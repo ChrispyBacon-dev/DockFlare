@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  tunnel-manager:
+    build: .
+    container_name: cloudflare-tunnel-manager
+    restart: unless-stopped
+    ports:
+      - "5001:5000" # Host:Container
+    env_file:
+      - .env
+    volumes:
+      # Grant access to the host's Docker socket
+      # SECURITY WARNING: This gives the container significant control over Docker.
+      - /var/run/docker.sock:/var/run/docker.sock
+    # Note: We are NOT defining the cloudflared container here.
+    # The tunnel-manager will create/manage it via the Docker API.
