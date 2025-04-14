@@ -2,6 +2,16 @@ docker run -d \
   --name my-nginx-web \
   --network cloudflare-net \
   -l cloudflare.tunnel.enable="true" \
-  -l cloudflare.tunnel.hostname="blub.dataverse.icu" \
+  -l cloudflare.tunnel.hostname="nginx1.dataverse.icu" \
   -l cloudflare.tunnel.service="http://my-nginx-web:80" \
+  nginx:latest
+
+
+  docker run -d \
+  --name my-nginx-web2 \
+  --network cloudflare-net \
+  -l cloudflare.tunnel.enable="true" \
+  -l cloudflare.tunnel.hostname="blub.gbv-ch.net" \
+  -l cloudflare.tunnel.service="http://my-nginx-web2:80" \
+  -l cloudflare.tunnel.zonename="gbv-ch.net" \
   nginx:latest

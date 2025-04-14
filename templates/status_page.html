@@ -14,6 +14,8 @@
         h1 { margin-top: 0; text-align: center; }
         article { margin-bottom: 1.5rem; }
         td pre { margin: 0; white-space: pre-wrap; word-break: break-all; font-family: var(--pico-font-family-monospace); font-size: 0.9em; }
+        /* Ensure preformatted text respects theme */
+        pre { background-color: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius: var(--pico-border-radius); padding: 0.5rem 0.75rem; color: var(--pico-color);}
 
         /* Status-specific colors using Pico variables and left border */
         .status-box {
@@ -82,11 +84,18 @@
             background: transparent;
             border: none;
             color: var(--pico-secondary);
+            cursor: pointer;
         }
         #theme-toggle:hover {
             color: var(--pico-secondary-hover);
              background: transparent; /* Ensure no background on hover */
              border: none;
+        }
+
+        /* Countdown timer style */
+        .countdown-timer {
+            /* color: var(--pico-muted-color); */ /* Use muted color */
+            font-size: 0.85em;
         }
 
     </style>
@@ -183,13 +192,18 @@
                                     </strong>
                                 </td>
                                 <td><pre title="{{ details.container_id if details.container_id else 'N/A' }}">{{ details.container_id[:12] if details.container_id else 'N/A' }}</pre></td>
-                                <td>
-                                    {% if details.status=='pending_deletion' and details.delete_at %}
-                                        <span title="{{ details.delete_at.isoformat() }}">{{ details.delete_at.strftime('%H:%M %d.%m.%Y') }}</span>
-                                    {% else %}
-                                        N/A
-                                    {% endif %}
-                                </td>
+
+                                <!-- Cell for Deletion Time and Countdown -->
+                                {% if details.status=='pending_deletion' and details.delete_at %}
+                                    <td data-delete-at="{{ details.delete_at.isoformat() }}"> <!-- Add data attribute -->
+                                        <span class="absolute-time">{{ details.delete_at.strftime('%H:%M %d.%m.%Y') }}</span>
+                                        <br>
+                                        <small><span class="countdown-timer">(calculating...)</span></small> <!-- Span for countdown -->
+                                    </td>
+                                {% else %}
+                                    <td>N/A</td> <!-- Keep N/A for non-pending rules -->
+                                {% endif %}
+
                                 <td>
                                     <form action="{{ url_for('force_delete_rule', hostname=hostname) }}" method="post"
                                           onsubmit="return confirm('Are you sure you want to force delete the rule and DNS record for {{ hostname }} immediately? This bypasses the grace period.');">
@@ -211,8 +225,9 @@
 
     </main> <!-- end .container -->
 
-    <!-- JavaScript for Theme Toggle -->
+    <!-- JavaScript for Theme Toggle and Countdown Timers -->
     <script>
+      // --- Theme Toggle Logic ---
       const themeToggleButton = document.getElementById('theme-toggle');
       const htmlElement = document.documentElement; // Target the <html> element
 
@@ -226,8 +241,8 @@
 
       // Function to toggle the theme
       const toggleTheme = () => {
-        // Check the current theme *explicitly* set on <html> or default to light
-        const currentTheme = htmlElement.getAttribute('data-theme') || 'light';
+        // Check the current theme *explicitly* set on <html> or default based on current setting
+        const currentTheme = htmlElement.getAttribute('data-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
         const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
         setTheme(newTheme);
       };
@@ -251,6 +266,63 @@
 
       // Run theme initialization
       initTheme();
+
+      // --- Countdown Timer Logic ---
+      const countdownElements = document.querySelectorAll('.countdown-timer');
+
+      function formatTimeDifference(diffMillis) {
+          const totalSeconds = Math.round(Math.abs(diffMillis / 1000)); // Round to nearest second
+
+          if (totalSeconds < 60) {
+              return diffMillis >= 0 ? 'in <1m' : 'Expired'; // Simplified for < 1 min
+          }
+
+          const days = Math.floor(totalSeconds / (3600 * 24));
+          const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
+          const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+          let parts = [];
+          if (days > 0) parts.push(`${days}d`);
+          if (hours > 0) parts.push(`${hours}h`);
+          // Always show minutes if > 0 or if it's the only unit left besides seconds
+          if (minutes > 0 || (days === 0 && hours === 0)) parts.push(`${minutes}m`);
+
+          const timeString = parts.join(' ');
+
+          // Check if difference is positive (future) or negative (past)
+          return diffMillis >= 0 ? `in ${timeString}` : `Expired ${timeString} ago`;
+      }
+
+      function updateCountdowns() {
+          const now = new Date(); // Get current time once per update cycle
+
+          countdownElements.forEach(span => {
+              const td = span.closest('td'); // Find the parent td
+              if (!td) return; // Should not happen, but safety check
+              const deleteAtISO = td.dataset.deleteAt;
+              if (!deleteAtISO) return; // Skip if data attribute missing
+
+              try {
+                  const targetDate = new Date(deleteAtISO);
+                  // Check if targetDate is valid
+                  if (isNaN(targetDate.getTime())) {
+                      throw new Error("Invalid date parsed");
+                  }
+                  const diff = targetDate - now; // Difference in milliseconds
+
+                  span.textContent = `(${formatTimeDifference(diff)})`; // Wrap in parentheses
+              } catch (e) {
+                  console.error("Error parsing date for countdown:", deleteAtISO, e);
+                  span.textContent = "(invalid date)";
+              }
+          });
+      }
+
+      // Update immediately on load
+      updateCountdowns();
+
+      // Update every 30 seconds (more frequent update)
+      const countdownInterval = setInterval(updateCountdowns, 30000); // 30000 milliseconds
 
     </script>
 
