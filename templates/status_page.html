@@ -6,33 +6,46 @@
     <meta http-equiv="refresh" content="30"> <!-- Auto-refresh every 30 seconds -->
     <!-- Pico.css CDN Link -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@latest/css/pico.min.css">
-    <!-- UPDATED TITLE -->
-    <title>DockFlare Tunnel Manager</title>
+    <title>Cloudflare Tunnel Manager</title>
     <style>
-<<<<<<< HEAD
-        /* ... (keep all previous styles) ... */
-=======
         /* Basic layout adjustments */
         body { padding-top: 1rem; padding-bottom: 1rem; }
         h1, h2, h3 { margin-top: 1.5em; margin-bottom: 0.5em; }
         h1 { margin-top: 0; text-align: center; }
         article { margin-bottom: 1.5rem; }
         td pre { margin: 0; white-space: pre-wrap; word-break: break-all; font-family: var(--pico-font-family-monospace); font-size: 0.9em; }
-        /* Ensure preformatted text respects theme */
-        pre { background-color: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius: var(--pico-border-radius); padding: 0.5rem 0.75rem; color: var(--pico-color);}
->>>>>>> 62eb57e (support for countdown on status webpage for grace period)
 
-        /* Settings Form & Manual Rule Form */
-        .settings-form label, .manual-rule-form label { margin-bottom: 0.5rem; font-weight: bold; display: block;}
-        .settings-form input[type=number], .manual-rule-form input { margin-bottom: 1rem; } /* Spacing below inputs */
-        .settings-form input[type=number] { max-width: 100px; margin-right: 0.5rem; display: inline-block; }
-        .settings-form button, .manual-rule-form button { width: auto; padding: 0.75rem 1.25rem; }
-        .manual-rule-form input[type=text], .manual-rule-form input[type=url] { margin-right: 1rem; } /* Space between inputs */
+        /* Status-specific colors using Pico variables and left border */
+        .status-box {
+            padding: 1rem 1.25rem;
+            border: 1px solid var(--pico-form-element-border-color);
+            border-radius: var(--pico-border-radius);
+            margin-top: 1rem;
+            word-wrap: break-word;
+            background-color: var(--pico-form-element-background-color);
+            color: var(--pico-form-element-color);
+            border-left-width: 4px; /* Add a thicker left border for emphasis */
+        }
+        .status-box.error {
+            border-left-color: var(--pico-color-red-500);
+        }
+        .status-box.success {
+            border-left-color: var(--pico-color-green-500);
+        }
+        .status-box.info {
+            border-left-color: var(--pico-color-blue-500);
+        }
+        .status-box.warning {
+            border-left-color: var(--pico-color-amber-500);
+        }
+        /* Ensure text inside is readable */
+        .status-box p {
+            margin-bottom: 0;
+        }
+        .status-box strong {
+             color: var(--pico-h_color); /* Use heading color for better contrast */
+        }
 
-<<<<<<< HEAD
-        /* Optional: Style the manual rule form layout better */
-        .manual-rule-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); grid-gap: 1rem; align-items: end; }
-=======
         /* Rule Status colors */
         .status-active { color: var(--pico-color-green-600); font-weight: bold; }
         .status-pending { color: var(--pico-color-orange-500); font-weight: bold; }
@@ -69,154 +82,118 @@
             background: transparent;
             border: none;
             color: var(--pico-secondary);
-            cursor: pointer;
         }
         #theme-toggle:hover {
             color: var(--pico-secondary-hover);
              background: transparent; /* Ensure no background on hover */
              border: none;
         }
->>>>>>> 62eb57e (support for countdown on status webpage for grace period)
-
-        /* Countdown timer style */
-        .countdown-timer {
-            /* color: var(--pico-muted-color); */ /* Use muted color */
-            font-size: 0.85em;
-        }
 
     </style>
 </head>
+<!-- Body uses Pico styles. Main container for centering/max-width. data-theme set by JS -->
 <body>
     <main class="container">
 
-        <button id="theme-toggle" aria-label="Toggle theme">🌓</button>
+        <!-- Theme Toggle Button -->
+        <button id="theme-toggle" aria-label="Toggle theme">🌓</button> <!-- Initial Icon -->
 
-        <!-- UPDATED TITLE -->
-        <h1>DockFlare Tunnel Manager</h1>
+        <h1>Cloudflare Tunnel Manager</h1>
 
         <!-- Initialization Status Section -->
         <article>
-            <!-- ... (content same as before) ... -->
+            <hgroup>
+                <h2>Initialization Status</h2>
+                <h3>Cloudflare Tunnel API Interaction</h3>
+            </hgroup>
+            <!-- Apply status class directly to the box -->
+            <div class="status-box {{ 'error' if tunnel_state.get('error') else ('success' if tunnel_state.get('token') else 'info') }}">
+                <p><strong>Message:</strong> {{ tunnel_state.status_message }}</p>
+                {% if tunnel_state.get('error') %}
+                    <p><strong>Error Details:</strong> <pre>{{ tunnel_state.error }}</pre></p>
+                {% endif %}
+            </div>
+            <h4>Tunnel Details</h4>
+            <p><strong>Desired Tunnel Name:</strong> <pre>{{ tunnel_state.name }}</pre></p>
+            <p><strong>Tunnel ID:</strong> <pre>{{ tunnel_state.id if tunnel_state.id else 'Not available' }}</pre></p>
+            <p><strong>Tunnel Token:</strong> <pre>{{ display_token }}</pre></p>
         </article>
 
         <!-- Tunnel Agent Control Section -->
         <article>
-             <!-- ... (content same as before) ... -->
-        </article>
+            <hgroup>
+                <h2>Tunnel Agent Control</h2>
+                <h3>Docker Container: <pre style="display: inline;">{{ cloudflared_container_name }}</pre></h3>
+            </hgroup>
+            <p>
+                <strong>Agent Container Status:</strong>
+                <span class="status-indicator {{ agent_state.container_status }}"></span>
+                <strong style="text-transform: capitalize;" class="{{'success' if agent_state.container_status=='running' else ('error' if 'error' in agent_state.container_status or agent_state.container_status=='docker_unavailable' or agent_state.container_status=='dead' or agent_state.container_status=='not_found' else ('warning' if agent_state.container_status=='exited' else 'info')) }}">
+                    {{ agent_state.container_status.replace('_',' ') }}
+                </strong>
+            </p>
+            {% if agent_state.last_action_status %}
+                <!-- Apply status class directly to the box -->
+                <div class="status-box {{ 'error' if 'Error:' in agent_state.last_action_status else ('warning' if 'Warning:' in agent_state.last_action_status else 'info') }}">
+                    <p><strong>Last Action Result:</strong> {{ agent_state.last_action_status }}</p>
+                </div>
+            {% endif %}
 
-        <!-- Settings Section -->
-        <article>
-             <!-- ... (content same as before) ... -->
-             <h2>Settings</h2>
-            <form action="{{ url_for('update_settings') }}" method="post" class="settings-form">
-                 {% set current_hours = (current_grace_period_seconds / 3600) | round(1) %}
-                 <label for="grace_period_hours">Pending Deletion Grace Period (Hours):</label>
-                 <div> <!-- Wrap inline elements for better layout control -->
-                    <input type="number" id="grace_period_hours" name="grace_period_hours"
-                            value="{{ current_hours }}"
-                            min="0" step="0.1" required>
-                    <button type="submit">Update Grace Period</button>
-                 </div>
-            </form>
-             <p><small>Rules for stopped Docker containers will be kept pending for this duration before being removed. Default: 2 hours.</small></p>
+            <!-- Agent Control Buttons - Grouped with grid -->
+            <div class="grid">
+                 <form action="{{ url_for('start_tunnel') }}" method="post">
+                     <button type="submit"
+                             {{ 'disabled' if not tunnel_state.get('token') or agent_state.container_status=='running' or not docker_available }}>
+                         Start Agent
+                     </button>
+                 </form>
+                 <form action="{{ url_for('stop_tunnel') }}" method="post">
+                     <button type="submit" class="secondary"
+                             {{ 'disabled' if agent_state.container_status!='running' or not docker_available }}>
+                         Stop Agent
+                     </button>
+                 </form>
+            </div>
         </article>
-
-        <!-- ADD MANUAL RULE SECTION -->
-        <article>
-            <h2>Add Manual Ingress Rule</h2>
-            <form action="{{ url_for('add_manual_rule') }}" method="post" class="manual-rule-form">
-                 <div class="manual-rule-grid">
-                     <div>
-                         <label for="manual_hostname">Public Hostname</label>
-                         <input type="text" id="manual_hostname" name="manual_hostname" placeholder="e.g., service.mydomain.com" required>
-                     </div>
-                     <div>
-                         <label for="manual_service">Internal Service URL</label>
-                         <input type="text" id="manual_service" name="manual_service" placeholder="e.g., http://192.168.1.50:8080" required>
-                     </div>
-                     <div>
-                         <label for="manual_zone_name">Zone Name (Optional)</label>
-                         <input type="text" id="manual_zone_name" name="manual_zone_name" placeholder="e.g., mydomain.com (uses default if blank)">
-                     </div>
-                     <div><!-- Empty grid cell for alignment or add button here -->
-                        <button type="submit">Add Manual Rule</button>
-                     </div>
-                 </div>
-                 <p><small>Use this to expose services not managed via Docker labels. If Zone Name is omitted, the default Zone ID from environment variables will be used.</small></p>
-            </form>
-        </article>
-
 
         <!-- Managed Ingress Rules Section -->
         <article>
             <h2>Managed Ingress Rules</h2>
             {% if rules %}
-                <figure>
-                <table role="grid">
+                <figure> <!-- Pico styles tables inside figures nicely -->
+                <table role="grid"> <!-- role="grid" for accessibility -->
                     <thead>
                         <tr>
                             <th scope="col">Hostname</th>
                             <th scope="col">Service Target</th>
                             <th scope="col">Status</th>
-                            <!-- ADDED Type Column -->
-                            <th scope="col">Type</th>
-                            <th scope="col">Container/Details</th>
+                            <th scope="col">Container</th>
                             <th scope="col">Delete Scheduled (UTC)</th>
                             <th scope="col">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for hostname, details in rules.items()|sort %}
+                        {% for hostname, details in rules.items()|sort %} {# Sort by hostname #}
                             <tr>
-                                <td>
-                                    <a href="https://{{ hostname }}" target="_blank" rel="noopener noreferrer" class="hostname-link" title="Open https://{{ hostname }}">
-                                        <pre>{{ hostname }}</pre>
-                                    </a>
-                                </td>
+                                <td><pre>{{ hostname }}</pre></td>
                                 <td><pre>{{ details.service }}</pre></td>
                                 <td>
                                     <strong class="{{ 'status-active' if details.status=='active' else 'status-pending' }}">
                                         {{ details.status }}
                                     </strong>
                                 </td>
-<<<<<<< HEAD
-                                <!-- ADDED Type Display -->
-                                <td style="text-transform: capitalize;">{{ details.type | default('docker') }}</td>
-                                <!-- Modified Container Column -->
+                                <td><pre title="{{ details.container_id if details.container_id else 'N/A' }}">{{ details.container_id[:12] if details.container_id else 'N/A' }}</pre></td>
                                 <td>
-                                    {% if details.type == 'docker' %}
-                                        <pre title="{{ details.container_id if details.container_id else 'N/A' }}">{{ details.container_id[:12] if details.container_id else 'N/A' }}</pre>
+                                    {% if details.status=='pending_deletion' and details.delete_at %}
+                                        <span title="{{ details.delete_at.isoformat() }}">{{ details.delete_at.strftime('%H:%M %d.%m.%Y') }}</span>
                                     {% else %}
-                                        <small><i>(Manual Rule)</i></small>
+                                        N/A
                                     {% endif %}
                                 </td>
-                                {% if details.status=='pending_deletion' and details.delete_at %}
-                                    <td data-delete-at="{{ details.delete_at.isoformat() }}">
-                                        <span class="absolute-time">{{ details.delete_at.strftime('%H:%M %d.%m.%Y') }}</span>
-                                        <br>
-                                        <small><span class="countdown-timer">(calculating...)</span></small>
-                                    </td>
-                                {% else %}
-                                    <td>N/A</td>
-                                {% endif %}
-=======
-                                <td><pre title="{{ details.container_id if details.container_id else 'N/A' }}">{{ details.container_id[:12] if details.container_id else 'N/A' }}</pre></td>
-
-                                <!-- Cell for Deletion Time and Countdown -->
-                                {% if details.status=='pending_deletion' and details.delete_at %}
-                                    <td data-delete-at="{{ details.delete_at.isoformat() }}"> <!-- Add data attribute -->
-                                        <span class="absolute-time">{{ details.delete_at.strftime('%H:%M %d.%m.%Y') }}</span>
-                                        <br>
-                                        <small><span class="countdown-timer">(calculating...)</span></small> <!-- Span for countdown -->
-                                    </td>
-                                {% else %}
-                                    <td>N/A</td> <!-- Keep N/A for non-pending rules -->
-                                {% endif %}
-
->>>>>>> 62eb57e (support for countdown on status webpage for grace period)
                                 <td>
                                     <form action="{{ url_for('force_delete_rule', hostname=hostname) }}" method="post"
-                                          onsubmit="return confirm('Force delete rule and DNS for {{ hostname }} immediately?');">
+                                          onsubmit="return confirm('Are you sure you want to force delete the rule and DNS record for {{ hostname }} immediately? This bypasses the grace period.');">
+                                        <!-- Use Pico classes for styling -->
                                         <button type="submit" class="delete-button contrast outline" {{ 'disabled' if not docker_available }}>
                                             Delete
                                         </button>
@@ -234,20 +211,8 @@
 
     </main> <!-- end .container -->
 
-<<<<<<< HEAD
-    <!-- JavaScript (includes Theme Toggle and Countdown) -->
+    <!-- JavaScript for Theme Toggle -->
     <script>
-      // --- Theme Toggle Logic ---
-      // ... (same as previous) ...
-      const themeToggleButton = document.getElementById('theme-toggle'); const htmlElement = document.documentElement; const setTheme = (theme) => { htmlElement.setAttribute('data-theme', theme); localStorage.setItem('theme', theme); themeToggleButton.textContent = theme === 'dark' ? '☀️' : '🌓'; }; const toggleTheme = () => { const currentTheme = htmlElement.getAttribute('data-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); const newTheme = currentTheme === 'dark' ? 'light' : 'dark'; setTheme(newTheme); }; const initTheme = () => { const savedTheme = localStorage.getItem('theme'); const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches; if (savedTheme) { setTheme(savedTheme); } else { setTheme(prefersDark ? 'dark' : 'light'); } }; themeToggleButton.addEventListener('click', toggleTheme); initTheme();
-
-      // --- Countdown Timer Logic ---
-      // ... (same as previous) ...
-      const countdownElements = document.querySelectorAll('.countdown-timer'); function formatTimeDifference(diffMillis) { const totalSeconds = Math.round(Math.abs(diffMillis / 1000)); if (totalSeconds < 60) { return diffMillis >= 0 ? 'in <1m' : 'Expired'; } const days = Math.floor(totalSeconds / (3600 * 24)); const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600); const minutes = Math.floor((totalSeconds % 3600) / 60); let parts = []; if (days > 0) parts.push(`${days}d`); if (hours > 0) parts.push(`${hours}h`); if (minutes > 0 || (days === 0 && hours === 0)) parts.push(`${minutes}m`); const timeString = parts.join(' '); return diffMillis >= 0 ? `in ${timeString}` : `Expired ${timeString} ago`; } function updateCountdowns() { const now = new Date(); countdownElements.forEach(span => { const td = span.closest('td'); if (!td) return; const deleteAtISO = td.dataset.deleteAt; if (!deleteAtISO) return; try { const targetDate = new Date(deleteAtISO); if (isNaN(targetDate.getTime())) { throw new Error("Invalid date"); } const diff = targetDate - now; span.textContent = `(${formatTimeDifference(diff)})`; } catch (e) { console.error("Countdown error:", deleteAtISO, e); span.textContent = "(err)"; } }); } updateCountdowns(); const countdownInterval = setInterval(updateCountdowns, 30000);
-=======
-    <!-- JavaScript for Theme Toggle and Countdown Timers -->
-    <script>
-      // --- Theme Toggle Logic ---
       const themeToggleButton = document.getElementById('theme-toggle');
       const htmlElement = document.documentElement; // Target the <html> element
 
@@ -261,8 +226,8 @@
 
       // Function to toggle the theme
       const toggleTheme = () => {
-        // Check the current theme *explicitly* set on <html> or default based on current setting
-        const currentTheme = htmlElement.getAttribute('data-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        // Check the current theme *explicitly* set on <html> or default to light
+        const currentTheme = htmlElement.getAttribute('data-theme') || 'light';
         const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
         setTheme(newTheme);
       };
@@ -287,64 +252,6 @@
       // Run theme initialization
       initTheme();
 
-      // --- Countdown Timer Logic ---
-      const countdownElements = document.querySelectorAll('.countdown-timer');
-
-      function formatTimeDifference(diffMillis) {
-          const totalSeconds = Math.round(Math.abs(diffMillis / 1000)); // Round to nearest second
-
-          if (totalSeconds < 60) {
-              return diffMillis >= 0 ? 'in <1m' : 'Expired'; // Simplified for < 1 min
-          }
-
-          const days = Math.floor(totalSeconds / (3600 * 24));
-          const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
-          const minutes = Math.floor((totalSeconds % 3600) / 60);
-
-          let parts = [];
-          if (days > 0) parts.push(`${days}d`);
-          if (hours > 0) parts.push(`${hours}h`);
-          // Always show minutes if > 0 or if it's the only unit left besides seconds
-          if (minutes > 0 || (days === 0 && hours === 0)) parts.push(`${minutes}m`);
-
-          const timeString = parts.join(' ');
-
-          // Check if difference is positive (future) or negative (past)
-          return diffMillis >= 0 ? `in ${timeString}` : `Expired ${timeString} ago`;
-      }
-
-      function updateCountdowns() {
-          const now = new Date(); // Get current time once per update cycle
-
-          countdownElements.forEach(span => {
-              const td = span.closest('td'); // Find the parent td
-              if (!td) return; // Should not happen, but safety check
-              const deleteAtISO = td.dataset.deleteAt;
-              if (!deleteAtISO) return; // Skip if data attribute missing
-
-              try {
-                  const targetDate = new Date(deleteAtISO);
-                  // Check if targetDate is valid
-                  if (isNaN(targetDate.getTime())) {
-                      throw new Error("Invalid date parsed");
-                  }
-                  const diff = targetDate - now; // Difference in milliseconds
-
-                  span.textContent = `(${formatTimeDifference(diff)})`; // Wrap in parentheses
-              } catch (e) {
-                  console.error("Error parsing date for countdown:", deleteAtISO, e);
-                  span.textContent = "(invalid date)";
-              }
-          });
-      }
-
-      // Update immediately on load
-      updateCountdowns();
-
-      // Update every 30 seconds (more frequent update)
-      const countdownInterval = setInterval(updateCountdowns, 30000); // 30000 milliseconds
-
->>>>>>> 62eb57e (support for countdown on status webpage for grace period)
     </script>
 
 </body>
