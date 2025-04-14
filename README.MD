@@ -1,48 +1,25 @@
-# Cloudflare Tunnel Docker Ingress Controller
+# DockFlare: Cloudflare Tunnel Ingress Controller for Docker
 
-[![Generic badge](https://img.shields.io/badge/Status-Alpha-yellow.svg)](https://shields.io/)
+DockFlare automates Cloudflare Tunnel ingress rule management based on Docker container labels, simplifying public exposure of your Dockerized applications. It eliminates manual Cloudflare configuration, acting as a self-hosted ingress controller.
 
-This project automates the management of Cloudflare Tunnel ingress rules based on Docker container labels on a host machine, effectively acting as a self-hosted "Cloudflare Tunnel Ingress Controller" for Docker.
+**Key Features:**
 
-## Core Problem Solved
+*   **Automated Cloudflare Tunnel Management:** Creates/uses a specified tunnel, retrieves Tunnel ID & Token.
+*   **`cloudflared` Agent Lifecycle:** Deploys & manages the `cloudflared` container (using Tunnel Token).
+*   **Dynamic Ingress via Docker Labels:**
+    *   Monitors Docker events for containers with labels (prefix: `cloudflare.tunnel.`): `enable="true"`, `hostname="subdomain.example.com"`, `service="http://target:port"`.
+    *   Automatically updates Cloudflare Tunnel configuration to match running, labeled containers.
+*   **Graceful Deletion:** Configurable grace period before removing ingress rules when a container stops.
+*   **State Persistence:** Saves `managed_rules` to `state.json` for restarts.
+*   **Reconciliation:** On startup, ensures consistency between Docker containers, saved state, and Cloudflare configuration.
+*   **Web UI:** Status dashboard with:
+    *   Tunnel & agent status.
+    *   Start/Stop agent controls.
+    *   Managed ingress rule list with status, container ID, deletion time, and "Force Delete" option.
 
-Eliminates the manual process of configuring public hostnames and DNS entries in Cloudflare Tunnels every time a new Docker service needs to be exposed, or an existing one is updated/removed.  This provides a dynamic and automated way to expose your Dockerized applications via Cloudflare Tunnel.
+**Core Problem Solved:**
 
-## Key Features & Functionality
-
-*   **Cloudflare Tunnel Entity Management:**
-    *   On startup, checks if a tunnel with the specified `TUNNEL_NAME` exists within the configured Cloudflare account (`CF_ACCOUNT_ID`).
-    *   If the tunnel doesn't exist, it creates it using the Cloudflare API.
-    *   Retrieves and stores the Tunnel ID and the necessary runtime Tunnel Token directly from the API response.
-*   **`cloudflared` Agent Container Management:**
-    *   Manages the lifecycle of the actual `cloudflared` agent process, running it as a separate Docker container (`cloudflare/cloudflared:latest`).
-    *   Uses the Tunnel Token (obtained via API) to authenticate the agent.
-    *   Automatically starts the agent container after successful initialization.
-    *   Provides Start/Stop buttons in the web UI to manually control the agent container.
-*   **Dynamic Ingress Rule Management (via Docker Labels):**
-    *   Listens for Docker container start and stop events on the host using the Docker API.
-    *   Processes containers that have specific labels (default prefix `cloudflare.tunnel.`):
-        *   `cloudflare.tunnel.enable="true"`: Marks the container for management.
-        *   `cloudflare.tunnel.hostname="subdomain.yourdomain.com"`: The desired public hostname.
-        *   `cloudflare.tunnel.service="http://target:port"`: The internal URL the tunnel should proxy to (e.g., `http://localhost:8080`, `http://container_name:9000`).
-    *   Maintains an internal state (`managed_rules`) representing the desired ingress configuration based on running, labeled containers.
-    *   Automatically updates the Cloudflare Tunnel's configuration by adding/removing ingress rules to match the `managed_rules` state.  Relies on Cloudflare to automatically handle the corresponding CNAME DNS records.
-*   **Graceful Deletion:**
-    *   When a managed container stops, its corresponding ingress rule is marked as `pending_deletion`.
-    *   A deletion timestamp (`delete_at`) is calculated based on a configurable grace period.
-    *   A background task periodically checks for expired rules and triggers an update to the Cloudflare configuration to remove them.
-*   **State Persistence:**
-    *   The `managed_rules` state is saved to a JSON file (`state.json` by default) to survive restarts.
-*   **Reconciliation on Startup:**
-    *   When the application starts, it compares currently running labeled Docker containers, the loaded state from `state.json`, and the actual configuration fetched from Cloudflare to ensure consistency and trigger necessary updates.
-*   **Web UI (Flask):**
-    *   Provides a status dashboard showing:
-        *   Tunnel initialization status, ID, and masked token.
-        *   `cloudflared` agent container status (running, stopped, etc.).
-        *   Start/Stop buttons for the agent container.
-        *   A table listing all currently managed ingress rules (hostname, service, status, associated container ID, scheduled deletion time).
-        *   A "Force Delete" button for each managed rule to bypass the grace period and remove the rule immediately.
-
+Simplifies exposing Docker services via Cloudflare Tunnel by automating configuration changes based on Docker container lifecycle events.
 ## Technical Implementation
 
 *   **Language:** Python 3
