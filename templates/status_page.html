@@ -4,105 +4,75 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="refresh" content="30"> <!-- Auto-refresh every 30 seconds -->
+    <!-- Pico.css CDN Link -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@latest/css/pico.min.css">
     <title>Cloudflare Tunnel Manager</title>
-    <!-- Pico.css Stylesheet -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
     <style>
-        /* Minimal custom styles */
-        body { padding-top: 1rem; padding-bottom: 1rem; }
-        main.container { padding-top: 0; } /* Reduce top padding inside container */
+        /* Keep some custom styles */
+        body { padding-top: 1rem; padding-bottom: 1rem; } /* Add some vertical padding */
+        h1, h2, h3 { margin-top: 1.5em; margin-bottom: 0.5em; }
+        h1 { margin-top: 0; text-align: center; }
         article { margin-bottom: 1.5rem; } /* Add space between sections */
-        pre { white-space: pre-wrap; word-break: break-all; font-size: 0.9em; background-color: var(--pico-card-background-color); border: var(--pico-card-border); border-radius: var(--pico-border-radius); padding: 0.5rem 0.75rem; }
-        table { margin-bottom: 1rem; }
-        td, th { vertical-align: top; padding: 0.5rem 0.75rem; } /* Adjust padding */
+        td pre { margin: 0; white-space: pre-wrap; word-break: break-all; font-family: var(--pico-font-family-monospace); font-size: 0.9em; } /* Use Pico monospace font */
 
-        /* Status Text Colors */
-        .status-active { color: var(--pico-color-green-600); font-weight: bold; }
-        .status-pending { color: var(--pico-color-orange-600); font-weight: bold; }
+        /* Status-specific colors (adjust Pico variables if preferred later) */
+        .status-box { padding: 1rem 1.25rem; border: 1px solid var(--pico-card-border-color); border-radius: var(--pico-card-border-radius); margin-top: 1rem; word-wrap: break-word; }
+        .error { background-color: #ffebeb; border-color: #ffc2c2; color: #a00; }
+        .success { background-color: #e6ffed; border-color: #c3e6cb; color: #155724; }
+        .info { background-color: #e7f3fe; border-color: #b8daff; color: #004085; }
+        .warning { background-color: #fff3cd; border-color: #ffeeba; color: #856404; }
 
-        /* Custom Button Colors (override Pico slightly if needed) */
-        .button-start { background-color: var(--pico-color-green-550); border-color: var(--pico-color-green-550); }
-        .button-start:hover:not([aria-disabled=true]) { background-color: var(--pico-color-green-650); border-color: var(--pico-color-green-650); }
-        .button-stop, .button-delete { background-color: var(--pico-color-red-550); border-color: var(--pico-color-red-550); }
-        .button-stop:hover:not([aria-disabled=true]),
-        .button-delete:hover:not([aria-disabled=true]) { background-color: var(--pico-color-red-650); border-color: var(--pico-color-red-650); }
-        .button-delete { padding-top: 0.25rem; padding-bottom: 0.25rem; font-size: 0.9em; } /* Make delete slightly smaller */
+        /* Rule Status colors */
+        .status-active { color: var(--pico-color-green-600); font-weight: bold; } /* Use Pico green */
+        .status-pending { color: var(--pico-color-orange-500); font-weight: bold; } /* Use Pico orange */
 
-        /* Status Box adjustments (Pico's article provides background/border) */
-        .status-box { padding: 1rem; margin-top: 1rem; }
-        .status-box.error { border-left: 5px solid var(--pico-color-red-500); background-color: var(--pico-color-red-100); } /* Use border and subtle bg */
-        .status-box.success { border-left: 5px solid var(--pico-color-green-500); background-color: var(--pico-color-green-100); }
-        .status-box.info { border-left: 5px solid var(--pico-color-blue-500); background-color: var(--pico-color-blue-100); }
-        .status-box.warning { border-left: 5px solid var(--pico-color-orange-500); background-color: var(--pico-color-orange-100); }
-        .status-box p:last-child { margin-bottom: 0; }
+        /* Form styling adjustments if needed */
+        form { display: inline-block; margin: 0; }
+        form button { margin: 0; } /* Pico might add margins we don't want inside the table cell */
 
-        /* Theme Toggle Button Styling */
+        /* Status indicator dots */
+        .status-indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle;}
+        .status-indicator.running { background-color: var(--pico-color-green-500); }
+        .status-indicator.exited, .status-indicator.dead, .status-indicator.not_found { background-color: var(--pico-color-red-500); }
+        .status-indicator.docker_unavailable { background-color: var(--pico-color-gray-500); }
+        .status-indicator.unknown, .status-indicator.created, .status-indicator.paused { background-color: var(--pico-color-amber-500); }
+
+        /* Button customizations (Pico uses <button> directly, removes need for .button class often) */
+        button.delete-button { --pico-background-color: var(--pico-color-red-600); --pico-border-color: var(--pico-color-red-600); }
+        button.delete-button:hover { --pico-background-color: var(--pico-color-red-700); }
+        /* Pico handles disabled state styling automatically */
+
+        /* Theme Toggle Placeholder */
         #theme-toggle {
-            position: fixed;
+            position: absolute;
             top: 1rem;
             right: 1rem;
-            background' if tunnel_state.get('error') else ('success' if tunnel_state.get('token') else 'info') }}">
-                <p><strong>Message:</strong> {{ tunnel_state.status_message }}</p>
-                {% if tunnel_state.get('error') %}
-                    <p><strong>Error Details:</strong> <pre>{{ tunnel_state.error }}</pre></p>
-                {% endif %}
-            </div>
-            <h3>Tunnel Details</h3>
-            <p><strong>Desired Tunnel Name:</strong> <pre>{{ tunnel_state.name }}</pre></p>
-            <p><strong>Tunnel ID:</strong> <pre>{{ tunnel_state.id if tunnel_state.id else 'Not available' }}</pre></p>
-            <p><strong>Tunnel Token:</strong> <pre>{{ display_token }}</pre></p>
-        </article>
-
-        <!-- Tunnel Agent Control Section -->
-        <article>
-            <header><h2>Tunnel Agent Control (<pre style="display: inline; padding: 0; border: none; background: none;">{{ cloudflared_container_name }}</pre>)</h2></header>
-            <p>
-                <strong>Agent Container Status:</strong>
-                <span class="status-indicator {{ agent_state.container_status }}"></span>
-                <strong class="capitalize {{'success' if agent_state.container_status=='running' else ('error' if 'error' in agent_state.container_status or agent_state.container_status=='docker_unavailable' or agent_state.container_status=='dead' or agent_state.container_status=='not_found' else ('warning' if agent_state.container_status=='exited' else 'info')) }}">
-                    {{ agent_state.container_status.replace('_',' ') }}
-                </strong>
-            </p>
-            {% if agent_state.last_action_status %}
-                <div class="status-box {{ 'error' if ': var(--pico-card-background-color);
-            border: 1px solid var(--pico-card-border-color);
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            padding: 0; /* Remove default button padding */
-            font-size: 1.2em; /* Adjust icon size */
-            z-index: 1000; /* Ensure it's above other content */
-        }
-        #theme-toggle:hover {
-             border-color: var(--pico-primary-hover-border);
         }
 
     </style>
 </head>
+<!-- Body will use Pico default styles. Main container for centering/max-width -->
 <body>
-    <!-- Theme toggle button -->
-    <button id="theme-toggle" aria-label="Switch theme">🌙</button>
-
     <main class="container">
+
+        <!-- Theme Toggle Button Placeholder -->
+        <button id="theme-toggle" aria-label="Toggle theme">🌓</button> <!-- Simple Emoji Toggle -->
+
         <h1>Cloudflare Tunnel Manager</h1>
 
         <!-- Initialization Status Section -->
         <article>
-            <header>
+            <hgroup>
                 <h2>Initialization Status</h2>
-            </header>
-            <!-- Use status-box for specific feedback coloring -->
+                <h3>Cloudflare Tunnel API Interaction</h3>
+            </hgroup>
             <div class="status-box {{ 'error' if tunnel_state.get('error') else ('success' if tunnel_state.get('token') else 'info') }}">
                 <p><strong>Message:</strong> {{ tunnel_state.status_message }}</p>
                 {% if tunnel_state.get('error') %}
                     <p><strong>Error Details:</strong> <pre>{{ tunnel_state.error }}</pre></p>
                 {% endif %}
             </div>
-            <h3>Tunnel Details</h3>
+            <h4>Tunnel Details</h4>
             <p><strong>Desired Tunnel Name:</strong> <pre>{{ tunnel_state.name }}</pre></p>
             <p><strong>Tunnel ID:</strong> <pre>{{ tunnel_state.id if tunnel_state.id else 'Not available' }}</pre></p>
             <p><strong>Tunnel Token:</strong> <pre>{{ display_token }}</pre></p>
@@ -110,77 +80,59 @@
 
         <!-- Tunnel Agent Control Section -->
         <article>
-            <header>
-                <h2>Tunnel Agent Control (<pre style="display: inline; padding: 0.1em 0.3em;">{{ cloudflared_container_name }}</pre>)</h2>
-            </header>
-             <p>
+            <hgroup>
+                <h2>Tunnel Agent Control</h2>
+                <h3>Docker Container: <pre style="display: inline;">{{ cloudflared_container_name }}</pre></h3>
+            </hgroup>
+            <p>
                 <strong>Agent Container Status:</strong>
-                <!-- Removed old indicator span -->
-                <strong style="text-transform: capitalize;">
+                <span class="status-indicator {{ agent_state.container_status }}"></span>
+                <strong style="text-transform: capitalize;" class="{{'success' if agent_state.container_status=='running' else ('error' if 'error' in agent_state.container_status or agent_state.container_status=='docker_unavailable' or agent_state.container_status=='dead' or agent_state.container_status=='not_found' else ('warning' if agent_state.container_status=='exited' else 'info')) }}">
                     {{ agent_state.container_status.replace('_',' ') }}
                 </strong>
-             </p>
+            </p>
             {% if agent_state.last_action_status %}
                 <div class="status-box {{ 'error' if 'Error:' in agent_state.last_action_status else ('warning' if 'Warning:' in agent_state.last_action_status else 'info') }}">
                     <strong>Last Action Result:</strong> {{ agent_state.last_action_status }}
                 </div>
             {% endif %}
 
-            <!-- Agent Control Buttons -->
-            <footer> <!-- Pico suggests forms/buttons in footers of articles -->
-                <form action="{{ url_for('start_tunnel') }}" method="post" style="display: inline-block; margin-right: 0.5rem;">
-                     <!-- Use standard button tag, add custom class for color -->
-                    <button type="submit" class="button-start"
-                            {{ 'aria-disabled=true' if not tunnel_state.get('token') or agent_state.container_status=='running' or not docker_available else '' }}
-                            {{ 'disabled' if not tunnel_state.get('token') or agent_state.container_status=='running' or not docker_available else '' }}>
-                        Start Agent
-                    </button>
-                </form>
-                <form action="{{ url_for('stop_tunnel') }}" method="post" style="display: inline-block;">
-                    <button type="submit" class="button-stop"
-                            {{ 'aria-disabled=true' if agent_state.container_status!='running' or not docker_available else '' }}
-                            {{ 'disabled' if agent_state.container_status!='running' or not docker_available else '' }}>
-                        Stop Agent
-Error:' in agent_state.last_action_status else ('warning' if 'Warning:' in agent_state.last_action_status else 'info') }}">
-                    <strong>Last Action Result:</strong> {{ agent_state.last_action_status }}
-                </div>
-            {% endif %}
-
-            <!-- Agent Control Buttons -->
-            <footer>
-                <form action="{{ url_for('start_tunnel') }}" method="post">
-                    <button type="submit"
-                            {{ 'disabled' if not tunnel_state.get('token') or agent_state.container_status=='running' or not docker_available }}>
-                        Start Agent
-                    </button>
-                </form>
-                <form action="{{ url_for('stop_tunnel') }}" method="post">
-                    <button type="submit" class="secondary"
-                            {{ 'disabled' if agent_state.container_status!='running' or not docker_available }}>
-                        Stop Agent
-                    </button>
-                </form>
-            </footer>
+            <!-- Agent Control Buttons - Grouped with grid -->
+            <div class="grid">
+                 <form action="{{ url_for('start_tunnel') }}" method="post">
+                     <button type="submit"
+                             {{ 'disabled' if not tunnel_state.get('token') or agent_state.container_status=='running' or not docker_available }}>
+                         Start Agent
+                     </button>
+                 </form>
+                 <form action="{{ url_for('stop_tunnel') }}" method="post">
+                     <!-- Add class="secondary" for less emphasis maybe? -->
+                     <button type="submit" class="secondary"
+                             {{ 'disabled' if agent_state.container_status!='running' or not docker_available }}>
+                         Stop Agent
+                     </button>
+                 </form>
+            </div>
         </article>
 
         <!-- Managed Ingress Rules Section -->
         <article>
-            <header><h2>Managed Ingress Rules</h2></header>
+            <h2>Managed Ingress Rules</h2>
             {% if rules %}
-                <div style="overflow-x: auto;"> <!-- Make table horizontally scrollable on small screens -->
-                <table>
+                <figure> <!-- Pico styles tables inside figures nicely -->
+                <table role="grid"> <!-- role="grid" for accessibility with tables -->
                     <thead>
                         <tr>
-                            <th>Hostname</th>
-                            <th>Service Target</th>
-                            <th>Status</th>
-                            <th>Managing Container ID</th>
-                            <th>Delete Scheduled At (UTC)</th>
-                            <th>Actions</th>
+                            <th scope="col">Hostname</th>
+                            <th scope="col">Service Target</th>
+                            <th scope="col">Status</th>
+                            <th scope="col">Container</th>
+                            <th scope="col">Delete Scheduled (UTC)</th>
+                            <th scope="col">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for hostname, details in rules.items()|sort %} {# Sort by hostname for consistent order #}
+                        {% for hostname, details in rules.items()|sort %} {# Sort by hostname #}
                             <tr>
                                 <td><pre>{{ hostname }}</pre></td>
                                 <td><pre>{{ details.service }}</pre></td>
@@ -189,11 +141,10 @@ Error:' in agent_state.last_action_status else ('warning' if 'Warning:' in agent
                                         {{ details.status }}
                                     </strong>
                                 </td>
-                                <td><pre>{{ details.container_id[:12] if details.container_id else 'N/A' }}</pre></td>
+                                <td><pre title="{{ details.container_id if details.container_id else 'N/A' }}">{{ details.container_id[:12] if details.container_id else 'N/A' }}</pre></td>
                                 <td>
-                                    {# Format the datetime object if it exists and status is pending #}
                                     {% if details.status=='pending_deletion' and details.delete_at %}
-                                        {{ details.delete_at.strftime('%H:%M %d.%m.%Y') }}
+                                        <span title="{{ details.delete_at.isoformat() }}">{{ details.delete_at.strftime('%H:%M %d.%m.%Y') }}</span>
                                     {% else %}
                                         N/A
                                     {% endif %}
@@ -201,7 +152,8 @@ Error:' in agent_state.last_action_status else ('warning' if 'Warning:' in agent
                                 <td>
                                     <form action="{{ url_for('force_delete_rule', hostname=hostname) }}" method="post"
                                           onsubmit="return confirm('Are you sure you want to force delete the rule and DNS record for {{ hostname }} immediately? This bypasses the grace period.');">
-                                        <button type="submit" class="secondary outline" {{ 'disabled' if not docker_available }}>
+                                        <!-- Pico styles buttons without needing specific classes -->
+                                        <button type="submit" class="delete-button contrast outline" {{ 'disabled' if not docker_available }}>
                                             Force Delete
                                         </button>
                                     </form>
@@ -210,140 +162,18 @@ Error:' in agent_state.last_action_status else ('warning' if 'Warning:' in agent
                         {% endfor %}
                     </tbody>
                 </table>
-                </div>
-            {% else %}
-                <p>No ingress rules are currently being managed.</p>
-            {% endif %}
-        </article>
-
-    </main>
-
-    <!-- JavaScript for Theme Toggle -->
-    <script>
-      (function() {
-        const htmlElement = document.documentElement;
-        const themeToggle = document.getElementById('theme-toggle');
-        const themeIcon = document.getElementById('theme-icon'); // Assumes the SVG has this ID
-        const storageKey = 'theme-preference';
-
-        // SVG icons (simple placeholders                    </button>
-                </form>
-            </footer>
-        </article>
-
-        <!-- Managed Ingress Rules Section -->
-        <article>
-            <header>
-                <h2>Managed Ingress Rules</h2>
-            </header>
-            {% if rules %}
-                 <!-- Pico makes tables responsive by default in overflow container -->
-                <figure>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th scope="col">Hostname</th>
-                                <th scope="col">Service Target</th>
-                                <th scope="col">Status</th>
-                                <th scope="col">Container</th>
-                                <th scope="col">Delete At (UTC)</th>
-                                <th scope="col">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for hostname, details in rules.items()|sort %} {# Sort by hostname for consistent order #}
-                                <tr>
-                                    <td><pre style="padding: 0.2em 0.4em;">{{ hostname }}</pre></td>
-                                    <td><pre style="padding: 0.2em 0.4em;">{{ details.service }}</pre></td>
-                                    <td>
-                                        <span class="{{ 'status-active' if details.status=='active' else 'status-pending' }}">
-                                            {{ details.status }}
-                                        </span>
-                                    </td>
-                                    <td><pre style="padding: 0.2em 0.4em;">{{ details.container_id[:12] if details.container_id else 'N/A' }}</pre></td>
-                                    <td>
-                                        {# Format the datetime object if it exists and status is pending #}
-                                        {% if details.status=='pending_deletion' and details - replace with better ones if desired)
-        const sunIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-sun"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>';
-        const moonIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-moon"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>';
-
-        const getThemePreference = () => {
-          const storedTheme = localStorage.getItem(storageKey);
-          if (storedTheme) {
-            return storedTheme;
-          }
-          // Default to light if no preference stored
-          return 'light';
-          // Optional: Respect OS preference as initial default
-          // return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-        };
-
-        const setTheme = (theme) => {
-          htmlElement.setAttribute('data-theme', theme);
-          if (themeIcon) {
-            themeIcon.innerHTML = theme === 'dark' ? sun.delete_at %}
-                                            {{ details.delete_at.strftime('%H:%M %d.%m.%Y') }}
-                                        {% else %}
-                                            N/A
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        <form action="{{ url_for('force_delete_rule', hostname=hostname) }}" method="post"
-                                              onsubmit="return confirm('Force delete rule and DNS for {{ hostname }} immediately?');">
-                                            <button type="submit" class="button-delete"
-                                                    {{ 'aria-disabled=true' if not docker_available else '' }}
-                                                    {{ 'disabled' if not docker_available else '' }}>
-                                                Force Delete
-                                            </button>
-                                        </form>
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
                 </figure>
             {% else %}
                 <p>No ingress rules are currently being managed.</p>
             {% endif %}
         </article>
 
-    </main>
+    </main> <!-- end .container -->
 
-    <!-- JavaScript for Theme Toggle -->
+    <!-- JavaScript for Theme Toggle (will add later) -->
     <script>
-        (function() {
-            const themeToggleButton = document.getElementById('theme-toggle');
-            const htmlElement = document.documentElement; // Get the <html> element
-            const storageKey = 'theme-preference';
-
-            // Icons for the button
-            const lightIcon = '☀️';
-            const darkIcon = '🌙';
-
-            // Function toIcon : moonIcon;
-          }
-          localStorage.setItem(storageKey, theme);
-          console.log(`Theme set to: ${theme}`);
-        };
-
-        const toggleTheme = () => {
-          const currentTheme = htmlElement.getAttribute('data-theme') || getThemePreference();
-          const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-          setTheme(newTheme);
-        };
-
-        // Set initial theme on load
-        const initialTheme = getThemePreference();
-        setTheme(initialTheme);
-
-        // Add event listener
-        if (themeToggle) {
-          themeToggle.addEventListener('click', toggleTheme);
-        } else {
-          console.error("Theme toggle button not found");
-        }
-
-      })();
+        // Placeholder for theme toggle script
+        console.log("Theme toggle script placeholder");
     </script>
 
 </body>
