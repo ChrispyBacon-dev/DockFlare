@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="30"> <!-- Auto-refresh every 30 seconds -->
+    <title>Cloudflare Tunnel Manager</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background-color: #f4f4f4; color: #333; line-height: 1.6; }
+        h1, h2, h3 { color: #555; margin-top: 1.5em; margin-bottom: 0.5em; }
+        h1 { margin-top: 0; }
+        .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,.1); margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #ddd; padding: 10px 12px; text-align: left; vertical-align: top; }
+        th { background-color: #f2f2f2; font-weight: bold; }
+        td pre { margin: 0; background-color: transparent; padding: 0; white-space: pre-wrap; word-break: break-all; font-family: monospace; font-size: 0.9em; }
+        .status-box { padding: 10px 15px; border: 1px solid #ccc; border-radius: 5px; margin-top: 10px; word-wrap: break-word; }
+        .error { background-color: #ffebeb; border-color: #ffc2c2; color: #a00; }
+        .success { background-color: #e6ffed; border-color: #c3e6cb; color: #155724; }
+        .info { background-color: #e7f3fe; border-color: #b8daff; color: #004085; }
+        .warning { background-color: #fff3cd; border-color: #ffeeba; color: #856404; }
+        .status-active { color: green; font-weight: bold; }
+        .status-pending { color: orange; font-weight: bold; }
+        .button { padding: 10px 15px; border: none; border-radius: 4px; color: #fff; cursor: pointer; font-size: 1em; margin-right: 10px; text-decoration: none; display: inline-block; }
+        .small-button { padding: 5px 10px; font-size: .9em; }
+        .start-button { background-color: #28a745; }
+        .stop-button { background-color: #dc3545; }
+        .delete-button { background-color: #dc3545; }
+        .button:disabled { background-color: #ccc; cursor: not-allowed; opacity: .6; }
+        form { display: inline-block; margin: 0; }
+        .capitalize { text-transform: capitalize; }
+        .status-indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
+        .status-indicator.running { background-color: #28a745; }
+        .status-indicator.exited, .status-indicator.dead, .status-indicator.not_found { background-color: #dc3545; }
+        .status-indicator.docker_unavailable { background-color: #6c757d; }
+        .status-indicator.unknown, .status-indicator.created, .status-indicator.paused { background-color: #ffc107; }
+
+    </style>
+</head>
+<body>
+    <h1>Cloudflare Tunnel Manager</h1>
+
+    <!-- Initialization Status Section -->
+    <div class="container">
+        <h2>Initialization Status</h2>
+        <div class="status-box {{ 'error' if tunnel_state.get('error') else ('success' if tunnel_state.get('token') else 'info') }}">
+            <p><strong>Message:</strong> {{ tunnel_state.status_message }}</p>
+            {% if tunnel_state.get('error') %}
+                <p><strong>Error Details:</strong> <pre>{{ tunnel_state.error }}</pre></p>
+            {% endif %}
+        </div>
+        <h3>Tunnel Details</h3>
+        <p><strong>Desired Tunnel Name:</strong> <pre>{{ tunnel_state.name }}</pre></p>
+        <p><strong>Tunnel ID:</strong> <pre>{{ tunnel_state.id if tunnel_state.id else 'Not available' }}</pre></p>
+        <p><strong>Tunnel Token:</strong> <pre>{{ display_token }}</pre></p>
+    </div>
+
+    <!-- Tunnel Agent Control Section -->
+    <div class="container">
+        <h2>Tunnel Agent Control (<pre>{{ cloudflared_container_name }}</pre>)</h2>
+        <p>
+            <strong>Agent Container Status:</strong>
+            <span class="status-indicator {{ agent_state.container_status }}"></span>
+            <strong class="capitalize {{'success' if agent_state.container_status=='running' else ('error' if 'error' in agent_state.container_status or agent_state.container_status=='docker_unavailable' or agent_state.container_status=='dead' or agent_state.container_status=='not_found' else ('warning' if agent_state.container_status=='exited' else 'info')) }}">
+                {{ agent_state.container_status.replace('_',' ') }}
+            </strong>
+        </p>
+        {% if agent_state.last_action_status %}
+            <div class="status-box {{ 'error' if 'Error:' in agent_state.last_action_status else ('warning' if 'Warning:' in agent_state.last_action_status else 'info') }}">
+                <strong>Last Action Result:</strong> {{ agent_state.last_action_status }}
+            </div>
+        {% endif %}
+
+        <!-- Agent Control Buttons -->
+        <form action="{{ url_for('start_tunnel') }}" method="post" style="margin-right: 10px;">
+            <button type="submit" class="button start-button"
+                    {{ 'disabled' if not tunnel_state.get('token') or agent_state.container_status=='running' or not docker_available }}>
+                Start Agent
+            </button>
+        </form>
+        <form action="{{ url_for('stop_tunnel') }}" method="post">
+            <button type="submit" class="button stop-button"
+                    {{ 'disabled' if agent_state.container_status!='running' or not docker_available }}>
+                Stop Agent
+            </button>
+        </form>
+    </div>
+
+    <!-- Managed Ingress Rules Section -->
+    <div class="container">
+        <h2>Managed Ingress Rules</h2>
+        {% if rules %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Hostname</th>
+                        <th>Service Target</th>
+                        <th>Status</th>
+                        <th>Managing Container ID</th>
+                        <th>Delete Scheduled At (UTC)</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for hostname, details in rules.items()|sort %} {# Sort by hostname for consistent order #}
+                        <tr>
+                            <td><pre>{{ hostname }}</pre></td>
+                            <td><pre>{{ details.service }}</pre></td>
+                            <td>
+                                <strong class="{{ 'status-active' if details.status=='active' else 'status-pending' }}">
+                                    {{ details.status }}
+                                </strong>
+                            </td>
+                            <td><pre>{{ details.container_id[:12] if details.container_id else 'N/A' }}</pre></td>
+                            <td>
+                                {# Format the datetime object if it exists and status is pending #}
+                                {% if details.status=='pending_deletion' and details.delete_at %}
+                                    {{ details.delete_at.strftime('%H:%M %d.%m.%Y') }}
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>
+                            <td>
+                                <form action="{{ url_for('force_delete_rule', hostname=hostname) }}" method="post"
+                                      onsubmit="return confirm('Are you sure you want to force delete the rule and DNS record for {{ hostname }} immediately? This bypasses the grace period.');">
+                                    <button type="submit" class="button delete-button small-button" {{ 'disabled' if not docker_available }}>
+                                        Force Delete
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p>No ingress rules are currently being managed.</p>
+        {% endif %}
+    </div>
+
+</body>
+</html>
