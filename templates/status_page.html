@@ -9,7 +9,18 @@
     <!-- UPDATED TITLE -->
     <title>DockFlare Tunnel Manager</title>
     <style>
+<<<<<<< HEAD
         /* ... (keep all previous styles) ... */
+=======
+        /* Basic layout adjustments */
+        body { padding-top: 1rem; padding-bottom: 1rem; }
+        h1, h2, h3 { margin-top: 1.5em; margin-bottom: 0.5em; }
+        h1 { margin-top: 0; text-align: center; }
+        article { margin-bottom: 1.5rem; }
+        td pre { margin: 0; white-space: pre-wrap; word-break: break-all; font-family: var(--pico-font-family-monospace); font-size: 0.9em; }
+        /* Ensure preformatted text respects theme */
+        pre { background-color: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius: var(--pico-border-radius); padding: 0.5rem 0.75rem; color: var(--pico-color);}
+>>>>>>> 62eb57e (support for countdown on status webpage for grace period)
 
         /* Settings Form & Manual Rule Form */
         .settings-form label, .manual-rule-form label { margin-bottom: 0.5rem; font-weight: bold; display: block;}
@@ -18,8 +29,60 @@
         .settings-form button, .manual-rule-form button { width: auto; padding: 0.75rem 1.25rem; }
         .manual-rule-form input[type=text], .manual-rule-form input[type=url] { margin-right: 1rem; } /* Space between inputs */
 
+<<<<<<< HEAD
         /* Optional: Style the manual rule form layout better */
         .manual-rule-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); grid-gap: 1rem; align-items: end; }
+=======
+        /* Rule Status colors */
+        .status-active { color: var(--pico-color-green-600); font-weight: bold; }
+        .status-pending { color: var(--pico-color-orange-500); font-weight: bold; }
+
+        /* Form styling adjustments */
+        form { display: inline-block; margin: 0; }
+        form button { margin: 0; }
+        .grid > form > button { width: 100%; } /* Make buttons in grid take full width */
+
+        /* Status indicator dots */
+        .status-indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle;}
+        .status-indicator.running { background-color: var(--pico-color-green-500); }
+        .status-indicator.exited, .status-indicator.dead, .status-indicator.not_found { background-color: var(--pico-color-red-500); }
+        .status-indicator.docker_unavailable { background-color: var(--pico-color-gray-500); }
+        .status-indicator.unknown, .status-indicator.created, .status-indicator.paused { background-color: var(--pico-color-amber-500); }
+
+        /* Button customizations */
+        button.delete-button {
+            /* Use Pico classes 'contrast' and 'outline' */
+            font-size: 0.9em; /* Make delete button slightly smaller */
+            padding: 0.5rem 0.75rem;
+        }
+
+        /* Theme Toggle Button */
+        #theme-toggle {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            /* Use Pico classes for button styling */
+            padding: 0.5rem; /* Smaller padding */
+            width: auto; /* Allow button to size to content */
+            line-height: 1; /* Align icon better */
+            font-size: 1.2rem; /* Adjust icon size */
+            background: transparent;
+            border: none;
+            color: var(--pico-secondary);
+            cursor: pointer;
+        }
+        #theme-toggle:hover {
+            color: var(--pico-secondary-hover);
+             background: transparent; /* Ensure no background on hover */
+             border: none;
+        }
+>>>>>>> 62eb57e (support for countdown on status webpage for grace period)
+
+        /* Countdown timer style */
+        .countdown-timer {
+            /* color: var(--pico-muted-color); */ /* Use muted color */
+            font-size: 0.85em;
+        }
 
     </style>
 </head>
@@ -116,6 +179,7 @@
                                         {{ details.status }}
                                     </strong>
                                 </td>
+<<<<<<< HEAD
                                 <!-- ADDED Type Display -->
                                 <td style="text-transform: capitalize;">{{ details.type | default('docker') }}</td>
                                 <!-- Modified Container Column -->
@@ -135,6 +199,21 @@
                                 {% else %}
                                     <td>N/A</td>
                                 {% endif %}
+=======
+                                <td><pre title="{{ details.container_id if details.container_id else 'N/A' }}">{{ details.container_id[:12] if details.container_id else 'N/A' }}</pre></td>
+
+                                <!-- Cell for Deletion Time and Countdown -->
+                                {% if details.status=='pending_deletion' and details.delete_at %}
+                                    <td data-delete-at="{{ details.delete_at.isoformat() }}"> <!-- Add data attribute -->
+                                        <span class="absolute-time">{{ details.delete_at.strftime('%H:%M %d.%m.%Y') }}</span>
+                                        <br>
+                                        <small><span class="countdown-timer">(calculating...)</span></small> <!-- Span for countdown -->
+                                    </td>
+                                {% else %}
+                                    <td>N/A</td> <!-- Keep N/A for non-pending rules -->
+                                {% endif %}
+
+>>>>>>> 62eb57e (support for countdown on status webpage for grace period)
                                 <td>
                                     <form action="{{ url_for('force_delete_rule', hostname=hostname) }}" method="post"
                                           onsubmit="return confirm('Force delete rule and DNS for {{ hostname }} immediately?');">
@@ -155,6 +234,7 @@
 
     </main> <!-- end .container -->
 
+<<<<<<< HEAD
     <!-- JavaScript (includes Theme Toggle and Countdown) -->
     <script>
       // --- Theme Toggle Logic ---
@@ -164,6 +244,107 @@
       // --- Countdown Timer Logic ---
       // ... (same as previous) ...
       const countdownElements = document.querySelectorAll('.countdown-timer'); function formatTimeDifference(diffMillis) { const totalSeconds = Math.round(Math.abs(diffMillis / 1000)); if (totalSeconds < 60) { return diffMillis >= 0 ? 'in <1m' : 'Expired'; } const days = Math.floor(totalSeconds / (3600 * 24)); const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600); const minutes = Math.floor((totalSeconds % 3600) / 60); let parts = []; if (days > 0) parts.push(`${days}d`); if (hours > 0) parts.push(`${hours}h`); if (minutes > 0 || (days === 0 && hours === 0)) parts.push(`${minutes}m`); const timeString = parts.join(' '); return diffMillis >= 0 ? `in ${timeString}` : `Expired ${timeString} ago`; } function updateCountdowns() { const now = new Date(); countdownElements.forEach(span => { const td = span.closest('td'); if (!td) return; const deleteAtISO = td.dataset.deleteAt; if (!deleteAtISO) return; try { const targetDate = new Date(deleteAtISO); if (isNaN(targetDate.getTime())) { throw new Error("Invalid date"); } const diff = targetDate - now; span.textContent = `(${formatTimeDifference(diff)})`; } catch (e) { console.error("Countdown error:", deleteAtISO, e); span.textContent = "(err)"; } }); } updateCountdowns(); const countdownInterval = setInterval(updateCountdowns, 30000);
+=======
+    <!-- JavaScript for Theme Toggle and Countdown Timers -->
+    <script>
+      // --- Theme Toggle Logic ---
+      const themeToggleButton = document.getElementById('theme-toggle');
+      const htmlElement = document.documentElement; // Target the <html> element
+
+      // Function to set the theme and update icon
+      const setTheme = (theme) => {
+        htmlElement.setAttribute('data-theme', theme);
+        localStorage.setItem('theme', theme); // Save preference
+        // Update button icon based on the new theme
+        themeToggleButton.textContent = theme === 'dark' ? '☀️' : '🌓';
+      };
+
+      // Function to toggle the theme
+      const toggleTheme = () => {
+        // Check the current theme *explicitly* set on <html> or default based on current setting
+        const currentTheme = htmlElement.getAttribute('data-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        setTheme(newTheme);
+      };
+
+      // Add event listener to the button
+      themeToggleButton.addEventListener('click', toggleTheme);
+
+      // Apply theme on initial load
+      const initTheme = () => {
+          const savedTheme = localStorage.getItem('theme');
+          // Check for OS preference if no theme is saved
+          const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+          if (savedTheme) {
+            setTheme(savedTheme);
+          } else {
+            // If no saved theme, use OS preference as default
+            setTheme(prefersDark ? 'dark' : 'light');
+          }
+      };
+
+      // Run theme initialization
+      initTheme();
+
+      // --- Countdown Timer Logic ---
+      const countdownElements = document.querySelectorAll('.countdown-timer');
+
+      function formatTimeDifference(diffMillis) {
+          const totalSeconds = Math.round(Math.abs(diffMillis / 1000)); // Round to nearest second
+
+          if (totalSeconds < 60) {
+              return diffMillis >= 0 ? 'in <1m' : 'Expired'; // Simplified for < 1 min
+          }
+
+          const days = Math.floor(totalSeconds / (3600 * 24));
+          const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
+          const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+          let parts = [];
+          if (days > 0) parts.push(`${days}d`);
+          if (hours > 0) parts.push(`${hours}h`);
+          // Always show minutes if > 0 or if it's the only unit left besides seconds
+          if (minutes > 0 || (days === 0 && hours === 0)) parts.push(`${minutes}m`);
+
+          const timeString = parts.join(' ');
+
+          // Check if difference is positive (future) or negative (past)
+          return diffMillis >= 0 ? `in ${timeString}` : `Expired ${timeString} ago`;
+      }
+
+      function updateCountdowns() {
+          const now = new Date(); // Get current time once per update cycle
+
+          countdownElements.forEach(span => {
+              const td = span.closest('td'); // Find the parent td
+              if (!td) return; // Should not happen, but safety check
+              const deleteAtISO = td.dataset.deleteAt;
+              if (!deleteAtISO) return; // Skip if data attribute missing
+
+              try {
+                  const targetDate = new Date(deleteAtISO);
+                  // Check if targetDate is valid
+                  if (isNaN(targetDate.getTime())) {
+                      throw new Error("Invalid date parsed");
+                  }
+                  const diff = targetDate - now; // Difference in milliseconds
+
+                  span.textContent = `(${formatTimeDifference(diff)})`; // Wrap in parentheses
+              } catch (e) {
+                  console.error("Error parsing date for countdown:", deleteAtISO, e);
+                  span.textContent = "(invalid date)";
+              }
+          });
+      }
+
+      // Update immediately on load
+      updateCountdowns();
+
+      // Update every 30 seconds (more frequent update)
+      const countdownInterval = setInterval(updateCountdowns, 30000); // 30000 milliseconds
+
+>>>>>>> 62eb57e (support for countdown on status webpage for grace period)
     </script>
 
 </body>
