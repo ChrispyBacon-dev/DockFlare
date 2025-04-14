@@ -59,16 +59,17 @@ Simplifies exposing Docker services via Cloudflare Tunnel by automating configur
     ```
     CF_API_TOKEN=<YOUR_CLOUDFLARE_API_TOKEN>
     CF_ACCOUNT_ID=<YOUR_CLOUDFLARE_ACCOUNT_ID>
-    CF_ZONE_ID=<Your Cloudflare Zone ID (domain)>
+    CF_ZONE_ID=<YOUR_CLOUDFLARE_ZONE_ID>
     TUNNEL_NAME=<DESIRED_TUNNEL_NAME>
-    GRACE_PERIOD_SECONDS=28800  # Optional: In seconds (default 8 hours). Delay before removing a stopped container's ingress rule.
+    GRACE_PERIOD_SECONDS=28800  # Optional: Default 8 hours (8 * 60 * 60)
     ```
 
     *   `CF_API_TOKEN`:  Your Cloudflare API token with `Account:Cloudflare Tunnel:Edit` permissions.
     *   `CF_ACCOUNT_ID`: Your Cloudflare Account ID.
+    *   `CF_ZONE_ID`: Your Cloudflare Zone ID (the domain where the DNS records will be created).
     *   `TUNNEL_NAME`: The name you want to give your Cloudflare Tunnel.
     *   `GRACE_PERIOD_SECONDS`: (Optional) The grace period in seconds before deleting an ingress rule after its associated container stops. Defaults to 8 hours.
-
+    
 3.  **Run with Docker Compose:**
 
     ```bash
