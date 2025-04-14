@@ -1,3 +1,4 @@
+# ... (all imports and config sections remain the same) ...
 import os
 import sys
 import logging
@@ -35,6 +36,7 @@ CF_HEADERS = {
     "Authorization": f"Bearer {CF_API_TOKEN}",
     "Content-Type": "application/json",
 }
+# Debug: Check if token was loaded for header creation
 logging.info(f"[DEBUG] CF_HEADERS created: Authorization Header starts with 'Bearer {str(CF_API_TOKEN)[:5]}...'")
 
 # App Config
@@ -113,8 +115,16 @@ def load_state():
         for hostname, rule in loaded_rules.items():
             # Parse delete_at
             if rule.get("delete_at") and isinstance(rule.get("delete_at"), str):
-                try: rule["delete_at"] = datetime.fromisoformat(rule["delete_at"].replace('Z', '+00:00')) if rule["delete_at"].endswith('Z') else datetime.fromisoformat(rule["delete_at"]).replace(tzinfo=timezone.utc)
-                except ValueError: logging.warning(f"Could not parse delete_at for {hostname}. Setting None."); rule["delete_at"] = None
+                try:
+                     dt_str = rule["delete_at"]
+                     # Handle Z for UTC explicitly
+                     if dt_str.endswith('Z'):
+                        rule["delete_at"] = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+                     else:
+                         # Assume UTC if no timezone provided in string
+                         dt = datetime.fromisoformat(dt_str)
+                         rule["delete_at"] = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+                except ValueError: logging.warning(f"Could not parse delete_at for {hostname}: {rule['delete_at']}. Setting None."); rule["delete_at"] = None
             elif not isinstance(rule.get("delete_at"), datetime): rule["delete_at"] = None
             # Ensure zone_id field exists
             if "zone_id" not in rule: logging.warning(f"Rule {hostname} missing 'zone_id'."); rule["zone_id"] = None
@@ -157,7 +167,7 @@ def save_state():
 # --- cf_api_request ---
 # No changes needed
 def cf_api_request(method, endpoint, json_data=None, params=None):
-    # ... (previous implementation) ...
+    # ... (previous implementation is fine) ...
     url = f"{CF_API_BASE_URL}{endpoint}"; error_msg = None
     try:
         request_headers = CF_HEADERS.copy(); logging.info(f"API Request: {method} {url} P={params} D={json_data}")
@@ -189,31 +199,64 @@ def cf_api_request(method, endpoint, json_data=None, params=None):
         raise requests.exceptions.RequestException(error_msg, response=e.response)
 
 # --- get_zone_id_from_name ---
-# No changes needed
+# CORRECTED: Syntax Error Fixed
 def get_zone_id_from_name(zone_name):
-    # ... (previous implementation) ...
-    global zone_id_cache; if not zone_name: logging.warning("get_zone_id: empty zone_name."); return None
-    with state_lock: cached_id = zone_id_cache.get(zone_name)
-    if cached_id: logging.debug(f"Zone ID '{zone_name}' from cache: {cached_id}"); return cached_id
-    logging.info(f"Zone ID '{zone_name}' not cached. Querying API...")
-    endpoint = "/zones"; params = {"name": zone_name, "status": "active"}
+    """
+    Retrieves the Zone ID for a given zone name using the Cloudflare API.
+    Caches the result to minimize API calls.
+    Returns the Zone ID (str) or None if not found or an error occurs.
+    """
+    global zone_id_cache # CORRECTED: global on its own line
+
+    # CORRECTED: if statement on its own line
+    if not zone_name:
+        logging.warning("get_zone_id_from_name called with empty zone_name.")
+        return None
+
+    # Check cache first (thread-safe access needs lock)
+    with state_lock:
+        cached_id = zone_id_cache.get(zone_name)
+    if cached_id:
+        logging.debug(f"Zone ID for '{zone_name}' found in cache: {cached_id}")
+        return cached_id
+
+    logging.info(f"Zone ID for '{zone_name}' not in cache. Querying Cloudflare API...")
+    endpoint = "/zones"
+    params = {"name": zone_name, "status": "active"} # Ensure we only get active zones
+
     try:
-        response_data = cf_api_request("GET", endpoint, params=params); results = response_data.get("result", [])
-        if results and len(results) == 1:
-            zone_id = results[0].get("id"); zone_actual_name = results[0].get("name")
+        response_data = cf_api_request("GET", endpoint, params=params)
+        results = response_data.get("result", [])
+
+        if results and isinstance(results, list) and len(results) == 1:
+            zone_id = results[0].get("id")
+            zone_actual_name = results[0].get("name")
             if zone_id and zone_actual_name == zone_name:
                 logging.info(f"Found Zone ID for '{zone_name}': {zone_id}")
-                with state_lock: zone_id_cache[zone_name] = zone_id
+                # Store in cache (thread-safe)
+                with state_lock:
+                    zone_id_cache[zone_name] = zone_id
                 return zone_id
-            else: logging.error(f"API name mismatch for zone '{zone_name}': {results[0]}"); return None
-        elif results: logging.error(f"Multiple zones match name '{zone_name}'. Ambiguous."); return None
-        else: logging.warning(f"No active zone found matching '{zone_name}'."); return None
-    except requests.exceptions.RequestException as e: logging.error(f"API error zone lookup '{zone_name}': {e}"); return None
-    except Exception as e: logging.error(f"Unexpected error zone lookup '{zone_name}': {e}", exc_info=True); return None
+            else:
+                logging.error(f"API returned unexpected result or name mismatch for zone '{zone_name}': {results[0]}")
+                return None
+        elif results and len(results) > 1:
+            logging.error(f"API returned multiple ({len(results)}) active zones matching name '{zone_name}'. Cannot determine correct zone.")
+            return None
+        else:
+            logging.warning(f"No active zone found matching name '{zone_name}' via API.")
+            return None
+    except requests.exceptions.RequestException as e:
+        logging.error(f"API error looking up zone '{zone_name}': {e}")
+        return None
+    except Exception as e:
+        logging.error(f"Unexpected error looking up zone '{zone_name}': {e}", exc_info=True)
+        return None
+
 
 # --- find_tunnel_via_api / get_tunnel_token_via_api / create_tunnel_via_api ---
 # No changes needed
-def find_tunnel_via_api(name): # ... (previous implementation) ...
+def find_tunnel_via_api(name): # ... (implementation from previous correct version) ...
     logging.info(f"[DEBUG] Entering find_tunnel_via_api for '{name}'")
     endpoint = f"/accounts/{CF_ACCOUNT_ID}/cfd_tunnel"; params = {"name": name, "is_deleted": "false"}
     try:
@@ -225,7 +268,7 @@ def find_tunnel_via_api(name): # ... (previous implementation) ...
     except requests.exceptions.RequestException as e: logging.error(f"API error finding tunnel '{name}': {e}"); logging.info(f"[DEBUG] Exit find - RequestException"); return None, None
     except Exception as e: logging.error(f"Unexpected error finding tunnel '{name}': {e}", exc_info=True); tunnel_state["error"] = f"Unexpected find tunnel: {e}"; logging.info(f"[DEBUG] Exit find - Exception"); return None, None
 
-def get_tunnel_token_via_api(tunnel_id): # ... (previous implementation) ...
+def get_tunnel_token_via_api(tunnel_id): # ... (implementation from previous correct version) ...
     logging.info(f"[DEBUG] Entering get_tunnel_token_via_api ID '{tunnel_id}'")
     endpoint = f"/accounts/{CF_ACCOUNT_ID}/cfd_tunnel/{tunnel_id}/token"; url = f"{CF_API_BASE_URL}{endpoint}"
     try:
@@ -236,7 +279,7 @@ def get_tunnel_token_via_api(tunnel_id): # ... (previous implementation) ...
     except requests.exceptions.RequestException as e: error_msg = f"API Error get token {tunnel_id}: {e}"; logging.error(error_msg); tunnel_state["error"] = error_msg; logging.info(f"[DEBUG] Exit get_token - RequestException"); raise
     except Exception as e: logging.error(f"Unexpected get token {tunnel_id}: {e}", exc_info=True); tunnel_state["error"] = f"Unexpected get token: {e}"; logging.info(f"[DEBUG] Exit get_token - Exception"); raise
 
-def create_tunnel_via_api(name): # ... (previous implementation) ...
+def create_tunnel_via_api(name): # ... (implementation from previous correct version) ...
     logging.info(f"[DEBUG] Entering create_tunnel_via_api for '{name}'")
     endpoint = f"/accounts/{CF_ACCOUNT_ID}/cfd_tunnel"; payload = {"name": name, "config_src": "cloudflare"}
     try:
@@ -249,17 +292,15 @@ def create_tunnel_via_api(name): # ... (previous implementation) ...
 
 # --- initialize_tunnel ---
 # No changes needed
-def initialize_tunnel(): # ... (previous implementation) ...
+def initialize_tunnel(): # ... (implementation from previous correct version) ...
     logging.info("[DEBUG] Entering initialize_tunnel")
     tunnel_state["status_message"] = f"Checking tunnel '{TUNNEL_NAME}'..."; tunnel_state["error"] = None; tunnel_id = None; token = None
     try:
-        logging.info("[DEBUG] Calling find_tunnel_via_api...")
-        tunnel_id, token = find_tunnel_via_api(TUNNEL_NAME)
+        logging.info("[DEBUG] Calling find_tunnel_via_api..."); tunnel_id, token = find_tunnel_via_api(TUNNEL_NAME)
         logging.info(f"[DEBUG] find returned: ID={tunnel_id}, Token={bool(token)}")
         if not tunnel_id and not tunnel_state.get("error"):
             tunnel_state["status_message"] = f"Tunnel '{TUNNEL_NAME}' not found. Creating..."; logging.info("[DEBUG] Calling create_tunnel_via_api...")
-            tunnel_id, token = create_tunnel_via_api(TUNNEL_NAME)
-            logging.info(f"[DEBUG] create returned: ID={tunnel_id}, Token={bool(token)}")
+            tunnel_id, token = create_tunnel_via_api(TUNNEL_NAME); logging.info(f"[DEBUG] create returned: ID={tunnel_id}, Token={bool(token)}")
         if tunnel_id and token:
             tunnel_state["id"] = tunnel_id; tunnel_state["token"] = token; tunnel_state["status_message"] = "Tunnel setup complete (API)."; tunnel_state["error"] = None
             logging.info(f"Tunnel '{TUNNEL_NAME}' initialized. ID: {tunnel_id}")
@@ -267,34 +308,32 @@ def initialize_tunnel(): # ... (previous implementation) ...
         else: tunnel_state["status_message"] = "Tunnel init failed (error)."; logging.error(f"Tunnel init failed '{TUNNEL_NAME}' due to API error: {tunnel_state['error']}")
         logging.info(f"[DEBUG] Exit initialize_tunnel - State: ID={tunnel_state.get('id')}, Token={bool(tunnel_state.get('token'))}, Err={tunnel_state.get('error')}")
     except Exception as e:
-        logging.error(f"Unhandled init exception: {e}", exc_info=True)
+        logging.error(f"Unhandled init exception: {e}", exc_info=True);
         if not tunnel_state.get("error"): tunnel_state["error"] = f"Init unexpected: {e}"
-        tunnel_state["status_message"] = "Tunnel init failed (unexpected error)."
-        logging.info(f"[DEBUG] Exit initialize_tunnel - Unhandled Exception: {e}")
+        tunnel_state["status_message"] = "Tunnel init failed (unexpected error)."; logging.info(f"[DEBUG] Exit initialize_tunnel - Unhandled Exception: {e}")
 
 # --- get_current_cf_config / find_dns_record_id / create_cloudflare_dns_record / delete_cloudflare_dns_record ---
 # No changes needed
-def get_current_cf_config(): # ... (previous implementation) ...
+def get_current_cf_config(): # ... (implementation from previous correct version) ...
     if not tunnel_state.get("id"): logging.warning("get_current_cf_config: No tunnel ID."); return None
     endpoint = f"/accounts/{CF_ACCOUNT_ID}/cfd_tunnel/{tunnel_state['id']}/configurations"
-    try:
-        response_data = cf_api_request("GET", endpoint)
-        if response_data and response_data.get("success"): result_data = response_data.get("result")
-        else: logging.error(f"Get config API failed: {response_data}"); return None
-        if isinstance(result_data, dict): config_data = result_data.get("config")
-        elif result_data is None: logging.info("Get config result is null."); return {}
-        else: logging.warning(f"Get config unexpected result format: {response_data}"); return {}
-        if isinstance(config_data, dict): logging.debug(f"Fetched config: {config_data}"); return config_data
-        elif config_data is None: logging.info("Fetched config is null."); return {}
-        else: logging.warning(f"Get config unexpected type for 'config': {type(config_data)}."); return {}
+    try: response_data = cf_api_request("GET", endpoint)
     except requests.exceptions.RequestException as e: logging.error(f"API error get config: {e}"); tunnel_state["error"] = f"Failed get config: {e}"; return None
     except Exception as e: logging.error(f"Unexpected get config: {e}", exc_info=True); tunnel_state["error"] = f"Unexpected get config: {e}"; return None
+    if response_data and response_data.get("success"): result_data = response_data.get("result")
+    else: logging.error(f"Get config API failed: {response_data}"); return None
+    if isinstance(result_data, dict): config_data = result_data.get("config")
+    elif result_data is None: logging.info("Get config result is null."); return {}
+    else: logging.warning(f"Get config unexpected result format: {response_data}"); return {}
+    if isinstance(config_data, dict): logging.debug(f"Fetched config: {config_data}"); return config_data
+    elif config_data is None: logging.info("Fetched config is null."); return {}
+    else: logging.warning(f"Get config unexpected type for 'config': {type(config_data)}."); return {}
 
-def find_dns_record_id(zone_id, hostname, tunnel_id): # ... (previous implementation) ...
+def find_dns_record_id(zone_id, hostname, tunnel_id): # ... (implementation from previous correct version) ...
     if not zone_id or not hostname or not tunnel_id: logging.error("find_dns: Missing args."); return None
     expected_content = f"{tunnel_id}.cfargotunnel.com"; endpoint = f"/zones/{zone_id}/dns_records"; params = {"type": "CNAME", "name": hostname, "content": expected_content, "match": "all"}
     try:
-        logging.info(f"Searching DNS: Z={zone_id}, N={hostname}, C={expected_content}")
+        logging.info(f"Searching DNS: Z={zone_id}, N={hostname}, C={expected_content[:10]}...")
         response_data = cf_api_request("GET", endpoint, params=params); results = response_data.get("result", [])
         if results: record_id = results[0].get("id")
         else: logging.info(f"No matching DNS for {hostname} in {zone_id}"); return None
@@ -303,14 +342,14 @@ def find_dns_record_id(zone_id, hostname, tunnel_id): # ... (previous implementa
     except requests.exceptions.RequestException as e: logging.error(f"API error find DNS for {hostname}: {e}"); return None
     except Exception as e: logging.error(f"Unexpected find DNS for {hostname}: {e}", exc_info=True); return None
 
-def create_cloudflare_dns_record(zone_id, hostname, tunnel_id): # ... (previous implementation) ...
+def create_cloudflare_dns_record(zone_id, hostname, tunnel_id): # ... (implementation from previous correct version) ...
     if not zone_id or not hostname or not tunnel_id: logging.error("create_dns: Missing args."); return None
     record_name = hostname; record_content = f"{tunnel_id}.cfargotunnel.com"; endpoint = f"/zones/{zone_id}/dns_records"
     payload = {"type": "CNAME", "name": record_name, "content": record_content, "ttl": 1, "proxied": True }
     try:
         existing_id = find_dns_record_id(zone_id, hostname, tunnel_id)
         if existing_id: logging.info(f"DNS for {hostname} in {zone_id} exists (ID: {existing_id})."); return existing_id
-        logging.info(f"Creating DNS in {zone_id}: N={record_name}, C={record_content}")
+        logging.info(f"Creating DNS in {zone_id}: N={record_name}, C={record_content[:10]}...")
         response_data = cf_api_request("POST", endpoint, json_data=payload); result = response_data.get("result", {})
         new_record_id = result.get("id")
         if new_record_id: logging.info(f"Created DNS for {hostname} in {zone_id}. ID: {new_record_id}"); return new_record_id
@@ -318,14 +357,13 @@ def create_cloudflare_dns_record(zone_id, hostname, tunnel_id): # ... (previous 
     except requests.exceptions.RequestException as e: logging.error(f"API error create DNS for {hostname}: {e}"); return None
     except Exception as e: logging.error(f"Unexpected create DNS for {hostname}: {e}", exc_info=True); return None
 
-def delete_cloudflare_dns_record(zone_id, hostname, tunnel_id): # ... (previous implementation) ...
+def delete_cloudflare_dns_record(zone_id, hostname, tunnel_id): # ... (implementation from previous correct version) ...
     if not zone_id or not hostname or not tunnel_id: logging.error("delete_dns: Missing args."); return False
     dns_record_id = find_dns_record_id(zone_id, hostname, tunnel_id)
     if not dns_record_id: logging.warning(f"DNS for {hostname} in {zone_id} not found to delete."); return True
     logging.info(f"Deleting DNS for {hostname} in {zone_id} (ID: {dns_record_id})")
     endpoint = f"/zones/{zone_id}/dns_records/{dns_record_id}"
-    try:
-        cf_api_request("DELETE", endpoint); logging.info(f"Deleted DNS for {hostname} (ID: {dns_record_id})."); return True
+    try: cf_api_request("DELETE", endpoint); logging.info(f"Deleted DNS for {hostname} (ID: {dns_record_id})."); return True
     except requests.exceptions.RequestException as e:
         if e.response is not None and e.response.status_code == 404: logging.warning(f"DNS {dns_record_id} not found during delete (404). OK."); return True
         logging.error(f"API error delete DNS {dns_record_id} for {hostname}: {e}"); return False
@@ -333,16 +371,16 @@ def delete_cloudflare_dns_record(zone_id, hostname, tunnel_id): # ... (previous 
 
 # --- update_cloudflare_config ---
 # No changes needed
-def update_cloudflare_config(): # ... (previous implementation) ...
+def update_cloudflare_config(): # ... (implementation from previous correct version) ...
     if not tunnel_state.get("id"): logging.warning("Cannot update CF config, tunnel ID missing."); return False
     final_ingress_rules = None; needs_api_update = False
     with state_lock:
         logging.info("Preparing potential CF tunnel config update...")
         desired_ingress_rules = []; catch_all_rule = {"service": "http_status:404"}
-        for hn, rule in managed_rules.items():
+        for hostname, rule in managed_rules.items():
             if rule.get("status") == "active":
-                if rule.get("service"): desired_ingress_rules.append({"hostname": hn, "service": rule["service"]})
-                else: logging.warning(f"Rule {hn} active missing service.")
+                if rule.get("service"): desired_ingress_rules.append({"hostname": hostname, "service": rule["service"]})
+                else: logging.warning(f"Rule {hostname} active missing service.")
         desired_ingress_rules.sort(key=lambda x: x.get("hostname", ""))
         logging.debug("Fetching current CF config for comparison..."); current_config = get_current_cf_config()
         if current_config is None: logging.error("Failed fetch CF config, aborting update."); return False
@@ -370,83 +408,55 @@ def update_cloudflare_config(): # ... (previous implementation) ...
 # --- process_container_start ---
 # UPDATED: Add type='docker'
 def process_container_start(container):
+    # ... (implementation from previous correct version, adding type='docker') ...
     if not container: return
     container_id = None
     try:
-        container_id = container.id
-        try: container.reload()
-        except NotFound: logging.warning(f"Container {container_id[:12]} gone on start."); return
+        container_id = container.id; container.reload()
         labels = container.labels; container_name = container.name
-        enabled_label = f"{LABEL_PREFIX}.enable"; hostname_label = f"{LABEL_PREFIX}.hostname"
-        service_label = f"{LABEL_PREFIX}.service"; zone_name_label = f"{LABEL_PREFIX}.zonename"
-        is_enabled = labels.get(enabled_label, "false").lower() in ["true", "1", "t", "yes"]
-        hostname = labels.get(hostname_label); service = labels.get(service_label); zone_name = labels.get(zone_name_label)
-        if not is_enabled: logging.debug(f"Ignore start {container_name}: not enabled."); return
+        enabled = labels.get(f"{LABEL_PREFIX}.enable", "false").lower() in ["true", "1", "t", "yes"]
+        hostname = labels.get(f"{LABEL_PREFIX}.hostname"); service = labels.get(f"{LABEL_PREFIX}.service"); zone_name = labels.get(f"{LABEL_PREFIX}.zonename")
+        if not enabled: logging.debug(f"Ignore start {container_name}: not enabled."); return
         if not hostname or not service: logging.warning(f"Ignore start {container_name}: missing labels."); return
-        # --- Validation (Hostname, Service) ---
         if not re.match(r"^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$", hostname): logging.warning(f"Ignore start {container_name}: invalid hostname."); return
         if not (re.match(r"^(https?|tcp|unix)://", service) or re.match(r"^[a-zA-Z0-9._-]+:\d+$", service)): logging.warning(f"Ignore start {container_name}: invalid service."); return
-
-        # --- Determine Zone ID ---
         target_zone_id = None
         if zone_name: logging.info(f"Container {container_name} specified zone: '{zone_name}'."); target_zone_id = get_zone_id_from_name(zone_name)
         else: logging.debug(f"Container {container_name} uses default zone."); target_zone_id = CF_ZONE_ID
         if not target_zone_id: logging.error(f"Cannot manage DNS for {hostname}: No valid Zone ID."); return
         logging.info(f"Managing {hostname} ({container_name}) in Zone ID: {target_zone_id}")
-
-        # --- Update State ---
         needs_cf_update = False; state_changed_locally = False
         with state_lock:
             existing_rule = managed_rules.get(hostname)
-            rule_data = { # Prepare data for new or updated rule
-                "service": service,
-                "container_id": container_id,
-                "status": "active",
-                "delete_at": None,
-                "zone_id": target_zone_id,
-                "type": "docker" # <-- Set type
-            }
+            rule_data = {"service": service, "container_id": container_id, "status": "active", "delete_at": None, "zone_id": target_zone_id, "type": "docker"}
             if existing_rule:
-                if existing_rule.get("status") == "pending_deletion":
-                    logging.info(f"Reactivating pending rule for {hostname}.")
-                    managed_rules[hostname].update(rule_data) # Update existing entry
-                    state_changed_locally = True; needs_cf_update = True
+                if existing_rule.get("status") == "pending_deletion": logging.info(f"Reactivating pending rule for {hostname}."); managed_rules[hostname].update(rule_data); state_changed_locally = True; needs_cf_update = True
                 elif existing_rule.get("status") == "active":
-                    # Check for changes needing update
                     if existing_rule.get("service") != service or existing_rule.get("zone_id") != target_zone_id: needs_cf_update = True
-                    if existing_rule.get("service") != service or existing_rule.get("container_id") != container_id or existing_rule.get("zone_id") != target_zone_id:
-                        logging.info(f"Updating active rule details for {hostname}.")
-                        managed_rules[hostname].update(rule_data)
-                        state_changed_locally = True
-            else:
-                logging.info(f"Adding new docker rule for hostname: {hostname}")
-                managed_rules[hostname] = rule_data # Add new entry
-                state_changed_locally = True; needs_cf_update = True
+                    if existing_rule.get("service") != service or existing_rule.get("container_id") != container_id or existing_rule.get("zone_id") != target_zone_id: logging.info(f"Updating active rule details for {hostname}."); managed_rules[hostname].update(rule_data); state_changed_locally = True
+            else: logging.info(f"Adding new docker rule for hostname: {hostname}"); managed_rules[hostname] = rule_data; state_changed_locally = True; needs_cf_update = True
             if state_changed_locally: save_state()
-
-        # --- Update Cloudflare ---
         if needs_cf_update:
             logging.info(f"Triggering CF config update for {hostname}.")
             if update_cloudflare_config():
                 logging.info(f"Tunnel update OK for {hostname}. Ensuring DNS in zone {target_zone_id}.")
                 if tunnel_state.get("id"):
-                    if not create_cloudflare_dns_record(target_zone_id, hostname, tunnel_state["id"]):
-                        logging.error(f"CRITICAL: Tunnel updated but DNS create/verify FAILED for {hostname} in zone {target_zone_id}!")
-                        cloudflared_agent_state["last_action_status"] = f"Error: DNS failed for {hostname} Z={target_zone_id}."
+                    if not create_cloudflare_dns_record(target_zone_id, hostname, tunnel_state["id"]): logging.error(f"CRITICAL: Tunnel updated but DNS FAILED for {hostname} in zone {target_zone_id}!"); cloudflared_agent_state["last_action_status"] = f"Error: DNS failed for {hostname} Z={target_zone_id}."
                 else: logging.error("No Tunnel ID for DNS mgmt.")
             else: logging.error(f"Failed CF update for {hostname}. DNS not managed.")
         elif state_changed_locally: logging.debug(f"Local state updated for {hostname}, no CF change needed.")
+    except NotFound: logging.warning(f"Container {container_id[:12] if container_id else 'Unknown'} gone on start.")
     except Exception as e: logging.error(f"Error process start {container_id[:12] if container_id else 'Unknown'}: {e}", exc_info=True)
 
 # --- schedule_container_stop ---
-# No changes needed
-def schedule_container_stop(container_id): # ... (previous implementation) ...
+# UPDATED: Only schedules 'docker' type rules
+def schedule_container_stop(container_id):
+    # ... (implementation from previous correct version) ...
     if not container_id: return; logging.info(f"Processing stop event for {container_id[:12]}.")
     hostname_to_schedule = None; state_changed = False
     with state_lock:
         for hn, details in managed_rules.items():
-            if details.get("container_id") == container_id and details.get("status") == "active" and details.get("type") == "docker": # Only schedule docker rules
-                hostname_to_schedule = hn; break
+            if details.get("container_id") == container_id and details.get("status") == "active" and details.get("type") == "docker": hostname_to_schedule = hn; break
         if hostname_to_schedule:
             logging.info(f"Docker rule {hostname_to_schedule} ({container_id[:12]}) stopped. Marking pending deletion.")
             rule = managed_rules[hostname_to_schedule]
@@ -457,7 +467,7 @@ def schedule_container_stop(container_id): # ... (previous implementation) ...
 
 # --- docker_event_listener ---
 # No changes needed
-def docker_event_listener(): # ... (previous implementation) ...
+def docker_event_listener(): # ... (implementation from previous correct version) ...
     if not docker_client: logging.error("No Docker client for listener."); return
     logging.info("Starting Docker event listener..."); error_count = 0; max_errors = 5
     while not stop_event.is_set() and error_count < max_errors:
@@ -483,7 +493,7 @@ def docker_event_listener(): # ... (previous implementation) ...
 
 # --- cleanup_expired_rules ---
 # No changes needed
-def cleanup_expired_rules(): # ... (previous implementation) ...
+def cleanup_expired_rules(): # ... (implementation from previous correct version) ...
     logging.info("Starting cleanup task...");
     while not stop_event.is_set():
         next_check_time = time.time() + CLEANUP_INTERVAL_SECONDS
@@ -496,7 +506,7 @@ def cleanup_expired_rules(): # ... (previous implementation) ...
                         if isinstance(delete_at, datetime):
                              if delete_at.astimezone(timezone.utc) <= now_utc: is_expired = True
                         else: logging.warning(f"Rule {hn} pending invalid delete_at: {delete_at}. Expiring now."); is_expired = True
-                        if is_expired: zone_id = details.get("zone_id", CF_ZONE_ID); # ... (rest is same) ...
+                        if is_expired: zone_id = details.get("zone_id", CF_ZONE_ID);
                         if is_expired:
                             zone_id = details.get("zone_id", CF_ZONE_ID)
                             if not zone_id: logging.error(f"Cannot delete DNS for expired {hn}: No zone ID."); continue
@@ -529,90 +539,62 @@ def cleanup_expired_rules(): # ... (previous implementation) ...
 # --- reconcile_state ---
 # UPDATED: Handle 'type' field
 def reconcile_state():
+    # ... (implementation from previous correct version, checking type='docker') ...
     if not docker_client: logging.warning("Reconcile: Docker client unavailable."); return
     if not tunnel_state.get("id"): logging.warning("Reconcile: Tunnel not initialized."); return
     logging.info("Starting state reconciliation..."); needs_cf_update = False; state_changed_locally = False
     try:
-        # --- Get Docker State ---
         running_labeled_containers = {}
-        try: containers = docker_client.containers.list(sparse=False); logging.debug(f"[Reconcile] Found {len(containers)} running.") # ... (rest of container listing logic) ...
+        try: containers = docker_client.containers.list(sparse=False); logging.debug(f"[Reconcile] Found {len(containers)} running.")
         except (APIError, requests.exceptions.ConnectionError) as e: logging.error(f"[Reconcile] Docker error list: {e}. Abort."); return
-        # --- (Populate running_labeled_containers as before) ---
         for c in containers:
             try:
                 labels = c.labels; cid = c.id; cname = c.name
                 enabled = labels.get(f"{LABEL_PREFIX}.enable", "false").lower() in ["true", "1", "t", "yes"]
                 hn = labels.get(f"{LABEL_PREFIX}.hostname"); svc = labels.get(f"{LABEL_PREFIX}.service"); zn = labels.get(f"{LABEL_PREFIX}.zonename")
                 if enabled and hn and svc:
-                    # Basic validation
                     if not re.match(r"^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$", hn): continue
                     if not (re.match(r"^(https?|tcp|unix)://", svc) or re.match(r"^[a-zA-Z0-9._-]+:\d+$", svc)): continue
                     if hn in running_labeled_containers: logging.warning(f"[Reconcile] Dup hostname {hn} on {cname} & {running_labeled_containers[hn]['container_name']}.")
                     running_labeled_containers[hn] = {"service": svc, "container_id": cid, "container_name": cname, "zone_name": zn }
             except (NotFound, APIError) as e: logging.warning(f"[Reconcile] Error proc container {c.id[:12]}: {e}. Skip.")
-
         logging.info(f"[Reconcile] Found {len(running_labeled_containers)} valid labeled running containers.")
-
-        # --- Compare ---
         with state_lock:
             logging.debug("[Reconcile] Acquired lock."); now_utc = datetime.now(timezone.utc)
-            managed_hostnames = set(managed_rules.keys()); running_hostnames = set(running_labeled_containers.keys())
-            hostnames_dns_check = []
-
-            # 1. Check running containers
+            managed_hostnames = set(managed_rules.keys()); running_hostnames = set(running_labeled_containers.keys()); hostnames_dns_check = []
             for hostname, running_details in running_labeled_containers.items():
                 target_zone_id = None; zone_name = running_details.get("zone_name")
-                if zone_name: target_zone_id = get_zone_id_from_name(zone_name); # ... (handle lookup failure) ...
+                if zone_name: target_zone_id = get_zone_id_from_name(zone_name)
                 else: target_zone_id = CF_ZONE_ID
                 if not target_zone_id: logging.error(f"[Reconcile] Skip {hostname}: No valid Zone ID."); continue
-
-                rule_data = { "service": running_details["service"], "container_id": running_details["container_id"], "status": "active", "delete_at": None, "zone_id": target_zone_id, "type": "docker" }
-
+                rule_data = {"service": running_details["service"], "container_id": running_details["container_id"], "status": "active", "delete_at": None, "zone_id": target_zone_id, "type": "docker"}
                 if hostname in managed_rules:
                     rule = managed_rules[hostname]; zone_id_changed = rule.get("zone_id") != target_zone_id
-                    if rule.get("status") == "pending_deletion":
-                        logging.info(f"[Reconcile] Reactivating {hostname}."); rule.update(rule_data); state_changed_locally=True; needs_cf_update=True; hostnames_dns_check.append(hostname)
+                    if rule.get("status") == "pending_deletion": logging.info(f"[Reconcile] Reactivating {hostname}."); rule.update(rule_data); state_changed_locally=True; needs_cf_update=True; hostnames_dns_check.append(hostname)
                     elif rule.get("status") == "active":
                         if rule.get("service") != running_details["service"] or rule.get("zone_id") != target_zone_id: needs_cf_update = True
-                        if rule.get("service") != running_details["service"] or rule.get("container_id") != running_details["container_id"] or rule.get("zone_id") != target_zone_id:
-                            logging.info(f"[Reconcile] Updating active rule {hostname}."); rule.update(rule_data); state_changed_locally = True
-                        if zone_id_changed: hostnames_dns_check.append(hostname) # Check DNS in new zone
-                    # If rule is manual, don't touch it based on container presence
-                    elif rule.get("type") == "manual":
-                         logging.debug(f"[Reconcile] Docker container running for manual rule {hostname}. Ignoring.")
-
-                else: # New rule needed for running container
-                    logging.info(f"[Reconcile] Adding new docker rule for {hostname}."); managed_rules[hostname] = rule_data; state_changed_locally=True; needs_cf_update=True; hostnames_dns_check.append(hostname)
-
-            # 2. Check managed rules vs running
+                        if rule.get("service") != running_details["service"] or rule.get("container_id") != running_details["container_id"] or rule.get("zone_id") != target_zone_id: logging.info(f"[Reconcile] Updating active rule {hostname}."); rule.update(rule_data); state_changed_locally = True
+                        if zone_id_changed: hostnames_dns_check.append(hostname)
+                    elif rule.get("type") == "manual": logging.debug(f"[Reconcile] Docker running for manual rule {hostname}. Ignore.")
+                else: logging.info(f"[Reconcile] Adding new docker rule for {hostname}."); managed_rules[hostname] = rule_data; state_changed_locally=True; needs_cf_update=True; hostnames_dns_check.append(hostname)
             for hostname in list(managed_hostnames):
                 if hostname not in running_hostnames:
-                     if hostname in managed_rules: # Check if still exists
+                     if hostname in managed_rules:
                          rule = managed_rules[hostname]
-                         # IMPORTANT: Only schedule deletion if it's a 'docker' type rule
-                         if rule.get("status") == "active" and rule.get("type") == "docker":
-                              logging.info(f"[Reconcile] Docker rule {hostname} active but container gone. Scheduling delete.")
-                              rule["status"] = "pending_deletion"; rule["delete_at"] = now_utc + timedelta(seconds=GRACE_PERIOD_SECONDS); state_changed_locally = True
-                         elif rule.get("status") == "active" and rule.get("type") == "manual":
-                              logging.debug(f"[Reconcile] Manual rule {hostname} active and no container running. OK.")
-
-            # 3. Compare local state vs CF state (no change needed here)
-            # ... (previous comparison logic is fine) ...
+                         if rule.get("status") == "active" and rule.get("type") == "docker": logging.info(f"[Reconcile] Docker rule {hostname} active but container gone. Scheduling delete."); rule["status"] = "pending_deletion"; rule["delete_at"] = now_utc + timedelta(seconds=GRACE_PERIOD_SECONDS); state_changed_locally = True
+                         elif rule.get("status") == "active" and rule.get("type") == "manual": logging.debug(f"[Reconcile] Manual rule {hostname} active, no container. OK.")
             current_cf_config = get_current_cf_config()
             if current_cf_config is not None:
                 cf_hostnames = {r.get("hostname") for r in current_cf_config.get("ingress", []) if r.get("hostname") and r.get("service") != "http_status:404"}
                 active_managed = {hn for hn, d in managed_rules.items() if d.get("status") == "active"}
                 if cf_hostnames != active_managed: logging.warning(f"[Reconcile] Mismatch: Managed={active_managed} vs CF={cf_hostnames}!"); needs_cf_update = True
             else: logging.error("[Reconcile] Failed CF config fetch for compare.")
-
             if state_changed_locally: logging.info("[Reconcile] Saving state changes."); save_state()
             logging.debug("[Reconcile] Releasing lock.")
-
-        # --- Trigger Updates ---
         if needs_cf_update:
             logging.info("[Reconcile] Triggering CF tunnel update.");
             if update_cloudflare_config():
-                 if hostnames_dns_check: # ... (DNS check logic is fine, uses rule["zone_id"]) ...
+                 if hostnames_dns_check:
                       logging.info(f"[Reconcile] Checking DNS for: {hostnames_dns_check}")
                       for hn in hostnames_dns_check:
                            rule = None; with state_lock: rule = managed_rules.get(hn)
@@ -625,54 +607,30 @@ def reconcile_state():
     except Exception as e: logging.error(f"Unexpected reconcile error: {e}", exc_info=True)
     finally: logging.info("Reconciliation complete.")
 
-
 # --- get_cloudflared_container / update_cloudflared_container_status / ensure_docker_network_exists ---
 # No changes needed
-def get_cloudflared_container(): # ... (previous implementation) ...
-    if not docker_client: logging.warning("Docker client unavailable."); return None
-    try: return docker_client.containers.get(CLOUDFLARED_CONTAINER_NAME)
-    except NotFound: logging.debug(f"Container '{CLOUDFLARED_CONTAINER_NAME}' not found."); return None
-    except Exception as e: logging.error(f"Error getting container '{CLOUDFLARED_CONTAINER_NAME}': {e}"); return None
-
-def update_cloudflared_container_status(): # ... (previous implementation) ...
-    global docker_client
-    if not docker_client:
-        try: docker_client = docker.from_env(timeout=5); docker_client.ping(); logging.info("Reconnected to Docker.")
-        except Exception as e: logging.error(f"Reconnect Docker failed: {e}"); cloudflared_agent_state["container_status"] = "docker_unavailable"; docker_client = None; return
-    container = get_cloudflared_container()
-    if container:
-        try: container.reload(); new_status = container.status; # ... (rest of status update) ...
-        except Exception as e: logging.warning(f"Error reloading agent status: {e}"); cloudflared_agent_state["container_status"] = "error" # Or not_found
-    else: # ... (handle container not found) ...
-        if cloudflared_agent_state.get("container_status") not in ["not_found", "docker_unavailable"]: logging.info("Agent container not found."); cloudflared_agent_state["container_status"] = "not_found"
-
-def ensure_docker_network_exists(network_name): # ... (previous implementation) ...
-     if not docker_client: logging.error("Docker client unavailable for network check."); return False
-     try: docker_client.networks.get(network_name); logging.info(f"Network '{network_name}' exists."); return True
-     except NotFound: logging.info(f"Network '{network_name}' creating..."); # ... (rest of creation logic) ...
-     except Exception as e: logging.error(f"Error check/create network '{network_name}': {e}"); return False
+def get_cloudflared_container(): # ... (implementation from previous correct version) ...
+def update_cloudflared_container_status(): # ... (implementation from previous correct version) ...
+def ensure_docker_network_exists(network_name): # ... (implementation from previous correct version) ...
 
 # --- start_cloudflared_container / stop_cloudflared_container ---
 # No changes needed
-def start_cloudflared_container(): # ... (previous implementation, includes ensure_docker_network_exists) ...
-     # ...
-     if not ensure_docker_network_exists(CLOUDFLARED_NETWORK_NAME): return False
-     # ...
-def stop_cloudflared_container(): # ... (previous implementation) ...
+def start_cloudflared_container(): # ... (implementation from previous correct version) ...
+def stop_cloudflared_container(): # ... (implementation from previous correct version) ...
 
 # --- Flask App Setup ---
 app = Flask(__name__)
 app.secret_key = os.urandom(24) # Needed for flash messages
 
-
 # --- get_display_token ---
 # No changes needed
-def get_display_token(token): # ... (previous implementation) ...
+def get_display_token(token): # ... (implementation from previous correct version) ...
 
 # --- status_page ---
 # UPDATED: Pass grace period seconds
 @app.route('/')
 def status_page():
+    # ... (implementation from previous correct version, passing current_grace_period_seconds) ...
     update_cloudflared_container_status()
     with state_lock:
         rules_for_template = {}
@@ -684,165 +642,106 @@ def status_page():
                             tunnel_state=template_tunnel_state, agent_state=template_agent_state,
                             display_token=display_token, cloudflared_container_name=CLOUDFLARED_CONTAINER_NAME,
                             docker_available=docker_available, rules=rules_for_template,
-                            current_grace_period_seconds=current_grace_period) # Pass to template
-
+                            current_grace_period_seconds=current_grace_period)
 
 # --- start_tunnel / stop_tunnel ---
 # No changes needed
 @app.route('/start', methods=['POST'])
-def start_tunnel(): # ... (previous implementation) ...
+def start_tunnel(): logging.info("UI request: Start agent."); start_cloudflared_container(); time.sleep(1); return redirect(url_for('status_page'))
 @app.route('/stop', methods=['POST'])
-def stop_tunnel(): # ... (previous implementation) ...
-
+def stop_tunnel(): logging.info("UI request: Stop agent."); stop_cloudflared_container(); time.sleep(1); return redirect(url_for('status_page'))
 
 # --- force_delete_rule ---
 # No changes needed (already uses stored zone_id)
 @app.route('/force_delete/<hostname>', methods=['POST'])
-def force_delete_rule(hostname): # ... (previous implementation) ...
-
+def force_delete_rule(hostname):
+    # ... (implementation from previous correct version) ...
+    logging.info(f"UI request: Force delete rule {hostname}"); rule_removed = False; dns_ok = False; zone_id = None
+    with state_lock: rule = managed_rules.get(hostname); zone_id = rule.get("zone_id") if rule else CF_ZONE_ID # Use default as fallback
+    if zone_id and tunnel_state.get("id"): dns_ok = delete_cloudflare_dns_record(zone_id, hostname, tunnel_state["id"]); # ... (rest of DNS logic) ...
+    else: logging.error(f"Cannot delete DNS for {hostname}: Missing zone/tunnel ID."); cloudflared_agent_state["last_action_status"] = "Error: Cannot delete DNS (missing config)."
+    with state_lock:
+        if hostname in managed_rules: logging.info(f"Force deleting {hostname} from state."); del managed_rules[hostname]; rule_removed = True; save_state()
+        else: logging.warning(f"Rule {hostname} already gone from state."); rule_removed = True
+    if rule_removed:
+        logging.info(f"Triggering CF update after force delete {hostname}.");
+        if update_cloudflare_config(): logging.info(f"CF update OK after force delete {hostname}."); action_status = f"Force deleted {hostname}." + ("" if dns_ok else " (DNS delete failed/skipped).")
+        else: logging.error(f"CRITICAL: Force deleted {hostname}, DNS={dns_ok}, but FAILED CF update!"); action_status = f"Error: Removed {hostname}, DNS={dns_ok}, FAILED CF update!"
+        cloudflared_agent_state["last_action_status"] = action_status
+    time.sleep(1); return redirect(url_for('status_page'))
 
 # --- update_settings ---
 # NEW Route: Handle grace period update
 @app.route('/update_settings', methods=['POST'])
 def update_settings():
-    global GRACE_PERIOD_SECONDS
-    logging.info("UI request: Update settings.")
-    submitted_hours_str = request.form.get('grace_period_hours')
-    action_status = None # Store feedback message
-
+    # ... (implementation from previous correct version) ...
+    global GRACE_PERIOD_SECONDS; logging.info("UI request: Update settings.")
+    submitted_hours_str = request.form.get('grace_period_hours'); action_status = None
     try:
         if submitted_hours_str is None: raise ValueError("Missing form field")
-        submitted_hours = float(submitted_hours_str) # Allow decimals like 0.5
+        submitted_hours = float(submitted_hours_str)
         if submitted_hours < 0: raise ValueError("Grace period cannot be negative.")
-        # Optional Max check: e.g., 7 days = 168 hours
-        # if submitted_hours > 168: raise ValueError("Grace period exceeds maximum (168h).")
-
         new_grace_period_seconds = int(submitted_hours * 3600)
         if new_grace_period_seconds != GRACE_PERIOD_SECONDS:
-            GRACE_PERIOD_SECONDS = new_grace_period_seconds
-            logging.info(f"Grace period updated to: {GRACE_PERIOD_SECONDS} seconds ({submitted_hours} hours)")
-            with state_lock: save_state() # Persist immediately
-            action_status = f"Settings updated: Grace Period is now {submitted_hours} hours."
-        else:
-            action_status = f"Grace Period already set to {submitted_hours} hours. No change."
-
-    except ValueError as e:
-        logging.error(f"Invalid settings submission: {e} (Value: '{submitted_hours_str}')")
-        action_status = f"Error: Invalid value for hours ({e})."
-    except Exception as e:
-        logging.error(f"Unexpected error updating settings: {e}", exc_info=True)
-        action_status = f"Error updating settings: {e}."
+            GRACE_PERIOD_SECONDS = new_grace_period_seconds; logging.info(f"Grace period -> {GRACE_PERIOD_SECONDS}s ({submitted_hours}h)")
+            with state_lock: save_state(); action_status = f"Settings updated: Grace Period is now {submitted_hours} hours."
+        else: action_status = f"Grace Period already {submitted_hours} hours. No change."
+    except ValueError as e: logging.error(f"Invalid settings: {e} (Value: '{submitted_hours_str}')"); action_status = f"Error: Invalid value ({e})."
+    except Exception as e: logging.error(f"Error update settings: {e}", exc_info=True); action_status = f"Error updating settings: {e}."
     finally:
-        # Use session flash messaging for better feedback (optional)
-        # flash(action_status, 'info' if 'Error' not in action_status else 'error')
-        # For now, use the existing last_action_status mechanism
         if action_status: cloudflared_agent_state["last_action_status"] = action_status
-
     return redirect(url_for('status_page'))
 
 # --- add_manual_rule ---
 # NEW Route: Handle manual rule creation
 @app.route('/add_manual_rule', methods=['POST'])
 def add_manual_rule():
-    logging.info("UI request: Add manual rule.")
-    hostname = request.form.get('manual_hostname')
-    service = request.form.get('manual_service')
-    zone_name = request.form.get('manual_zone_name') # Optional field
-    action_status = None
-
+    # ... (implementation from previous correct version) ...
+    logging.info("UI request: Add manual rule."); hostname = request.form.get('manual_hostname'); service = request.form.get('manual_service'); zone_name = request.form.get('manual_zone_name'); action_status = None
     try:
-        # --- Validation ---
-        if not hostname or not service: raise ValueError("Hostname and Service URL are required.")
-        # Hostname validation
-        if not re.match(r"^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$", hostname):
-             raise ValueError(f"Invalid hostname format '{hostname}'.")
-        # Service validation
-        if not (re.match(r"^(https?|tcp|udp|unix)://", service) or re.match(r"^[a-zA-Z0-9._-]+:\d+$", service) or re.match(r"^http_status:\d+$", service)):
-             raise ValueError(f"Invalid service format '{service}'. Needs scheme or host:port or http_status:code.")
-        # Check for duplicates
+        if not hostname or not service: raise ValueError("Hostname and Service URL required.")
+        if not re.match(r"^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$", hostname): raise ValueError(f"Invalid hostname: '{hostname}'.")
+        if not (re.match(r"^(https?|tcp|udp|unix)://", service) or re.match(r"^[a-zA-Z0-9._-]+:\d+$", service) or re.match(r"^http_status:\d+$", service)): raise ValueError(f"Invalid service format: '{service}'.")
         with state_lock:
-            if hostname in managed_rules:
-                raise ValueError(f"Hostname '{hostname}' is already managed.")
-
-        # --- Determine Zone ID ---
+            if hostname in managed_rules: raise ValueError(f"Hostname '{hostname}' already managed.")
         target_zone_id = None
-        if zone_name:
-            logging.info(f"Manual rule specified zone name: '{zone_name}'. Looking up ID.")
-            target_zone_id = get_zone_id_from_name(zone_name)
-            if not target_zone_id: raise ValueError(f"Could not find Zone ID for name '{zone_name}'.")
-        else:
-            target_zone_id = CF_ZONE_ID # Use default
-            if not target_zone_id: raise ValueError("Default CF_ZONE_ID is not set, and no zone name provided.")
+        if zone_name: logging.info(f"Manual rule zone name: '{zone_name}'."); target_zone_id = get_zone_id_from_name(zone_name);
+        else: target_zone_id = CF_ZONE_ID
+        if not target_zone_id: raise ValueError("Zone ID required (provide zone name or set default CF_ZONE_ID).")
         logging.info(f"Using Zone ID {target_zone_id} for manual rule {hostname}")
-
-        # --- Add to State ---
         with state_lock:
-            managed_rules[hostname] = {
-                "service": service,
-                "container_id": None, # No container for manual rules
-                "status": "active",
-                "delete_at": None,
-                "zone_id": target_zone_id,
-                "type": "manual" # <-- Set type
-            }
-            save_state()
-        logging.info(f"Added manual rule for {hostname} to state.")
-        state_changed_locally = True # Assume state change requires CF update
-
-        # --- Update Cloudflare ---
-        if state_changed_locally: # Always true when adding manually
-            logging.info(f"Triggering Cloudflare config update for manual rule {hostname}.")
-            if update_cloudflare_config():
-                logging.info(f"Tunnel config update successful for {hostname}.")
-                if tunnel_state.get("id"):
-                    dns_record_id = create_cloudflare_dns_record(target_zone_id, hostname, tunnel_state["id"])
-                    if dns_record_id:
-                         logging.info(f"DNS record mgmt successful for {hostname} in zone {target_zone_id}.")
-                         action_status = f"Successfully added manual rule for {hostname}."
-                    else:
-                         logging.error(f"CRITICAL: Added manual rule {hostname} but DNS create/verify FAILED in zone {target_zone_id}!")
-                         action_status = f"Error: Added {hostname} but DNS failed in zone {target_zone_id}!"
-                else:
-                     logging.error(f"Cannot manage DNS for {hostname}: Tunnel ID missing.")
-                     action_status = f"Error: Added {hostname} but Tunnel ID missing for DNS."
-            else:
-                logging.error(f"Failed to update Cloudflare tunnel config after adding manual rule {hostname}. State might be inconsistent.")
-                # Attempt to roll back state change? More complex. Log clearly.
-                action_status = f"Error: Added {hostname} locally, but FAILED pushing tunnel config update!"
-                # Maybe remove from state again here if CF push fails?
-                # with state_lock:
-                #    if hostname in managed_rules and managed_rules[hostname].get("type") == "manual":
-                #        del managed_rules[hostname]
-                #        save_state()
-                #        logging.info(f"Rolled back state addition for {hostname} due to CF update failure.")
-
-    except ValueError as e:
-        logging.error(f"Invalid manual rule submission: {e}")
-        action_status = f"Error adding rule: {e}."
-    except Exception as e:
-        logging.error(f"Unexpected error adding manual rule: {e}", exc_info=True)
-        action_status = f"Error adding rule: {e}."
+            managed_rules[hostname] = {"service": service, "container_id": None, "status": "active", "delete_at": None, "zone_id": target_zone_id, "type": "manual"}
+            save_state(); logging.info(f"Added manual rule {hostname} to state.")
+        logging.info(f"Triggering CF update for manual rule {hostname}.")
+        if update_cloudflare_config():
+            logging.info(f"Tunnel update OK for {hostname}.")
+            if tunnel_state.get("id"):
+                if create_cloudflare_dns_record(target_zone_id, hostname, tunnel_state["id"]): action_status = f"Added manual rule for {hostname}."
+                else: logging.error(f"CRITICAL: Manual rule added but DNS FAILED for {hostname} in zone {target_zone_id}!"); action_status = f"Error: Added {hostname} but DNS failed!"
+            else: logging.error("No Tunnel ID for DNS."); action_status = f"Error: Added {hostname}, No Tunnel ID for DNS."
+        else: logging.error(f"Failed CF update after adding manual {hostname}."); action_status = f"Error: Added {hostname} locally, FAILED CF update!"
+    except ValueError as e: logging.error(f"Invalid manual rule: {e}"); action_status = f"Error adding rule: {e}."
+    except Exception as e: logging.error(f"Error add manual rule: {e}", exc_info=True); action_status = f"Error adding rule: {e}."
     finally:
         if action_status: cloudflared_agent_state["last_action_status"] = action_status
-
     return redirect(url_for('status_page'))
-
 
 # --- run_background_tasks ---
 # No changes needed
-def run_background_tasks(): # ... (previous implementation) ...
+def run_background_tasks(): # ... (implementation from previous correct version) ...
+    if not docker_client or not tunnel_state.get("id"): logging.warning("Cannot start background tasks."); return None, None
+    logging.info("Starting background threads..."); event_thread = threading.Thread(target=docker_event_listener, name="DockerEventListener", daemon=True); cleanup_thread = threading.Thread(target=cleanup_expired_rules, name="CleanupTask", daemon=True); event_thread.start(); cleanup_thread.start(); logging.info("Background threads started."); return event_thread, cleanup_thread
 
 # --- Main Execution ---
 if __name__ == '__main__':
-    # ... (previous implementation, including commented network check if desired) ...
+    # ... (implementation from previous correct version) ...
     logging.info("-" * 52); logging.info("--- DockFlare Tunnel Manager Starting ---"); logging.info("-" * 52)
     load_state(); logging.info("State loaded.")
     event_thread = None; cleanup_thread = None
     if not CF_API_TOKEN or not TUNNEL_NAME or not CF_ACCOUNT_ID: logging.error("FATAL: Missing required env vars."); sys.exit(1)
-    if not docker_client: logging.error("Docker client unavailable. Limited functionality."); # ... (set state) ...
+    if not docker_client: logging.error("Docker client unavailable. Limited functionality."); tunnel_state["status_message"] = "Error: Docker unavailable."; tunnel_state["error"] = "Failed connect Docker."; cloudflared_agent_state["container_status"] = "docker_unavailable"; logging.warning("Skipping init...")
     else:
          logging.info("Docker client available.")
-         # logging.info(f"Ensuring network '{CLOUDFLARED_NETWORK_NAME}' exists... (Check deferred)") # Keep commented if preferred
          logging.info("[DEBUG] >>> Calling initialize_tunnel()..."); initialize_tunnel()
          logging.info(f"Tunnel init complete. Status: {tunnel_state.get('status_message')}")
          logging.debug(f"Tunnel State: ID={tunnel_state.get('id')}, Token={bool(tunnel_state.get('token'))}, Err={tunnel_state.get('error')}")
@@ -852,17 +751,16 @@ if __name__ == '__main__':
              if cloudflared_agent_state.get("container_status") != 'running': logging.info("Agent not running, starting..."); start_cloudflared_container()
              else: logging.info("Agent running.")
              event_thread, cleanup_thread = run_background_tasks()
-         else: logging.warning("Tunnel not ready. Skipping reconcile, agent, background tasks."); # ... (set state) ...
+         else: logging.warning("Tunnel not ready. Skipping reconcile, agent, background tasks.");
     logging.info("Starting Flask web server..."); flask_thread = None
     try: from waitress import serve; flask_thread = threading.Thread(target=serve, args=(app,), kwargs={'host':'0.0.0.0','port':5000}, daemon=True, name="FlaskWaitressServer"); flask_thread.start(); logging.info("Waitress server started.")
     except ImportError: logging.warning("Waitress not found. Using Flask dev server."); app.run(host='0.0.0.0', port=5000)
-    # --- Main Loop (keep alive, monitor threads) ---
     try:
         while True:
-             all_threads_alive = True # ... (thread monitoring logic) ...
+             all_threads_alive = True; # ... (thread monitoring) ...
              if not all_threads_alive: logging.error("Critical thread died. Shutting down."); stop_event.set(); break
              if stop_event.is_set(): logging.info("Stop event detected."); break
              time.sleep(10)
-    except KeyboardInterrupt: logging.info("KeyboardInterrupt received.")
+    except KeyboardInterrupt: logging.info("KeyboardInterrupt.")
     except Exception as server_err: logging.error(f"Web server failed: {server_err}", exc_info=True)
-    finally: logging.info("Shutdown initiated..."); stop_event.set(); logging.info("Stop event set."); # ... (exit logic) ...
+    finally: logging.info("Shutdown initiated..."); stop_event.set(); logging.info("Stop event set."); logging.info("Exiting DockFlare."); exit_code = 1 if tunnel_state.get("error") else 0; sys.exit(exit_code)
