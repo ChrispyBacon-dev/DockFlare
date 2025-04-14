@@ -957,7 +957,7 @@ def start_cloudflared_container():
                       try: container.remove(force=True)
                       except APIError as rm_err: logging.error(f"Failed to remove misconfigured container: {rm_err}. Proceeding to create might fail."); needs_recreate=False # Reset flag if remove fails maybe? Or let create fail?
                       container = None # Ensure we enterLARED_CONTAINER_NAME}': {e}. Assuming it needs creation.")
-                  container = None # Proceed to create block
+                      container = None # Proceed to create block
 
         # Create container if it doesn't exist or needed recreation
         if not container and not success_flag: # Only create if not found or not successfully started above
