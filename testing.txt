@@ -1,7 +1,0 @@
-docker run -d \
-  --name my-nginx-web \
-  --network cloudflare-net \
-  -l cloudflare.tunnel.enable="true" \
-  -l cloudflare.tunnel.hostname="nginx-test.dataverse.icu" \
-  -l cloudflare.tunnel.service="http://my-nginx-web:80" \
-  nginx:latest

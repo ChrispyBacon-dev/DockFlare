@@ -44,6 +44,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # In this case, just app.py
 COPY app.py .
 
+COPY templates /app/templates
 # Inform Docker that the container listens on port 5000 at runtime
 # This is documentation; actual mapping is done in docker-compose.yml or `docker run -p`
 EXPOSE 5000

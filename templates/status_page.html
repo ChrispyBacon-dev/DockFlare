@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en"> <!-- data-theme will be added by JS -->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="30"> <!-- Auto-refresh every 30 seconds -->
+    <!-- Pico.css CDN Link -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@latest/css/pico.min.css">
+    <title>Cloudflare Tunnel Manager</title>
+    <style>
+        /* Basic layout adjustments */
+        body { padding-top: 1rem; padding-bottom: 1rem; }
+        h1, h2, h3 { margin-top: 1.5em; margin-bottom: 0.5em; }
+        h1 { margin-top: 0; text-align: center; }
+        article { margin-bottom: 1.5rem; }
+        td pre { margin: 0; white-space: pre-wrap; word-break: break-all; font-family: var(--pico-font-family-monospace); font-size: 0.9em; }
+        /* Ensure preformatted text respects theme */
+        pre { background-color: var(--pico-card-background-color); border: 1px solid var(--pico-card-border-color); border-radius: var(--pico-border-radius); padding: 0.5rem 0.75rem; color: var(--pico-color);}
+
+        /* Status-specific colors using Pico variables and left border */
+        .status-box {
+            padding: 1rem 1.25rem;
+            border: 1px solid var(--pico-form-element-border-color);
+            border-radius: var(--pico-border-radius);
+            margin-top: 1rem;
+            word-wrap: break-word;
+            background-color: var(--pico-form-element-background-color);
+            color: var(--pico-form-element-color);
+            border-left-width: 4px; /* Add a thicker left border for emphasis */
+        }
+        .status-box.error {
+            border-left-color: var(--pico-color-red-500);
+        }
+        .status-box.success {
+            border-left-color: var(--pico-color-green-500);
+        }
+        .status-box.info {
+            border-left-color: var(--pico-color-blue-500);
+        }
+        .status-box.warning {
+            border-left-color: var(--pico-color-amber-500);
+        }
+        /* Ensure text inside is readable */
+        .status-box p {
+            margin-bottom: 0;
+        }
+        .status-box strong {
+             color: var(--pico-h_color); /* Use heading color for better contrast */
+        }
+
+        /* Rule Status colors */
+        .status-active { color: var(--pico-color-green-600); font-weight: bold; }
+        .status-pending { color: var(--pico-color-orange-500); font-weight: bold; }
+
+        /* Form styling adjustments */
+        form { display: inline-block; margin: 0; }
+        form button { margin: 0; }
+        .grid > form > button { width: 100%; } /* Make buttons in grid take full width */
+
+        /* Status indicator dots */
+        .status-indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle;}
+        .status-indicator.running { background-color: var(--pico-color-green-500); }
+        .status-indicator.exited, .status-indicator.dead, .status-indicator.not_found { background-color: var(--pico-color-red-500); }
+        .status-indicator.docker_unavailable { background-color: var(--pico-color-gray-500); }
+        .status-indicator.unknown, .status-indicator.created, .status-indicator.paused { background-color: var(--pico-color-amber-500); }
+
+        /* Button customizations */
+        button.delete-button {
+            /* Use Pico classes 'contrast' and 'outline' */
+            font-size: 0.9em; /* Make delete button slightly smaller */
+            padding: 0.5rem 0.75rem;
+        }
+
+        /* Theme Toggle Button */
+        #theme-toggle {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            /* Use Pico classes for button styling */
+            padding: 0.5rem; /* Smaller padding */
+            width: auto; /* Allow button to size to content */
+            line-height: 1; /* Align icon better */
+            font-size: 1.2rem; /* Adjust icon size */
+            background: transparent;
+            border: none;
+            color: var(--pico-secondary);
+            cursor: pointer;
+        }
+        #theme-toggle:hover {
+            color: var(--pico-secondary-hover);
+             background: transparent; /* Ensure no background on hover */
+             border: none;
+        }
+
+        /* Countdown timer style */
+        .countdown-timer {
+            /* color: var(--pico-muted-color); */ /* Use muted color */
+            font-size: 0.85em;
+        }
+
+    </style>
+</head>
+<!-- Body uses Pico styles. Main container for centering/max-width. data-theme set by JS -->
+<body>
+    <main class="container">
+
+        <!-- Theme Toggle Button -->
+        <button id="theme-toggle" aria-label="Toggle theme">🌓</button> <!-- Initial Icon -->
+
+        <h1>Cloudflare Tunnel Manager</h1>
+
+        <!-- Initialization Status Section -->
+        <article>
+            <hgroup>
+                <h2>Initialization Status</h2>
+                <h3>Cloudflare Tunnel API Interaction</h3>
+            </hgroup>
+            <!-- Apply status class directly to the box -->
+            <div class="status-box {{ 'error' if tunnel_state.get('error') else ('success' if tunnel_state.get('token') else 'info') }}">
+                <p><strong>Message:</strong> {{ tunnel_state.status_message }}</p>
+                {% if tunnel_state.get('error') %}
+                    <p><strong>Error Details:</strong> <pre>{{ tunnel_state.error }}</pre></p>
+                {% endif %}
+            </div>
+            <h4>Tunnel Details</h4>
+            <p><strong>Desired Tunnel Name:</strong> <pre>{{ tunnel_state.name }}</pre></p>
+            <p><strong>Tunnel ID:</strong> <pre>{{ tunnel_state.id if tunnel_state.id else 'Not available' }}</pre></p>
+            <p><strong>Tunnel Token:</strong> <pre>{{ display_token }}</pre></p>
+        </article>
+
+        <!-- Tunnel Agent Control Section -->
+        <article>
+            <hgroup>
+                <h2>Tunnel Agent Control</h2>
+                <h3>Docker Container: <pre style="display: inline;">{{ cloudflared_container_name }}</pre></h3>
+            </hgroup>
+            <p>
+                <strong>Agent Container Status:</strong>
+                <span class="status-indicator {{ agent_state.container_status }}"></span>
+                <strong style="text-transform: capitalize;" class="{{'success' if agent_state.container_status=='running' else ('error' if 'error' in agent_state.container_status or agent_state.container_status=='docker_unavailable' or agent_state.container_status=='dead' or agent_state.container_status=='not_found' else ('warning' if agent_state.container_status=='exited' else 'info')) }}">
+                    {{ agent_state.container_status.replace('_',' ') }}
+                </strong>
+            </p>
+            {% if agent_state.last_action_status %}
+                <!-- Apply status class directly to the box -->
+                <div class="status-box {{ 'error' if 'Error:' in agent_state.last_action_status else ('warning' if 'Warning:' in agent_state.last_action_status else 'info') }}">
+                    <p><strong>Last Action Result:</strong> {{ agent_state.last_action_status }}</p>
+                </div>
+            {% endif %}
+
+            <!-- Agent Control Buttons - Grouped with grid -->
+            <div class="grid">
+                 <form action="{{ url_for('start_tunnel') }}" method="post">
+                     <button type="submit"
+                             {{ 'disabled' if not tunnel_state.get('token') or agent_state.container_status=='running' or not docker_available }}>
+                         Start Agent
+                     </button>
+                 </form>
+                 <form action="{{ url_for('stop_tunnel') }}" method="post">
+                     <button type="submit" class="secondary"
+                             {{ 'disabled' if agent_state.container_status!='running' or not docker_available }}>
+                         Stop Agent
+                     </button>
+                 </form>
+            </div>
+        </article>
+
+        <!-- Managed Ingress Rules Section -->
+        <article>
+            <h2>Managed Ingress Rules</h2>
+            {% if rules %}
+                <figure> <!-- Pico styles tables inside figures nicely -->
+                <table role="grid"> <!-- role="grid" for accessibility -->
+                    <thead>
+                        <tr>
+                            <th scope="col">Hostname</th>
+                            <th scope="col">Service Target</th>
+                            <th scope="col">Status</th>
+                            <th scope="col">Container</th>
+                            <th scope="col">Delete Scheduled (UTC)</th>
+                            <th scope="col">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for hostname, details in rules.items()|sort %} {# Sort by hostname #}
+                            <tr>
+                                <td><pre>{{ hostname }}</pre></td>
+                                <td><pre>{{ details.service }}</pre></td>
+                                <td>
+                                    <strong class="{{ 'status-active' if details.status=='active' else 'status-pending' }}">
+                                        {{ details.status }}
+                                    </strong>
+                                </td>
+                                <td><pre title="{{ details.container_id if details.container_id else 'N/A' }}">{{ details.container_id[:12] if details.container_id else 'N/A' }}</pre></td>
+
+                                <!-- Cell for Deletion Time and Countdown -->
+                                {% if details.status=='pending_deletion' and details.delete_at %}
+                                    <td data-delete-at="{{ details.delete_at.isoformat() }}"> <!-- Add data attribute -->
+                                        <span class="absolute-time">{{ details.delete_at.strftime('%H:%M %d.%m.%Y') }}</span>
+                                        <br>
+                                        <small><span class="countdown-timer">(calculating...)</span></small> <!-- Span for countdown -->
+                                    </td>
+                                {% else %}
+                                    <td>N/A</td> <!-- Keep N/A for non-pending rules -->
+                                {% endif %}
+
+                                <td>
+                                    <form action="{{ url_for('force_delete_rule', hostname=hostname) }}" method="post"
+                                          onsubmit="return confirm('Are you sure you want to force delete the rule and DNS record for {{ hostname }} immediately? This bypasses the grace period.');">
+                                        <!-- Use Pico classes for styling -->
+                                        <button type="submit" class="delete-button contrast outline" {{ 'disabled' if not docker_available }}>
+                                            Delete
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                </figure>
+            {% else %}
+                <p>No ingress rules are currently being managed.</p>
+            {% endif %}
+        </article>
+
+    </main> <!-- end .container -->
+
+    <!-- JavaScript for Theme Toggle and Countdown Timers -->
+    <script>
+      // --- Theme Toggle Logic ---
+      const themeToggleButton = document.getElementById('theme-toggle');
+      const htmlElement = document.documentElement; // Target the <html> element
+
+      // Function to set the theme and update icon
+      const setTheme = (theme) => {
+        htmlElement.setAttribute('data-theme', theme);
+        localStorage.setItem('theme', theme); // Save preference
+        // Update button icon based on the new theme
+        themeToggleButton.textContent = theme === 'dark' ? '☀️' : '🌓';
+      };
+
+      // Function to toggle the theme
+      const toggleTheme = () => {
+        // Check the current theme *explicitly* set on <html> or default based on current setting
+        const currentTheme = htmlElement.getAttribute('data-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        setTheme(newTheme);
+      };
+
+      // Add event listener to the button
+      themeToggleButton.addEventListener('click', toggleTheme);
+
+      // Apply theme on initial load
+      const initTheme = () => {
+          const savedTheme = localStorage.getItem('theme');
+          // Check for OS preference if no theme is saved
+          const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+          if (savedTheme) {
+            setTheme(savedTheme);
+          } else {
+            // If no saved theme, use OS preference as default
+            setTheme(prefersDark ? 'dark' : 'light');
+          }
+      };
+
+      // Run theme initialization
+      initTheme();
+
+      // --- Countdown Timer Logic ---
+      const countdownElements = document.querySelectorAll('.countdown-timer');
+
+      function formatTimeDifference(diffMillis) {
+          const totalSeconds = Math.round(Math.abs(diffMillis / 1000)); // Round to nearest second
+
+          if (totalSeconds < 60) {
+              return diffMillis >= 0 ? 'in <1m' : 'Expired'; // Simplified for < 1 min
+          }
+
+          const days = Math.floor(totalSeconds / (3600 * 24));
+          const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
+          const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+          let parts = [];
+          if (days > 0) parts.push(`${days}d`);
+          if (hours > 0) parts.push(`${hours}h`);
+          // Always show minutes if > 0 or if it's the only unit left besides seconds
+          if (minutes > 0 || (days === 0 && hours === 0)) parts.push(`${minutes}m`);
+
+          const timeString = parts.join(' ');
+
+          // Check if difference is positive (future) or negative (past)
+          return diffMillis >= 0 ? `in ${timeString}` : `Expired ${timeString} ago`;
+      }
+
+      function updateCountdowns() {
+          const now = new Date(); // Get current time once per update cycle
+
+          countdownElements.forEach(span => {
+              const td = span.closest('td'); // Find the parent td
+              if (!td) return; // Should not happen, but safety check
+              const deleteAtISO = td.dataset.deleteAt;
+              if (!deleteAtISO) return; // Skip if data attribute missing
+
+              try {
+                  const targetDate = new Date(deleteAtISO);
+                  // Check if targetDate is valid
+                  if (isNaN(targetDate.getTime())) {
+                      throw new Error("Invalid date parsed");
+                  }
+                  const diff = targetDate - now; // Difference in milliseconds
+
+                  span.textContent = `(${formatTimeDifference(diff)})`; // Wrap in parentheses
+              } catch (e) {
+                  console.error("Error parsing date for countdown:", deleteAtISO, e);
+                  span.textContent = "(invalid date)";
+              }
+          });
+      }
+
+      // Update immediately on load
+      updateCountdowns();
+
+      // Update every 30 seconds (more frequent update)
+      const countdownInterval = setInterval(updateCountdowns, 30000); // 30000 milliseconds
+
+    </script>
+
+</body>
+</html>
