@@ -1,8 +1,9 @@
 version: '3.8'
 services:
   cloudflare-tunnel-manager:
-    build: .
-    container_name: cloudflare-tunnel-manager
+    # build: . # Commented out for not building local docker image
+    container_name: dockflare
+    image: alplat/dockflare:stable
     restart: unless-stopped
     ports:
       - "5000:5000"

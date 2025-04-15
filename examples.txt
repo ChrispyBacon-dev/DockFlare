@@ -1,0 +1,18 @@
+docker run -d \
+  --name my-nginx-web \
+  --network cloudflare-net \
+  -l cloudflare.tunnel.enable="true" \
+  -l cloudflare.tunnel.hostname="nginx.your-domain.com" \
+  -l cloudflare.tunnel.service="http://my-nginx-web:80" \
+  nginx:latest
+
+### For Multi DNS Zones on your CloudFlare
+
+  docker run -d \
+  --name my-nginx-web2 \
+  --network cloudflare-net \
+  -l cloudflare.tunnel.enable="true" \
+  -l cloudflare.tunnel.hostname="nginx.your-other-domain.com" \
+  -l cloudflare.tunnel.service="http://my-nginx-web2:80" \
+  -l cloudflare.tunnel.zonename="your-other-domain.com" \
+  nginx:latest
