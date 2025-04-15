@@ -1,0 +1,43 @@
+{% if rules %}
+    <figure>
+        <table role="grid">
+            <thead>
+                <tr>
+                    <th scope="col">Hostname</th>
+                    <th scope="col">Service Target</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Container</th>
+                    <th scope="col">Delete Scheduled (UTC)</th>
+                    <th scope="col">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for hostname, details in rules.items()|sort %}
+                    <tr>
+                        <td><a href="https://{{ hostname }}" target="_blank" rel="noopener noreferrer" title="Open https://{{ hostname }} in new tab"><code>{{ hostname }}</code></a></td>
+                        <td><code>{{ details.service }}</code></td>
+                        <td><strong class="{{ 'status-active' if details.status=='active' else 'status-pending' }}">{{ details.status }}</strong></td>
+                        <td><code title="{{ details.container_id if details.container_id else 'N/A' }}">{{ details.container_id[:12] if details.container_id else 'N/A' }}</code></td>
+                        {% if details.status=='pending_deletion' and details.delete_at %}
+                            <td data-delete-at="{{ details.delete_at.isoformat() }}">
+                                <span class="absolute-time">{{ details.delete_at.strftime('%H:%M %d.%m.%Y') }}</span>
+                                <span class="countdown-timer">(calculating...)</span>
+                            </td>
+                        {% else %}
+                            <td>N/A</td>
+                        {% endif %}
+                        <td>
+                            <form action="{{ url_for('force_delete_rule', hostname=hostname) }}" method="post" onsubmit="return confirm('Are you sure you want to force delete the rule and DNS record for {{ hostname }} immediately? This bypasses the grace period.');">
+                                <button type="submit" class="delete-button contrast outline" {{ 'disabled' if not docker_available }}>
+                                    Delete
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </figure>
+{% else %}
+    <p>No ingress rules are currently being managed.</p>
+{% endif %}

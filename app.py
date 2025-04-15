@@ -66,63 +66,44 @@ class QueueLogHandler(logging.Handler):
         self.log_queue = log_queue
 
     def emit(self, record):
-        # Check if the message is already formatted for SSE (our custom events)
-        # This prevents double-formatting log messages if they somehow contain "event:"
         log_entry = self.format(record)
         if "event:" not in log_entry and "data:" not in log_entry:
-            # Format as a standard SSE message event if it's a normal log record
-             message_payload = json.dumps(log_entry) # Ensure valid JSON payload
+             message_payload = json.dumps(log_entry)
              sse_message = f"event: message\ndata: {message_payload}\n\n"
         else:
-             # Assume it's a pre-formatted SSE event (like rules_update)
-             sse_message = log_entry # Pass it through directly
-
+             sse_message = log_entry
         try:
             self.log_queue.put_nowait(sse_message)
         except queue.Full:
-            try:
-                self.log_queue.get_nowait() # Discard oldest item
-                self.log_queue.put_nowait(sse_message) # Try putting again
+            try: self.log_queue.get_nowait(); self.log_queue.put_nowait(sse_message)
             except queue.Empty: pass
             except queue.Full: print(f"Log queue full, dropping message: {log_entry[:100]}...", file=sys.stderr)
 
 queue_handler = QueueLogHandler(log_queue)
 queue_handler.setFormatter(log_formatter)
-queue_handler.setLevel(logging.INFO) # Only push INFO and above to the web UI
+queue_handler.setLevel(logging.INFO)
 root_logger = logging.getLogger()
 root_logger.addHandler(queue_handler)
 
 # Docker Client Setup
 try:
-    docker_client = docker.from_env(timeout=10)
-    docker_client.ping()
+    docker_client = docker.from_env(timeout=10); docker_client.ping()
     logging.info("Successfully connected to Docker daemon.")
-except Exception as e:
-    logging.error(f"FATAL: Failed to connect to Docker daemon: {e}")
-    docker_client = None
+except Exception as e: logging.error(f"FATAL: Failed to connect to Docker daemon: {e}"); docker_client = None
 
 # Global State
 tunnel_state = { "name": TUNNEL_NAME, "id": None, "token": None, "status_message": "Initializing...", "error": None }
 cloudflared_agent_state = { "container_status": "unknown", "last_action_status": None }
-managed_rules = {}
-zone_id_cache = {}
-state_lock = threading.Lock()
-stop_event = threading.Event()
+managed_rules = {}; zone_id_cache = {}; state_lock = threading.Lock(); stop_event = threading.Event()
 
-# --- NEW: Helper to Send SSE Events ---
 def send_sse_event(event_type, data=""):
     """Puts a specially formatted message into the log queue for SSE."""
     sse_message = f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
-    try:
-        log_queue.put_nowait(sse_message)
-        logging.debug(f"Sent SSE event: {event_type}")
-    except queue.Full:
-        logging.warning(f"Log queue full when trying to send SSE event: {event_type}. Event lost.")
-
+    try: log_queue.put_nowait(sse_message); logging.debug(f"Sent SSE event: {event_type}")
+    except queue.Full: logging.warning(f"Log queue full when trying to send SSE event: {event_type}. Event lost.")
 
 def load_state():
-    global managed_rules
-    state_dir = os.path.dirname(STATE_FILE_PATH)
+    global managed_rules; state_dir = os.path.dirname(STATE_FILE_PATH)
     if not os.path.exists(state_dir):
         try: os.makedirs(state_dir, exist_ok=True); logging.info(f"Created directory for state file: {state_dir}")
         except OSError as e: logging.error(f"FATAL: Could not create directory for state file {state_dir}: {e}. State persistence will fail."); managed_rules = {}; return
@@ -202,8 +183,15 @@ def get_zone_id_from_name(zone_name):
         response_data = cf_api_request("GET", endpoint, params=params); results = response_data.get("result", [])
         if results and isinstance(results, list) and len(results) == 1:
             zone_id = results[0].get("id"); zone_actual_name = results[0].get("name")
-            if zone_id and zone_actual_name == zone_name: logging.info(f"Found Zone ID for '{zone_name}': {zone_id}"); with state_lock: zone_id_cache[zone_name] = zone_id; return zone_id
-            else: logging.error(f"API returned unexpected result or name mismatch for zone '{zone_name}': {results[0]}"); return None
+            # *** CORRECTED BLOCK ***
+            if zone_id and zone_actual_name == zone_name:
+                logging.info(f"Found Zone ID for '{zone_name}': {zone_id}")
+                with state_lock: # Acquire lock to safely update cache
+                    zone_id_cache[zone_name] = zone_id
+                # Return the zone_id *after* the lock is released
+                return zone_id
+            # *** END CORRECTED BLOCK ***
+            else: logging.error(f"API returned unexpected result or name/ID mismatch for zone '{zone_name}': {results[0]}"); return None
         elif results and len(results) > 1: logging.error(f"API returned multiple ({len(results)}) active zones matching name '{zone_name}'. Cannot determine correct zone."); return None
         else: logging.warning(f"No active zone found matching name '{zone_name}' via API."); return None
     except requests.exceptions.RequestException as e: logging.error(f"API error looking up zone '{zone_name}': {e}"); return None
@@ -670,15 +658,16 @@ def status_page():
                  except Exception as date_parse_err: logging.warning(f"Error parsing delete_at ('{rule['delete_at']}') for template: {date_parse_err}"); rule["delete_at"] = None
         template_tunnel_state = tunnel_state.copy(); template_agent_state = cloudflared_agent_state.copy()
     display_token = get_display_token(template_tunnel_state.get("token")); docker_available = docker_client is not None
+    # Pass docker_available needed for the partial template too
     return render_template('status_page.html', tunnel_state=template_tunnel_state, agent_state=template_agent_state, display_token=display_token, cloudflared_container_name=CLOUDFLARED_CONTAINER_NAME, docker_available=docker_available, rules=rules_for_template)
 
 @app.route('/start-tunnel', methods=['POST'])
 def start_tunnel():
-    logging.info("UI request: Start tunnel agent."); start_cloudflared_container(); time.sleep(1); return redirect(url_for('status_page')) # Keep redirect for now, JS handles async
+    logging.info("UI request: Start tunnel agent."); start_cloudflared_container(); time.sleep(1); return jsonify(success=True) # Return JSON for fetch
 
 @app.route('/stop-tunnel', methods=['POST'])
 def stop_tunnel():
-    logging.info("UI request: Stop tunnel agent."); stop_cloudflared_container(); time.sleep(1); return redirect(url_for('status_page')) # Keep redirect for now, JS handles async
+    logging.info("UI request: Stop tunnel agent."); stop_cloudflared_container(); time.sleep(1); return jsonify(success=True) # Return JSON for fetch
 
 @app.route('/force_delete_rule/<hostname>', methods=['POST'])
 def force_delete_rule(hostname):
@@ -692,18 +681,17 @@ def force_delete_rule(hostname):
     elif not zone_id_for_delete: logging.error(f"Cannot delete DNS for {hostname}: Zone ID could not be determined."); cloudflared_agent_state["last_action_status"] = f"Error: Cannot delete DNS for {hostname} (missing zone ID)."
     else: logging.error(f"Cannot delete DNS for {hostname}: Missing Tunnel ID."); cloudflared_agent_state["last_action_status"] = f"Error: Cannot delete DNS for {hostname} (missing tunnel ID)."
     with state_lock:
-        if hostname in managed_rules: logging.info(f"Force deleting rule for {hostname} from local state."); del managed_rules[hostname]; rule_removed_from_state = True; save_state(); send_sse_event('rules_update') # Signal after state saved
+        if hostname in managed_rules: logging.info(f"Force deleting rule for {hostname} from local state."); del managed_rules[hostname]; rule_removed_from_state = True; save_state(); send_sse_event('rules_update')
         else: logging.warning(f"Rule '{hostname}' was already removed from state when force delete requested."); rule_removed_from_state = True
     if rule_removed_from_state:
         logging.info(f"Triggering Cloudflare tunnel config update after force deleting {hostname}.")
         if update_cloudflare_config(): logging.info(f"CF tunnel config update successful after force deleting {hostname}."); status_msg = f"Successfully force deleted rule for {hostname} and updated Cloudflare."; status_msg += " (Note: DNS deletion failed or was skipped)." if not dns_delete_success else ""; cloudflared_agent_state["last_action_status"] = status_msg
         else: logging.error(f"CRITICAL: State updated after force delete of {hostname} (DNS delete success: {dns_delete_success}), but subsequent tunnel config update FAILED!"); cloudflared_agent_state["last_action_status"] = f"Error: Removed {hostname} locally (DNS delete: {dns_delete_success}), but FAILED tunnel config update! Reconciliation needed."
-    time.sleep(1); return redirect(url_for('status_page')) # Keep redirect for standard form submission (JS override)
+    time.sleep(1); return redirect(url_for('status_page')) # Force delete still uses standard redirect
 
 # --- NEW Endpoint: Render just the rules table ---
 @app.route('/get_rules_table')
 def get_rules_table():
-    """Renders only the HTML fragment for the managed rules table."""
     with state_lock:
         rules_for_template = json.loads(json.dumps(managed_rules, default=str))
         for rule in rules_for_template.values():
@@ -714,52 +702,21 @@ def get_rules_table():
                      rule["delete_at"] = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
                  except Exception: rule["delete_at"] = None
     docker_available = docker_client is not None
-    table_html_template = """
-        {% if rules %}
-            <figure>
-                <table role="grid">
-                    <thead><tr><th scope="col">Hostname</th><th scope="col">Service Target</th><th scope="col">Status</th><th scope="col">Container</th><th scope="col">Delete Scheduled (UTC)</th><th scope="col">Actions</th></tr></thead>
-                    <tbody>
-                        {% for hostname, details in rules.items()|sort %}
-                            <tr>
-                                <td><a href="https://{{ hostname }}" target="_blank" rel="noopener noreferrer" title="Open https://{{ hostname }} in new tab"><code>{{ hostname }}</code></a></td>
-                                <td><code>{{ details.service }}</code></td>
-                                <td><strong class="{{ 'status-active' if details.status=='active' else 'status-pending' }}">{{ details.status }}</strong></td>
-                                <td><code title="{{ details.container_id if details.container_id else 'N/A' }}">{{ details.container_id[:12] if details.container_id else 'N/A' }}</code></td>
-                                {% if details.status=='pending_deletion' and details.delete_at %}<td data-delete-at="{{ details.delete_at.isoformat() }}"><span class="absolute-time">{{ details.delete_at.strftime('%H:%M %d.%m.%Y') }}</span><span class="countdown-timer">(calculating...)</span></td>{% else %}<td>N/A</td>{% endif %}
-                                <td><form action="{{ url_for('force_delete_rule', hostname=hostname) }}" method="post" onsubmit="return confirm('Are you sure you want to force delete the rule and DNS record for {{ hostname }} immediately? This bypasses the grace period.');"><button type="submit" class="delete-button contrast outline" {{ 'disabled' if not docker_available }}>Delete</button></form></td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </figure>
-        {% else %}
-            <p>No ingress rules are currently being managed.</p>
-        {% endif %}
-    """
-    return render_template_string(table_html_template, rules=rules_for_template, docker_available=docker_available)
-
+    # Use render_template with the partial file
+    return render_template('rules_table_partial.html', rules=rules_for_template, docker_available=docker_available)
 
 # --- MODIFIED SSE stream endpoint ---
 @app.route('/stream-logs')
 def stream_logs():
-    """Streams log messages and update events using Server-Sent Events."""
     @stream_with_context
     def event_stream():
         logging.info("SSE client connected.")
-        # Send initial connection message as a specific event type
         yield f"event: connection_status\ndata: {json.dumps({'status': 'connected'})}\n\n"
         try:
-            while True:
-                # Block waiting for a log message or event from the queue
-                sse_message = log_queue.get(block=True)
-                # Yield the pre-formatted message directly (includes event type)
-                yield sse_message
-        except GeneratorExit:
-            logging.info("SSE client disconnected.")
+            while True: sse_message = log_queue.get(block=True); yield sse_message
+        except GeneratorExit: logging.info("SSE client disconnected.")
         finally: pass
     return Response(event_stream(), mimetype='text/event-stream')
-
 
 # --- Background Task Runner ---
 def run_background_tasks():
