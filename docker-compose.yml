@@ -1,9 +1,9 @@
 version: '3.8'
 services:
   cloudflare-tunnel-manager:
-    # build: . # Commented out for not building local docker image
+    build: . # for building local docker image
     container_name: dockflare
-    image: alplat/dockflare:stable
+    # image: alplat/dockflare:stable # The pre-built Docker image (`alplat/dockflare:stable`) is currently only available for `x86_64` / `amd64` architectures.
     restart: unless-stopped
     ports:
       - "5000:5000"
