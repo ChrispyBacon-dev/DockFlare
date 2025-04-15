@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Removed meta refresh, relying on SSE and user action -->
     <!-- Pico.css CDN Link -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@latest/css/pico.min.css">
     <title>Dockflare</title>
@@ -11,7 +10,19 @@
         /* --- Base & Layout --- */
         :root {
           --container-max-width: 1140px; /* Wider container */
+          /* Custom colors for buttons */
+          --button-color-green: var(--pico-color-green-600);
+          --button-color-green-hover: var(--pico-color-green-700);
+          --button-color-red: var(--pico-color-red-600);
+          --button-color-red-hover: var(--pico-color-red-700);
         }
+        html[data-theme="dark"] {
+          --button-color-green: var(--pico-color-green-500);
+          --button-color-green-hover: var(--pico-color-green-400);
+          --button-color-red: var(--pico-color-red-500);
+          --button-color-red-hover: var(--pico-color-red-400);
+        }
+
         body { padding-top: 1.5rem; padding-bottom: 2rem; display: flex; flex-direction: column; min-height: 100vh; }
         main.container { flex-grow: 1; max-width: var(--container-max-width); width: 100%; padding-bottom: 2rem; margin-left: auto; margin-right: auto; }
         h1, h2, h3, h4 { margin-top: 1.5em; margin-bottom: 0.6em; color: var(--pico-h_color); }
@@ -19,11 +30,10 @@
         article {
             margin-bottom: 2rem;
             padding: 1.5rem;
-            /* Removed border, relying on background and shadow */
             border: none;
             border-radius: var(--pico-card-border-radius);
             background-color: var(--pico-card-background-color);
-            box-shadow: var(--pico-box-shadow); /* Use standard box shadow for separation */
+            box-shadow: var(--pico-box-shadow);
         }
         hgroup { margin-bottom: 1rem; }
         p { line-height: 1.6; }
@@ -36,7 +46,7 @@
         .token-display strong { display: block; margin-bottom: 0.2rem; }
 
         /* --- Status Boxes & Indicators --- */
-        .status-box { padding: 1rem 1.25rem; border: 1px solid var(--pico-form-element-border-color); border-radius: var(--pico-border-radius); margin-top: 1rem; margin-bottom: 1rem; word-wrap: break-word; background-color: var(--pico-card-sectioning-background-color); /* Slightly different background */ color: var(--pico-color); border-left-width: 4px; /* Slightly thinner side border */ box-shadow: var(--pico-box-shadow-inset); }
+        .status-box { padding: 1rem 1.25rem; border: 1px solid var(--pico-form-element-border-color); border-radius: var(--pico-border-radius); margin-top: 1rem; margin-bottom: 1rem; word-wrap: break-word; background-color: var(--pico-card-sectioning-background-color); color: var(--pico-color); border-left-width: 4px; box-shadow: var(--pico-box-shadow-inset); }
         .status-box p:last-child { margin-bottom: 0; }
         .status-box strong { color: var(--pico-h_color); }
         .status-box.error { border-left-color: var(--pico-color-red-600); }
@@ -55,26 +65,42 @@
 
         /* --- Forms & Buttons --- */
         form { display: inline-block; margin: 0; }
-        button.delete-button { font-size: 0.85em; padding: 0.4rem 0.6rem; --pico-color: var(--pico-color-red-600); --pico-color-hover: var(--pico-color-red-700); --pico-color-focus: var(--pico-color-red-700); }
-
-        /* --- Toggle Switch Styling (iOS inspired) --- */
         .agent-control-section { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-top: 1.5rem; }
         .agent-status-info { flex-grow: 1; }
-        .switch-container { display: flex; align-items: center; }
-        .switch { position: relative; display: inline-block; width: 56px; height: 30px; margin-left: 1rem; }
-        .switch input { opacity: 0; width: 0; height: 0; }
-        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--pico-form-element-disabled-background-color); -webkit-transition: .3s; transition: .3s; border-radius: 30px; border: 1px solid var(--pico-form-element-border-color); }
-        .slider:before { position: absolute; content: ""; height: 22px; width: 22px; left: 3px; bottom: 3px; background-color: white; -webkit-transition: .3s; transition: .3s; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
-        input:checked + .slider { background-color: var(--pico-color-green-500); border-color: var(--pico-color-green-600); }
-        input:focus + .slider { box-shadow: 0 0 1px var(--pico-color-green-500); }
-        input:checked + .slider:before { -webkit-transform: translateX(26px); -ms-transform: translateX(26px); transform: translateX(26px); }
-        /* Disabled state */
-        input:disabled + .slider { cursor: not-allowed; background-color: var(--pico-form-element-disabled-background-color); opacity: 0.6; border-color: var(--pico-form-element-border-color); }
-        input:disabled + .slider:before { background-color: var(--pico-muted-color); }
+        .agent-action-button { margin-left: 1rem; /* Add some space next to status text */ }
+
+        /* Custom Button Styles */
+        button.button-start {
+            --pico-color: white; /* Text color */
+            --pico-background-color: var(--button-color-green);
+            --pico-border-color: var(--button-color-green);
+             --pico-color-hover: white;
+            --pico-background-color-hover: var(--button-color-green-hover);
+            --pico-border-color-hover: var(--button-color-green-hover);
+        }
+        button.button-stop {
+             --pico-color: white; /* Text color */
+             --pico-background-color: var(--button-color-red);
+             --pico-border-color: var(--button-color-red);
+             --pico-color-hover: white;
+             --pico-background-color-hover: var(--button-color-red-hover);
+             --pico-border-color-hover: var(--button-color-red-hover);
+        }
+        /* Ensure disabled states use standard Pico disabled style */
+        button.button-start:disabled,
+        button.button-stop:disabled {
+            --pico-color: var(--pico-form-element-disabled-color);
+            --pico-background-color: var(--pico-form-element-disabled-background-color);
+            --pico-border-color: var(--pico-form-element-disabled-border-color);
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+        button.delete-button { font-size: 0.85em; padding: 0.4rem 0.6rem; --pico-color: var(--pico-color-red-600); --pico-color-hover: var(--pico-color-red-700); --pico-color-focus: var(--pico-color-red-700); }
 
         /* --- Table Styling --- */
         figure { margin: 1.5rem 0; overflow-x: auto; }
-        table { white-space: nowrap; width: 100%; } /* Ensure table takes full width */
+        table { white-space: nowrap; width: 100%; }
         table th { font-weight: 600; background-color: var(--pico-table-header-background); color: var(--pico-table-header-color); }
         table td, table th { padding: 0.75rem 1rem; vertical-align: middle; }
         table tbody tr:hover { background-color: var(--pico-table-row-striping-background-color); }
@@ -100,22 +126,21 @@
 
         /* --- Log Output Styling --- */
         #log-output {
-            height: 400px; /* Adjust height as needed */
-            overflow-y: scroll; /* Enable vertical scrolling */
-            background-color: var(--pico-code-background-color); /* Use theme background */
-            color: var(--pico-color); /* Use theme text color */
+            height: 400px;
+            overflow-y: scroll;
+            background-color: var(--pico-code-background-color);
+            color: var(--pico-color);
             border: 1px solid var(--pico-form-element-border-color);
             border-radius: var(--pico-border-radius);
             padding: 1rem;
             font-family: var(--pico-font-family-monospace);
-            font-size: 0.85em; /* Smaller font for logs */
+            font-size: 0.85em;
             line-height: 1.5;
-            white-space: pre-wrap;   /* Wrap long lines */
-            word-wrap: break-word; /* Break words if needed */
-            box-shadow: var(--pico-box-shadow-inset); /* Subtle inset shadow */
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            box-shadow: var(--pico-box-shadow-inset);
         }
-        #log-output div { margin-bottom: 2px; /* Tiny space between lines */ }
-        /* Style for status messages from the stream */
+        #log-output div { margin-bottom: 2px; }
         #log-output .log-status { font-style: italic; color: var(--pico-muted-color); }
         #log-output .log-status.error { color: var(--pico-color-red-600); font-weight: bold; }
         #log-output .log-status.connected { color: var(--pico-color-green-600); }
@@ -160,13 +185,16 @@
                          {{ agent_state.container_status.replace('_',' ') }}
                      </strong>
                  </div>
-                 <div class="switch-container">
-                     <label class="switch" aria-label="Toggle Cloudflared Agent">
-                         <input type="checkbox" id="agent-toggle"
-                                {{ 'checked' if agent_state.container_status=='running' else '' }}
-                                {{ 'disabled' if not tunnel_state.get('token') or not docker_available else '' }}>
-                         <span class="slider"></span>
-                     </label>
+                 <div class="agent-action-button">
+                     {% if agent_state.container_status=='running' %}
+                         <form action="{{ url_for('stop_tunnel') }}" method="post">
+                             <button type="submit" class="button-stop" {{ 'disabled' if not docker_available else '' }}>Stop Agent</button>
+                         </form>
+                     {% else %}
+                         <form action="{{ url_for('start_tunnel') }}" method="post">
+                             <button type="submit" class="button-start" {{ 'disabled' if not tunnel_state.get('token') or not docker_available else '' }}>Start Agent</button>
+                         </form>
+                     {% endif %}
                  </div>
             </div>
         </article>
@@ -231,42 +259,7 @@
       function formatTimeDifference(diffMillis) { const totalSeconds = Math.round(Math.abs(diffMillis / 1000)); if (totalSeconds < 60) { return diffMillis >= 0 ? 'in <1m' : 'Expired <1m ago'; } const days = Math.floor(totalSeconds / (3600 * 24)); const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600); const minutes = Math.floor((totalSeconds % 3600) / 60); let parts = []; if (days > 0) parts.push(`${days}d`); if (hours > 0) parts.push(`${hours}h`); if (minutes > 0 || (days === 0 && hours === 0)) parts.push(`${minutes}m`); const timeString = parts.join(' '); return diffMillis >= 0 ? `in ${timeString}` : `Expired ${timeString} ago`; }
       function updateCountdowns() { const now = new Date(); countdownElements.forEach(span => { const td = span.closest('td'); if (!td) return; const deleteAtISO = td.dataset.deleteAt; if (!deleteAtISO) return; try { const targetDate = new Date(deleteAtISO); if (isNaN(targetDate.getTime())) { throw new Error("Invalid date parsed"); } const diff = targetDate - now; span.textContent = `(${formatTimeDifference(diff)})`; if (diff < 0) { span.classList.add('expired'); } else { span.classList.remove('expired'); } } catch (e) { console.error("Error parsing date for countdown:", deleteAtISO, e); span.textContent = "(invalid date)"; } }); }
       updateCountdowns(); // Run once on load
-      // Interval potentially useful if you remove page reload on toggle
-      // const countdownInterval = setInterval(updateCountdowns, 30000);
-
-      // --- Agent Toggle Switch Logic ---
-      const agentToggle = document.getElementById('agent-toggle');
-      if (agentToggle) {
-          agentToggle.addEventListener('change', function() {
-              const isChecked = this.checked;
-              const url = isChecked ? "{{ url_for('start_tunnel') }}" : "{{ url_for('stop_tunnel') }}";
-              const actionVerb = isChecked ? 'Starting' : 'Stopping';
-
-              // Disable toggle immediately to prevent rapid clicks
-              this.disabled = true;
-              console.log(`${actionVerb} agent...`);
-              // Optionally update status text immediately (e.g., add a temporary "pending" state)
-
-              fetch(url, { method: 'POST' })
-                  .then(response => {
-                      if (!response.ok) {
-                          // Basic error handling - could show a notification
-                          console.error(`${actionVerb} request failed with status: ${response.status}`);
-                      }
-                      // Reload the page after a short delay to reflect backend state changes
-                      setTimeout(() => {
-                          window.location.reload();
-                      }, 1500); // Delay allows backend some time, adjust as needed
-                  })
-                  .catch(error => {
-                      console.error(`Error during ${actionVerb} request:`, error);
-                      // Re-enable toggle even on error after delay, or reload anyway
-                       setTimeout(() => {
-                          window.location.reload();
-                      }, 1500);
-                  });
-          });
-      }
+      // const countdownInterval = setInterval(updateCountdowns, 30000); // Keep commented unless needed
 
 
       // --- Real-time Log Streaming ---
@@ -275,21 +268,17 @@
       let initialConnectMessageCleared = false; // Flag to clear initial message
 
       function addLogLine(message, type = 'log') {
-            // Clear initial message on first actual log line
             if (!initialConnectMessageCleared && logOutput.textContent.includes('Connecting to log stream...')) {
-                logOutput.textContent = ''; // Clear the initial message
+                logOutput.textContent = '';
                 initialConnectMessageCleared = true;
             }
-
             const newLogLine = document.createElement('div');
-            newLogLine.textContent = message; // Use textContent to prevent XSS
-
+            newLogLine.textContent = message;
             if (type === 'status') { newLogLine.classList.add('log-status'); }
             else if (type === 'error') { newLogLine.classList.add('log-status', 'error'); }
             else if (type === 'connected') { newLogLine.classList.add('log-status', 'connected'); }
-            // Add more types (e.g., 'warning') if needed based on log level parsing
 
-            const isScrolledToBottom = logOutput.scrollHeight - logOutput.clientHeight <= logOutput.scrollTop + 5; // Add buffer
+            const isScrolledToBottom = logOutput.scrollHeight - logOutput.clientHeight <= logOutput.scrollTop + 5;
             logOutput.appendChild(newLogLine);
 
             while (logOutput.childNodes.length > maxLogLines) {
@@ -299,15 +288,15 @@
       }
 
       function connectEventSource() {
-          if (!!window.EventSource) { // Check if browser supports Server-Sent Events
-              const logSource = new EventSource('/stream-logs'); // Connect to the stream
+          if (!!window.EventSource) {
+              const logSource = new EventSource('/stream-logs');
               logSource.onopen = function() { console.log("Log stream connection opened."); };
               logSource.onmessage = function(event) { addLogLine(event.data, 'log'); };
               logSource.onerror = function(err) {
                   console.error("EventSource failed:", err);
                   addLogLine("--- Log stream connection error. Retrying... ---", 'error');
-                  logSource.close(); // Close the connection
-                  setTimeout(connectEventSource, 5000); // Retry after 5 seconds
+                  logSource.close();
+                  setTimeout(connectEventSource, 5000);
               };
           } else {
               logOutput.textContent = "Your browser doesn't support Server-Sent Events, cannot display real-time logs.";
