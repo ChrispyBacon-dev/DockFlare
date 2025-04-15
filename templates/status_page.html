@@ -43,7 +43,6 @@
 
         /* --- Code & Pre Styling (More Consistent) --- */
         code { background-color: var(--pico-code-background-color); color: var(--pico-code-color); padding: 0.15em 0.4em; border-radius: var(--pico-border-radius); font-size: 0.9em; /* Consistent code size */ font-family: var(--pico-font-family-monospace); word-break: break-word; }
-        /* Removed specific rule for td/h3/h4 code */
         pre { background-color: var(--pico-code-background-color); border: 1px solid var(--pico-form-element-border-color); border-radius: var(--pico-border-radius); padding: 0.75rem 1rem; color: var(--pico-color); margin-top: 0.25rem; white-space: pre-wrap; word-break: break-all; font-family: var(--pico-font-family-monospace); font-size: 0.9em; /* Consistent pre size */ line-height: 1.5; }
         .token-display { margin-top: 0.5rem; }
         .token-display strong { display: block; margin-bottom: 0.2rem; }
@@ -72,38 +71,37 @@
         .agent-status-info { flex-grow: 1; }
         .agent-action-button { margin-left: 1rem; }
 
-        /* Custom Button Styles - Ensures background color is applied in base state */
+        /* Custom Button Styles - Using direct properties */
         button.button-start {
-            --pico-color: white; /* Text color */
-            background-color: var(--button-color-green); /* Apply base background */
-            border-color: var(--button-color-green); /* Apply base border */
-             --pico-color-hover: white;
-            --pico-background-color-hover: var(--button-color-green-hover);
-            --pico-border-color-hover: var(--button-color-green-hover);
+            color: white; /* Direct text color */
+            background-color: var(--button-color-green); /* Base background */
+            border-color: var(--button-color-green); /* Base border */
         }
+        button.button-start:not(:disabled):hover { /* Apply hover only if not disabled */
+             color: white;
+             background-color: var(--button-color-green-hover); /* Hover background */
+             border-color: var(--button-color-green-hover); /* Hover border */
+        }
+
         button.button-stop {
-             --pico-color: white; /* Text color */
-             background-color: var(--button-color-red); /* Apply base background */
-             border-color: var(--button-color-red); /* Apply base border */
-             --pico-color-hover: white;
-             --pico-background-color-hover: var(--button-color-red-hover);
-             --pico-border-color-hover: var(--button-color-red-hover);
+             color: white; /* Direct text color */
+             background-color: var(--button-color-red); /* Base background */
+             border-color: var(--button-color-red); /* Base border */
         }
+         button.button-stop:not(:disabled):hover { /* Apply hover only if not disabled */
+             color: white;
+             background-color: var(--button-color-red-hover); /* Hover background */
+             border-color: var(--button-color-red-hover); /* Hover border */
+        }
+
         /* Ensure disabled states use standard Pico disabled style (important!) */
         button.button-start:disabled,
         button.button-stop:disabled {
-            color: var(--pico-form-element-disabled-color) !important; /* Use !important if needed to override */
+            color: var(--pico-form-element-disabled-color) !important;
             background-color: var(--pico-form-element-disabled-background-color) !important;
             border-color: var(--pico-form-element-disabled-border-color) !important;
             cursor: not-allowed;
             opacity: 0.5;
-            /* Reset custom vars just in case, though overrides above should work */
-            --pico-color: var(--pico-form-element-disabled-color);
-            --pico-background-color: var(--pico-form-element-disabled-background-color);
-            --pico-border-color: var(--pico-form-element-disabled-border-color);
-            --pico-color-hover: var(--pico-form-element-disabled-color);
-            --pico-background-color-hover: var(--pico-form-element-disabled-background-color);
-            --pico-border-color-hover: var(--pico-form-element-disabled-border-color);
         }
 
         button.delete-button { font-size: 0.85em; padding: 0.4rem 0.6rem; --pico-color: var(--pico-color-red-600); --pico-color-hover: var(--pico-color-red-700); --pico-color-focus: var(--pico-color-red-700); }
