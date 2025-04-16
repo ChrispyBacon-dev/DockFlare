@@ -80,7 +80,6 @@ This method allows you to run DockFlare quickly without cloning the entire repos
       dockflare_data:
     networks:
       cloudflare-net:
-      driver: bridge
       name: cloudflare-net # Creates/uses a dedicated network for the tunnel
     ```
 
