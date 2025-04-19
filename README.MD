@@ -179,8 +179,8 @@ This method involves cloning the repository, which gives you access to the examp
           cloudflare.tunnel.enable: "true" # Required: Tells DockFlare to manage this service
           cloudflare.tunnel.hostname: "my-service.example.com" # Required: Your public hostname
           cloudflare.tunnel.service: "http://my-web-app:80" # Required: Internal service URL (use container name/alias and port)
-          # cloudflare.tunnel.zonename: "other-domain.com" # Optional: Use if hostname is on a different zone than CF_ZONE_ID
           cloudflare.tunnel.no_tls_verify: "true" # Optional: Disables TLS verification for this service
+          # cloudflare.tunnel.zonename: "other-domain.com" # Optional: Use if hostname is on a different zone than CF_ZONE_ID
     ```
     *   Replace `"my-service.example.com"` with the desired public hostname (must be within a zone managed by your Cloudflare account).
     *   Replace `"http://my-web-app:80"` with the internal URL of your service (use the service/container name and the port it listens on *within the Docker network*).
