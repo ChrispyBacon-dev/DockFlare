@@ -2,7 +2,7 @@
 
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/ChrispyBacon-dev/baconflip)
 [![OS](https://img.shields.io/badge/os-linux%20%7C%20windows%20%7C%20macos-brightgreen)]()
-[![CPU Architectures](https://img.shields.io/badge/CPU-x86%20%7C%20-brightgreen)](https://en.wikipedia.org/wiki/Central_processing_unit)
+[![CPU Architectures](https://img.shields.io/badge/CPU-x86_64%20%7C%20arm64-brightgreen)](https://en.wikipedia.org/wiki/Central_processing_unit)
 [![Generic badge](https://img.shields.io/badge/Status-Alpha-yellow.svg)](https://shields.io/)
 [![Docker Pulls](https://img.shields.io/docker/pulls/alplat/dockflare)](https://hub.docker.com/r/alplat/dockflare)
 [![made-with-python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/)
@@ -157,8 +157,8 @@ This method involves cloning the repository, which gives you access to the examp
 
 ### Architecture Support
 
-*   **Currently Supported:** The pre-built Docker image (`alplat/dockflare:stable`) is currently only available for `x86_64` / `amd64` architectures.
-*   **Future Support:** `arm64` support (e.g., for Raspberry Pi, Apple Silicon) is planned for a future release.
+*   **Currently Supported:** The pre-built Docker image (`alplat/dockflare:stable`) now supports both `x86_64` / `amd64` and `arm64` architectures.
+*   **Automatic Architecture Detection:** The `Dockerfile` dynamically detects the system architecture and downloads the appropriate `cloudflared` binary during the build process.
 
 ---
 

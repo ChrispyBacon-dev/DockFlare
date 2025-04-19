@@ -18,20 +18,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     # Clean up apt cache to reduce image size
     && rm -rf /var/lib/apt/lists/* \
-    # Download cloudflared binary for linux amd64
-    && wget -q https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64.deb \
-    # Install the downloaded package
-    && dpkg -i cloudflared-linux-amd64.deb \
-    # If dpkg fails due to missing dependencies, uncomment the next line
-    # && apt-get install -f -y --no-install-recommends \
-    # Clean up the downloaded .deb file
-    && rm cloudflared-linux-amd64.deb \
-    # Verify cloudflared installation (optional but good practice)
-    && cloudflared --version \
-    # Create the default cloudflared directory to avoid path errors
-    # This directory is expected by cloudflared even if cert.pem isn't used for API commands
-    && mkdir -p /root/.cloudflared \
-    && echo "Created /root/.cloudflared directory" # Optional: confirmation log
+    # Dynamically determine architecture and download the appropriate cloudflared binary
+    && ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "amd64" ]; then \
+        CLOUDFLARED_ARCH="linux-amd64"; \
+    elif [ "$ARCH" = "arm64" ]; then \
+        CLOUDFLARED_ARCH="linux-arm64"; \
+    else \
+        echo "Unsupported architecture: $ARCH" && exit 1; \
+    fi && \
+    wget -q https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-$CLOUDFLARED_ARCH.deb && \
+    dpkg -i cloudflared-$CLOUDFLARED_ARCH.deb && \
+    rm cloudflared-$CLOUDFLARED_ARCH.deb && \
+    cloudflared --version && \
+    mkdir -p /root/.cloudflared && \
+    echo "Created /root/.cloudflared directory" # Optional: confirmation log
 
 # Install Python dependencies
 # Copy requirements file first to leverage Docker cache
