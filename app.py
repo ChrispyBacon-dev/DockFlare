@@ -649,21 +649,20 @@ def update_cloudflare_config():
 
 def process_container_start(container):
     """Processes a container start event based on labels."""
-    if not container:
-        return
+    if not container: return
     container_id = None
     container_name = "Unknown"
     try:
         container_id = container.id
         try:
-            container.reload()
-            container_name = container.name
+             container.reload()
+             container_name = container.name
         except NotFound:
-            logging.warning(f"Container {container_id[:12]} not found processing start (likely stopped very quickly?).")
-            return
+             logging.warning(f"Container {container_id[:12]} not found processing start (likely stopped very quickly?).")
+             return
         except APIError as e:
-            logging.error(f"Docker API error reloading container {container_id[:12]}: {e}")
-            return
+             logging.error(f"Docker API error reloading container {container_id[:12]}: {e}")
+             return
 
         labels = container.labels
         enabled_label = f"{LABEL_PREFIX}.enable"
@@ -686,11 +685,11 @@ def process_container_start(container):
             return
 
         if not is_valid_hostname(hostname):
-            logging.warning(f"Ignoring start: {container_name} ({container_id[:12]}): Invalid hostname format '{hostname}'.")
-            return
+             logging.warning(f"Ignoring start: {container_name} ({container_id[:12]}): Invalid hostname format '{hostname}'.")
+             return
         if not is_valid_service(service):
-            logging.warning(f"Ignoring start: {container_name} ({container_id[:12]}): Invalid service format '{service}'. Needs protocol (http/https/tcp/unix) or host:port.")
-            return
+             logging.warning(f"Ignoring start: {container_name} ({container_id[:12]}): Invalid service format '{service}'. Needs protocol (http/https/tcp/unix) or host:port.")
+             return
 
         target_zone_id = None
         if zone_name:
@@ -704,8 +703,8 @@ def process_container_start(container):
             target_zone_id = CF_ZONE_ID
 
         if not target_zone_id:
-            logging.error(f"Cannot manage DNS for {hostname} (container {container_name}): No valid Zone ID found (label lookup failed and no default CF_ZONE_ID set?).")
-            return
+             logging.error(f"Cannot manage DNS for {hostname} (container {container_name}): No valid Zone ID found (label lookup failed and no default CF_ZONE_ID set?).")
+             return
 
         logging.info(f"Managing {hostname} (from {container_name}) in Zone ID: {target_zone_id}")
 
@@ -738,20 +737,20 @@ def process_container_start(container):
                         existing_rule["container_id"] = container_id
                         state_changed_locally = True
                     if service_changed:
-                        logging.info(f"Updating service for active rule {hostname}: '{existing_rule.get('service')}' -> '{service}'.")
-                        existing_rule["service"] = service
-                        state_changed_locally = True
-                        needs_cf_update = True
+                         logging.info(f"Updating service for active rule {hostname}: '{existing_rule.get('service')}' -> '{service}'.")
+                         existing_rule["service"] = service
+                         state_changed_locally = True
+                         needs_cf_update = True
                     if no_tls_verify_changed:
-                        logging.info(f"Updating noTLSVerify for active rule {hostname}: '{existing_rule.get('no_tls_verify')}' -> '{no_tls_verify}'.")
-                        existing_rule["no_tls_verify"] = no_tls_verify
-                        state_changed_locally = True
-                        needs_cf_update = True
+                         logging.info(f"Updating noTLSVerify for active rule {hostname}: '{existing_rule.get('no_tls_verify')}' -> '{no_tls_verify}'.")
+                         existing_rule["no_tls_verify"] = no_tls_verify
+                         state_changed_locally = True
+                         needs_cf_update = True
                     if zone_id_changed:
-                        logging.warning(f"Zone ID for active rule {hostname} changed ('{existing_rule.get('zone_id')}' -> '{target_zone_id}'). DNS in old zone may be stale if cleanup failed.")
-                        existing_rule["zone_id"] = target_zone_id
-                        state_changed_locally = True
-                        needs_cf_update = True
+                         logging.warning(f"Zone ID for active rule {hostname} changed ('{existing_rule.get('zone_id')}' -> '{target_zone_id}'). DNS in old zone may be stale if cleanup failed.")
+                         existing_rule["zone_id"] = target_zone_id
+                         state_changed_locally = True
+                         needs_cf_update = True
             else:
                 logging.info(f"Adding new active rule for hostname: {hostname}")
                 managed_rules[hostname] = {
@@ -776,16 +775,16 @@ def process_container_start(container):
                 if tunnel_state.get("id"):
                     dns_record_id = create_cloudflare_dns_record(target_zone_id, hostname, tunnel_state["id"])
                     if dns_record_id:
-                        logging.info(f"DNS record management in zone {target_zone_id} successful for {hostname}.")
+                         logging.info(f"DNS record management in zone {target_zone_id} successful for {hostname}.")
                     else:
-                        logging.error(f"CRITICAL: Tunnel config updated for {hostname} but failed to create/verify DNS record in zone {target_zone_id}!")
-                        cloudflared_agent_state["last_action_status"] = f"Error: Failed creating DNS for {hostname} in zone {target_zone_id}."
+                         logging.error(f"CRITICAL: Tunnel config updated for {hostname} but failed to create/verify DNS record in zone {target_zone_id}!")
+                         cloudflared_agent_state["last_action_status"] = f"Error: Failed creating DNS for {hostname} in zone {target_zone_id}."
                 else:
-                    logging.error("Missing Tunnel ID - cannot manage DNS record for {hostname}.")
+                     logging.error("Missing Tunnel ID - cannot manage DNS record for {hostname}.")
             else:
                 logging.error(f"Failed to update Cloudflare tunnel config after processing start for {hostname}. DNS record not managed.")
         elif state_changed_locally:
-            logging.debug(f"Local state updated for {hostname} (e.g., container ID), no Cloudflare config change needed.")
+             logging.debug(f"Local state updated for {hostname} (e.g., container ID), no Cloudflare config change needed.")
 
     except NotFound:
         logging.warning(f"Container {container_name} ({container_id[:12] if container_id else 'Unknown'}) not found during start processing.")
