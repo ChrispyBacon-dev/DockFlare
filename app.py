@@ -1388,7 +1388,7 @@ def stop_cloudflared_container():
         return success_flag
 
 def update_cloudflare_config():
-    """Updates the Cloudflare tunnel ingress configuration if needed."""
+    """Updates the Cloudflare tunnel ingress configuration if needed, preserving external rules."""
     if not tunnel_state.get("id"):
         logging.warning("Cannot update CF config, tunnel ID missing.")
         return False
@@ -1424,32 +1424,64 @@ def update_cloudflare_config():
             logging.error("Failed to fetch current CF config, aborting update check.")
             return False
 
-        current_cf_ingress = [r for r in current_config.get("ingress", []) if r.get("service") != catch_all_rule["service"]]
+        # Extract just the rules managed by this instance for comparison purposes
+        current_cf_ingress = current_config.get("ingress", [])
+        current_cf_all_hostnames = {r.get("hostname") for r in current_cf_ingress if r.get("hostname")}
+        current_managed_hostnames = {hostname for hostname in managed_rules}
+        
+        # Identify external rules (rules that aren't managed by this instance)
+        external_rules = [
+            r for r in current_cf_ingress 
+            if r.get("hostname") and r.get("hostname") not in current_managed_hostnames
+            and r.get("service") != catch_all_rule.get("service")
+        ]
+        
+        # Keep track of the catch-all rule if it exists in the current config
+        existing_catch_all = next((r for r in current_cf_ingress if r.get("service") == catch_all_rule["service"]), None)
+        
+        # For comparison, only consider rules that we're managing
+        current_cf_managed_ingress = [
+            r for r in current_cf_ingress 
+            if r.get("hostname") in current_managed_hostnames
+        ]
 
         def rule_to_canonical(rule):
             items = sorted([(k, v) for k, v in rule.items() if k in ["hostname", "service"]])
             return tuple(items)
 
         try:
-             current_cf_set = {rule_to_canonical(r) for r in current_cf_ingress if r.get("hostname") and r.get("service")}
-             desired_set = {rule_to_canonical(r) for r in desired_ingress_rules if r.get("hostname") and r.get("service")}
+            current_cf_set = {rule_to_canonical(r) for r in current_cf_managed_ingress if r.get("hostname") and r.get("service")}
+            desired_set = {rule_to_canonical(r) for r in desired_ingress_rules if r.get("hostname") and r.get("service")}
         except Exception as e:
-             logging.error(f"Error creating canonical rule sets for comparison: {e}", exc_info=True)
-             return False
+            logging.error(f"Error creating canonical rule sets for comparison: {e}", exc_info=True)
+            return False
 
-        if current_cf_set == desired_set:
+        if current_cf_set == desired_set and len(external_rules) == 0:
             logging.info("No changes detected in CF tunnel config. Skipping API update.")
             needs_api_update = False
         else:
-            logging.info("Change detected. Desired ingress rules differ from current CF config.")
-            logging.debug(f"Current CF rules: {current_cf_set}")
-            logging.debug(f"Desired rules: {desired_set}")
+            logging.info("Change detected. Rules need to be updated.")
+            if len(external_rules) > 0:
+                logging.info(f"Preserving {len(external_rules)} external rules found in the current configuration")
+                for rule in external_rules:
+                    logging.debug(f"Preserving external rule for hostname: {rule.get('hostname')}")
+            
+            # Combine external rules with our desired rules
+            final_ingress_rules = external_rules + desired_ingress_rules
+            
+            # Sort by hostname for predictable ordering
+            final_ingress_rules.sort(key=lambda x: x.get("hostname", "") if x.get("hostname") else "zzzz")
+            
+            # Always add the catch-all rule at the end
+            final_ingress_rules.append(catch_all_rule if existing_catch_all is None else existing_catch_all)
+            
             needs_api_update = True
-            final_ingress_rules = desired_ingress_rules + [catch_all_rule]
 
     # Proceed with API update if needed
     if needs_api_update and final_ingress_rules is not None:
-        logging.info(f"Updating Cloudflare tunnel config with {len(final_ingress_rules) - 1} active rules (+1 catch-all)...")
+        logging.info(f"Updating Cloudflare tunnel config with {len(final_ingress_rules) - 1} rules (+1 catch-all)")
+        logging.debug(f"Rules to update: {[r.get('hostname') for r in final_ingress_rules if r.get('hostname')]}")
+        
         endpoint = f"/accounts/{CF_ACCOUNT_ID}/cfd_tunnel/{tunnel_state['id']}/configurations"
         
         # Build the complete config object
@@ -1491,7 +1523,6 @@ def update_cloudflare_config():
     
     # If we reached here, either there were no changes or the update was successful
     return True
-
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
@@ -1503,33 +1534,39 @@ def add_security_headers(response):
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     
-    # Enhanced Content Security Policy that works with reverse proxies
+    # Enhanced Content Security Policy with protocol awareness
+    is_https = request.headers.get('X-Forwarded-Proto') == 'https'
+    
+    # Adjust CSP based on the protocol
     csp = (
         "default-src 'self'; "
-        "connect-src 'self' ws: wss:; " # Allow WebSockets for log streaming
-        "style-src 'self' 'unsafe-inline'; " # Allow inline styles for UI
-        "script-src 'self' 'unsafe-inline'; " # Allow inline scripts for UI functionality
-        "img-src 'self' data: https:; " # Allow data: URLs for SVG images
+        f"connect-src 'self' {('wss:' if is_https else 'ws:')}; "  # Protocol-aware WebSocket
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https:; "
         "font-src 'self'; "
-        "frame-ancestors 'self'; " # Control embedding in iframes
-        "base-uri 'self'; " # Restrict base URI
-        "form-action 'self'; " # Restrict form submissions
-        "upgrade-insecure-requests; " # Upgrade HTTP to HTTPS when possible
+        "frame-ancestors 'self'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
     )
+    
+    # Only include upgrade-insecure-requests for HTTPS
+    if is_https:
+        csp += "upgrade-insecure-requests; "
+        
     response.headers['Content-Security-Policy'] = csp
     
     # Additional headers for reverse proxy and protocol awareness
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    
+    # Only include HSTS for HTTPS
+    if is_https:
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     
     # Cross-origin headers for API compatibility
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-Requested-With, Authorization'
-    
-    # Proxy-related headers to ensure proper protocol detection
-    if request.headers.get('X-Forwarded-Proto'):
-        response.headers['X-Forwarded-Proto'] = request.headers.get('X-Forwarded-Proto')
     
     return response
 
@@ -1538,6 +1575,15 @@ def get_display_token(token):
     if not token:
         return "Not available"
     return f"{token[:5]}...{token[-5:]}" if len(token) > 10 else "Token retrieved (short)"
+
+@app.context_processor
+def inject_protocol():
+    """Inject protocol info into all templates."""
+    is_https = request.headers.get('X-Forwarded-Proto') == 'https'
+    return {
+        'protocol': 'https' if is_https else 'http',
+        'is_https': is_https
+    }
 
 @app.route('/')
 def status_page():
@@ -1702,13 +1748,15 @@ def stream_logs():
     # Create response with appropriate MIME type
     response = Response(event_stream(), mimetype='text/event-stream')
 
+    # Protocol awareness for better compatibility
+    is_https = request.headers.get('X-Forwarded-Proto') == 'https'
+
     # Enhanced headers for better reverse proxy compatibility
     response.headers.update({
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0',
         'X-Accel-Buffering': 'no',  # For Nginx reverse proxy
-        'Transfer-Encoding': 'chunked', # Helps with buffering issues
         'Connection': 'keep-alive',  # Explicitly set keep-alive
         'Content-Type': 'text/event-stream; charset=utf-8',  # Explicit charset
         

@@ -295,6 +295,21 @@
 
 
     <script>
+      document.addEventListener('DOMContentLoaded', function() {
+          // Make all form submissions use the same protocol as the current page
+          document.querySelectorAll('form').forEach(function(form) {
+              form.addEventListener('submit', function(e) {
+                  // Get the current protocol (http: or https:)
+                  const protocol = window.location.protocol; 
+                  // If the form action starts with http: or https:, update it to use current protocol
+                  if (form.action.startsWith('http:') || form.action.startsWith('https:')) {
+                      const url = new URL(form.action);
+                      url.protocol = protocol;
+                      form.action = url.toString();
+                  }
+              });
+          });
+      });
       const themeToggleButton = document.getElementById('theme-toggle');
       const themeToggleIcon = themeToggleButton.querySelector('span');
       const htmlElement = document.documentElement;
