@@ -10,28 +10,20 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 # Install system dependencies needed for downloading and installing cloudflared
-# Also install Node.js and npm for Tailwind CSS compilation
-# Pinning the version is recommended for reproducibility
 # renovate: datasource=github-releases depName=cloudflare/cloudflared versioning=semver
 ENV CLOUDFLARED_VERSION="2024.1.5"
-ENV NODE_VERSION=16
 
 # Install dependencies in one step to keep the layer size down
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     ca-certificates \
-    curl \
-    gnupg \
+    nodejs \
+    npm \
     # Clean up apt cache to reduce image size
     && rm -rf /var/lib/apt/lists/* \
-    # Install Node.js with proper repository setup
-    && mkdir -p /etc/apt/keyrings \
-    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
-    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_VERSION.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list \
-    && apt-get update && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/* \
     # Verify node and npm are installed correctly
-    && node --version && npm --version \
+    && nodejs --version \
+    && npm --version \
     # Dynamically determine architecture and download the appropriate cloudflared binary
     && ARCH=$(dpkg --print-architecture) && \
     if [ "$ARCH" = "amd64" ]; then \
@@ -48,31 +40,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     mkdir -p /root/.cloudflared && \
     echo "Created /root/.cloudflared directory" # Optional: confirmation log
 
-# Copy Tailwind CSS files
+# Create static directory if it doesn't exist and copy Tailwind CSS files
+RUN mkdir -p /app/static
 COPY static/ /app/static/
 COPY tailwind.config.js /app/
 
-# Install Tailwind CSS and build the CSS
+# Install Tailwind CSS globally and build the CSS
 RUN npm install -g tailwindcss postcss autoprefixer && \
     tailwindcss -c tailwind.config.js -i /app/static/main.css -o /app/static/tailwind.css --minify
 
 # Install Python dependencies
-# Copy requirements file first to leverage Docker cache
 COPY requirements.txt .
-# Install packages specified in requirements.txt
-# --no-cache-dir reduces layer size
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application code into the container
-# In this case, just app.py
 COPY app.py .
-
 COPY templates /app/templates
+
 # Inform Docker that the container listens on port 5000 at runtime
-# This is documentation; actual mapping is done in docker-compose.yml or `docker run -p`
 EXPOSE 5000
 
 # Define the command to run the application when the container starts
-# It runs the Flask development server defined in app.py
-# Environment variables (like CF_API_TOKEN) are expected to be passed in at runtime (e.g., via docker-compose)
 CMD ["python", "app.py"]
