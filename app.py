@@ -15,6 +15,7 @@ from docker.errors import NotFound, APIError
 from flask import Flask, jsonify, render_template, redirect, url_for, request, Response, stream_with_context
 from dotenv import load_dotenv
 import requests
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] [%(threadName)s] %(message)s')
 load_dotenv()
@@ -1456,6 +1457,12 @@ def stop_cloudflared_container():
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
+# Apply ProxyFix to trust headers from reverse proxies
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
+
+# Optionally, you can log a message to confirm the middleware is applied
+logging.info("ProxyFix middleware applied to Flask app.")
+
 def get_display_token(token):
     """Returns a truncated token for display."""
     if not token:
@@ -1574,13 +1581,14 @@ def stream_logs():
                     log_entry = log_queue.get(timeout=10)  # Add timeout to prevent indefinite blocking
                     yield f"data: {log_entry}\n\n"
                 except queue.Empty:
+                    logging.debug("No new log entries, continuing...")  # Log debug message for empty queue
                     continue  # No log entry, continue waiting
         except GeneratorExit:
             logging.info("Log stream client disconnected.")
         except Exception as e:
             logging.error(f"Unexpected error in log stream: {e}", exc_info=True)
         finally:
-            pass
+            logging.info("Log stream loop exited.")
     return Response(event_stream(), mimetype='text/event-stream')
 
 def run_background_tasks():
@@ -1655,7 +1663,7 @@ if __name__ == '__main__':
         flask_thread = threading.Thread(
             target=serve,
             args=(app,),
-            kwargs={'host':'0.0.0.0','port':5000},
+            kwargs={'host': '0.0.0.0', 'port': 5000, 'threads': 8},  # Increase threads to 8
             daemon=True,
             name="FlaskWaitressServer"
         )
