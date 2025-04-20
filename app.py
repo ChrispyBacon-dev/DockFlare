@@ -1589,18 +1589,29 @@ def stream_logs():
         logging.info("Log stream client connected.")
         yield f"data: --- Log stream connected ---\n\n"
         try:
+            heartbeat_interval = 15  # Send heartbeat every 15 seconds
+            last_heartbeat = time.time()
+            
             while True:
                 try:
-                    log_entry = log_queue.get(timeout=10)  # Add timeout to prevent indefinite blocking
+                    # Try to get a log entry with a short timeout
+                    log_entry = log_queue.get(timeout=1)
                     yield f"data: {log_entry}\n\n"
+                    last_heartbeat = time.time()  # Reset heartbeat timer after sending real data
                 except queue.Empty:
-                    continue  # No log entry, continue waiting
+                    # Send heartbeat if needed
+                    current_time = time.time()
+                    if current_time - last_heartbeat >= heartbeat_interval:
+                        yield f"data: \n\n"  # Empty data serves as heartbeat
+                        last_heartbeat = current_time
+                    time.sleep(0.1)  # Small sleep to prevent CPU spinning
         except GeneratorExit:
             logging.info("Log stream client disconnected.")
         except Exception as e:
             logging.error(f"Unexpected error in log stream: {e}", exc_info=True)
         finally:
-            pass
+            logging.info("Log stream generator cleanup.")
+            
     return Response(event_stream(), mimetype='text/event-stream')
 
 def run_background_tasks():
@@ -1723,3 +1734,4 @@ if __name__ == '__main__':
         logging.info("Exiting Dockflare application.")
         exit_code = 1 if tunnel_state.get("error") or cloudflared_agent_state.get("container_status") == "docker_unavailable" else 0
         sys.exit(exit_code)
+``` 
