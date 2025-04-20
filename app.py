@@ -1431,11 +1431,11 @@ def update_cloudflare_config():
             return tuple(items)
 
         try:
-             current_cf_set = {rule_to_canonical(r) for r in current_cf_ingress if r.get("hostname") and r.get("service")}
-             desired_set = {rule_to_canonical(r) for r in desired_ingress_rules if r.get("hostname") and r.get("service")}
+            current_cf_set = {rule_to_canonical(r) for r in current_cf_ingress if r.get("hostname") and r.get("service")}
+            desired_set = {rule_to_canonical(r) for r in desired_ingress_rules if r.get("hostname") and r.get("service")}
         except Exception as e:
-             logging.error(f"Error creating canonical rule sets for comparison: {e}", exc_info=True)
-             return False
+            logging.error(f"Error creating canonical rule sets for comparison: {e}", exc_info=True)
+            return False
 
         if current_cf_set == desired_set:
             logging.info("No changes detected in CF tunnel config. Skipping API update.")
@@ -1447,6 +1447,21 @@ def update_cloudflare_config():
             needs_api_update = True
             final_ingress_rules = desired_ingress_rules + [catch_all_rule]
 
+    if needs_api_update:
+        logging.info("Updating Cloudflare tunnel ingress configuration...")
+        endpoint = f"/accounts/{CF_ACCOUNT_ID}/cfd_tunnel/{tunnel_state['id']}/configurations"
+        payload = {"ingress": final_ingress_rules}
+        for attempt in range(MAX_CF_UPDATE_RETRIES):
+            try:
+                cf_api_request("PUT", endpoint, json_data=payload)
+                logging.info("Cloudflare tunnel ingress configuration updated successfully.")
+                return True
+            except requests.exceptions.RequestException as e:
+                logging.error(f"Failed to update CF config (attempt {attempt + 1}/{MAX_CF_UPDATE_RETRIES}): {e}")
+                time.sleep(CF_UPDATE_RETRY_DELAY * (CF_UPDATE_BACKOFF_FACTOR ** attempt))
+        logging.error("Exceeded maximum retries for updating CF config.")
+        return False
+
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
@@ -1455,9 +1470,18 @@ def add_security_headers(response):
     """Add security headers to help with reverse proxies and fix CSS loading issues."""
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
-    response.headers['Content-Security-Policy'] = "default-src 'self' https://cdn.tailwindcss.com https://rsms.me; style-src 'self' 'unsafe-inline' https://rsms.me; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; img-src 'self' data:; font-src 'self' https://rsms.me;"
-    response.headers['Referrer-Policy'] = 'no-referrer-when-downgrade'
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "font-src 'self'; "
+        "connect-src 'self'; "
+        "frame-ancestors 'self';"
+    )
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     return response
 
 def get_display_token(token):
@@ -1535,8 +1559,8 @@ def force_delete_rule(hostname):
         logging.info(f"Attempting immediate DNS record deletion for force-deleted rule: {hostname} in zone {zone_id_for_delete}")
         dns_delete_success = delete_cloudflare_dns_record(zone_id_for_delete, hostname, tunnel_state["id"])
         if not dns_delete_success:
-             logging.error(f"Failed immediate DNS delete for {hostname} in zone {zone_id_for_delete}. Tunnel config update will proceed.")
-             cloudflared_agent_state["last_action_status"] = f"Warning: Failed DNS delete for {hostname}. Tunnel update proceeding."
+            logging.error(f"Failed immediate DNS delete for {hostname} in zone {zone_id_for_delete}. Tunnel config update will proceed.")
+            cloudflared_agent_state["last_action_status"] = f"Warning: Failed DNS delete for {hostname}. Tunnel update proceeding."
     elif not zone_id_for_delete:
         logging.error(f"Cannot delete DNS for {hostname}: Zone ID could not be determined.")
         cloudflared_agent_state["last_action_status"] = f"Error: Cannot delete DNS for {hostname} (missing zone ID)."
@@ -1620,7 +1644,6 @@ def stream_logs():
         'Pragma': 'no-cache',
         'Expires': '0',
         'X-Accel-Buffering': 'no',  # For Nginx
-        'X-Requested-With': 'XMLHttpRequest',
         'Access-Control-Allow-Origin': '*'  # Allow cross-origin access
     })
     return response
