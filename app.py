@@ -15,7 +15,6 @@ from docker.errors import NotFound, APIError
 from flask import Flask, jsonify, render_template, redirect, url_for, request, Response, stream_with_context
 from dotenv import load_dotenv
 import requests
-from werkzeug.middleware.proxy_fix import ProxyFix
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] [%(threadName)s] %(message)s')
 load_dotenv()
@@ -45,23 +44,6 @@ CLOUDFLARED_CONTAINER_NAME = os.getenv('CLOUDFLARED_CONTAINER_NAME', f"cloudflar
 CLOUDFLARED_IMAGE = "cloudflare/cloudflared:latest"
 CLOUDFLARED_NETWORK_NAME = os.getenv('CLOUDFLARED_NETWORK_NAME', 'cloudflare-net')
 
-# Add support for external hostname or base URL
-EXTERNAL_HOSTNAME = os.getenv('EXTERNAL_HOSTNAME', None)
-BASE_URL = os.getenv('BASE_URL', '/')
-
-app = Flask(__name__)
-
-# Ensure the app is defined before any decorators or configurations
-if EXTERNAL_HOSTNAME:
-    @app.before_request
-    def set_external_hostname():
-        if request.is_secure:
-            request.environ['HTTP_HOST'] = f"https://{EXTERNAL_HOSTNAME}"
-        else:
-            request.environ['HTTP_HOST'] = f"http://{EXTERNAL_HOSTNAME}"
-
-if BASE_URL != '/':
-    app.config['APPLICATION_ROOT'] = BASE_URL
 if not CF_API_TOKEN or not TUNNEL_NAME or not CF_ACCOUNT_ID:
     logging.error("FATAL: Missing required environment variables (CF_API_TOKEN, TUNNEL_NAME, CF_ACCOUNT_ID)")
     sys.exit(1)
@@ -1471,13 +1453,8 @@ def stop_cloudflared_container():
         logging.info(f"Exiting stop_cloudflared_container function (Success: {success_flag}).")
         return success_flag
 
+app = Flask(__name__)
 app.secret_key = os.urandom(24)
-
-# Apply ProxyFix to trust headers from reverse proxies
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
-
-# Optionally, you can log a message to confirm the middleware is applied
-logging.info("ProxyFix middleware applied to Flask app.")
 
 def get_display_token(token):
     """Returns a truncated token for display."""
@@ -1597,14 +1574,13 @@ def stream_logs():
                     log_entry = log_queue.get(timeout=10)  # Add timeout to prevent indefinite blocking
                     yield f"data: {log_entry}\n\n"
                 except queue.Empty:
-                    logging.debug("No new log entries, continuing...")  # Log debug message for empty queue
                     continue  # No log entry, continue waiting
         except GeneratorExit:
             logging.info("Log stream client disconnected.")
         except Exception as e:
             logging.error(f"Unexpected error in log stream: {e}", exc_info=True)
         finally:
-            logging.info("Log stream loop exited.")
+            pass
     return Response(event_stream(), mimetype='text/event-stream')
 
 def run_background_tasks():
@@ -1679,7 +1655,7 @@ if __name__ == '__main__':
         flask_thread = threading.Thread(
             target=serve,
             args=(app,),
-            kwargs={'host': '0.0.0.0', 'port': 5000, 'threads': 8},  # Increase threads to 8
+            kwargs={'host':'0.0.0.0','port':5000},
             daemon=True,
             name="FlaskWaitressServer"
         )

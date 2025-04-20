@@ -17,8 +17,6 @@ services:
     environment:
       - STATE_FILE_PATH=/app/data/state.json
       - TZ=Europe/Zurich # Set the timezone to Zurich
-      - EXTERNAL_HOSTNAME=https://dockflare.example.com # Optional: Set the external hostname for reverse proxy
-      - BASE_URL=/ # Optional: Set the base URL if the app is served under a subpath
 volumes:
   dockflare_data:
 networks:
