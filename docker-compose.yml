@@ -1,24 +1,41 @@
 version: '3.8'
 services:
-  cloudflare-tunnel-manager:
-    build: . # for building local docker image
+  dockflare:
+    image: alplat/dockflare:stable  # Use the stable pre-built image
+    # build: .  # Uncomment to build from source instead
     container_name: dockflare
-    # image: alplat/dockflare:stable # The pre-built Docker image (`alplat/dockflare:stable`) is currently only available for `x86_64` / `amd64` architectures.
     restart: unless-stopped
     ports:
-      - "5000:5000"
+      - "5000:5000"  # Web UI port
     env_file:
-      - .env
+      - .env  # Load environment variables from .env file
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - dockflare_data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro  # Required to monitor Docker events
+      - dockflare_data:/app/data  # Persistent storage for state
     networks:
-      - cloudflare-net
+      - cloudflare-net  # Network for communication with other containers
     environment:
       - STATE_FILE_PATH=/app/data/state.json
-      - TZ=Europe/Zurich # Set the timezone to Zurich
+      - TZ=Europe/London  # Set your timezone here
+      
+      # Optional: Uncomment any of these to override .env file settings
+      
+      # Container Scanning:
+      # - SCAN_ALL_NETWORKS=true  # Scan containers across all Docker networks
+      
+      # For reverse proxy usage:
+      # - TRUSTED_PROXIES=172.16.0.0/12  # IP range of your proxy servers
+      
+      # For external cloudflared:
+      # - USE_EXTERNAL_CLOUDFLARED=true
+      # - EXTERNAL_TUNNEL_ID=your-external-tunnel-id
+      
+      # SSL verification for origin services:
+      # - DEFAULT_NO_TLS_VERIFY=false  # Set to true to skip SSL verification for all services
+
 volumes:
-  dockflare_data:
+  dockflare_data:  # Persistent volume for state data
+
 networks:
-  cloudflare-net:
+  cloudflare-net:  # Default network for cloudflared and services
     name: cloudflare-net
