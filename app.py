@@ -541,14 +541,7 @@ def update_cloudflare_config():
             if rule_details.get("status") == "active":
                 service = rule_details.get("service")
                 if service:
-                    no_tls_verify = rule_details.get("no_tls_verify", False)
-                    desired_ingress_rules.append({
-                        "hostname": hostname,
-                        "service": service,
-                        "originRequest": {
-                            "noTLSVerify": no_tls_verify
-                        }
-                    })
+                    desired_ingress_rules.append({"hostname": hostname, "service": service})
                 else:
                     logging.warning(f"Rule {hostname} is active but missing 'service' detail. Skipping.")
 
@@ -669,13 +662,11 @@ def process_container_start(container):
         hostname_label = f"{LABEL_PREFIX}.hostname"
         service_label = f"{LABEL_PREFIX}.service"
         zone_name_label = f"{LABEL_PREFIX}.zonename"
-        no_tls_verify_label = f"{LABEL_PREFIX}.no_tls_verify"
 
         is_enabled = labels.get(enabled_label, "false").lower() in ["true", "1", "t", "yes"]
         hostname = labels.get(hostname_label)
         service = labels.get(service_label)
         zone_name = labels.get(zone_name_label)
-        no_tls_verify = labels.get(no_tls_verify_label, "false").lower() in ["true", "1", "t", "yes"]
 
         if not is_enabled:
             logging.debug(f"Ignoring start: {container_name} ({container_id[:12]}): '{enabled_label}' not true.")
@@ -722,7 +713,6 @@ def process_container_start(container):
                     existing_rule["service"] = service
                     existing_rule["container_id"] = container_id
                     existing_rule["zone_id"] = target_zone_id
-                    existing_rule["no_tls_verify"] = no_tls_verify
                     state_changed_locally = True
                     needs_cf_update = True
                     if zone_id_changed:
@@ -730,7 +720,6 @@ def process_container_start(container):
                 elif existing_rule.get("status") == "active":
                     service_changed = existing_rule.get("service") != service
                     container_changed = existing_rule.get("container_id") != container_id
-                    no_tls_verify_changed = existing_rule.get("no_tls_verify") != no_tls_verify
 
                     if container_changed:
                         logging.info(f"Updating container ID for active rule {hostname}: '{existing_rule.get('container_id')[:12]}' -> '{container_id[:12]}'.")
@@ -739,11 +728,6 @@ def process_container_start(container):
                     if service_changed:
                          logging.info(f"Updating service for active rule {hostname}: '{existing_rule.get('service')}' -> '{service}'.")
                          existing_rule["service"] = service
-                         state_changed_locally = True
-                         needs_cf_update = True
-                    if no_tls_verify_changed:
-                         logging.info(f"Updating noTLSVerify for active rule {hostname}: '{existing_rule.get('no_tls_verify')}' -> '{no_tls_verify}'.")
-                         existing_rule["no_tls_verify"] = no_tls_verify
                          state_changed_locally = True
                          needs_cf_update = True
                     if zone_id_changed:
@@ -758,8 +742,7 @@ def process_container_start(container):
                     "container_id": container_id,
                     "status": "active",
                     "delete_at": None,
-                    "zone_id": target_zone_id,
-                    "no_tls_verify": no_tls_verify
+                    "zone_id": target_zone_id
                 }
                 state_changed_locally = True
                 needs_cf_update = True
@@ -1016,7 +999,6 @@ def reconcile_state():
                      hostname = labels.get(f"{LABEL_PREFIX}.hostname")
                      service = labels.get(f"{LABEL_PREFIX}.service")
                      zone_name = labels.get(f"{LABEL_PREFIX}.zonename")
-                     no_tls_verify = labels.get(f"{LABEL_PREFIX}.no_tls_verify", "false").lower() in ["true", "1", "t", "yes"]
 
                      if enabled and hostname and service:
                          if not is_valid_hostname(hostname): continue
@@ -1028,8 +1010,7 @@ def reconcile_state():
                              "service": service,
                              "container_id": container_id,
                              "container_name": container_name,
-                             "zone_name": zone_name,
-                             "no_tls_verify": no_tls_verify
+                             "zone_name": zone_name
                          }
                  except (NotFound, APIError) as e:
                       logging.warning(f"[Reconcile] Docker error processing container {c.id[:12]}: {e}. Skipping this container.");
@@ -1060,23 +1041,19 @@ def reconcile_state():
                         logging.info(f"[Reconcile] Hostname {hostname} is running again, reactivating pending rule.")
                         rule["status"] = "active"; rule["delete_at"] = None
                         rule["service"] = running_details["service"]; rule["container_id"] = running_details["container_id"]
-                        rule["zone_id"] = target_zone_id; rule["no_tls_verify"] = running_details["no_tls_verify"]
+                        rule["zone_id"] = target_zone_id
                         state_changed_locally = True; needs_cf_update = True
                         hostnames_requiring_dns_check.append(hostname)
                         if zone_id_changed: logging.info(f"[Reconcile] Zone ID for reactivated rule {hostname} updated to {target_zone_id}.")
                     elif rule.get("status") == "active":
                         container_changed = rule.get("container_id") != running_details["container_id"]
                         service_changed = rule.get("service") != running_details["service"]
-                        no_tls_verify_changed = rule.get("no_tls_verify") != running_details["no_tls_verify"]
                         if container_changed:
                              logging.info(f"[Reconcile] Updating container ID for active rule {hostname}.");
                              rule["container_id"] = running_details["container_id"]; state_changed_locally = True
                         if service_changed:
                              logging.info(f"[Reconcile] Updating service for active rule {hostname}.");
                              rule["service"] = running_details["service"]; state_changed_locally = True; needs_cf_update = True
-                        if no_tls_verify_changed:
-                             logging.info(f"[Reconcile] Updating noTLSVerify for active rule {hostname}.");
-                             rule["no_tls_verify"] = running_details["no_tls_verify"]; state_changed_locally = True; needs_cf_update = True
                         if zone_id_changed:
                              logging.warning(f"[Reconcile] Zone ID for active rule {hostname} changed ('{rule.get('zone_id')}' -> '{target_zone_id}'). Updating state.");
                              rule["zone_id"] = target_zone_id; state_changed_locally = True;
@@ -1086,8 +1063,7 @@ def reconcile_state():
                     logging.info(f"[Reconcile] Found running container for new hostname {hostname}. Adding rule.")
                     managed_rules[hostname] = {
                         "service": running_details["service"], "container_id": running_details["container_id"],
-                        "status": "active", "delete_at": None, "zone_id": target_zone_id,
-                        "no_tls_verify": running_details["no_tls_verify"]
+                        "status": "active", "delete_at": None, "zone_id": target_zone_id
                     }
                     state_changed_locally = True; needs_cf_update = True
                     hostnames_requiring_dns_check.append(hostname)
@@ -1570,15 +1546,10 @@ def stream_logs():
         yield f"data: --- Log stream connected ---\n\n"
         try:
             while True:
-                try:
-                    log_entry = log_queue.get(timeout=10)  # Add timeout to prevent indefinite blocking
-                    yield f"data: {log_entry}\n\n"
-                except queue.Empty:
-                    continue  # No log entry, continue waiting
+                log_entry = log_queue.get(block=True)
+                yield f"data: {log_entry}\n\n"
         except GeneratorExit:
             logging.info("Log stream client disconnected.")
-        except Exception as e:
-            logging.error(f"Unexpected error in log stream: {e}", exc_info=True)
         finally:
             pass
     return Response(event_stream(), mimetype='text/event-stream')
@@ -1663,30 +1634,24 @@ if __name__ == '__main__':
         logging.info("Flask server started using waitress on 0.0.0.0:5000.")
 
         while True:
-            try:
-                all_threads_alive = True
-                if flask_thread and not flask_thread.is_alive():
-                    logging.error("Flask server thread terminated unexpectedly!")
-                    all_threads_alive = False
-                if agent_status_thread and not agent_status_thread.is_alive():
-                    logging.warning("Agent status updater thread terminated.")
-                for bg_thread in background_threads:
-                    if bg_thread and not bg_thread.is_alive():
-                        logging.warning(f"{bg_thread.name} thread terminated.")
+             all_threads_alive = True
+             if flask_thread and not flask_thread.is_alive():
+                 logging.error("Flask server thread terminated unexpectedly!")
+                 all_threads_alive = False
+             if agent_status_thread and not agent_status_thread.is_alive():
+                 logging.warning("Agent status updater thread terminated.")
+             for bg_thread in background_threads:
+                 if bg_thread and not bg_thread.is_alive():
+                      logging.warning(f"{bg_thread.name} thread terminated.")
 
-                if not all_threads_alive:
-                    logging.error("A critical thread (Flask server) terminated. Initiating shutdown.")
-                    stop_event.set()
-                    break
-                if stop_event.is_set():
-                    logging.info("Stop event detected by main thread.")
-                    break
-
-                time.sleep(10)
-            except Exception as e:
-                logging.error(f"Unexpected error in main thread monitoring loop: {e}", exc_info=True)
-                stop_event.set()
-                break
+             if not all_threads_alive:
+                 logging.error("A critical thread (Flask server) terminated. Initiating shutdown.")
+                 stop_event.set()
+                 break
+             if stop_event.is_set():
+                 logging.info("Stop event detected by main thread.")
+                 break
+             time.sleep(10)
 
     except ImportError:
         logging.warning("Waitress not found. Using Flask development server (not recommended for production). Install using: pip install waitress")
