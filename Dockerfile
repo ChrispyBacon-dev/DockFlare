@@ -12,6 +12,7 @@ WORKDIR /app
 # Install system dependencies needed for downloading and installing cloudflared
 # Also install cloudflared itself
 # Pinning the version is recommended for reproducibility
+# renovate: datasource=github-releases depName=cloudflare/cloudflared versioning=semver
 ARG CLOUDFLARED_VERSION=2024.1.5 # Check for the latest stable version if desired
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
