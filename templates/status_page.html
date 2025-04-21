@@ -296,18 +296,43 @@
 
     <script>
       document.addEventListener('DOMContentLoaded', function() {
-          // Make all form submissions use the same protocol as the current page
-          document.querySelectorAll('form').forEach(function(form) {
-              form.addEventListener('submit', function(e) {
-                  // Get the current protocol (http: or https:)
-                  const protocol = window.location.protocol; 
-                  // If the form action starts with http: or https:, update it to use current protocol
-                  if (form.action.startsWith('http:') || form.action.startsWith('https:')) {
-                      const url = new URL(form.action);
-                      url.protocol = protocol;
-                      form.action = url.toString();
-                  }
-              });
+          // Fix protocol for CSS, JS and media files
+          const currentProtocol = window.location.protocol;
+          
+          // Fix links in the header
+          document.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
+              if (link.href.startsWith('http:') || link.href.startsWith('https:')) {
+                  const url = new URL(link.href);
+                  url.protocol = currentProtocol;
+                  link.href = url.toString();
+              }
+          });
+          
+          // Fix script sources
+          document.querySelectorAll('script[src]').forEach(script => {
+              if (script.src.startsWith('http:') || script.src.startsWith('https:')) {
+                  const url = new URL(script.src);
+                  url.protocol = currentProtocol;
+                  script.src = url.toString();
+              }
+          });
+          
+          // Fix image sources
+          document.querySelectorAll('img[src]').forEach(img => {
+              if (img.src.startsWith('http:') || img.src.startsWith('https:')) {
+                  const url = new URL(img.src);
+                  url.protocol = currentProtocol;
+                  img.src = url.toString();
+              }
+          });
+          
+          // Fix form actions for delete buttons and other forms
+          document.querySelectorAll('form[action]').forEach(form => {
+              if (form.action.startsWith('http:') || form.action.startsWith('https:')) {
+                  const url = new URL(form.action);
+                  url.protocol = currentProtocol;
+                  form.action = url.toString();
+              }
           });
       });
       const themeToggleButton = document.getElementById('theme-toggle');

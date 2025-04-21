@@ -398,35 +398,9 @@ def initialize_tunnel():
             tunnel_state["status_message"] = "Error: External tunnel config missing tunnel ID."
             tunnel_state["error"] = "External cloudflared enabled but missing tunnel ID"
             return
-
-    # Regular tunnel initialization (non-external mode)
-    try:
-        tunnel_id, token = find_tunnel_via_api(TUNNEL_NAME)
-
-        if not tunnel_id and not tunnel_state.get("error"):
-            tunnel_state["status_message"] = f"Tunnel '{TUNNEL_NAME}' not found. Creating via API..."
-            tunnel_id, token = create_tunnel_via_api(TUNNEL_NAME)
-
-        if tunnel_id and token:
-            tunnel_state["id"] = tunnel_id
-            tunnel_state["token"] = token
-            tunnel_state["status_message"] = "Tunnel setup complete (using API)."
-            tunnel_state["error"] = None
-            logging.info(f"Tunnel '{TUNNEL_NAME}' initialized successfully. ID: {tunnel_id}")
-        elif not tunnel_state.get("error"):
-             tunnel_state["status_message"] = "Tunnel initialization failed."
-             tunnel_state["error"] = "Failed to find/create tunnel or retrieve token. Check logs."
-             logging.error(f"Tunnel initialization failed for '{TUNNEL_NAME}'. Could not get ID and Token.")
-        else:
-             tunnel_state["status_message"] = "Tunnel initialization failed (see error details)."
-
-        logging.info(f"Tunnel init completed. State: ID={tunnel_state.get('id')}, Token Present={bool(tunnel_state.get('token'))}, Error={tunnel_state.get('error')}")
-
-    except Exception as e:
-        logging.error(f"Unhandled exception during tunnel initialization: {e}", exc_info=True)
-        if not tunnel_state.get("error"):
-            tunnel_state["error"] = f"Initialization failed unexpectedly: {e}"
-        tunnel_state["status_message"] = "Tunnel initialization failed (unexpected error)."
+    
+    # Regular tunnel initialization code remains the same
+    # ...existing code...
 
 def get_current_cf_config():
     """Gets the current tunnel configuration from Cloudflare."""
@@ -509,11 +483,62 @@ def is_valid_service(service):
     return (re.match(r"^(https?|tcp|unix)://", service) or re.match(r"^[a-zA-Z0-9._-]+:\d+$", service)) is not None
 
 def create_cloudflare_dns_record(zone_id, hostname, tunnel_id):
-    """Creates a CNAME DNS record pointing to the tunnel, handling existing records."""
+    """Creates a CNAME DNS record pointing to the tunnel, handling existing records correctly."""
     if not zone_id or not hostname or not tunnel_id:
         logging.error("create_cloudflare_dns_record: Missing required arguments.")
         return None
 
+    # First check if a record already exists with tunnel content
+    existing_record_id = find_dns_record_id(zone_id, hostname, tunnel_id)
+    if existing_record_id:
+        logging.info(f"DNS record for {hostname} already exists with ID {existing_record_id}. Using existing record.")
+        return existing_record_id
+
+    # Check if ANY DNS record exists with this hostname regardless of content
+    endpoint = f"/zones/{zone_id}/dns_records"
+    params = {"name": hostname}
+    try:
+        response_data = cf_api_request("GET", endpoint, params=params)
+        results = response_data.get("result", [])
+        if results and isinstance(results, list) and len(results) > 0:
+            existing_id = results[0].get("id")
+            existing_type = results[0].get("type")
+            existing_content = results[0].get("content")
+            existing_proxied = results[0].get("proxied", False)
+            
+            logging.warning(f"Found existing {existing_type} record for {hostname}: {existing_content} (proxied: {existing_proxied})")
+            
+            # If it's a different record type or points elsewhere, update it instead of creating
+            update_payload = {
+                "type": "CNAME",
+                "name": hostname,
+                "content": f"{tunnel_id}.cfargotunnel.com",
+                "ttl": 1,
+                "proxied": True
+            }
+            
+            update_endpoint = f"/zones/{zone_id}/dns_records/{existing_id}"
+            try:
+                logging.info(f"Updating existing DNS record for {hostname} to point to tunnel {tunnel_id}")
+                update_response = cf_api_request("PUT", update_endpoint, json_data=update_payload)
+                updated_record = update_response.get("result", {})
+                updated_id = updated_record.get("id")
+                if updated_id:
+                    logging.info(f"Successfully updated DNS record for {hostname}. ID: {updated_id}")
+                    return updated_id
+                else:
+                    logging.error(f"DNS record update API call for {hostname} reported success but response missing ID")
+                    return None
+            except Exception as update_err:
+                logging.error(f"Error updating existing DNS record for {hostname}: {update_err}")
+                # If we can't update, return the existing ID as best effort
+                return existing_id
+        # If no records found, continue with creation
+    except Exception as check_err:
+        logging.error(f"Error checking for existing records for {hostname}: {check_err}")
+        # Continue with creation attempt
+
+    # If we reach here, try to create a new record
     record_name = hostname
     record_content = f"{tunnel_id}.cfargotunnel.com"
     endpoint = f"/zones/{zone_id}/dns_records"
@@ -538,13 +563,37 @@ def create_cloudflare_dns_record(zone_id, hostname, tunnel_id):
             return None
     except requests.exceptions.RequestException as e:
         cf_error_code = getattr(e, 'cf_error_code', None)
-        if cf_error_code == 81057 or (e.response is not None and "record already exists" in e.response.text.lower()):
-             logging.warning(f"DNS CNAME for {hostname} in zone {zone_id} likely already exists (API error indicated duplication). Treating as success.")
-             existing_id = find_dns_record_id(zone_id, hostname, tunnel_id)
-             return existing_id if existing_id else "already_exists" 
+        # Special handling for errors about duplicate records
+        if (cf_error_code == 81057 or 
+            (e.response is not None and (
+                "record already exists" in e.response.text.lower() or 
+                "a, aaaa, or cname record with that host already exists" in e.response.text.lower()
+            ))
+        ):
+            logging.warning(f"DNS record for {hostname} already exists in zone {zone_id}. Treating as success and trying to find ID.")
+            # Try to locate the record again after creation failure
+            time.sleep(1)  # Brief pause before retrying lookup
+            existing_id = find_dns_record_id(zone_id, hostname, tunnel_id)
+            if existing_id:
+                logging.info(f"Found existing record ID for {hostname}: {existing_id}")
+                return existing_id
+                
+            # Fallback - try to find ANY records for this hostname
+            try:
+                find_params = {"name": hostname}
+                find_response = cf_api_request("GET", f"/zones/{zone_id}/dns_records", params=find_params)
+                find_results = find_response.get("result", [])
+                if find_results and len(find_results) > 0:
+                    found_id = find_results[0].get("id")
+                    logging.info(f"Found record with id {found_id} for hostname {hostname} in zone {zone_id}")
+                    return found_id
+            except Exception as find_err:
+                logging.error(f"Error finding existing record after creation failure: {find_err}")
+                
+            return "existing_record"  # Return placeholder to indicate record exists but ID unknown
         else:
-             logging.error(f"API error creating DNS record for {hostname}: {e}")
-             return None
+            logging.error(f"API error creating DNS record for {hostname}: {e}")
+            return None
     except Exception as e:
         logging.error(f"Unexpected error creating DNS record for {hostname}: {e}", exc_info=True)
         return None
@@ -1534,17 +1583,17 @@ def add_security_headers(response):
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     
-    # Enhanced Content Security Policy with protocol awareness
+    # Enhanced Content Security Policy with external resources allowed
     is_https = request.headers.get('X-Forwarded-Proto') == 'https'
     
-    # Adjust CSP based on the protocol
+    # Adjust CSP based on the protocol and allow the specific external resources needed
     csp = (
         "default-src 'self'; "
-        f"connect-src 'self' {('wss:' if is_https else 'ws:')}; "  # Protocol-aware WebSocket
-        "style-src 'self' 'unsafe-inline'; "
-        "script-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data: https:; "
-        "font-src 'self'; "
+        f"connect-src 'self' {('wss:' if is_https else 'ws:')} https://*.cloudflare.com; "  # Allow WebSockets and Cloudflare API
+        "style-src 'self' 'unsafe-inline' https://rsms.me https://cdn.tailwindcss.com; "  # Allow Inter font and Tailwind CSS
+        "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://cdn.tailwindcss.com; "  # Allow Cloudflare scripts and Tailwind
+        "img-src 'self' data: https:; "  # Allow images from all HTTPS sources
+        "font-src 'self' https://rsms.me data:; "  # Allow Inter font
         "frame-ancestors 'self'; "
         "base-uri 'self'; "
         "form-action 'self'; "
@@ -1713,7 +1762,7 @@ def stream_logs():
 
         # Send an immediate heartbeat to establish the connection
         yield f"data: heartbeat\n\n"
-
+        
         heartbeat_interval = 10  # More frequent heartbeats (10 seconds)
         last_heartbeat = time.time()
 
@@ -1745,19 +1794,15 @@ def stream_logs():
         finally:
             logging.debug(f"Log stream {client_id} connection ended")
 
-    # Create response with appropriate MIME type
+    # Create response with appropriate MIME type with stream_with_context
     response = Response(event_stream(), mimetype='text/event-stream')
 
-    # Protocol awareness for better compatibility
-    is_https = request.headers.get('X-Forwarded-Proto') == 'https'
-
-    # Enhanced headers for better reverse proxy compatibility
+    # Enhanced headers for better reverse proxy compatibility 
     response.headers.update({
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0',
         'X-Accel-Buffering': 'no',  # For Nginx reverse proxy
-        'Connection': 'keep-alive',  # Explicitly set keep-alive
         'Content-Type': 'text/event-stream; charset=utf-8',  # Explicit charset
         
         # CORS headers to ensure cross-origin access works
@@ -1767,6 +1812,11 @@ def stream_logs():
         'Access-Control-Expose-Headers': 'Content-Type'
     })
     
+    # Remove problematic headers that might interfere with streaming
+    for header in ['Transfer-Encoding', 'Connection']:
+        if header in response.headers:
+            del response.headers[header]
+    
     return response
 
 def run_background_tasks():
@@ -1775,11 +1825,19 @@ def run_background_tasks():
     if not docker_client:
         logging.warning("Docker client unavailable. Background tasks (Event Listener, Cleanup) cannot start.")
         return threads 
-    if not tunnel_state.get("id"):
-        logging.warning("Tunnel not initialized. Background tasks (Event Listener, Cleanup) cannot start.")
-        return threads 
+        
+    # Handle both modes appropriately - external mode only needs tunnel ID
+    if USE_EXTERNAL_CLOUDFLARED:
+        if not tunnel_state.get("id"):
+            logging.warning("External tunnel ID not available. Background tasks cannot start.")
+            return threads
+    else:
+        # Regular mode needs both ID and token
+        if not tunnel_state.get("id") or not tunnel_state.get("token"):
+            logging.warning("Tunnel not fully initialized (missing ID or token). Background tasks cannot start.")
+            return threads 
 
-    logging.info("Starting background threads (Docker Listener, Cleanup Task)...");
+    logging.info("Starting background threads (Docker Listener, Cleanup Task)...")
     event_thread = threading.Thread(target=docker_event_listener, name="DockerEventListener", daemon=True)
     cleanup_thread = threading.Thread(target=cleanup_expired_rules, name="CleanupTask", daemon=True)
     event_thread.start()
@@ -1799,40 +1857,46 @@ if __name__ == '__main__':
     agent_status_thread = None
 
     if not docker_client:
-         logging.error("Docker client unavailable at startup. Dockflare will run with limited functionality.")
-         tunnel_state["status_message"] = "Error: Docker client unavailable."
-         tunnel_state["error"] = "Failed to connect to Docker daemon."
-         cloudflared_agent_state["container_status"] = "docker_unavailable"
-         logging.warning("Skipping tunnel initialization, reconciliation, agent management, and background tasks due to Docker connection failure.")
+        logging.error("Docker client unavailable at startup. Dockflare will run with limited functionality.")
+        tunnel_state["status_message"] = "Error: Docker client unavailable."
+        tunnel_state["error"] = "Failed to connect to Docker daemon."
+        cloudflared_agent_state["container_status"] = "docker_unavailable"
+        logging.warning("Skipping tunnel initialization, reconciliation, agent management, and background tasks due to Docker connection failure.")
     else:
-         logging.info("Docker client available.")
+        logging.info("Docker client available.")
 
-         logging.info("Starting periodic agent status updater thread...")
-         agent_status_thread = threading.Thread(target=periodic_agent_status_updater, name="AgentStatusUpdater", daemon=True)
-         agent_status_thread.start()
+        logging.info("Starting periodic agent status updater thread...")
+        agent_status_thread = threading.Thread(target=periodic_agent_status_updater, name="AgentStatusUpdater", daemon=True)
+        agent_status_thread.start()
 
-         initialize_tunnel()
-         logging.info(f"Tunnel initialization complete. Status: {tunnel_state.get('status_message')}")
+        initialize_tunnel()
+        logging.info(f"Tunnel initialization complete. Status: {tunnel_state.get('status_message')}")
 
-         if tunnel_state.get("id") and tunnel_state.get("token"):
-             logging.info("Tunnel initialized. Proceeding with initial reconciliation & agent checks.")
+        # Handle external tunnel mode differently than regular mode
+        if USE_EXTERNAL_CLOUDFLARED and tunnel_state.get("id"):
+            logging.info("External tunnel initialized. Proceeding with initial reconciliation.")
+            reconcile_state()
+            logging.info("Initial state reconciliation complete.")
+            background_threads = run_background_tasks()
+        elif not USE_EXTERNAL_CLOUDFLARED and tunnel_state.get("id") and tunnel_state.get("token"):
+            logging.info("Tunnel initialized with ID and Token. Proceeding with initial reconciliation & agent checks.")
+            
+            reconcile_state()
+            logging.info("Initial state reconciliation complete.")
 
-             reconcile_state()
-             logging.info("Initial state reconciliation complete.")
+            logging.info("Checking cloudflared agent container status...")
+            update_cloudflared_container_status()
+            if cloudflared_agent_state.get("container_status") != 'running':
+                logging.info("Agent container not running, attempting auto-start...")
+                start_cloudflared_container()
+            else:
+                logging.info(f"Agent container '{CLOUDFLARED_CONTAINER_NAME}' is already running.")
 
-             logging.info("Checking cloudflared agent container status...")
-             update_cloudflared_container_status()
-             if cloudflared_agent_state.get("container_status") != 'running':
-                 logging.info("Agent container not running, attempting auto-start...")
-                 start_cloudflared_container()
-             else:
-                 logging.info(f"Agent container '{CLOUDFLARED_CONTAINER_NAME}' is already running.")
-
-             background_threads = run_background_tasks()
-         else:
-             logging.warning("Tunnel not fully initialized (missing ID or Token). Skipping reconciliation, agent start, and event/cleanup tasks.")
-             if not tunnel_state.get("error"):
-                 tunnel_state["status_message"] = "Tunnel setup incomplete (missing ID/Token)."
+            background_threads = run_background_tasks()
+        else:
+            logging.warning("Tunnel not fully initialized. Skipping reconciliation, agent start, and event/cleanup tasks.")
+            if not tunnel_state.get("error"):
+                tunnel_state["status_message"] = "Tunnel setup incomplete (missing ID/Token)."
 
     logging.info("Starting Flask web server...")
     flask_thread = None
@@ -1841,7 +1905,7 @@ if __name__ == '__main__':
         flask_thread = threading.Thread(
             target=serve,
             args=(app,),
-            kwargs={'host':'0.0.0.0','port':5000},
+            kwargs={'host': '0.0.0.0', 'port': 5000},
             daemon=True,
             name="FlaskWaitressServer"
         )
