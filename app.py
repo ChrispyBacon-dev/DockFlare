@@ -364,10 +364,51 @@ def create_tunnel_via_api(name):
 def initialize_tunnel():
     """Finds or creates the tunnel and gets its token."""
     logging.info("Initializing tunnel...")
+    
+    # Add detailed logging to help diagnose issues
+    logging.info(f"Using Cloudflare Account ID: {CF_ACCOUNT_ID}")
+    logging.info(f"API Token available: {'Yes (Token masked for security)' if CF_API_TOKEN else 'No (Missing API token)'}")
+    logging.info(f"Zone ID available: {'Yes: ' + CF_ZONE_ID if CF_ZONE_ID else 'No (Missing Zone ID)'}")
+    logging.info(f"Tunnel Name: {TUNNEL_NAME}")
+    logging.info(f"External mode: {USE_EXTERNAL_CLOUDFLARED}")
+    logging.info(f"External tunnel ID: {EXTERNAL_TUNNEL_ID}")
+    
     tunnel_state["status_message"] = f"Checking for tunnel '{TUNNEL_NAME}' via API..."
     tunnel_state["error"] = None
     tunnel_id = None
     token = None
+    
+    # If external cloudflared is configured, use its tunnel ID
+    if USE_EXTERNAL_CLOUDFLARED:
+        logging.info("External cloudflared configuration detected")
+        if EXTERNAL_TUNNEL_ID:
+            tunnel_id = EXTERNAL_TUNNEL_ID
+            logging.info(f"Using external tunnel ID: {tunnel_id}")
+            tunnel_state["id"] = tunnel_id
+
+            # For external tunnels, we don't need the token since we don't manage the container
+            # But for DNS record management we need the tunnel ID
+            tunnel_state["token"] = None
+            tunnel_state["status_message"] = "Using external tunnel (DNS management only)."
+
+            # Ensure containers with DockFlare labels are detected and added to managed rules
+            logging.info("Scanning for containers with DockFlare labels in external mode...")
+            try:
+                containers = docker_client.containers.list(all=SCAN_ALL_NETWORKS)
+                for container in containers:
+                    process_container_start(container)
+            except Exception as e:
+                logging.error(f"Error scanning containers in external mode: {e}", exc_info=True)
+
+            logging.info(f"External tunnel '{TUNNEL_NAME}' (ID: {tunnel_id}) initialized for DNS management only.")
+            return
+        else:
+            logging.warning("USE_EXTERNAL_CLOUDFLARED is enabled but EXTERNAL_TUNNEL_ID is not provided.")
+            tunnel_state["status_message"] = "Error: External tunnel config missing tunnel ID."
+            tunnel_state["error"] = "External cloudflared enabled but missing tunnel ID"
+            return
+    
+    # Regular tunnel initialization code
     try:
         tunnel_id, token = find_tunnel_via_api(TUNNEL_NAME)
 
