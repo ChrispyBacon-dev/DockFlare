@@ -1834,85 +1834,20 @@ def force_delete_rule(hostname):
 
 @app.route('/stream-logs')
 def stream_logs():
-    """Stream logs using Server-Sent Events with proper context handling for proxies."""
-    client_id = f"client-{random.randint(1000, 9999)}"
-    
-    # Capture necessary information from the request context
-    forwarded_proto = request.headers.get('X-Forwarded-Proto', '')
-    cf_visitor = request.headers.get('Cf-Visitor', '')
-    remote_addr = request.headers.get('X-Real-Ip') or request.headers.get('Cf-Connecting-Ip') or request.remote_addr
-    
-    try:
-        if cf_visitor:
-            cf_visitor_data = json.loads(cf_visitor)
-            scheme = cf_visitor_data.get('scheme', '')
-        else:
-            scheme = ''
-    except:
-        scheme = ''
-    
-    # Log connection details from request context
-    logging.info(f"Log stream request from {client_id} (IP: {remote_addr}), X-Forwarded-Proto: {forwarded_proto}, Cf-Visitor: {scheme}")
-    
-    def generate():
-        """Generator function that yields log entries without accessing Flask request object."""
+    """Streams log messages using Server-Sent Events."""
+    @stream_with_context
+    def event_stream():
+        logging.info("Log stream client connected.")
+        yield f"data: --- Log stream connected ---\n\n"
         try:
-            # Send welcome message
-            yield f"data: --- Log stream connected (client {client_id}) ---\n\n"
-            yield f"data: heartbeat\n\n"
-            
-            # Use shorter heartbeat interval for Cloudflare
-            heartbeat_interval = 2
-            last_heartbeat = time.time()
-
             while True:
-                current_time = time.time()
-                
-                # Send heartbeat more frequently through Cloudflare
-                if current_time - last_heartbeat > heartbeat_interval:
-                    yield f"data: heartbeat\n\n"
-                    last_heartbeat = current_time
-
-                # Get log entry with short timeout
-                try:
-                    log_entry = log_queue.get(timeout=0.1)
-                    if log_entry:
-                        yield f"data: {log_entry}\n\n"
-                except queue.Empty:
-                    # Keep connection alive with frequent comments
-                    yield f": keepalive {int(current_time)}\n\n"
-                
-                # Very short sleep to prevent CPU usage
-                time.sleep(0.05)
-                
+                log_entry = log_queue.get(block=True)
+                yield f"data: {log_entry}\n\n"
         except GeneratorExit:
-            logging.info(f"Client {client_id} disconnected")
-        except Exception as e:
-            logging.error(f"Error in log stream for {client_id}: {e}", exc_info=True)
+            logging.info("Log stream client disconnected.")
         finally:
-            logging.info(f"Event stream for {client_id} ended")
-
-    # Create response with critical headers for streaming through proxies
-    response = Response(generate(), mimetype="text/event-stream")
-    
-    # These headers are essential for proper streaming through Cloudflare
-    response.headers.update({
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0',
-        'Connection': 'keep-alive',
-        'X-Accel-Buffering': 'no',
-        'Content-Type': 'text/event-stream; charset=utf-8',
-    })
-    
-    # Add CORS headers for compatibility
-    response.headers.update({
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET',
-        'Access-Control-Allow-Headers': 'Content-Type'
-    })
-    
-    return response
+            pass
+    return Response(event_stream(), mimetype='text/event-stream')
 
 @app.route('/cloudflare-ping')
 def cloudflare_ping():
