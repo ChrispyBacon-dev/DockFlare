@@ -295,46 +295,118 @@
 
 
     <script>
+      // Fix protocol mismatches on page load
       document.addEventListener('DOMContentLoaded', function() {
-          // Fix protocol for CSS, JS and media files
+          // Get the current protocol
           const currentProtocol = window.location.protocol;
+          const baseUrl = currentProtocol + '//' + window.location.host;
           
-          // Fix links in the header
-          document.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
-              if (link.href.startsWith('http:') || link.href.startsWith('https:')) {
-                  const url = new URL(link.href);
-                  url.protocol = currentProtocol;
-                  link.href = url.toString();
-              }
-          });
-          
-          // Fix script sources
-          document.querySelectorAll('script[src]').forEach(script => {
-              if (script.src.startsWith('http:') || script.src.startsWith('https:')) {
-                  const url = new URL(script.src);
-                  url.protocol = currentProtocol;
-                  script.src = url.toString();
-              }
-          });
-          
-          // Fix image sources
-          document.querySelectorAll('img[src]').forEach(img => {
-              if (img.src.startsWith('http:') || img.src.startsWith('https:')) {
-                  const url = new URL(img.src);
-                  url.protocol = currentProtocol;
-                  img.src = url.toString();
-              }
-          });
-          
-          // Fix form actions for delete buttons and other forms
-          document.querySelectorAll('form[action]').forEach(form => {
-              if (form.action.startsWith('http:') || form.action.startsWith('https:')) {
+          // Fix form actions (for delete buttons and other forms)
+          document.querySelectorAll('form').forEach(form => {
+              if (form.action && form.action.startsWith('http')) {
                   const url = new URL(form.action);
+                  // Ensure form uses same protocol as current page
                   url.protocol = currentProtocol;
                   form.action = url.toString();
               }
           });
+          
+          // Fix stream-logs URL if it exists
+          const logSource = document.getElementById('logSource');
+          if (logSource && typeof connectLogStream === 'function') {
+              // Replace any hardcoded protocol in log source URL
+              const logUrl = baseUrl + '/stream-logs';
+              console.log('Setting log stream URL to:', logUrl);
+              // Reconnect with correct URL
+              disconnectLogStream();
+              setTimeout(() => connectLogStream(logUrl), 500);
+          }
+          
+          // Fix stylesheet links
+          document.querySelectorAll('link[rel="stylesheet"]').forEach(link => {
+              if (link.href && link.href.startsWith('http')) {
+                  const url = new URL(link.href);
+                  // Only change protocol for same-origin stylesheets
+                  if (url.host === window.location.host) {
+                      url.protocol = currentProtocol;
+                      link.href = url.toString();
+                  }
+              }
+          });
       });
+
+      // Intercept all fetch/XMLHttpRequest calls to ensure they use the right protocol
+      (function() {
+          const originalFetch = window.fetch;
+          window.fetch = function(url, options) {
+              if (url && typeof url === 'string' && url.startsWith('http')) {
+                  const urlObj = new URL(url);
+                  // Only modify same-origin requests
+                  if (urlObj.host === window.location.host) {
+                      urlObj.protocol = window.location.protocol;
+                      url = urlObj.toString();
+                  }
+              }
+              return originalFetch.call(this, url, options);
+          };
+      })();
+
+      // Protocol-aware log streaming
+      function connectLogStream(streamUrl) {
+          // If no URL provided, build one with the correct protocol
+          if (!streamUrl) {
+              const protocol = window.location.protocol;
+              const host = window.location.host;
+              streamUrl = `${protocol}//${host}/stream-logs`;
+          }
+          console.log(`Connecting log stream to: ${streamUrl}`);
+          
+          // Create EventSource with the correct URL
+          window.logSource = new EventSource(streamUrl);
+          
+          window.logSource.onmessage = function(event) {
+              const logList = document.getElementById('logList');
+              if (logList && event.data && event.data !== 'heartbeat') {
+                  const entry = document.createElement('li');
+                  entry.textContent = event.data;
+                  logList.appendChild(entry);
+                  // Keep only the most recent logs
+                  while (logList.childNodes.length > 100) {
+                      logList.removeChild(logList.firstChild);
+                  }
+                  // Auto-scroll to bottom
+                  logList.scrollTop = logList.scrollHeight;
+              }
+          };
+          
+          window.logSource.onerror = function() {
+              console.log('Log stream connection error, reconnecting in 5s...');
+              disconnectLogStream();
+              setTimeout(() => connectLogStream(streamUrl), 5000);
+          };
+      }
+
+      function disconnectLogStream() {
+          if (window.logSource) {
+              window.logSource.close();
+              console.log('Disconnected log stream');
+          }
+      }
+
+      // Connect when page loads, with protocol detection
+      document.addEventListener('DOMContentLoaded', function() {
+          // Use the correct protocol for the current page
+          const protocol = window.location.protocol;
+          const host = window.location.host;
+          const streamUrl = `${protocol}//${host}/stream-logs`;
+          
+          // Wait a second to ensure page is fully loaded
+          setTimeout(() => connectLogStream(streamUrl), 1000);
+          
+          // Clean up when leaving the page
+          window.addEventListener('beforeunload', disconnectLogStream);
+      });
+
       const themeToggleButton = document.getElementById('theme-toggle');
       const themeToggleIcon = themeToggleButton.querySelector('span');
       const htmlElement = document.documentElement;

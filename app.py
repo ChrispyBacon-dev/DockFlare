@@ -1577,23 +1577,24 @@ app.secret_key = os.urandom(24)
 
 @app.after_request
 def add_security_headers(response):
-    """Add comprehensive security headers for better protection and reverse proxy compatibility."""
+    """Add comprehensive security headers for better protection and protocol compatibility."""
     # Basic security headers
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     
-    # Enhanced Content Security Policy with external resources allowed
-    is_https = request.headers.get('X-Forwarded-Proto') == 'https'
+    # Get protocol information from request
+    forwarded_proto = request.headers.get('X-Forwarded-Proto', '')
+    is_https = forwarded_proto == 'https' or request.is_secure
     
-    # Adjust CSP based on the protocol and allow the specific external resources needed
+    # Adjust CSP based on the protocol detection
     csp = (
         "default-src 'self'; "
-        f"connect-src 'self' {('wss:' if is_https else 'ws:')} https://*.cloudflare.com; "  # Allow WebSockets and Cloudflare API
-        "style-src 'self' 'unsafe-inline' https://rsms.me https://cdn.tailwindcss.com; "  # Allow Inter font and Tailwind CSS
-        "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://cdn.tailwindcss.com; "  # Allow Cloudflare scripts and Tailwind
-        "img-src 'self' data: https:; "  # Allow images from all HTTPS sources
-        "font-src 'self' https://rsms.me data:; "  # Allow Inter font
+        f"connect-src 'self' {('wss:' if is_https else 'ws:')} http: https:; "  # Allow both protocols
+        "style-src 'self' 'unsafe-inline' https://rsms.me https://cdn.tailwindcss.com http://rsms.me http://cdn.tailwindcss.com; "
+        "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://cdn.tailwindcss.com http://static.cloudflareinsights.com http://cdn.tailwindcss.com; "
+        "img-src 'self' data: http: https:; "
+        "font-src 'self' https://rsms.me http://rsms.me data:; "
         "frame-ancestors 'self'; "
         "base-uri 'self'; "
         "form-action 'self'; "
@@ -1627,11 +1628,23 @@ def get_display_token(token):
 
 @app.context_processor
 def inject_protocol():
-    """Inject protocol info into all templates."""
-    is_https = request.headers.get('X-Forwarded-Proto') == 'https'
+    """Inject protocol info into all templates with improved detection."""
+    # Check for X-Forwarded-Proto header first (set by reverse proxies)
+    forwarded_proto = request.headers.get('X-Forwarded-Proto', '')
+    
+    # Determine if we're using HTTPS based on header or request
+    is_https = forwarded_proto == 'https' or request.is_secure
+    
+    # Get base URL with correct protocol for use in templates
+    if is_https:
+        base_url = f"https://{request.host}"
+    else:
+        base_url = f"http://{request.host}"
+    
     return {
         'protocol': 'https' if is_https else 'http',
-        'is_https': is_https
+        'is_https': is_https,
+        'base_url': base_url
     }
 
 @app.route('/')
@@ -1753,38 +1766,34 @@ def force_delete_rule(hostname):
 
 @app.route('/stream-logs')
 def stream_logs():
-    """Streams log messages using Server-Sent Events with improved connection handling for reverse proxies."""
+    """Streams log messages using Server-Sent Events with improved connection handling for all environments."""
     @stream_with_context
     def event_stream():
         client_id = f"client-{random.randint(1000, 9999)}"
-        logging.info(f"Log stream {client_id} connected.")
+        # Log protocol information for debugging
+        proto_info = request.headers.get('X-Forwarded-Proto', 'none') 
+        is_secure = request.is_secure
+        logging.info(f"Log stream {client_id} connected. X-Forwarded-Proto: {proto_info}, is_secure: {is_secure}")
+        
         yield f"data: --- Log stream connected ---\n\n"
-
-        # Send an immediate heartbeat to establish the connection
         yield f"data: heartbeat\n\n"
         
-        heartbeat_interval = 10  # More frequent heartbeats (10 seconds)
+        heartbeat_interval = 10
         last_heartbeat = time.time()
 
         try:
             while True:
                 current_time = time.time()
-
-                # Handle heartbeats more aggressively
                 if current_time - last_heartbeat > heartbeat_interval:
                     yield f"data: heartbeat\n\n"
                     last_heartbeat = current_time
 
                 try:
-                    # Very short timeout to prevent blocking waitress threads
                     log_entry = log_queue.get(timeout=0.5)  
                     if log_entry:
                         yield f"data: {log_entry}\n\n"
                 except queue.Empty:
-                    # No log entry available, yield an empty comment to keep connection
                     yield f": keepalive {int(current_time)}\n\n"
-
-                # Brief sleep to yield control back to waitress
                 time.sleep(0.01)
 
         except GeneratorExit:
@@ -1794,25 +1803,22 @@ def stream_logs():
         finally:
             logging.debug(f"Log stream {client_id} connection ended")
 
-    # Create response with appropriate MIME type with stream_with_context
     response = Response(event_stream(), mimetype='text/event-stream')
-
-    # Enhanced headers for better reverse proxy compatibility 
+    
+    # Remove all protocol-sensitive headers
     response.headers.update({
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         'Pragma': 'no-cache',
         'Expires': '0',
-        'X-Accel-Buffering': 'no',  # For Nginx reverse proxy
-        'Content-Type': 'text/event-stream; charset=utf-8',  # Explicit charset
-        
-        # CORS headers to ensure cross-origin access works
+        'X-Accel-Buffering': 'no',
+        'Content-Type': 'text/event-stream; charset=utf-8',
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With',
         'Access-Control-Expose-Headers': 'Content-Type'
     })
     
-    # Remove problematic headers that might interfere with streaming
+    # Remove headers that could cause issues
     for header in ['Transfer-Encoding', 'Connection']:
         if header in response.headers:
             del response.headers[header]
