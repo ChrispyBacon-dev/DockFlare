@@ -427,17 +427,31 @@
             console.log(`Connecting log stream to: ${streamUrl}`);
             
             try {
-                // Create new EventSource
+                // Create new EventSource with additional options
                 window.activeLogSource = new EventSource(streamUrl);
+                
+                // Set connection timeout
+                const connectionTimeout = setTimeout(() => {
+                    console.error("EventSource connection timeout after 10s");
+                    if (window.activeLogSource) {
+                        window.activeLogSource.close();
+                        addLogLine("--- Log stream connection timeout. Reconnecting... ---", 'error');
+                        setTimeout(connectEventSource, 2000);
+                    }
+                }, 10000);
                 
                 // Handle connection opened
                 window.activeLogSource.onopen = function() {
                     console.log("Log stream connection opened");
+                    clearTimeout(connectionTimeout);
                     addLogLine("--- Log stream connected ---", 'connected');
                 };
                 
-                // Handle incoming messages
+                // Handle incoming messages with retry logic
                 window.activeLogSource.onmessage = function(event) {
+                    // Clear timeout on any message
+                    clearTimeout(connectionTimeout);
+                    
                     if (event.data === "heartbeat") {
                         console.log("♥ Heartbeat received");
                         return;
@@ -446,9 +460,17 @@
                     addLogLine(event.data, 'log');
                 };
                 
-                // Handle errors
+                // Handle errors with exponential backoff
+                let retryAttempt = 0;
                 window.activeLogSource.onerror = function(err) {
+                    clearTimeout(connectionTimeout);
                     console.error("Log stream connection error:", err);
+                    
+                    // Log the error details
+                    if (err && err.target) {
+                        console.log(`EventSource state: ${err.target.readyState}, URL: ${err.target.url}`);
+                    }
+                    
                     addLogLine("--- Log stream connection error. Reconnecting in 5s... ---", 'error');
                     
                     // Clean up
@@ -457,20 +479,47 @@
                         window.activeLogSource = null;
                     }
                     
-                    // Reconnect after delay
-                    setTimeout(connectEventSource, 5000);
+                    // Exponential backoff with max of 30 seconds
+                    retryAttempt++;
+                    const delay = Math.min(5000 * Math.pow(1.5, retryAttempt - 1), 30000);
+                    
+                    console.log(`Reconnecting in ${Math.round(delay/1000)}s (attempt ${retryAttempt})...`);
+                    setTimeout(connectEventSource, delay);
                 };
-                
             } catch (e) {
                 console.error("Error creating EventSource:", e);
                 addLogLine("--- Failed to establish log stream connection ---", 'error');
                 setTimeout(connectEventSource, 5000);
             }
             
+            // Check connection status periodically and ping server
+            if (window.eventSourceHealthCheck) {
+                clearInterval(window.eventSourceHealthCheck);
+            }
+            
+            window.eventSourceHealthCheck = setInterval(() => {
+                if (!window.activeLogSource || window.activeLogSource.readyState === 2) {
+                    console.log("EventSource disconnected or in error state, reconnecting...");
+                    if (window.activeLogSource) {
+                        window.activeLogSource.close();
+                    }
+                    connectEventSource();
+                    return;
+                }
+                
+                // Ping the server to check connectivity
+                fetch(`${currentProtocol}//${currentHost}/ping?t=${Date.now()}`)
+                    .then(response => response.json())
+                    .catch(error => console.error("Ping error:", error));
+            }, 30000);
+            
             // Ensure cleanup on page unload
             window.addEventListener('beforeunload', function() {
                 if (window.activeLogSource) {
                     window.activeLogSource.close();
+                }
+                if (window.eventSourceHealthCheck) {
+                    clearInterval(window.eventSourceHealthCheck);
                 }
             });
         }
