@@ -422,4 +422,4 @@ Contributions are welcome! Please open an issue or submit a pull request on GitH
 
 ## License
 
-DockFlare is licensed under the GNU General Public License version 3 License. See `LICENSE.MD` for details.
+DockFlare is licensed under the GNU General Public License version 3 License. See `[LICENSE.MD](https://github.com/ChrispyBacon-dev/DockFlare?tab=License-1-ov-file)` for details.
