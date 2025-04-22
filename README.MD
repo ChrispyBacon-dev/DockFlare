@@ -19,9 +19,13 @@ DockFlare automates Cloudflare Tunnel ingress rule management based on Docker co
 - **Dynamic Ingress via Docker Labels**:
   - Monitors Docker events for containers with labels (prefix: `cloudflare.tunnel.`): `enable="true"`, `hostname="subdomain.example.com"`, `service="http://target:port"`.
   - Automatically updates Cloudflare Tunnel configuration to match running, labeled containers.
+- **Multi-Domain Support**: Configure multiple domains for a single container using indexed labels, each with its own service target and zone configuration.
 - **Graceful Deletion**: Configurable grace period before removing ingress rules when a container stops.
 - **State Persistence**: Saves `managed_rules` to `state.json` for restarts.
-- **Reconciliation**: On startup, ensures consistency between Docker containers, saved state, and Cloudflare configuration.
+- **Optimized Reconciliation**: 
+  - On startup, ensures consistency between Docker containers, saved state, and Cloudflare configuration
+  - Processes DNS operations in small batches to prevent API rate limiting
+  - Shows real-time reconciliation progress in the UI
 - **Web UI**: Status dashboard with:
   - Tunnel & agent status.
   - Start/Stop agent controls.
@@ -30,7 +34,6 @@ DockFlare automates Cloudflare Tunnel ingress rule management based on Docker co
 - **Content Security Policy (CSP)**: Ensures secure loading of resources and compatibility with reverse proxies.
 
 ![Web ui example](images/status_web.png)
-
 ## How It Works
 
 DockFlare listens for Docker container events and manages Cloudflare Tunnel ingress rules dynamically. By labeling your containers, DockFlare automatically configures the tunnel and DNS records, ensuring your services are publicly accessible.
@@ -44,13 +47,6 @@ DockFlare listens for Docker container events and manages Cloudflare Tunnel ingr
 
 ## Getting Started
 
-There are two main ways to get DockFlare running:
-
-1.  **Quick Start:** Directly use Docker Compose with the provided configuration.
-2.  **From Repository:** Clone the repository first, then configure and run.
-
-Choose the method that best suits your needs.
-
 ### Prerequisites
 
 - Docker: [Install Docker](https://docs.docker.com/engine/install/)
@@ -60,12 +56,9 @@ Choose the method that best suits your needs.
   - Account ID (found in Cloudflare Dashboard → Overview)
   - Zone ID (found in Cloudflare Dashboard → Overview)
 
-### Option 1: Quick Start (Using Docker Compose)
+### Quick Start (Using Docker Compose)
 
-This method allows you to run DockFlare quickly without cloning the entire repository.
-
-1. **Create `docker-compose.yml`:**
-   Create a file named `docker-compose.yml` in a directory of your choice and paste the following content:
+1. **Create `docker-compose.yml`**:
 
    ```yaml
    version: '3.8'
@@ -83,36 +76,34 @@ This method allows you to run DockFlare quickly without cloning the entire repos
          - dockflare_data:/app/data  # Persistent storage for state
        networks:
          - cloudflare-net  # Network for communication with cloudflared agent
-       environment:
-         - STATE_FILE_PATH=/app/data/state.json # Path to state file inside the container
-         - TZ=Europe/Zurich # Optional: Set your timezone, e.g., America/New_York
    volumes:
      dockflare_data:
    networks:
      cloudflare-net:
-       name: cloudflare-net # Creates/uses a dedicated network for the tunnel
    ```
 
-2. **Create and Configure `.env`:**
-   Create a file named `.env` in the *same directory* as your `docker-compose.yml`. Add your Cloudflare details:
+2. **Create `.env` File**:
 
    ```dotenv
-   # --- Required Cloudflare Configuration ---
-   CF_API_TOKEN=<YOUR_CLOUDFLARE_API_TOKEN>
-   CF_ACCOUNT_ID=<YOUR_CLOUDFLARE_ACCOUNT_ID>
-   CF_ZONE_ID=<YOUR_CLOUDFLARE_ZONE_ID> # Primary domain for DNS records
-   TUNNEL_NAME=<DESIRED_TUNNEL_NAME>    # e.g., my-dockflare-tunnel
-
-   # --- Optional Configuration ---
-   GRACE_PERIOD_SECONDS=28800 # Default: 8 hours (8 * 60 * 60). Time before deleting rules for stopped containers.
-   # LOG_LEVEL=INFO           # Optional: Set log level (DEBUG, INFO, WARNING, ERROR). Default: INFO
+   # Required Cloudflare credentials
+   CF_API_TOKEN=your_cloudflare_api_token
+   CF_ACCOUNT_ID=your_cloudflare_account_id
+   CF_ZONE_ID=your_cloudflare_zone_id
    
-   # --- Optional: External cloudflared mode ---
+   # Tunnel configuration
+   TUNNEL_NAME=your_tunnel_name
+   
+   # Optional configuration
+   GRACE_PERIOD_SECONDS=28800  # 8 hours before removing rules after container stops
+   LABEL_PREFIX=cloudflare.tunnel  # Prefix for Docker labels
+   
+   # Optional: External cloudflared mode
    # USE_EXTERNAL_CLOUDFLARED=true
    # EXTERNAL_TUNNEL_ID=your_external_tunnel_id
+   
+   # Optional: Scanning configuration
+   # SCAN_ALL_NETWORKS=true  # Scan containers across all Docker networks
    ```
-
-   > **Note:** Environment variables can be set in either the `docker-compose.yml` file or the `.env` file. The `.env` file is typically used for sensitive information and configuration that might change.
 
 3. **Run DockFlare**:
 
@@ -120,151 +111,78 @@ This method allows you to run DockFlare quickly without cloning the entire repos
    docker compose up -d
    ```
 
-### Option 2: From Cloned Repository
+4. **Access the Web UI**: Open `http://localhost:5000` in your browser.
 
-This method involves cloning the repository, which gives you access to the example files directly.
+### Labeling Containers
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/ChrispyBacon-dev/DockFlare.git
-   cd DockFlare
-   ```
+DockFlare supports two approaches for labeling containers:
 
-2. **Configure the `.env` file:**
-   Copy the example configuration file and then edit it with your details:
+#### 1. Standard Labels (Single Domain)
 
-   ```bash
-   cp .env.example .env
-   nano .env # or use your preferred text editor
-   ```
+To expose a single service through DockFlare, add the following labels to your container:
 
-   Fill in the necessary variables as described in Option 1, Step 2.
-
-3. **Run with Docker Compose:**
-   Ensure you are in the `DockFlare` directory (where the `docker-compose.yml` file is located) and run:
-
-   ```bash
-   docker compose up -d
-   ```
-
-### Architecture Support
-
-- **Currently Supported:** The pre-built Docker image (`alplat/dockflare:stable`) is currently only available for `x86_64` / `amd64` architectures.
-
-### Next Steps
-
-1. **Access the Web UI**: Open `http://localhost:5000` in your browser.
-
-2. **Label Your Containers**:
-   To expose a service through DockFlare, add the following labels to your container:
-
-   ```yaml
-   services:
-     my-service:
-       image: nginx:latest
-       labels:
-         # Enable DockFlare management for this container
-         cloudflare.tunnel.enable: "true"
-         
-         # The public hostname to expose (must be a valid domain you control)
-         cloudflare.tunnel.hostname: "my-service.example.com"
-         
-         # The internal service address (protocol://host:port)
-         cloudflare.tunnel.service: "http://my-service:80"
-         
-         # Optional: Specify a different zone for this hostname
-         # cloudflare.tunnel.zonename: "example.com"
-         
-         # Optional: Disable TLS verification for this service
-         # cloudflare.tunnel.no_tls_verify: "true"
-       networks:
-         - cloudflare-net  # Must be in a network that DockFlare can reach
-   ```
-
-3. **Restart or Deploy Labeled Containers:**
-   After adding the labels, (re)start the labeled containers (e.g., `docker-compose up -d my-web-app`). DockFlare will detect the labels and automatically configure the Cloudflare Tunnel ingress rules.
-
-## Configuring Cloudflare Credentials (`.env` file)
-
-DockFlare needs credentials to interact with your Cloudflare account to manage tunnels and DNS records. You'll need to provide these in the `.env` file.
-
-**1. Finding Your Account ID (`CF_ACCOUNT_ID`)**
-
-Your Account ID identifies your entire Cloudflare account.
-
-- Log in to the [Cloudflare Dashboard](https://dash.cloudflare.com/).
-- Select any of your domain names (zones).
-- On the domain's **Overview** page, scroll down the right-hand sidebar.
-- You'll find your **Account ID** listed there. Copy this value.
-  - *Direct Link (after login):* You can often find it quickly here: `https://dash.cloudflare.com/?to=/:account/support` (Look under "Account Details").
-
-**2. Finding Your Zone ID (`CF_ZONE_ID`)**
-
-Your Zone ID identifies a specific domain (zone) managed within your Cloudflare account.
-
-- **Primary Zone:** You must specify *one* Zone ID here. This acts as the **primary** or **default** zone where DockFlare will create DNS CNAME records for your services *unless* you explicitly specify a different zone using labels on a container.
-- **Multi-Zone Support:** DockFlare *can* manage DNS records across multiple zones within the same Cloudflare account (identified by `CF_ACCOUNT_ID`). To use a zone *other* than this primary one for a specific service, you will use the `cloudflare.tunnel.zonename` label on that service's container.
-- **API Token Requirement:** Ensure the API Token you create has `Zone:DNS:Edit` permissions covering *all* the zones you intend to use, including this primary zone and any others you might specify with labels. Granting access to "All zones from an account" during token creation is the simplest way to enable this flexibility.
-
-- **How to Find the Primary Zone ID:**
-  1. Log in to the [Cloudflare Dashboard](https://dash.cloudflare.com/).
-  2. Click on the **specific domain name** (e.g., `example.com`) that you want to designate as your **primary** zone for DockFlare.
-  3. On that domain's **Overview** page, scroll down the right-hand sidebar.
-  4. You'll find the **Zone ID** listed just below the Account ID. Copy this value to use for `CF_ZONE_ID` in your `.env` file.
-
-**3. Creating the API Token (`CF_API_TOKEN`)**
-
-For security, DockFlare requires an API **Token** with specific, limited permissions, rather than your Global API Key.
-
-- **Permissions Needed:**
-  - `Account` > `Cloudflare Tunnel` > `Edit`: Allows DockFlare to create, list, and delete Cloudflare Tunnels within your account.
-  - `Zone` > `DNS` > `Edit`: Allows DockFlare to create and delete DNS records (specifically CNAME records pointing to your tunnel) within your zones.
-
-- **Steps to Create the Token:**
-  1. Log in to the [Cloudflare Dashboard](https://dash.cloudflare.com/).
-  2. Click your **profile icon** in the top right corner and select "**My Profile**".
-  3. Navigate to the "**API Tokens**" tab on the left sidebar.
-  4. Click the "**Create Token**" button.
-  5. Scroll down to the "**Custom token**" section and click "**Get started**".
-  6. **Token Name:** Give your token a descriptive name, e.g., `DockFlare-Manager`.
-  7. **Permissions:** Configure the following permissions:
-     - **Permission 1 (Tunnel Management):**
-       - Select: `Account`
-       - Select: `Cloudflare Tunnel`
-       - Select: `Edit`
-     - **Permission 2 (DNS Management):**
-       - Click "**+ Add more**"
-       - Select: `Zone`
-       - Select: `DNS`
-       - Select: `Edit`
-  8. **Account Resources:**
-     - For the `Account - Cloudflare Tunnel - Edit` permission row, ensure it's set to:
-       - `Include` > `Specific account` > `[Your Account Name]` (Select your main account).
-  9. **Zone Resources:**
-     - For the `Zone - DNS - Edit` permission row, configure it to grant access to the zones DockFlare might need:
-       - `Include` > `All zones from an account` > `[Your Account Name]`
-       - *(This is the most flexible option, allowing DockFlare to manage DNS for the primary `CF_ZONE_ID` and any other zones you might specify using the `cloudflare.tunnel.zonename` label later.)*
-       - *(Alternatively, if you *only* ever plan to use the single zone defined by `CF_ZONE_ID`, you could select `Include` > `Specific zone` > `[Your Primary Domain Zone]`. However, using "All zones from an account" is generally recommended for flexibility.)*
-  10. **Client IP Address Filtering (Optional but Recommended):** If you know the static IP address(es) from which DockFlare will be running, you can restrict the token to only work from those IPs for added security.
-  11. **TTL (Optional):** Set an expiration date for the token if desired.
-  12. Click "**Continue to summary**".
-  13. Review the permissions and resource scopes carefully. Ensure they match the requirements (`Account:Cloudflare Tunnel:Edit`, `Zone:DNS:Edit`).
-  14. Click "**Create Token**".
-  15. **Important:** Cloudflare will now display your API Token. **Copy this token immediately** and store it securely. You will **not** be able to see it again after leaving this page.
-
-## External Cloudflared Mode
-
-DockFlare can work with an existing `cloudflared` container. This is useful if you're already using cloudflared for other services or prefer to manage it separately. To enable this mode:
-
-1. Set `USE_EXTERNAL_CLOUDFLARED=true` in your `.env` file.
-2. Provide the external tunnel ID using `EXTERNAL_TUNNEL_ID`.
-
-In this mode, DockFlare will only manage DNS records and ingress rules, but not the cloudflared agent itself.
-
-```dotenv
-USE_EXTERNAL_CLOUDFLARED=true
-EXTERNAL_TUNNEL_ID=your-tunnel-id-from-cloudflare
+```yaml
+services:
+  my-service:
+    image: nginx:latest
+    labels:
+      # Enable DockFlare management for this container
+      cloudflare.tunnel.enable: "true"
+      
+      # The public hostname to expose (must be a valid domain you control)
+      cloudflare.tunnel.hostname: "my-service.example.com"
+      
+      # The internal service address (protocol://host:port)
+      cloudflare.tunnel.service: "http://my-service:80"
+      
+      # Optional: Specify a different zone for this hostname
+      # cloudflare.tunnel.zonename: "example.com"
+      
+      # Optional: Disable TLS verification for this service
+      # cloudflare.tunnel.no_tls_verify: "true"
+    networks:
+      - cloudflare-net  # Must be in a network that DockFlare can reach
 ```
+
+#### 2. Indexed Labels (Multiple Domains)
+
+To expose multiple domains from a single container, use indexed labels to define each configuration:
+
+```yaml
+services:
+  multi-domain-service:
+    image: nginx:latest
+    labels:
+      # Enable DockFlare for this container
+      - "cloudflare.tunnel.enable=true"
+      
+      # First hostname (using indexed notation)
+      - "cloudflare.tunnel.0.hostname=my-service.example.com"
+      - "cloudflare.tunnel.0.service=http://my-service:80"
+      - "cloudflare.tunnel.0.no_tls_verify=true"
+      
+      # Second hostname (using indexed notation)
+      - "cloudflare.tunnel.1.hostname=my-service2.example.com"
+      - "cloudflare.tunnel.1.service=http://my-service:80"
+      - "cloudflare.tunnel.1.no_tls_verify=true"
+      
+      # Third hostname with a different zone
+      - "cloudflare.tunnel.2.hostname=my-service.otherdomain.com"
+      - "cloudflare.tunnel.2.service=http://my-service:80"
+      - "cloudflare.tunnel.2.no_tls_verify=true"
+      - "cloudflare.tunnel.2.zonename=otherdomain.com"
+    networks:
+      - cloudflare-net
+```
+
+With indexed labels, each domain can have:
+
+Different target services (useful for exposing different ports or paths)
+Different TLS verification settings
+Different zone names for multi-domain management
+This feature works with both internal and external cloudflared modes, making it perfect for services that need to be accessible across multiple domains or subdomains.
+
+> **Note**: Index numbers must be sequential starting from 0 (0, 1, 2, etc.). Any gap in the sequence will cause DockFlare to stop processing further indices.
 
 ### Finding Your Tunnel ID
 
@@ -327,7 +245,7 @@ If you want to switch from using DockFlare's built-in cloudflared container to a
    ```bash
    docker start dockflare
    # Or if you removed the volume, you may need to recreate the container
-   docker-compose up -d
+   docker compose up -d
    ```
 
 9. **Verify container discovery** after restart:
@@ -353,8 +271,8 @@ After the switch, DockFlare will:
 |----------|-------------|---------|
 | `CF_API_TOKEN` | Cloudflare API token | (Required) |
 | `CF_ACCOUNT_ID` | Cloudflare account ID | (Required) |
-| `CF_ZONE_ID` | Default Cloudflare zone ID | (Required unless using `zonename` label) |
-| `TUNNEL_NAME` | Name for the Cloudflare tunnel | (Required unless using external tunnel) |
+| `CF_ZONE_ID` | Default/fallback Cloudflare zone ID | (Required unless all containers use `zonename` label) |
+| `TUNNEL_NAME` | Name for the Cloudflare tunnel | dockflared-tunnel (Required unless using external tunnel) |
 | `GRACE_PERIOD_SECONDS` | Time before removing rules after container stops | 28800 (8 hours) |
 | `CLEANUP_INTERVAL_SECONDS` | Interval for checking expired rules | 300 (5 minutes) |
 | `LABEL_PREFIX` | Prefix for Docker labels | cloudflare.tunnel |
@@ -363,8 +281,6 @@ After the switch, DockFlare will:
 | `SCAN_ALL_NETWORKS` | Scan containers across all Docker networks | false |
 | `CLOUDFLARED_NETWORK_NAME` | Docker network for cloudflared agent | cloudflare-net |
 | `STATE_FILE_PATH` | Path for state persistence | /app/data/state.json |
-| `LOG_LEVEL` | Set the application's logging verbosity | INFO |
-| `TZ` | Set your timezone | UTC |
 
 ### Container Labels
 
@@ -376,49 +292,93 @@ After the switch, DockFlare will:
 | `{prefix}.zonename` | Zone name for this hostname | No | `"example.com"` |
 | `{prefix}.no_tls_verify` | Disable TLS verification | No | `"true"` |
 
+### External Cloudflared Mode
+
+DockFlare can work with an existing `cloudflared` container. This is useful if you're already using cloudflared for other services or prefer to manage it separately. To enable this mode:
+
+1. Set `USE_EXTERNAL_CLOUDFLARED=true` in your `.env` file.
+2. Provide the external tunnel ID using `EXTERNAL_TUNNEL_ID`.
+
+In this mode, DockFlare will only manage DNS records and ingress rules, but not the cloudflared agent itself.
+
+```dotenv
+USE_EXTERNAL_CLOUDFLARED=true
+EXTERNAL_TUNNEL_ID=your-tunnel-id-from-cloudflare
+```
+
 ### Real-time Log Streaming
 
 DockFlare provides real-time logs using Server-Sent Events (SSE). Open the "Real-time Activity Logs" section in the Web UI to view logs as they happen. This feature is especially useful for monitoring container events and configuration changes.
 
 ### DNS Zone Management
 
-By default, DockFlare uses the `CF_ZONE_ID` specified in your environment variables for all DNS records. However, you can specify different zones for individual containers using the `cloudflare.tunnel.zonename` label. This allows you to expose services across multiple domains.
+DockFlare supports hosting services across multiple Cloudflare zones (domains). There are two ways to specify which zone a hostname belongs to:
+
+1. **Container-specific zone using labels**: Use the `cloudflare.tunnel.zonename` label to specify the zone name for a specific hostname. DockFlare will look up the zone ID automatically.
+
+2. **Default zone using environment variable**: Set the `CF_ZONE_ID` environment variable as a fallback for any hostname that doesn't specify a `zonename` label.
+
+For multi-domain setups, you have two options:
+- **Option 1**: Set `CF_ZONE_ID` to your primary domain's Zone ID, and use `zonename` labels only for hostnames in other zones
+- **Option 2**: Always specify `zonename` labels for all hostnames, making the `CF_ZONE_ID` environment variable optional
+
+> **Note**: When using wildcard domains like `*.example.com`, ensure you're using the correct zone, either via the `zonename` label or the default `CF_ZONE_ID`.
 
 ```yaml
 services:
   my-service:
     # ...other configuration...
     labels:
-      cloudflare.tunnel.enable: "true"
-      cloudflare.tunnel.hostname: "app.customdomain.com"
-      cloudflare.tunnel.service: "http://my-service:80"
-      cloudflare.tunnel.zonename: "customdomain.com"
+      cloudflare.tunnel.0.enable: "true"
+      cloudflare.tunnel.0.hostname: "app.customdomain.com"
+      cloudflare.tunnel.0.service: "http://my-service:80"
+      cloudflare.tunnel.0.zonename: "customdomain.com"  # Explicitly defines the zone
 ```
 
-## Technical Implementation
+#### 3. Wildcard Domain Support
 
-- **Language:** Python 3
-- **Core Libraries:**
-  - `requests`: Cloudflare API interaction.
-  - `docker`: Docker API interaction and event handling.
-  - `Flask`: Web UI.
-  - `python-dotenv`: Configuration management.
-  - `threading`: Background tasks.
-- **Deployment:** Runs as a Docker container, typically managed by `docker-compose.yml`. Requires mounting the Docker socket (`/var/run/docker.sock`) to interact with the Docker daemon.
-- **Configuration:**
-  - Primarily via an `.env` file (API Token, Account ID, Tunnel Name, optional grace period, labels, etc.).
-  - Docker labels on target application containers.
-  - Environment variables can be set in either the `docker-compose.yml` file or the `.env` file.
-- **Authentication:** Uses a Cloudflare API Token with Account:Cloudflare Tunnel:Edit permissions and Zone:DNS:Edit for DNS record management.
+DockFlare supports wildcard domains for routing all subdomains through your tunnel:
 
-## Key Files
+```yaml
+services:
+  wildcard-service:
+    image: nginx:latest
+    labels:
+      - "cloudflare.tunnel.enable=true"
+      # Wildcard domain - routes all subdomains
+      - "cloudflare.tunnel.hostname=*.example.com"
+      - "cloudflare.tunnel.service=https://my-service:443"
+      - "cloudflare.tunnel.no_tls_verify=true"
+    networks:
+      - cloudflare-net
+```
 
-- `app.py`: Main Python application code (Flask routes, API logic, Docker event handling, state management).
-- `Dockerfile`: Builds the application container, installing Python, dependencies, and `cloudflared`.
-- `docker-compose.yml`: Defines the service for running the application container and mounts the Docker socket.
-- `requirements.txt`: Lists Python dependencies.
-- `.env`: Stores sensitive configuration and parameters (API keys, IDs, tunnel name). **Do not commit this file!**
-- `state.json`: (Created at runtime) Persists the managed rules state.
+This configuration will route all subdomains of example.com through your tunnel to the specified service. This is useful for:
+- Multi-tenant applications where each tenant gets their own subdomain
+- Development environments with dynamic subdomains
+- Catch-all routing for a domain
+
+> **Note**: Specific subdomain rules take precedence over wildcard rules. For example, if you have both `*.example.com` and `specific.example.com` configured, requests to `specific.example.com` will be routed according to its specific rule.
+
+### Performance Tuning
+
+DockFlare includes several features to optimize performance and prevent rate limiting:
+
+1. **Concurrent DNS Operation Limiting**: 
+   - Controls how many simultaneous DNS operations can run
+   - Prevents Cloudflare API rate limiting during large reconciliations
+   - Configurable via `MAX_CONCURRENT_DNS_OPS` (default: 3)
+
+2. **Batched DNS Processing**:
+   - Processes DNS records in small batches during reconciliation
+   - Shows real-time progress feedback in the web UI
+   - Configurable via `RECONCILIATION_BATCH_SIZE` (default: 3)
+
+3. **Asynchronous Initialization**:
+   - Web UI is immediately available while initialization continues
+   - Progress indicators show current status of initialization and reconciliation
+
+These optimizations are particularly helpful when managing tunnels with many domains or when running on systems with limited resources.
 
 ## Troubleshooting
 
