@@ -28,7 +28,42 @@
             const currentProtocol = window.location.protocol;
             const currentHost = window.location.host;
             console.log("Page loading with protocol:", currentProtocol);
-
+    
+            function fixResources() {
+                console.log("Fixing resource protocols for reverse proxy compatibility");
+                
+                document.querySelectorAll('link[rel="stylesheet"]').forEach(function(link) {
+                    const href = link.getAttribute('href');
+                    if (href && href.startsWith('http:') && window.location.protocol === 'https:') {
+                        const newHref = href.replace('http:', 'https:');
+                        console.log(`Fixing stylesheet: ${href} → ${newHref}`);
+                        link.setAttribute('href', newHref);
+                    }
+                });
+                
+                document.querySelectorAll('script[src]').forEach(function(script) {
+                    const src = script.getAttribute('src');
+                    if (src && src.startsWith('http:') && window.location.protocol === 'https:') {
+                        const newSrc = src.replace('http:', 'https:');
+                        console.log(`Fixing script: ${src} → ${newSrc}`);
+                        script.setAttribute('src', newSrc);
+                    }
+                });
+                
+                document.querySelectorAll('link[rel="preconnect"]').forEach(function(link) {
+                    const href = link.getAttribute('href');
+                    if (href && href.startsWith('http:') && window.location.protocol === 'https:') {
+                        const newHref = href.replace('http:', 'https:');
+                        console.log(`Fixing preconnect: ${href} → ${newHref}`);
+                        link.setAttribute('href', newHref);
+                    }
+                });
+            }
+            
+            fixResources();
+            
+            document.addEventListener('DOMContentLoaded', fixResources);
+    
             const origFetch = window.fetch;
             window.fetch = function(url, options) {
                 if (url && typeof url === 'string' && url.startsWith('http')) {
@@ -44,10 +79,26 @@
                 }
                 return origFetch.call(this, url, options);
             };
-
+    
             const baseTag = document.createElement('base');
             baseTag.href = currentProtocol + '//' + currentHost + '/';
             document.head.appendChild(baseTag);
+            
+            const preconnectDomains = ['cdn.tailwindcss.com', 'rsms.me'];
+            preconnectDomains.forEach(domain => {
+                const existingPreconnect = Array.from(document.querySelectorAll('link[rel="preconnect"]'))
+                    .find(link => link.href.includes(domain));
+                    
+                if (existingPreconnect) {
+                    const href = existingPreconnect.getAttribute('href');
+                    if (href && href.startsWith('http') && 
+                        new URL(href).protocol !== currentProtocol) {
+                        const newHref = currentProtocol + '//' + new URL(href).host;
+                        console.log(`Updating preconnect: ${href} → ${newHref}`);
+                        existingPreconnect.setAttribute('href', newHref);
+                    }
+                }
+            });
         })();
     </script>
 
