@@ -285,9 +285,9 @@ If you develop a new program, and you want it to be of the greatest possible use
 
 To do so, attach the following notices to the program. It is safest to attach them to the start of each source file to most effectively state the exclusion of warranty; and each file should have at least the "copyright" line and a pointer to where the full notice is found.
 
-```
-<one line to give the program's name and a brief idea of what it does.>
-Copyright (C) <year>  <name of author>
+DockFlare automates Cloudflare Tunnel ingress rule management based on Docker container labels, simplifying public exposure of your Dockerized applications. It eliminates manual Cloudflare configuration, acting as a self-hosted ingress controller.
+
+DockFlare  Copyright (C) 2025  ChrispyBacon-Dev <https://github.com/ChrispyBacon-dev/DockFlare>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -301,39 +301,3 @@ GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
-```
-
-Also add information on how to contact you by electronic and paper mail.
-
-If the program does terminal interaction, make it output a short notice like this when it starts in an interactive mode:
-
-```
-<program>  Copyright (C) <year>  <name of author>
-This program comes with ABSOLUTELY NO WARRANTY; for details type `show w'.
-This is free software, and you are welcome to redistribute it
-under certain conditions; type `show c' for details.
-```
-
-The hypothetical commands `show w' and` show c' should show the appropriate parts of the General Public License. Of course, your program's commands might be different; for a GUI interface, you would use an "about box".
-
-You should also get your employer (if you work as a programmer) or school, if any, to sign a "copyright disclaimer" for the program, if necessary.
-
-For more information on this, and how to apply and follow the GNU GPL, see <https://www.gnu.org/licenses/>.
-
-The GNU General Public License does not permit incorporating your program into proprietary programs. If your program is a subroutine library, you may consider it more useful to permit linking proprietary applications with the library. If this is what you want to do, use the GNU Lesser General Public License instead of this License. But first, please read <https://www.gnu.org/licenses/why-not-lgpl.html>.
-```
-
-**Explanation and important notes:**
-
-*   **Copy of the License:**  The file contains the full text of the GPL v3.0.  This is important so that the license terms are always available directly with the code.
-*   **Header:** It starts with a brief header that states the project is licensed under the GPL v3.0.  This helps people quickly understand the license.
-*   **"How to Apply" section:** The original GPL text includes instructions on how to apply the license to your new programs. You should follow these instructions for each source file in your DockFlare project.  Specifically, add the copyright notice and licensing information to the top of each `.py` file.  This is *very important* for clearly establishing the license on your code.
-*   **Year and Author:** In the example at the end, remember to replace `<year>` with the year the code was first created, and `<name of author>` with the name of the copyright holder (e.g., your name or your organization's name).
-*   **Alternatives:** While the GPL v3.0 is a strong copyleft license, you might want to consider other licenses (like MIT or Apache 2.0) if you want to allow more permissive use of your code (e.g., inclusion in proprietary software). However, you explicitly asked for the GPL v3.0.
-*   **Consult a Lawyer:**  License questions can be complex. If you have any specific concerns, it's always best to consult with a lawyer who specializes in open-source licensing.
-
-To use this file:
-
-1.  Create a file named `LICENSE.md` in the root directory of your DockFlare repository.
-2.  Copy and paste the content above into the `LICENSE.md` file.
-3.  Edit the copyright notices in your source code files as described in the "How to Apply" section of the `LICENSE.md` file.  This is the most important step.

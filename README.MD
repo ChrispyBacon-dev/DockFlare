@@ -1,9 +1,8 @@
-# DockFlare: Cloudflare Tunnel Ingress Controller
-
+![DockFlareBanner](images/bannertr.png)
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/ChrispyBacon-dev/baconflip)
 [![OS](https://img.shields.io/badge/os-linux%20%7C%20windows%20%7C%20macos-brightgreen)]()
 [![CPU Architectures](https://img.shields.io/badge/CPU-x86_64%20%7C%20arm64-brightgreen)](https://en.wikipedia.org/wiki/Central_processing_unit)
-[![Generic badge](https://img.shields.io/badge/Status-Alpha-yellow.svg)](https://shields.io/)
+[![Generic badge](https://img.shields.io/badge/Status-Beta-yellow.svg)](https://shields.io/)
 [![Docker Pulls](https://img.shields.io/docker/pulls/alplat/dockflare)](https://hub.docker.com/r/alplat/dockflare)
 [![made-with-python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/)
 [![GitHub issues](https://img.shields.io/github/issues/ChrispyBacon-dev/dockflare)](https://github.com/ChrispyBacon-dev/dockflare/issues)
@@ -32,6 +31,8 @@ DockFlare automates Cloudflare Tunnel ingress rule management based on Docker co
   - Managed ingress rule list with status, container ID, deletion time, and "Force Delete" option.
 - **Real-time Log Streaming**: View logs in real-time using Server-Sent Events (SSE).
 - **Content Security Policy (CSP)**: Ensures secure loading of resources and compatibility with reverse proxies.
+
+[Learn more on the GitHub Wiki](https://github.com/ChrispyBacon-dev/DockFlare/wiki)
 
 ![Web ui example](images/status_web.png)
 ## How It Works
@@ -333,6 +334,7 @@ services:
       cloudflare.tunnel.0.hostname: "app.customdomain.com"
       cloudflare.tunnel.0.service: "http://my-service:80"
       cloudflare.tunnel.0.zonename: "customdomain.com"  # Explicitly defines the zone
+
 ```
 
 #### 3. Wildcard Domain Support
@@ -421,4 +423,4 @@ Contributions are welcome! Please open an issue or submit a pull request on GitH
 
 ## License
 
-DockFlare is licensed under the MIT License. See `LICENSE.MD` for details.
+DockFlare is licensed under the GNU General Public License version 3 License. See [LICENSE.MD](https://github.com/ChrispyBacon-dev/DockFlare?tab=License-1-ov-file) for details.

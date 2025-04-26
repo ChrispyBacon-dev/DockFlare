@@ -1,3 +1,18 @@
+# DockFlare: Automates Cloudflare Tunnel ingress from Docker labels.
+# Copyright (C) 2025 ChrispyBacon-Dev <https://github.com/ChrispyBacon-dev/DockFlare>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 # Use an official Python runtime as a parent image
 # Using slim variant for smaller size
 FROM python:3.13-slim
@@ -47,6 +62,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
 
 COPY templates /app/templates
+COPY images /app/static/images
 # Inform Docker that the container listens on port 5000 at runtime
 # This is documentation; actual mapping is done in docker-compose.yml or `docker run -p`
 EXPOSE 5000
