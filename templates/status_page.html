@@ -379,6 +379,95 @@
         </section>
 
         <section class="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden mb-8 sm:mb-12 transition-shadow duration-300 hover:shadow-xl">
+            <div class="px-6 py-5 sm:px-8 sm:py-6">
+                <h2 class="text-2xl sm:text-3xl font-semibold mb-6 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 pb-3">
+                    All Cloudflare Tunnels on Account
+                </h2>
+
+                {% if CF_ACCOUNT_ID_CONFIGURED %}
+                    <p class="mb-4 text-sm text-gray-600 dark:text-gray-400">
+                        Displaying tunnels for Cloudflare Account ID: <code class="bg-gray-200 dark:bg-gray-700 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded font-mono text-xs">{{ ACCOUNT_ID_FOR_DISPLAY | e }}</code>.
+                        <br>
+                        <em>This list shows all tunnels found on the account, not just the one managed by this DockFlare instance.</em>
+                    </p>
+                    {% if all_account_tunnels is defined and all_account_tunnels %}
+                        <div class="overflow-x-auto -mx-6 sm:-mx-8"> <!-- Same styling as your rules table for consistency -->
+                            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                <thead class="bg-gray-50 dark:bg-gray-700/50">
+                                    <tr>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Tunnel Name</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Tunnel ID</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Created At</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Connections</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Version</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                    {% for tunnel in all_account_tunnels %}
+                                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-150 ease-in-out">
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
+                                                {{ tunnel.name | e }}
+                                            </td>
+                                            <td class="px-6 py-4 whitespace-nowrap">
+                                                <code class="text-sm text-gray-700 dark:text-gray-300 font-mono">{{ tunnel.id | e }}</code>
+                                            </td>
+                                            <td class="px-6 py-4 whitespace-nowrap">
+                                                <span class="status-text status-{{ tunnel.status | lower | e }} px-2 inline-flex text-xs leading-5 font-semibold rounded-full
+                                                    {% if tunnel.status | lower == 'healthy' %} bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300
+                                                    {% elif tunnel.status | lower == 'degraded' %} bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300
+                                                    {% elif tunnel.status | lower == 'down' %} bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300
+                                                    {% else %} bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300
+                                                    {% endif %}">
+                                                    {{ tunnel.status | capitalize | e }}
+                                                </span>
+                                            </td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                                {% if tunnel.created_at %}
+                                                    {{ tunnel.created_at.split('T')[0] | e }} <!-- Show Date only -->
+                                                {% else %}
+                                                    N/A
+                                                {% endif %}
+                                            </td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                                {% if tunnel.connections and tunnel.connections is iterable and not tunnel.connections is string %}
+                                                    {% for conn in tunnel.connections %}
+                                                      <span class="connection-badge">{{ conn.colo_name | e }}</span>
+                                                    {% endfor %}
+                                                    {% if tunnel.connections | length > 0 %}
+                                                        ({{ tunnel.connections | length }} total)
+                                                    {% else %}
+                                                        (0 total)
+                                                    {% endif %}
+                                                {% elif tunnel.connections %}
+                                                     {{ tunnel.connections | e }} <!-- Fallback if not list -->
+                                                {% else %}
+                                                    None
+                                                {% endif %}
+                                            </td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                                {{ tunnel.version | e or 'N/A' }}
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% elif all_account_tunnels is defined %}
+                        <p class="text-center text-gray-500 dark:text-gray-400 py-8">No Cloudflare Tunnels found for Account ID: <code>{{ ACCOUNT_ID_FOR_DISPLAY | e }}</code>.</p>
+                        <p class="text-center text-sm text-gray-500 dark:text-gray-400"><em>This could also mean an error occurred fetching them (check DockFlare logs). Ensure your CF_API_TOKEN has 'Account:Cloudflare Tunnel:Read' permission for the account level.</em></p>
+                    {% else %}
+                        <p class="warning-text text-center py-8">Could not retrieve tunnel information (<code>all_account_tunnels</code> variable not available in template).</p>
+                    {% endif %}
+                {% else %}
+                    <p class="warning-text text-center py-8">
+                        The <code>CF_ACCOUNT_ID</code> environment variable is not configured. This section cannot be displayed.
+                    </p>
+                {% endif %}
+            </div>
+        </section>
+
+        <section class="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden mb-8 sm:mb-12 transition-shadow duration-300 hover:shadow-xl">
              <div class="px-6 py-5 sm:px-8 sm:py-6">
                  <h2 class="text-2xl sm:text-3xl font-semibold mb-4 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 pb-3">
                     Real-time Activity Logs
