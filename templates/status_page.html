@@ -375,7 +375,6 @@
                                                     {% if tunnel.connections | length > 0 %}({{ tunnel.connections | length }} total){% else %}(0 total){% endif %}
                                                 {% elif tunnel.connections %}{{ tunnel.connections | e }}{% else %}None{% endif %}
                                             </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{{ tunnel.version | e or 'N/A' }}</td>
                                         </tr>
                                         <tr class="dns-records-row hidden bg-gray-100 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
                                             <td colspan="6">
