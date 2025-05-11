@@ -24,7 +24,7 @@ import queue
 from datetime import datetime, timedelta, timezone
 import random
 import copy 
-
+import hashlib
 import docker
 from docker.errors import NotFound, APIError
 from flask import Flask, jsonify, render_template, redirect, url_for, request, Response, stream_with_context
@@ -170,9 +170,16 @@ def load_state():
                      rule["delete_at"] = None
              elif not isinstance(rule.get("delete_at"), datetime):
                  rule["delete_at"] = None
+
              if "zone_id" not in rule:
                  logging.warning(f"Rule for {hostname} loaded from state is missing 'zone_id'. Will attempt to re-determine on reconcile.")
                  rule["zone_id"] = None
+            
+             
+             rule.setdefault("access_app_id", None)
+             rule.setdefault("access_policy_type", None)
+             rule.setdefault("access_app_config_hash", None)
+
         managed_rules = loaded_data
         logging.info(f"Loaded state for {len(managed_rules)} rules from {STATE_FILE_PATH}")
     except (json.JSONDecodeError, IOError, OSError) as e:
@@ -185,9 +192,15 @@ def save_state():
         rule_copy = rule.copy()
         if rule_copy.get("delete_at") and isinstance(rule_copy["delete_at"], datetime):
             rule_copy["delete_at"] = rule_copy["delete_at"].astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        
         if "zone_id" not in rule_copy:
             logging.warning(f"Attempting to save rule for {hostname} without zone_id!")
             rule_copy["zone_id"] = None
+        
+        rule_copy.setdefault("access_app_id", None)
+        rule_copy.setdefault("access_policy_type", None)
+        rule_copy.setdefault("access_app_config_hash", None)
+            
         serializable_state[hostname] = rule_copy
     try:
         state_dir = os.path.dirname(STATE_FILE_PATH)
@@ -202,7 +215,6 @@ def save_state():
         logging.debug(f"Saved state for {len(managed_rules)} rules to {STATE_FILE_PATH}")
     except (IOError, OSError) as e:
         logging.error(f"Error saving state to {STATE_FILE_PATH}: {e}", exc_info=True)
-
 def cf_api_request(method, endpoint, json_data=None, params=None):
     url = f"{CF_API_BASE_URL}{endpoint}"
     error_msg = None
@@ -394,6 +406,149 @@ def create_tunnel_via_api(name):
         logging.error(f"Unexpected error creating tunnel '{name}': {e}", exc_info=True)
         tunnel_state["error"] = f"Unexpected error creating tunnel: {e}"
         return None, None
+def _build_access_app_payload(hostname, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies, allowed_idps=None, auto_redirect_to_identity=False):
+    payload = {
+        "name": name,
+        "domain": hostname,
+        "type": "self_hosted",
+        "session_duration": session_duration,
+        "app_launcher_visible": app_launcher_visible,
+        "self_hosted_domains": self_hosted_domains,
+        "allowed_idps": allowed_idps if allowed_idps else [],
+        "auto_redirect_to_identity": auto_redirect_to_identity,
+        "policies": access_policies
+    }
+    
+    if allowed_idps is None:
+        del payload["allowed_idps"]
+    return payload
+
+def find_cloudflare_access_application_by_hostname(hostname):
+    logging.info(f"Finding Cloudflare Access Application for hostname '{hostname}'")
+    endpoint = f"/accounts/{CF_ACCOUNT_ID}/access/apps"
+    try:
+        response_data = cf_api_request("GET", endpoint, params={"domain": hostname})
+        apps = response_data.get("result", [])
+        if apps and isinstance(apps, list):
+            for app in apps:
+                if app.get("domain") == hostname:
+                    logging.info(f"Found Access Application ID '{app.get('id')}' for hostname '{hostname}'")
+                    return app
+            logging.info(f"No exact match Access Application found for hostname '{hostname}' via direct domain query.")
+        
+        logging.info(f"Falling back to listing all Access Applications to find '{hostname}'")
+        all_apps_response = cf_api_request("GET", endpoint) # No params to get all
+        all_apps = all_apps_response.get("result", [])
+        if all_apps and isinstance(all_apps, list):
+            for app in all_apps:
+                if app.get("domain") == hostname:
+                    logging.info(f"Found Access Application ID '{app.get('id')}' for hostname '{hostname}' via full list scan.")
+                    return app
+
+                if hostname in app.get("self_hosted_domains", []):
+                    logging.info(f"Found Access Application ID '{app.get('id')}' for hostname '{hostname}' (in self_hosted_domains) via full list scan.")
+                    return app
+
+        logging.info(f"Access Application for hostname '{hostname}' not found after extensive search.")
+        return None
+    except requests.exceptions.RequestException as e:
+        logging.error(f"API error finding Cloudflare Access Application for '{hostname}': {e}")
+        return None
+    except Exception as e:
+        logging.error(f"Unexpected error finding Cloudflare Access Application for '{hostname}': {e}", exc_info=True)
+        return None
+
+def create_cloudflare_access_application(hostname, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies, allowed_idps=None, auto_redirect_to_identity=False):
+    logging.info(f"Creating Cloudflare Access Application for hostname '{hostname}'")
+    endpoint = f"/accounts/{CF_ACCOUNT_ID}/access/apps"
+    payload = _build_access_app_payload(hostname, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies, allowed_idps, auto_redirect_to_identity)
+    try:
+        response_data = cf_api_request("POST", endpoint, json_data=payload)
+        app_data = response_data.get("result")
+        if app_data and app_data.get("id"):
+            logging.info(f"Successfully created Access Application '{app_data.get('id')}' for '{hostname}'")
+            return app_data
+        else:
+            logging.error(f"Access Application creation for '{hostname}' reported success but no ID in response: {app_data}")
+            return None
+    except requests.exceptions.RequestException as e:
+        logging.error(f"API error creating Access Application for '{hostname}': {e}")
+        return None
+    except Exception as e:
+        logging.error(f"Unexpected error creating Access Application for '{hostname}': {e}", exc_info=True)
+        return None
+
+def get_cloudflare_access_application(app_uuid):
+    logging.info(f"Getting Cloudflare Access Application details for ID '{app_uuid}'")
+    endpoint = f"/accounts/{CF_ACCOUNT_ID}/access/apps/{app_uuid}"
+    try:
+        response_data = cf_api_request("GET", endpoint)
+        app_data = response_data.get("result")
+        if app_data:
+            logging.info(f"Successfully retrieved Access Application details for ID '{app_uuid}'")
+            return app_data
+        else:
+
+            logging.warning(f"Successfully called API for Access App ID '{app_uuid}', but no result data found. Response: {response_data}")
+            return None
+    except requests.exceptions.RequestException as e:
+
+        if e.response is not None and e.response.status_code == 404:
+            logging.warning(f"Cloudflare Access Application with ID '{app_uuid}' not found (404).")
+        else:
+            logging.error(f"API error getting Access Application '{app_uuid}': {e}")
+        return None
+    except Exception as e:
+        logging.error(f"Unexpected error getting Access Application '{app_uuid}': {e}", exc_info=True)
+        return None
+
+def update_cloudflare_access_application(app_uuid, hostname, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies, allowed_idps=None, auto_redirect_to_identity=False):
+    logging.info(f"Updating Cloudflare Access Application ID '{app_uuid}' for hostname '{hostname}'")
+    endpoint = f"/accounts/{CF_ACCOUNT_ID}/access/apps/{app_uuid}"
+    payload = _build_access_app_payload(hostname, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies, allowed_idps, auto_redirect_to_identity)
+    try:
+        response_data = cf_api_request("PUT", endpoint, json_data=payload)
+        app_data = response_data.get("result")
+        if app_data and app_data.get("id"):
+            logging.info(f"Successfully updated Access Application '{app_data.get('id')}' for '{hostname}'")
+            return app_data
+        else:
+            logging.error(f"Access Application update for '{app_uuid}' reported success but no ID in response: {app_data}")
+            return None 
+    except requests.exceptions.RequestException as e:
+        logging.error(f"API error updating Access Application '{app_uuid}': {e}")
+        return None
+    except Exception as e:
+        logging.error(f"Unexpected error updating Access Application '{app_uuid}': {e}", exc_info=True)
+        return None
+
+def delete_cloudflare_access_application(app_uuid):
+    logging.info(f"Deleting Cloudflare Access Application ID '{app_uuid}'")
+    endpoint = f"/accounts/{CF_ACCOUNT_ID}/access/apps/{app_uuid}"
+    try:
+        response_data = cf_api_request("DELETE", endpoint)
+
+        if response_data and response_data.get("success"): 
+
+            deleted_id = response_data.get("result", {}).get("id") if isinstance(response_data.get("result"), dict) else app_uuid
+            logging.info(f"Successfully submitted deletion for Access Application ID '{deleted_id if deleted_id else app_uuid}'")
+            return True
+
+        elif response_data is None and "success" not in str(response_data): 
+            logging.info(f"Access Application ID '{app_uuid}' deletion API call likely succeeded (no content/error).")
+            return True
+
+        logging.warning(f"Access Application deletion for '{app_uuid}' API call did not confirm success clearly. Response: {response_data}")
+        return False 
+    except requests.exceptions.RequestException as e:
+        if e.response is not None and e.response.status_code == 404:
+            logging.warning(f"Cloudflare Access Application with ID '{app_uuid}' not found during delete attempt (404). Treating as success.")
+            return True
+        logging.error(f"API error deleting Access Application '{app_uuid}': {e}")
+        return False
+    except Exception as e:
+        logging.error(f"Unexpected error deleting Access Application '{app_uuid}': {e}", exc_info=True)
+        return False
 
 def initialize_tunnel():
     """Finds or creates the tunnel and gets its token."""
@@ -748,9 +903,24 @@ def delete_cloudflare_dns_record(zone_id, hostname, tunnel_id):
         except Exception as e:
             logging.error(f"Unexpected error deleting DNS record {record_id} for {hostname} in zone {zone_id}: {e}", exc_info=True)
             return False
+def generate_access_app_config_hash(policy_type, session_duration, app_launcher_visible, allowed_idps_str, auto_redirect_to_identity, custom_access_rules_str=None):
+
+    config_items = {
+        "policy_type": policy_type,
+        "session_duration": session_duration,
+        "app_launcher_visible": app_launcher_visible,
+        "allowed_idps_str": allowed_idps_str, 
+        "auto_redirect_to_identity": auto_redirect_to_identity,
+        "custom_access_rules_str": custom_access_rules_str 
+    }
+
+    consistent_config_string = json.dumps(config_items, sort_keys=True)
+
+    hasher = hashlib.sha256()
+    hasher.update(consistent_config_string.encode('utf-8'))
+    return hasher.hexdigest()
 
 def process_container_start(container):
-    """Processes a container start event based on labels."""
     if not container:
         return
 
@@ -769,10 +939,16 @@ def process_container_start(container):
             logging.debug(f"Ignoring start: {container_name} ({container_id[:12]}): '{enabled_label}' not true.")
             return
 
-        # Look for both indexed and non-indexed hostname patterns
         hostnames_to_process = []
         
-        # First, check for any direct labels (non-indexed format)
+        default_access_policy_type_label = labels.get(f"{LABEL_PREFIX}.access.policy")
+        default_access_app_name_label = labels.get(f"{LABEL_PREFIX}.access.name")
+        default_access_session_duration_label = labels.get(f"{LABEL_PREFIX}.access.session_duration", "24h")
+        default_access_app_launcher_visible_label = labels.get(f"{LABEL_PREFIX}.access.app_launcher_visible", "false").lower() in ["true", "1", "t", "yes"]
+        default_access_allowed_idps_label_str = labels.get(f"{LABEL_PREFIX}.access.allowed_idps")
+        default_access_auto_redirect_label = labels.get(f"{LABEL_PREFIX}.access.auto_redirect_to_identity", "false").lower() in ["true", "1", "t", "yes"]
+        default_access_custom_rules_label_str = labels.get(f"{LABEL_PREFIX}.access.custom_rules")
+
         hostname = labels.get(f"{LABEL_PREFIX}.hostname")
         service = labels.get(f"{LABEL_PREFIX}.service") 
         zone_name = labels.get(f"{LABEL_PREFIX}.zonename")
@@ -784,42 +960,63 @@ def process_container_start(container):
                     "hostname": hostname,
                     "service": service,
                     "zone_name": zone_name,
-                    "no_tls_verify": no_tls_verify
+                    "no_tls_verify": no_tls_verify,
+                    "access_policy_type": default_access_policy_type_label,
+                    "access_app_name": default_access_app_name_label,
+                    "access_session_duration": default_access_session_duration_label,
+                    "access_app_launcher_visible": default_access_app_launcher_visible_label,
+                    "access_allowed_idps_str": default_access_allowed_idps_label_str,
+                    "access_auto_redirect": default_access_auto_redirect_label,
+                    "access_custom_rules_str": default_access_custom_rules_label_str
                 })
             else:
                 logging.warning(f"Ignoring invalid direct label pair for {container_name}: Invalid hostname '{hostname}' or service '{service}'")
         
-        # Then check for indexed labels (cloudflare.tunnel.0.hostname, etc.)
         index = 0
         while True:
             prefix = f"{LABEL_PREFIX}.{index}"
-            hostname = labels.get(f"{prefix}.hostname")
-            if not hostname:
-                # No more indexed hostnames found
+            hostname_indexed = labels.get(f"{prefix}.hostname")
+            if not hostname_indexed:
                 break
                 
-            service = labels.get(f"{prefix}.service")
-            if not service:
-                # Use the default service if available, otherwise warning and skip
-                service = labels.get(f"{LABEL_PREFIX}.service")
-                if not service:
-                    logging.warning(f"Ignoring indexed hostname {hostname} for {container_name}: Missing service for index {index}")
+            service_indexed = labels.get(f"{prefix}.service")
+            if not service_indexed:
+                service_indexed = labels.get(f"{LABEL_PREFIX}.service") 
+                if not service_indexed:
+                    logging.warning(f"Ignoring indexed hostname {hostname_indexed} for {container_name}: Missing service for index {index} and no default service label.")
                     index += 1
                     continue
             
-            zone_name = labels.get(f"{prefix}.zonename", labels.get(f"{LABEL_PREFIX}.zonename"))
-            no_tls_verify_value = labels.get(f"{prefix}.no_tls_verify", labels.get(f"{LABEL_PREFIX}.no_tls_verify", "false"))
-            no_tls_verify = no_tls_verify_value.lower() in ["true", "1", "t", "yes"]
-            
-            if is_valid_hostname(hostname) and is_valid_service(service):
+            zone_name_indexed = labels.get(f"{prefix}.zonename", labels.get(f"{LABEL_PREFIX}.zonename"))
+            no_tls_verify_indexed_value = labels.get(f"{prefix}.no_tls_verify", labels.get(f"{LABEL_PREFIX}.no_tls_verify", "false"))
+            no_tls_verify_indexed = no_tls_verify_indexed_value.lower() in ["true", "1", "t", "yes"]
+
+            access_policy_type_indexed = labels.get(f"{prefix}.access.policy", default_access_policy_type_label)
+            access_app_name_indexed = labels.get(f"{prefix}.access.name", default_access_app_name_label)
+            access_session_duration_indexed = labels.get(f"{prefix}.access.session_duration", default_access_session_duration_label)
+            access_app_launcher_visible_indexed_val = labels.get(f"{prefix}.access.app_launcher_visible", str(default_access_app_launcher_visible_label).lower())
+            access_app_launcher_visible_indexed = access_app_launcher_visible_indexed_val.lower() in ["true", "1", "t", "yes"]
+            access_allowed_idps_indexed_str = labels.get(f"{prefix}.access.allowed_idps", default_access_allowed_idps_label_str)
+            access_auto_redirect_indexed_val = labels.get(f"{prefix}.access.auto_redirect_to_identity", str(default_access_auto_redirect_label).lower())
+            access_auto_redirect_indexed = access_auto_redirect_indexed_val.lower() in ["true", "1", "t", "yes"]
+            access_custom_rules_indexed_str = labels.get(f"{prefix}.access.custom_rules", default_access_custom_rules_label_str)
+
+            if is_valid_hostname(hostname_indexed) and is_valid_service(service_indexed):
                 hostnames_to_process.append({
-                    "hostname": hostname,
-                    "service": service,
-                    "zone_name": zone_name,
-                    "no_tls_verify": no_tls_verify
+                    "hostname": hostname_indexed,
+                    "service": service_indexed,
+                    "zone_name": zone_name_indexed,
+                    "no_tls_verify": no_tls_verify_indexed,
+                    "access_policy_type": access_policy_type_indexed,
+                    "access_app_name": access_app_name_indexed,
+                    "access_session_duration": access_session_duration_indexed,
+                    "access_app_launcher_visible": access_app_launcher_visible_indexed,
+                    "access_allowed_idps_str": access_allowed_idps_indexed_str,
+                    "access_auto_redirect": access_auto_redirect_indexed,
+                    "access_custom_rules_str": access_custom_rules_indexed_str
                 })
             else:
-                logging.warning(f"Ignoring invalid indexed label pair for {container_name}: Invalid hostname '{hostname}' or service '{service}'")
+                logging.warning(f"Ignoring invalid indexed label pair for {container_name} (index {index}): Invalid hostname '{hostname_indexed}' or service '{service_indexed}'")
             
             index += 1
         
@@ -829,15 +1026,22 @@ def process_container_start(container):
             
         logging.info(f"Found {len(hostnames_to_process)} hostname configurations for container {container_name}")
         
-        # Process each hostname configuration
         state_changed_locally = False
-        needs_cf_update = False
+        needs_tunnel_config_update = False
         
-        for config in hostnames_to_process:
-            hostname = config["hostname"]
-            service = config["service"]
-            zone_name = config["zone_name"]
-            no_tls_verify = config["no_tls_verify"]
+        for config_item in hostnames_to_process:
+            hostname = config_item["hostname"]
+            service = config_item["service"]
+            zone_name = config_item["zone_name"]
+            no_tls_verify = config_item["no_tls_verify"]
+
+            desired_access_policy_type = config_item["access_policy_type"]
+            desired_access_app_name = config_item["access_app_name"] if config_item["access_app_name"] else f"DockFlare-{hostname}"
+            desired_session_duration = config_item["access_session_duration"]
+            desired_app_launcher_visible = config_item["access_app_launcher_visible"]
+            desired_allowed_idps_str = config_item["access_allowed_idps_str"]
+            desired_auto_redirect = config_item["access_auto_redirect"]
+            desired_custom_rules_str = config_item["access_custom_rules_str"]
             
             target_zone_id = None
             if zone_name:
@@ -851,15 +1055,22 @@ def process_container_start(container):
                 target_zone_id = CF_ZONE_ID
 
             if not target_zone_id:
-                logging.error(f"Cannot manage DNS for {hostname}: No valid Zone ID found (label lookup failed and no default CF_ZONE_ID set?). Skipping.")
+                logging.error(f"Cannot manage DNS for {hostname}: No valid Zone ID found. Skipping.")
                 continue
                 
             logging.info(f"Managing {hostname} (from {container_name}) in Zone ID: {target_zone_id}")
             
             with state_lock:
                 existing_rule = managed_rules.get(hostname)
+                current_access_app_id = None
+                current_access_policy_type = None
+                current_access_app_config_hash = None
+
                 if existing_rule:
                     zone_id_changed = existing_rule.get("zone_id") != target_zone_id
+                    current_access_app_id = existing_rule.get("access_app_id")
+                    current_access_policy_type = existing_rule.get("access_policy_type")
+                    current_access_app_config_hash = existing_rule.get("access_app_config_hash")
 
                     if existing_rule.get("status") == "pending_deletion":
                         logging.info(f"Rule for {hostname} was pending deletion. Reactivating.")
@@ -870,7 +1081,7 @@ def process_container_start(container):
                         existing_rule["zone_id"] = target_zone_id
                         existing_rule["no_tls_verify"] = no_tls_verify
                         state_changed_locally = True
-                        needs_cf_update = True
+                        needs_tunnel_config_update = True
                         if zone_id_changed:
                             logging.info(f"Zone ID for reactivated rule {hostname} updated to {target_zone_id}.")
                     elif existing_rule.get("status") == "active":
@@ -886,17 +1097,17 @@ def process_container_start(container):
                             logging.info(f"Updating service for active rule {hostname}: '{existing_rule.get('service')}' -> '{service}'.")
                             existing_rule["service"] = service
                             state_changed_locally = True
-                            needs_cf_update = True
+                            needs_tunnel_config_update = True
                         if no_tls_verify_changed:
                             logging.info(f"Updating noTLSVerify for active rule {hostname}: '{existing_rule.get('no_tls_verify')}' -> '{no_tls_verify}'.")
                             existing_rule["no_tls_verify"] = no_tls_verify
                             state_changed_locally = True
-                            needs_cf_update = True
+                            needs_tunnel_config_update = True
                         if zone_id_changed:
-                            logging.warning(f"Zone ID for active rule {hostname} changed ('{existing_rule.get('zone_id')}' -> '{target_zone_id}'). DNS in old zone may be stale if cleanup failed.")
+                            logging.warning(f"Zone ID for active rule {hostname} changed ('{existing_rule.get('zone_id')}' -> '{target_zone_id}'). DNS in old zone may be stale.")
                             existing_rule["zone_id"] = target_zone_id
                             state_changed_locally = True
-                            needs_cf_update = True
+                            needs_tunnel_config_update = True 
                 else:
                     logging.info(f"Adding new active rule for hostname: {hostname}")
                     managed_rules[hostname] = {
@@ -905,39 +1116,151 @@ def process_container_start(container):
                         "status": "active",
                         "delete_at": None,
                         "zone_id": target_zone_id,
-                        "no_tls_verify": no_tls_verify
+                        "no_tls_verify": no_tls_verify,
+                        "access_app_id": None, # Initialize new fields
+                        "access_policy_type": None,
+                        "access_app_config_hash": None
                     }
+                    existing_rule = managed_rules[hostname] 
+                    current_access_app_id = None 
+                    current_access_policy_type = None
+                    current_access_app_config_hash = None
                     state_changed_locally = True
-                    needs_cf_update = True
+                    needs_tunnel_config_update = True
+
+                if desired_access_policy_type: 
+                    desired_access_app_config_hash = generate_access_app_config_hash(
+                        desired_access_policy_type,
+                        desired_session_duration,
+                        desired_app_launcher_visible,
+                        desired_allowed_idps_str,
+                        desired_auto_redirect,
+                        desired_custom_rules_str
+                    )
+
+                    if desired_access_policy_type == "default_tld":
+                        if current_access_app_id:
+                            logging.info(f"Access policy for {hostname} changed to 'default_tld'. Deleting existing Access App {current_access_app_id}.")
+                            if delete_cloudflare_access_application(current_access_app_id):
+                                existing_rule["access_app_id"] = None
+                                existing_rule["access_policy_type"] = "default_tld"
+                                existing_rule["access_app_config_hash"] = None
+                                state_changed_locally = True
+                            else:
+                                logging.error(f"Failed to delete Access App {current_access_app_id} for {hostname}. State not fully updated.")
+                        elif existing_rule.get("access_policy_type") != "default_tld":
+                            existing_rule["access_app_id"] = None
+                            existing_rule["access_policy_type"] = "default_tld"
+                            existing_rule["access_app_config_hash"] = None
+                            state_changed_locally = True
+                            logging.info(f"Access policy for {hostname} set to 'default_tld'. No specific app managed.")
+
+                    elif desired_access_policy_type in ["bypass", "authenticate"]:
+                        cf_access_policies = []
+                        if desired_custom_rules_str:
+                            try:
+                                cf_access_policies = json.loads(desired_custom_rules_str)
+                                if not isinstance(cf_access_policies, list):
+                                    logging.error(f"Parsed 'custom_rules' for {hostname} is not a list. Reverting to default for {desired_access_policy_type}.")
+                                    cf_access_policies = [] # Fallback
+                            except json.JSONDecodeError as json_err:
+                                logging.error(f"Error parsing 'custom_rules' JSON for {hostname}: {json_err}. Reverting to default for {desired_access_policy_type}.")
+                                cf_access_policies = [] # Fallback
+                        
+                        if not cf_access_policies:
+                            if desired_access_policy_type == "bypass":
+                                cf_access_policies = [{"name": "Public Bypass", "decision": "bypass", "include": [{"everyone": True}]}]
+                            elif desired_access_policy_type == "authenticate":
+                                policy_include_rules = []
+                                if desired_allowed_idps_str:
+                                    idp_ids = [idp.strip() for idp in desired_allowed_idps_str.split(',') if idp.strip()]
+                                    if idp_ids:
+                                        policy_include_rules.append({"identity_provider": {"id": idp_ids}})
+                                
+                                if not policy_include_rules:
+                                    policy_include_rules.append({"everyone": True}) 
+
+                                cf_access_policies = [{"name": "Default Authenticated Access", "decision": "allow", "include": policy_include_rules}]
+                        
+                        allowed_idps_list_for_app = [idp.strip() for idp in desired_allowed_idps_str.split(',') if idp.strip()] if desired_allowed_idps_str else None
+
+                        if current_access_app_id:
+                            if current_access_policy_type != desired_access_policy_type or current_access_app_config_hash != desired_access_app_config_hash:
+                                logging.info(f"Updating Access App {current_access_app_id} for {hostname} due to policy/config change.")
+                                updated_app = update_cloudflare_access_application(
+                                    current_access_app_id, hostname, desired_access_app_name,
+                                    desired_session_duration, desired_app_launcher_visible,
+                                    [hostname], cf_access_policies, allowed_idps_list_for_app, desired_auto_redirect
+                                )
+                                if updated_app:
+                                    existing_rule["access_policy_type"] = desired_access_policy_type
+                                    existing_rule["access_app_config_hash"] = desired_access_app_config_hash
+                                    state_changed_locally = True
+                                else:
+                                    logging.error(f"Failed to update Access App {current_access_app_id} for {hostname}.")
+                        else:
+                            logging.info(f"Creating new Access App for {hostname} with policy type '{desired_access_policy_type}'.")
+                            created_app = create_cloudflare_access_application(
+                                hostname, desired_access_app_name,
+                                desired_session_duration, desired_app_launcher_visible,
+                                [hostname], cf_access_policies, allowed_idps_list_for_app, desired_auto_redirect
+                            )
+                            if created_app and created_app.get("id"):
+                                existing_rule["access_app_id"] = created_app.get("id")
+                                existing_rule["access_policy_type"] = desired_access_policy_type
+                                existing_rule["access_app_config_hash"] = desired_access_app_config_hash
+                                state_changed_locally = True
+                            else:
+                                logging.error(f"Failed to create Access App for {hostname}.")
+                    else:
+                        logging.warning(f"Unknown access.policy type '{desired_access_policy_type}' for {hostname}. No Access App action taken.")
+
+                else: 
+                    if current_access_app_id:
+                        logging.info(f"No access policy label for {hostname}, but found managed Access App {current_access_app_id}. Deleting it.")
+                        if delete_cloudflare_access_application(current_access_app_id):
+                            existing_rule["access_app_id"] = None
+                            existing_rule["access_policy_type"] = None
+                            existing_rule["access_app_config_hash"] = None
+                            state_changed_locally = True
+                        else:
+                            logging.error(f"Failed to delete Access App {current_access_app_id} for {hostname} during cleanup.")
+                    elif current_access_policy_type is not None : 
+                        existing_rule["access_app_id"] = None
+                        existing_rule["access_policy_type"] = None
+                        existing_rule["access_app_config_hash"] = None
+                        state_changed_locally = True
+
 
         if state_changed_locally:
             logging.debug(f"Saving state after processing start for container {container_name}.")
             save_state()
 
-        if needs_cf_update:
-            logging.info(f"Triggering Cloudflare config update due to changes for container {container_name}.")
+        if needs_tunnel_config_update: 
+            logging.info(f"Triggering Cloudflare tunnel config update due to changes for container {container_name}.")
             if update_cloudflare_config():
                 logging.info(f"Tunnel config update successful for container {container_name}.")
-                if tunnel_state.get("id"):
-                    # Set up DNS records for each hostname
-                    for config in hostnames_to_process:
-                        hostname = config["hostname"]
-                        zone_name = config["zone_name"]
-                        
-                        # Find the zone ID (either from zone_name or default)
-                        target_zone_id = get_zone_id_from_name(zone_name) if zone_name else CF_ZONE_ID
-                        
-                        if target_zone_id:
-                            dns_record_id = create_cloudflare_dns_record(target_zone_id, hostname, tunnel_state["id"])
-                            if dns_record_id:
-                                logging.info(f"DNS record management in zone {target_zone_id} successful for {hostname}.")
+
+                if tunnel_state.get("id") or USE_EXTERNAL_CLOUDFLARED:
+                    effective_tunnel_id = tunnel_state.get("id") if not USE_EXTERNAL_CLOUDFLARED else EXTERNAL_TUNNEL_ID
+                    if effective_tunnel_id:
+                        for config_item_dns in hostnames_to_process: 
+                            hostname_dns = config_item_dns["hostname"]
+                            zone_name_dns = config_item_dns["zone_name"]
+                            
+                            target_zone_id_dns = get_zone_id_from_name(zone_name_dns) if zone_name_dns else CF_ZONE_ID
+                            
+                            if target_zone_id_dns:
+                                dns_record_id = create_cloudflare_dns_record(target_zone_id_dns, hostname_dns, effective_tunnel_id)
+                                if dns_record_id:
+                                    logging.info(f"DNS record management in zone {target_zone_id_dns} successful for {hostname_dns}.")
+                                else:
+                                    logging.error(f"CRITICAL: Tunnel config or service for {hostname_dns} might be active but failed to create/verify DNS record in zone {target_zone_id_dns}!")
+                                    cloudflared_agent_state["last_action_status"] = f"Error: Failed creating DNS for {hostname_dns} in zone {target_zone_id_dns}."
                             else:
-                                logging.error(f"CRITICAL: Tunnel config updated for {hostname} but failed to create/verify DNS record in zone {target_zone_id}!")
-                                cloudflared_agent_state["last_action_status"] = f"Error: Failed creating DNS for {hostname} in zone {target_zone_id}."
-                        else:
-                            logging.error(f"Missing Zone ID - cannot manage DNS record for {hostname}.")
-                else:
-                    logging.error(f"Missing Tunnel ID - cannot manage DNS records for container {container_name}.")
+                                logging.error(f"Missing Zone ID - cannot manage DNS record for {hostname_dns}.")
+                    else:
+                        logging.error(f"Missing effective Tunnel ID - cannot manage DNS records for container {container_name}.")
             else:
                 logging.error(f"Failed to update Cloudflare tunnel config after processing start for container {container_name}. DNS records not managed.")
 
@@ -1063,18 +1386,17 @@ def docker_event_listener():
     logging.info("Docker event listener stopped.")
 
 def cleanup_expired_rules():
-    """Periodically checks for and cleans up expired rules."""
     logging.info("Starting cleanup task...")
     while not stop_event.is_set():
         next_check_time = time.time() + CLEANUP_INTERVAL_SECONDS
         try:
             logging.debug("Running cleanup check for expired rules...")
-            rules_to_delete = {}
+            rules_to_process_for_deletion = {} # Stores hostname: {zone_id, access_app_id}
             now_utc = datetime.now(timezone.utc)
             state_changed_in_cleanup = False
 
             with state_lock:
-                for hostname, details in managed_rules.items():
+                for hostname, details in list(managed_rules.items()): 
                     if details.get("status") == "pending_deletion":
                         delete_at = details.get("delete_at")
                         is_expired = False
@@ -1083,57 +1405,82 @@ def cleanup_expired_rules():
                              if delete_at_utc <= now_utc:
                                  is_expired = True
                         else:
-                             logging.warning(f"Rule {hostname} pending delete but has invalid delete_at timestamp: {delete_at}. Deleting immediately.")
+                             logging.warning(f"Rule {hostname} pending delete but has invalid delete_at timestamp: {delete_at}. Marking for immediate deletion processing.")
                              is_expired = True
 
                         if is_expired:
                             zone_id_for_delete = details.get("zone_id", CF_ZONE_ID)
+                            access_app_id_for_delete = details.get("access_app_id")
+                            
                             if not zone_id_for_delete:
-                                logging.error(f"Cannot schedule DNS deletion for expired rule {hostname}: Zone ID is missing in state and no default CF_ZONE_ID is set.")
-                            else:
-                                rules_to_delete[hostname] = zone_id_for_delete
-                                logging.info(f"Rule for {hostname} in zone {zone_id_for_delete} expired. Scheduling for full deletion.")
+                                logging.error(f"Cannot schedule DNS deletion for expired rule {hostname}: Zone ID is missing in state and no default CF_ZONE_ID is set. Rule will be removed from state only.")
+                            
+                            rules_to_process_for_deletion[hostname] = {
+                                "zone_id": zone_id_for_delete,
+                                "access_app_id": access_app_id_for_delete
+                            }
+                            logging.info(f"Rule for {hostname} (Zone: {zone_id_for_delete}, Access App: {access_app_id_for_delete}) expired. Scheduling for full deletion.")
 
-            if rules_to_delete:
-                logging.info(f"Processing cleanup for hostnames: {list(rules_to_delete.keys())}")
-                processed_hostnames_for_cf_update = []
-                dns_delete_success_all = True
+            if rules_to_process_for_deletion:
+                logging.info(f"Processing cleanup for hostnames: {list(rules_to_process_for_deletion.keys())}")
+                hostnames_fully_cleaned_for_state_removal = []
+                
+                effective_tunnel_id = tunnel_state.get("id") if not USE_EXTERNAL_CLOUDFLARED else EXTERNAL_TUNNEL_ID
 
-                for hostname, zone_id in rules_to_delete.items():
-                    if tunnel_state.get("id"):
+                for hostname, delete_info in rules_to_process_for_deletion.items():
+                    dns_deleted_successfully = False
+                    access_app_deleted_successfully = False
+                    zone_id = delete_info["zone_id"]
+                    access_app_id = delete_info["access_app_id"]
+
+                    
+                    if zone_id and effective_tunnel_id:
                          logging.info(f"Attempting DNS record deletion for expired rule: {hostname} in zone {zone_id}")
-                         if delete_cloudflare_dns_record(zone_id, hostname, tunnel_state["id"]):
-                              processed_hostnames_for_cf_update.append(hostname)
+                         if delete_cloudflare_dns_record(zone_id, hostname, effective_tunnel_id):
+                              dns_deleted_successfully = True
                          else:
-                              logging.error(f"Failed to delete DNS record for {hostname} in zone {zone_id}. Tunnel config update will proceed, but DNS record may remain stale.")
-                              dns_delete_success_all = False
-                              processed_hostnames_for_cf_update.append(hostname)
+                              logging.error(f"Failed to delete DNS record for {hostname} in zone {zone_id}. It may remain stale.")
+                    elif not zone_id:
+                        logging.warning(f"Skipping DNS deletion for {hostname} as Zone ID is unavailable.")
+                    elif not effective_tunnel_id:
+                        logging.warning(f"Skipping DNS deletion for {hostname} as Tunnel ID is unavailable.")
+                    
+                    
+                    if access_app_id:
+                        logging.info(f"Attempting Access Application deletion for expired rule: {hostname}, App ID: {access_app_id}")
+                        if delete_cloudflare_access_application(access_app_id):
+                            access_app_deleted_successfully = True
+                        else:
+                            logging.error(f"Failed to delete Access Application {access_app_id} for {hostname}. It may remain orphaned.")
                     else:
-                         logging.error(f"Cannot delete DNS for expired rule {hostname}: Missing Tunnel ID.")
-                         dns_delete_success_all = False
-                         processed_hostnames_for_cf_update.append(hostname)
+                        access_app_deleted_successfully = True # No app to delete, so considered successful in this context
 
-                if processed_hostnames_for_cf_update:
-                    logging.info(f"Attempting Cloudflare tunnel config update after processing DNS deletions for: {processed_hostnames_for_cf_update}")
-                    if update_cloudflare_config():
-                        logging.info(f"Cloudflare tunnel config updated. Removing rules from local state: {processed_hostnames_for_cf_update}")
+                    
+                    hostnames_fully_cleaned_for_state_removal.append(hostname)
+
+
+                if hostnames_fully_cleaned_for_state_removal:
+                   
+                    logging.info(f"Attempting Cloudflare tunnel config update after processing deletions for: {hostnames_fully_cleaned_for_state_removal}")
+                    if update_cloudflare_config() or USE_EXTERNAL_CLOUDFLARED: 
+                        logging.info(f"Cloudflare tunnel config update successful (or skipped for external). Removing rules from local state: {hostnames_fully_cleaned_for_state_removal}")
                         with state_lock:
                             deleted_count = 0
-                            for hostname in processed_hostnames_for_cf_update:
+                            for hostname in hostnames_fully_cleaned_for_state_removal:
                                 if hostname in managed_rules and managed_rules[hostname].get("status") == "pending_deletion":
+                               
                                     del managed_rules[hostname]
                                     deleted_count += 1
                                     state_changed_in_cleanup = True
                                 else:
                                     logging.warning(f"Rule {hostname} was scheduled for removal but not found or not pending when removing from state.")
-                            logging.info(f"Removed {deleted_count} rules from local state.")
+                            logging.info(f"Removed {deleted_count} rules from local state after cleanup.")
                             if state_changed_in_cleanup:
                                 save_state()
                     else:
-                        logging.error("Failed to update Cloudflare tunnel config during rule cleanup. Rules remain in local state. Will retry on next cycle.")
+                        logging.error("Failed to update Cloudflare tunnel config during rule cleanup. Rules remain in local state but their cloud resources might have been deleted. Will retry on next cycle or reconciliation.")
                 else:
-                     logging.info("No hostnames eligible for tunnel config update after DNS processing during cleanup.")
-
+                     logging.info("No hostnames processed for state removal during cleanup.")
             else:
                 logging.debug("No expired rules found requiring cleanup.")
 
@@ -1154,7 +1501,7 @@ def reconcile_state():
         logging.warning("Tunnel not initialized, skipping reconciliation.")
         return
 
-    # Set reconciliation status to in progress
+    
     app.reconciliation_info = {
         "in_progress": True,
         "progress": 0,
@@ -1164,7 +1511,7 @@ def reconcile_state():
         "status": "Starting reconciliation..."
     }
 
-    # Start the reconciliation in a separate thread to prevent webUI stalls
+    
     reconcile_thread = threading.Thread(
         target=_run_reconciliation,
         name="ReconciliationThread",
@@ -1176,17 +1523,20 @@ def reconcile_state():
     return
 
 def _run_reconciliation():
-    """Does the actual reconciliation work in a separate thread."""
     logging.info("[Reconcile Thread] Starting state reconciliation...")
-    needs_cf_update = False
+    needs_tunnel_config_update = False # For tunnel ingress rules
     state_changed_locally = False
     
-    # Create a watchdog timer that will force-complete reconciliation if it takes too long
-    max_total_time = 180  # 3 minutes absolute maximum
+    max_total_time = 180 
     reconciliation_start = time.time()
     
+    app.reconciliation_info = {
+        "in_progress": True, "progress": 0, "total_items": 0,
+        "processed_items": 0, "start_time": reconciliation_start,
+        "status": "Initializing reconciliation..."
+    }
+
     def watchdog_timer():
-        """Force-completes reconciliation if it's taking too long"""
         elapsed = time.time() - reconciliation_start
         if elapsed > max_total_time and getattr(app, 'reconciliation_info', {}).get('in_progress', False):
             logging.error(f"[Reconcile] WATCHDOG: Reconciliation taking too long ({elapsed:.1f}s)! Forcing completion.")
@@ -1195,51 +1545,40 @@ def _run_reconciliation():
             app.reconciliation_info["status"] = "Forced completion by watchdog timer"
             app.reconciliation_info["completed_at"] = time.time()
     
-    # Start the watchdog timer
     watchdog = threading.Timer(max_total_time + 10, watchdog_timer)
     watchdog.daemon = True
     watchdog.start()
     
     try:
-        # First phase: Get running container data
-        running_labeled_containers = {}
+        # --- Phase 1: Get running container data with Access Policy labels ---
+        running_labeled_hostnames_details = {} # Changed from running_labeled_containers
         try:
-            # Update UI status
-            app.reconciliation_info["status"] = "Scanning containers..."
+            app.reconciliation_info["status"] = "Scanning containers for services and access policies..."
             logging.debug("[Reconcile] Starting container scan phase")
             
-            try:
-                # Use lower batch size for scanning in external mode
-                containers = docker_client.containers.list(sparse=False, all=SCAN_ALL_NETWORKS)
-                container_count = len(containers)
-                logging.debug(f"[Reconcile] Found {container_count} total containers.")
-            except Exception as e:
-                logging.error(f"[Reconcile] Error listing containers: {e}")
-                app.reconciliation_info["status"] = f"Error listing containers: {e}"
-                containers = []
-                container_count = 0
-                
-            # Process containers in smaller batches if in external mode to reduce API load
-            batch_size = 5 if not USE_EXTERNAL_CLOUDFLARED else 3
+            containers = docker_client.containers.list(sparse=False, all=SCAN_ALL_NETWORKS)
+            container_count = len(containers)
+            logging.debug(f"[Reconcile] Found {container_count} total containers.")
+            app.reconciliation_info["total_items"] = container_count # Initial total for container scan progress
+
+            batch_size = 3 if not USE_EXTERNAL_CLOUDFLARED else 2
+            processed_container_count = 0
+
             for i in range(0, container_count, batch_size):
-                # Check timeout
-                if time.time() - reconciliation_start > 60:  # 1 minute max for container scanning
-                    logging.warning("[Reconcile] Timeout during container scanning phase. Moving to next phase with partial data.")
-                    app.reconciliation_info["status"] = "Partial scan - timeout reached"
+                if time.time() - reconciliation_start > 60: 
+                    logging.warning("[Reconcile] Timeout during container scanning phase.")
+                    app.reconciliation_info["status"] = "Container scan timeout (partial data)"
                     break
                 
                 batch = containers[i:i+batch_size]
-                logging.debug(f"[Reconcile] Processing container batch {i//batch_size + 1} with {len(batch)} containers")
+                processed_container_count += len(batch)
+                app.reconciliation_info["progress"] = min(100, int((processed_container_count / container_count) * 100)) if container_count > 0 else 0
+                app.reconciliation_info["processed_items"] = processed_container_count
                 app.reconciliation_info["status"] = f"Scanning containers: batch {i//batch_size + 1}/{(container_count+batch_size-1)//batch_size}"
                 
-                # Process each container with individual timeouts
                 for c in batch:
-                    container_start_time = time.time()
+                    container_scan_item_start_time = time.time()
                     try:
-                        if time.time() - container_start_time > 5:  # 5 seconds max per container
-                            logging.warning(f"[Reconcile] Container {c.id[:12]} processing taking too long, skipping")
-                            continue
-                            
                         labels = c.labels
                         container_id = c.id
                         container_name = c.name
@@ -1247,386 +1586,333 @@ def _run_reconciliation():
                         
                         if not enabled:
                             continue
-                            
-                        # Process hostname configurations
-                        hostname_configs = []
                         
-                        # Direct hostname labels
-                        hostname = labels.get(f"{LABEL_PREFIX}.hostname")
-                        service = labels.get(f"{LABEL_PREFIX}.service")
-                        zone_name = labels.get(f"{LABEL_PREFIX}.zonename")
-                        no_tls_verify = labels.get(f"{LABEL_PREFIX}.no_tls_verify", "false").lower() in ["true", "1", "t", "yes"]
-                        
-                        if hostname and service:
-                            if is_valid_hostname(hostname) and is_valid_service(service):
-                                hostname_configs.append({
-                                    "hostname": hostname,
-                                    "service": service,
-                                    "zone_name": zone_name,
-                                    "no_tls_verify": no_tls_verify
-                                })
-                        
-                        # Process indexed labels with individual timeout
-                        index = 0
-                        index_start_time = time.time()
-                        while time.time() - index_start_time < 3:  # 3 seconds max for all indexed labels
-                            prefix = f"{LABEL_PREFIX}.{index}"
-                            indexed_hostname = labels.get(f"{prefix}.hostname")
-                            if not indexed_hostname:
-                                break
-                                
-                            indexed_service = labels.get(f"{prefix}.service", service)
-                            if not indexed_service:
-                                index += 1
-                                continue
-                                
-                            indexed_zone_name = labels.get(f"{prefix}.zonename", zone_name)
-                            indexed_no_tls_verify = labels.get(f"{prefix}.no_tls_verify", 
-                                                              labels.get(f"{LABEL_PREFIX}.no_tls_verify", "false")).lower() in ["true", "1", "t", "yes"]
-                            
-                            if is_valid_hostname(indexed_hostname) and is_valid_service(indexed_service):
-                                hostname_configs.append({
-                                    "hostname": indexed_hostname,
-                                    "service": indexed_service,
-                                    "zone_name": indexed_zone_name,
-                                    "no_tls_verify": indexed_no_tls_verify
-                                })
-                            
-                            index += 1
-                            
-                        # Add to running containers map
-                        for config in hostname_configs:
-                            hostname = config["hostname"]
-                            if hostname in running_labeled_containers:
-                                logging.warning(f"[Reconcile] Duplicate hostname '{hostname}' found. Using latest.")
-                            
-                            running_labeled_containers[hostname] = {
-                                "service": config["service"],
-                                "container_id": container_id,
-                                "container_name": container_name,
-                                "zone_name": config["zone_name"],
-                                "no_tls_verify": config["no_tls_verify"]
-                            }
-                            
-                    except Exception as e:
-                        logging.error(f"[Reconcile] Error processing container {c.id[:12]}: {e}")
-                        continue
-                
-                # Add delay between batches
-                if USE_EXTERNAL_CLOUDFLARED and i + batch_size < container_count:
-                    time.sleep(0.5)
-            
-            logging.info(f"[Reconcile] Found {len(running_labeled_containers)} running hostnames with valid DockFlare labels.")
-            
-        except Exception as e:
-            logging.error(f"[Reconcile] Error in container scanning phase: {e}", exc_info=True)
-            app.reconciliation_info["status"] = f"Container scan error: {str(e)}"
+                        # Parse Access Policy defaults from non-indexed labels
+                        default_access_policy_type = labels.get(f"{LABEL_PREFIX}.access.policy")
+                        default_access_app_name = labels.get(f"{LABEL_PREFIX}.access.name")
+                        default_session_duration = labels.get(f"{LABEL_PREFIX}.access.session_duration", "24h")
+                        default_app_launcher_visible = labels.get(f"{LABEL_PREFIX}.access.app_launcher_visible", "false").lower() in ["true", "1", "t", "yes"]
+                        default_allowed_idps_str = labels.get(f"{LABEL_PREFIX}.access.allowed_idps")
+                        default_auto_redirect = labels.get(f"{LABEL_PREFIX}.access.auto_redirect_to_identity", "false").lower() in ["true", "1", "t", "yes"]
+                        default_custom_rules_str = labels.get(f"{LABEL_PREFIX}.access.custom_rules")
 
-        # Second phase: State comparison with timeout protection
-        hostnames_requiring_dns_check = []
-        app.reconciliation_info["status"] = "Comparing state..."
-        
-        # Use a timeout for acquiring the state lock
-        state_lock_timeout = 10  # 10 seconds max to acquire lock
+                        hostname_configs_for_container = []
+                        # Direct (non-indexed) labels
+                        h = labels.get(f"{LABEL_PREFIX}.hostname")
+                        s = labels.get(f"{LABEL_PREFIX}.service")
+                        zn = labels.get(f"{LABEL_PREFIX}.zonename")
+                        ntv = labels.get(f"{LABEL_PREFIX}.no_tls_verify", "false").lower() in ["true", "1", "t", "yes"]
+                        if h and s and is_valid_hostname(h) and is_valid_service(s):
+                            hostname_configs_for_container.append({
+                                "hostname": h, "service": s, "zone_name": zn, "no_tls_verify": ntv,
+                                "access_policy_type": default_access_policy_type,
+                                "access_app_name": default_access_app_name,
+                                "access_session_duration": default_session_duration,
+                                "access_app_launcher_visible": default_app_launcher_visible,
+                                "access_allowed_idps_str": default_allowed_idps_str,
+                                "access_auto_redirect": default_auto_redirect,
+                                "access_custom_rules_str": default_custom_rules_str
+                            })
+
+                        # Indexed labels
+                        idx = 0
+                        while time.time() - container_scan_item_start_time < 5 : # Timeout per container for all its labels
+                            pfx = f"{LABEL_PREFIX}.{idx}"
+                            h_idx = labels.get(f"{pfx}.hostname")
+                            if not h_idx: break
+                            s_idx = labels.get(f"{pfx}.service", s) # Fallback to non-indexed service
+                            if not s_idx: idx += 1; continue
+                            
+                            zn_idx = labels.get(f"{pfx}.zonename", zn)
+                            ntv_idx = labels.get(f"{pfx}.no_tls_verify", str(ntv).lower()).lower() in ["true", "1", "t", "yes"]
+
+                            acc_pol_idx = labels.get(f"{pfx}.access.policy", default_access_policy_type)
+                            acc_name_idx = labels.get(f"{pfx}.access.name", default_access_app_name)
+                            acc_sess_idx = labels.get(f"{pfx}.access.session_duration", default_session_duration)
+                            acc_vis_idx = labels.get(f"{pfx}.access.app_launcher_visible", str(default_app_launcher_visible).lower()).lower() in ["true", "1", "t", "yes"]
+                            acc_idps_idx = labels.get(f"{pfx}.access.allowed_idps", default_allowed_idps_str)
+                            acc_redir_idx = labels.get(f"{pfx}.access.auto_redirect_to_identity", str(default_auto_redirect).lower()).lower() in ["true", "1", "t", "yes"]
+                            acc_custom_idx = labels.get(f"{pfx}.access.custom_rules", default_custom_rules_str)
+
+                            if is_valid_hostname(h_idx) and is_valid_service(s_idx):
+                                hostname_configs_for_container.append({
+                                    "hostname": h_idx, "service": s_idx, "zone_name": zn_idx, "no_tls_verify": ntv_idx,
+                                    "access_policy_type": acc_pol_idx, "access_app_name": acc_name_idx,
+                                    "access_session_duration": acc_sess_idx, "access_app_launcher_visible": acc_vis_idx,
+                                    "access_allowed_idps_str": acc_idps_idx, "access_auto_redirect": acc_redir_idx,
+                                    "access_custom_rules_str": acc_custom_idx
+                                })
+                            idx += 1
+                        
+                        for config in hostname_configs_for_container:
+                            hostname = config["hostname"]
+                            if hostname in running_labeled_hostnames_details:
+                                logging.warning(f"[Reconcile] Duplicate hostname '{hostname}' found from labels. Using latest encountered: {container_name}.")
+                            running_labeled_hostnames_details[hostname] = {
+                                "service": config["service"], "container_id": container_id, "container_name": container_name,
+                                "zone_name": config["zone_name"], "no_tls_verify": config["no_tls_verify"],
+                                "access_policy_type": config["access_policy_type"],
+                                "access_app_name": config["access_app_name"],
+                                "access_session_duration": config["access_session_duration"],
+                                "access_app_launcher_visible": config["access_app_launcher_visible"],
+                                "access_allowed_idps_str": config["access_allowed_idps_str"],
+                                "access_auto_redirect": config["access_auto_redirect"],
+                                "access_custom_rules_str": config["access_custom_rules_str"]
+                            }
+                    except Exception as e_cont:
+                        logging.error(f"[Reconcile] Error processing container {c.id[:12]}: {e_cont}")
+                        continue
+                if USE_EXTERNAL_CLOUDFLARED and i + batch_size < container_count: time.sleep(0.2)
+            
+            logging.info(f"[Reconcile] Found {len(running_labeled_hostnames_details)} running hostnames with DockFlare labels.")
+        except Exception as e_phase1:
+            logging.error(f"[Reconcile] Error in container scanning phase: {e_phase1}", exc_info=True)
+            app.reconciliation_info["status"] = f"Container scan error: {str(e_phase1)}"
+
+        # --- Phase 2: State Comparison & Cloud Resource Reconciliation (Tunnel Ingress, DNS, Access Apps) ---
+        app.reconciliation_info["status"] = "Comparing state and reconciling cloud resources..."
+        app.reconciliation_info["total_items"] = len(running_labeled_hostnames_details) + len(managed_rules) # Approx total items for this phase
+        app.reconciliation_info["processed_items"] = 0
+        processed_reconcile_items = 0
+
+        state_lock_timeout = 10 
         state_lock_acquired = False
         
-        try:
+        hostnames_requiring_dns_setup = [] # List of (hostname, target_zone_id)
+
+        try: # state_lock acquisition and main reconciliation logic
             state_lock_acquired = state_lock.acquire(timeout=state_lock_timeout)
             if not state_lock_acquired:
-                logging.error("[Reconcile] Could not acquire state lock after timeout. Continuing with limited functionality.")
-                app.reconciliation_info["status"] = "Error: Could not acquire state lock"
+                logging.error("[Reconcile] Could not acquire state lock. Reconciliation incomplete.")
+                app.reconciliation_info["status"] = "Error: Could not acquire state lock for reconciliation."
             else:
                 logging.debug("[Reconcile] Acquired state lock for comparison.")
+                now_utc = datetime.now(timezone.utc)
+                current_managed_hostnames_in_state = set(managed_rules.keys())
                 
-                # Check overall timeout
-                if time.time() - reconciliation_start > 120:  # 2 minutes max
-                    logging.warning("[Reconcile] Overall timeout reached before completing state comparison.")
-                    app.reconciliation_info["status"] = "Timeout reached during state comparison"
-                    needs_cf_update = False  # Skip remaining operations
-                else:
-                    # Process state comparison with timeout protection
-                    comparison_start = time.time()
-                    comparison_timeout = 30  # 30 seconds max for comparison
+                # A. Reconcile based on running containers (desired state)
+                for hostname, desired_details in running_labeled_hostnames_details.items():
+                    processed_reconcile_items +=1
+                    app.reconciliation_info["processed_items"] = processed_reconcile_items
+                    app.reconciliation_info["progress"] = min(100, int((processed_reconcile_items / app.reconciliation_info["total_items"]) * 100)) if app.reconciliation_info["total_items"] > 0 else 0
+                    app.reconciliation_info["status"] = f"Reconciling: {hostname}"
+
+                    if time.time() - reconciliation_start > max_total_time - 30: # Leave time for final steps
+                        logging.warning("[Reconcile] Timeout reached during active rule reconciliation.")
+                        break
+
+                    target_zone_id = get_zone_id_from_name(desired_details["zone_name"]) if desired_details["zone_name"] else CF_ZONE_ID
+                    if not target_zone_id:
+                        logging.error(f"[Reconcile] No zone ID for {hostname}, skipping its reconciliation.")
+                        continue
+
+                    current_rule = managed_rules.get(hostname)
+                    if not current_rule: # New rule needed
+                        logging.info(f"[Reconcile] Adding new rule for {hostname} to managed_rules.")
+                        current_rule = {
+                            "service": desired_details["service"], "container_id": desired_details["container_id"],
+                            "status": "active", "delete_at": None, "zone_id": target_zone_id,
+                            "no_tls_verify": desired_details["no_tls_verify"],
+                            "access_app_id": None, "access_policy_type": None, "access_app_config_hash": None
+                        }
+                        managed_rules[hostname] = current_rule
+                        state_changed_locally = True
+                        needs_tunnel_config_update = True # For ingress rule
+                        hostnames_requiring_dns_setup.append((hostname, target_zone_id))
+                    else: # Existing rule, check for updates
+                        if current_rule.get("status") == "pending_deletion":
+                            logging.info(f"[Reconcile] Reactivating pending deletion rule for {hostname}.")
+                            current_rule["status"] = "active"; current_rule["delete_at"] = None
+                            state_changed_locally = True # Access App and Ingress will be re-evaluated below
+                        
+                        if current_rule.get("service") != desired_details["service"] or \
+                           current_rule.get("no_tls_verify") != desired_details["no_tls_verify"] or \
+                           current_rule.get("zone_id") != target_zone_id:
+                            needs_tunnel_config_update = True # Ingress rule change
+                        
+                        current_rule["service"] = desired_details["service"]
+                        current_rule["container_id"] = desired_details["container_id"] # Always update container_id
+                        current_rule["zone_id"] = target_zone_id
+                        current_rule["no_tls_verify"] = desired_details["no_tls_verify"]
+                        state_changed_locally = True
+                        # If zone_id changed, DNS might need recreation
+                        hostnames_requiring_dns_setup.append((hostname, target_zone_id))
+
+
+                    # --- Access Application Reconciliation for this active hostname ---
+                    desired_access_policy_type = desired_details["access_policy_type"]
+                    desired_access_app_name = desired_details["access_app_name"] if desired_details["access_app_name"] else f"DockFlare-{hostname}"
                     
-                    try:
-                        # Your state comparison code with timeout checks
-                        now_utc = datetime.now(timezone.utc)
-                        managed_hostnames = set(managed_rules.keys())
-                        running_hostnames = set(running_labeled_containers.keys())
+                    if desired_access_policy_type:
+                        desired_acc_hash = generate_access_app_config_hash(
+                            desired_access_policy_type, desired_details["access_session_duration"],
+                            desired_details["access_app_launcher_visible"], desired_details["access_allowed_idps_str"],
+                            desired_details["access_auto_redirect"], desired_details["access_custom_rules_str"]
+                        )
 
-                        # Process running containers with timeout protection
-                        for hostname, running_details in running_labeled_containers.items():
-                            # Check timeout periodically
-                            if time.time() - comparison_start > comparison_timeout:
-                                logging.warning("[Reconcile] State comparison taking too long, stopping early")
-                                app.reconciliation_info["status"] = "State comparison timeout - partial results"
-                                break
-                                
-                            # Zone ID lookup with strict timeout
-                            target_zone_id = None
-                            zone_name = running_details.get("zone_name")
-                            
-                            if zone_name:
-                                logging.debug(f"[Reconcile] Looking up zone ID for {zone_name}")
-                                app.reconciliation_info["status"] = f"Looking up zone for {zone_name}"
-                                
-                                # Use a timeout wrapper for zone ID lookup
-                                zone_start = time.time()
-                                zone_timeout = 5  # 5 seconds max per zone lookup
-                                
-                                try:
-                                    # First check cache without API call
-                                    cached_data = zone_id_cache.get(zone_name)
-                                    if cached_data:
-                                        zone_id, timestamp = cached_data
-                                        target_zone_id = zone_id
-                                        logging.debug(f"[Reconcile] Using cached zone ID for {zone_name}: {zone_id}")
-                                    else:
-                                        # Only make API call if not in cache and within timeout
-                                        if time.time() - zone_start < zone_timeout:
-                                            target_zone_id = get_zone_id_from_name(zone_name)
-                                            logging.debug(f"[Reconcile] Zone lookup for {zone_name} result: {target_zone_id}")
-                                except Exception as zone_err:
-                                    logging.error(f"[Reconcile] Error in zone lookup for {zone_name}: {zone_err}")
-                            
-                            if not target_zone_id:
-                                target_zone_id = CF_ZONE_ID
-                                
-                            if not target_zone_id:
-                                logging.error(f"[Reconcile] No zone ID for {hostname}, skipping")
-                                continue
-                                
-                            # Update state rules with timeouts
-                            if time.time() - comparison_start > comparison_timeout:
-                                break
-                                
-                            # Process rule
-                            if hostname in managed_rules:
-                                rule = managed_rules[hostname]
-                                zone_id_changed = rule.get("zone_id") != target_zone_id
+                        current_app_id = current_rule.get("access_app_id")
+                        needs_access_app_action = False
 
-                                if rule.get("status") == "pending_deletion":
-                                    logging.info(f"[Reconcile] Reactivating {hostname}")
-                                    rule["status"] = "active"
-                                    rule["delete_at"] = None
-                                    rule["service"] = running_details["service"]
-                                    rule["container_id"] = running_details["container_id"]
-                                    rule["zone_id"] = target_zone_id
-                                    rule["no_tls_verify"] = running_details["no_tls_verify"]
+                        if desired_access_policy_type == "default_tld":
+                            if current_app_id:
+                                logging.info(f"[Reconcile] {hostname} wants 'default_tld', deleting managed Access App {current_app_id}.")
+                                if delete_cloudflare_access_application(current_app_id): # API call outside lock recommended, but complex here
+                                    current_rule["access_app_id"] = None
+                                    current_rule["access_policy_type"] = "default_tld"
+                                    current_rule["access_app_config_hash"] = None
                                     state_changed_locally = True
-                                    needs_cf_update = True
-                                    hostnames_requiring_dns_check.append((hostname, target_zone_id))
-                                    
-                                elif rule.get("status") == "active":
-                                    container_changed = rule.get("container_id") != running_details["container_id"]
-                                    service_changed = rule.get("service") != running_details["service"]
-                                    no_tls_verify_changed = rule.get("no_tls_verify") != running_details["no_tls_verify"]
-                                    
-                                    if container_changed or service_changed or no_tls_verify_changed or zone_id_changed:
-                                        if container_changed:
-                                            rule["container_id"] = running_details["container_id"]
-                                        if service_changed:
-                                            rule["service"] = running_details["service"]
-                                            needs_cf_update = True
-                                        if no_tls_verify_changed:
-                                            rule["no_tls_verify"] = running_details["no_tls_verify"]
-                                            needs_cf_update = True
-                                        if zone_id_changed:
-                                            rule["zone_id"] = target_zone_id
-                                            hostnames_requiring_dns_check.append((hostname, target_zone_id))
-                                            needs_cf_update = True
-                                            
-                                        state_changed_locally = True
-                            else:
-                                logging.info(f"[Reconcile] Adding new rule for {hostname}")
-                                managed_rules[hostname] = {
-                                    "service": running_details["service"],
-                                    "container_id": running_details["container_id"],
-                                    "status": "active",
-                                    "delete_at": None,
-                                    "zone_id": target_zone_id,
-                                    "no_tls_verify": running_details["no_tls_verify"]
-                                }
-                                state_changed_locally = True
-                                needs_cf_update = True
-                                hostnames_requiring_dns_check.append((hostname, target_zone_id))
-
-                        # Mark non-running rules for deletion (with timeout check)
-                        if time.time() - comparison_start < comparison_timeout:
-                            for hostname in list(managed_hostnames):
-                                if hostname not in running_hostnames:
-                                    if hostname in managed_rules and managed_rules[hostname].get("status") == "active":
-                                        logging.info(f"[Reconcile] Marking {hostname} for deletion")
-                                        rule = managed_rules[hostname]
-                                        rule["status"] = "pending_deletion"
-                                        rule["delete_at"] = now_utc + timedelta(seconds=GRACE_PERIOD_SECONDS)
-                                        state_changed_locally = True
-                        
-                        # Save state if changed
-                        if state_changed_locally:
-                            logging.info("[Reconcile] Saving state changes")
-                            app.reconciliation_info["status"] = "Saving state..."
-                            save_state()
+                        elif desired_access_policy_type in ["bypass", "authenticate"]:
+                            cf_access_policies_list = []
+                            if desired_details["access_custom_rules_str"]:
+                                try: cf_access_policies_list = json.loads(desired_details["access_custom_rules_str"])
+                                except: logging.error(f"[Reconcile] Invalid custom_rules JSON for {hostname}")
+                            if not cf_access_policies_list:
+                                if desired_access_policy_type == "bypass":
+                                    cf_access_policies_list = [{"name": "Public Bypass", "decision": "bypass", "include": [{"everyone": True}]}]
+                                elif desired_access_policy_type == "authenticate":
+                                    auth_include = []
+                                    if desired_details["access_allowed_idps_str"]:
+                                        ids = [idp.strip() for idp in desired_details["access_allowed_idps_str"].split(',') if idp.strip()]
+                                        if ids: auth_include.append({"identity_provider": {"id": ids}})
+                                    if not auth_include: auth_include.append({"everyone": True}) # Default to any authed user via app's IdPs
+                                    cf_access_policies_list = [{"name": "Default Auth", "decision": "allow", "include": auth_include}]
                             
-                    except Exception as state_err:
-                        logging.error(f"[Reconcile] Error during state comparison: {state_err}", exc_info=True)
-                        app.reconciliation_info["status"] = f"State comparison error: {str(state_err)}"
-                        
-        except Exception as lock_err:
-            logging.error(f"[Reconcile] Error acquiring state lock: {lock_err}", exc_info=True)
-            app.reconciliation_info["status"] = f"Error acquiring state lock: {str(lock_err)}"
+                            app_idps = [idp.strip() for idp in desired_details["access_allowed_idps_str"].split(',') if idp.strip()] if desired_details["access_allowed_idps_str"] else None
+
+                            if current_app_id: # Existing app, check if update needed
+                                if current_rule.get("access_policy_type") != desired_access_policy_type or \
+                                   current_rule.get("access_app_config_hash") != desired_acc_hash:
+                                    logging.info(f"[Reconcile] Updating Access App for {hostname} (ID: {current_app_id}).")
+                                    updated_app = update_cloudflare_access_application(
+                                        current_app_id, hostname, desired_access_app_name,
+                                        desired_details["access_session_duration"], desired_details["access_app_launcher_visible"],
+                                        [hostname], cf_access_policies_list, app_idps, desired_details["access_auto_redirect"]
+                                    )
+                                    if updated_app:
+                                        current_rule["access_policy_type"] = desired_access_policy_type
+                                        current_rule["access_app_config_hash"] = desired_acc_hash
+                                        state_changed_locally = True
+                            else: # No current app, create new
+                                logging.info(f"[Reconcile] Creating Access App for {hostname}.")
+                                created_app = create_cloudflare_access_application(
+                                    hostname, desired_access_app_name,
+                                    desired_details["access_session_duration"], desired_details["access_app_launcher_visible"],
+                                    [hostname], cf_access_policies_list, app_idps, desired_details["access_auto_redirect"]
+                                )
+                                if created_app and created_app.get("id"):
+                                    current_rule["access_app_id"] = created_app.get("id")
+                                    current_rule["access_policy_type"] = desired_access_policy_type
+                                    current_rule["access_app_config_hash"] = desired_acc_hash
+                                    state_changed_locally = True
+                    else: # No desired_access_policy_type from labels, ensure no app is managed
+                        if current_rule.get("access_app_id"):
+                            logging.info(f"[Reconcile] No access policy for {hostname}, deleting managed Access App {current_rule['access_app_id']}.")
+                            if delete_cloudflare_access_application(current_rule["access_app_id"]):
+                                current_rule["access_app_id"] = None
+                                current_rule["access_policy_type"] = None
+                                current_rule["access_app_config_hash"] = None
+                                state_changed_locally = True
+                
+                # B. Reconcile based on managed_rules (for rules whose containers are no longer running)
+                hostnames_in_state_but_not_running = list(current_managed_hostnames_in_state - set(running_labeled_hostnames_details.keys()))
+                
+                for hostname_to_check in hostnames_in_state_but_not_running:
+                    processed_reconcile_items +=1
+                    app.reconciliation_info["processed_items"] = processed_reconcile_items
+                    app.reconciliation_info["progress"] = min(100, int((processed_reconcile_items / app.reconciliation_info["total_items"]) * 100)) if app.reconciliation_info["total_items"] > 0 else 0
+                    app.reconciliation_info["status"] = f"Reconciling (orphaned?): {hostname_to_check}"
+
+                    if time.time() - reconciliation_start > max_total_time - 20: # Leave time for final steps
+                        logging.warning("[Reconcile] Timeout reached during orphaned rule reconciliation.")
+                        break
+
+                    rule = managed_rules.get(hostname_to_check)
+                    if rule and rule.get("status") == "active": # It was active but container is gone or no longer labeled
+                        logging.info(f"[Reconcile] Rule for {hostname_to_check} is active but container/labels missing. Marking for deletion.")
+                        rule["status"] = "pending_deletion"
+                        rule["delete_at"] = now_utc + timedelta(seconds=GRACE_PERIOD_SECONDS)
+                        state_changed_locally = True
+                        # Associated Access App will be cleaned by cleanup_expired_rules once grace period ends.
+                        # Or, to be more aggressive during reconciliation:
+                        # app_id_to_delete_orphan = rule.get("access_app_id")
+                        # if app_id_to_delete_orphan:
+                        #    logging.info(f"[Reconcile] Deleting Access App {app_id_to_delete_orphan} for orphaned rule {hostname_to_check}.")
+                        #    delete_cloudflare_access_application(app_id_to_delete_orphan) # This would be immediate
+                        #    rule["access_app_id"] = None # Clear it from state as it's being deleted
+
+                if state_changed_locally:
+                    logging.info("[Reconcile] Saving state changes after reconciliation phase.")
+                    app.reconciliation_info["status"] = "Saving reconciled state..."
+                    save_state()
+        
+        except Exception as e_lock:
+            logging.error(f"[Reconcile] Error during state lock or main reconciliation logic: {e_lock}", exc_info=True)
+            app.reconciliation_info["status"] = f"Reconciliation error: {str(e_lock)}"
         finally:
             if state_lock_acquired:
                 state_lock.release()
-                logging.debug("[Reconcile] Released state lock after comparison")
+                logging.debug("[Reconcile] Released state lock after reconciliation.")
 
-        # Third phase: DNS operations with aggressive timeouts
-        if needs_cf_update and time.time() - reconciliation_start < 150:  # Leave 30s for DNS work
-            # Update CF config (external mode skip)
-            try:
-                app.reconciliation_info["status"] = "Updating configuration..."
-                
-                if USE_EXTERNAL_CLOUDFLARED:
-                    logging.info("[Reconcile] Using external mode, skipping CF config update")
-                    config_updated = True
+        # --- Phase 3: Cloudflare Tunnel Config Update & DNS Operations ---
+        if time.time() - reconciliation_start > max_total_time - 15: # Check timeout before this phase
+             logging.warning("[Reconcile] Timeout reached before Tunnel/DNS operations.")
+             needs_tunnel_config_update = False # Skip update if too close to timeout
+
+        if needs_tunnel_config_update:
+            app.reconciliation_info["status"] = "Updating Cloudflare tunnel configuration..."
+            logging.info("[Reconcile] Tunnel ingress rules require update.")
+            if not USE_EXTERNAL_CLOUDFLARED:
+                if not update_cloudflare_config():
+                    logging.error("[Reconcile] Failed to update Cloudflare tunnel configuration.")
+                    app.reconciliation_info["status"] = "Error: Failed tunnel config update."
                 else:
-                    logging.info("[Reconcile] Updating CF config")
-                    config_updated = update_cloudflare_config()
-            except Exception as cf_err:
-                logging.error(f"[Reconcile] Error updating CF config: {cf_err}", exc_info=True)
-                config_updated = False
-                
-            # Process DNS records
-            dns_records_total = len(hostnames_requiring_dns_check)
-            app.reconciliation_info["total_items"] = dns_records_total
-            
-            if dns_records_total > 0:
-                logging.info(f"[Reconcile] Processing {dns_records_total} DNS records")
-                processed_count = 0
-                
-                # Group by zone with timeout protection
-                try:
-                    zone_grouped = {}
-                    for hostname, zone_id in hostnames_requiring_dns_check:
-                        if zone_id not in zone_grouped:
-                            zone_grouped[zone_id] = []
-                        zone_grouped[zone_id].append(hostname)
-                        
-                    app.reconciliation_info["status"] = f"Processing DNS across {len(zone_grouped)} zones..."
-                    
-                    # Process each zone with smaller batches for external mode
-                    batch_size = 1 if USE_EXTERNAL_CLOUDFLARED else 2
-                    
-                    for zone_id, hostnames in zone_grouped.items():
-                        logging.info(f"[Reconcile] Processing zone {zone_id}: {len(hostnames)} hostnames")
-                        
-                        # Process in small batches with timeouts
-                        for i in range(0, len(hostnames), batch_size):
-                            # Overall timeout check
-                            if time.time() - reconciliation_start > 170:  # Leave 10s for cleanup
-                                logging.warning("[Reconcile] Timeout reached during DNS operations")
-                                app.reconciliation_info["status"] = f"DNS timeout - processed {processed_count}/{dns_records_total}"
-                                break
-                                
-                            batch = hostnames[i:i+batch_size]
-                            app.reconciliation_info["status"] = f"DNS batch {i//batch_size + 1} in zone {zone_id}"
-                            
-                            # Process each hostname with individual timeout
-                            for hostname in batch:
-                                dns_start = time.time()
-                                dns_timeout = 10  # 10s max per hostname
-                                
-                                try:
-                                    app.reconciliation_info["status"] = f"Processing DNS for {hostname}"
-                                    
-                                    # Check rule still exists
-                                    rule = None
-                                    try:
-                                        state_lock_acq = state_lock.acquire(timeout=5)
-                                        if state_lock_acq:
-                                            try:
-                                                if hostname in managed_rules:
-                                                    rule = managed_rules[hostname]
-                                            finally:
-                                                state_lock.release()
-                                        else:
-                                            logging.warning(f"[Reconcile] Could not acquire lock for DNS check of {hostname}")
-                                    except Exception as lock_err:
-                                        logging.error(f"[Reconcile] Lock error for DNS: {lock_err}")
-                                    
-                                    if rule and tunnel_state.get("id"):
-                                        # Timeout wrapper for DNS operation
-                                        try:
-                                            if time.time() - dns_start > dns_timeout:
-                                                logging.warning(f"[Reconcile] Timeout before DNS operation for {hostname}")
-                                            else:
-                                                dns_record_id = create_cloudflare_dns_record(zone_id, hostname, tunnel_state["id"])
-                                                if dns_record_id == "semaphore_timeout":
-                                                    logging.warning(f"[Reconcile] DNS semaphore timeout for {hostname}")
-                                                    app.reconciliation_info["status"] = f"DNS timeout for {hostname}"
-                                                elif dns_record_id:
-                                                    logging.info(f"[Reconcile] DNS successful for {hostname}")
-                                                else:
-                                                    logging.error(f"[Reconcile] DNS failed for {hostname}")
-                                        except Exception as dns_err:
-                                            logging.error(f"[Reconcile] DNS error for {hostname}: {dns_err}")
-                                    else:
-                                        logging.warning(f"[Reconcile] Skipping DNS for {hostname}: rule or tunnel ID missing")
-                                    
-                                    # Always update progress
-                                    processed_count += 1
-                                    app.reconciliation_info["processed_items"] = processed_count
-                                    app.reconciliation_info["progress"] = min(100, int((processed_count / dns_records_total) * 100))
-                                    
-                                    # Add small delay in external mode
-                                    if USE_EXTERNAL_CLOUDFLARED:
-                                        time.sleep(1)
-                                        
-                                except Exception as e:
-                                    logging.error(f"[Reconcile] Error processing DNS for {hostname}: {e}")
-                                    processed_count += 1  # Count as processed
-                                    app.reconciliation_info["processed_items"] = processed_count
-                                    app.reconciliation_info["progress"] = min(100, int((processed_count / dns_records_total) * 100))
-                            
-                            # Delay between batches in external mode
-                            if USE_EXTERNAL_CLOUDFLARED and i + batch_size < len(hostnames):
-                                time.sleep(2)
-                except Exception as zone_err:
-                    logging.error(f"[Reconcile] Error in zone processing: {zone_err}", exc_info=True)
+                    logging.info("[Reconcile] Cloudflare tunnel configuration updated successfully.")
+                    app.reconciliation_info["status"] = "Tunnel configuration updated."
             else:
-                logging.info("[Reconcile] No DNS records to process")
-                app.reconciliation_info["progress"] = 100
+                logging.info("[Reconcile] External mode: Skipping DockFlare-managed tunnel config update.")
         else:
-            if not needs_cf_update:
-                logging.info("[Reconcile] No config changes needed")
+            logging.info("[Reconcile] No changes to tunnel ingress rules needed.")
+
+        # DNS Setup for new/updated rules
+        if hostnames_requiring_dns_setup:
+            app.reconciliation_info["status"] = f"Setting up DNS for {len(hostnames_requiring_dns_setup)} hostnames..."
+            dns_total = len(hostnames_requiring_dns_setup)
+            dns_processed = 0
+            # Re-initialize progress for DNS phase if desired, or continue overall progress
+            # For simplicity, we continue overall progress. For more granular:
+            # app.reconciliation_info["total_items"] = dns_total; app.reconciliation_info["processed_items"] = 0
+
+            effective_tunnel_id_for_dns = tunnel_state.get("id") if not USE_EXTERNAL_CLOUDFLARED else EXTERNAL_TUNNEL_ID
+            if effective_tunnel_id_for_dns:
+                for hostname_dns, zone_id_dns in hostnames_requiring_dns_setup:
+                    dns_processed +=1
+                    # Update overall progress based on dns_processed relative to dns_total if using granular progress for DNS
+                    # app.reconciliation_info["progress"] = ...
+                    app.reconciliation_info["status"] = f"DNS for {hostname_dns} ({dns_processed}/{dns_total})"
+                    
+                    if time.time() - reconciliation_start > max_total_time - 5:
+                        logging.warning("[Reconcile] Timeout reached during DNS setup phase.")
+                        break
+                    
+                    create_cloudflare_dns_record(zone_id_dns, hostname_dns, effective_tunnel_id_for_dns)
+                    if USE_EXTERNAL_CLOUDFLARED: time.sleep(0.1) # Small delay
             else:
-                logging.warning("[Reconcile] Timeout reached before DNS operations")
-            app.reconciliation_info["progress"] = 100
+                logging.error("[Reconcile] Cannot setup DNS: Effective tunnel ID is missing.")
+                app.reconciliation_info["status"] = "Error: Missing tunnel ID for DNS setup."
             
-    except Exception as e:
-        logging.error(f"[Reconcile] Unhandled error: {e}", exc_info=True)
-        app.reconciliation_info["status"] = f"Error: {str(e)}"
+    except Exception as e_reconcile_main:
+        logging.error(f"[Reconcile] Unhandled error in reconciliation: {e_reconcile_main}", exc_info=True)
+        app.reconciliation_info["status"] = f"Reconciliation main error: {str(e_reconcile_main)}"
     
     finally:
-        # Always mark as complete, even on error
-        if not hasattr(app, 'reconciliation_info'):
-            app.reconciliation_info = {}
-        
         app.reconciliation_info["in_progress"] = False
-        app.reconciliation_info["progress"] = 100
-        app.reconciliation_info["status"] = app.reconciliation_info.get("status", "Completed")
-        
-        if "start_time" not in app.reconciliation_info:
-            app.reconciliation_info["start_time"] = reconciliation_start
-            
+        app.reconciliation_info["progress"] = 100 # Always show 100% at the end
+        app.reconciliation_info["status"] = app.reconciliation_info.get("status", "Reconciliation finished.") + " (Final)"
+        if "start_time" not in app.reconciliation_info: app.reconciliation_info["start_time"] = reconciliation_start
         app.reconciliation_info["completed_at"] = time.time()
-        duration = app.reconciliation_info["completed_at"] - reconciliation_start
-        
-        # Cancel the watchdog timer
+        duration = app.reconciliation_info["completed_at"] - app.reconciliation_info["start_time"]
         watchdog.cancel()
-        
-        logging.info(f"Reconciliation complete. Duration: {duration:.2f} seconds")
-
+        logging.info(f"[Reconcile Thread] Reconciliation complete. Duration: {duration:.2f} seconds. Status: {app.reconciliation_info['status']}")
 def get_cloudflared_container():
     """Gets the cloudflared agent container object."""
     if not docker_client:
@@ -2396,43 +2682,53 @@ def stop_tunnel():
 
 @app.route('/force_delete_rule/<hostname>', methods=['POST', 'GET'])
 def force_delete_rule(hostname):
-    """Force delete a rule with improved method handling."""
-    # HTTP method validation with better error handling
     if request.method != 'POST':
-        # Return a more helpful error for GET requests
-        flash("Delete operations require a POST request. If you're seeing this message, there may be an issue with your browser's form submission.", "error")
+        # flash("Delete operations require a POST request. If you're seeing this message, there may be an issue with your browser's form submission.", "error")
+        logging.warning(f"GET request to /force_delete_rule/{hostname}. Redirecting. Should be POST.")
         return redirect(url_for('status_page'))
 
     logging.info(f"UI request: Force delete rule for hostname: {hostname}")
     rule_removed_from_state = False
     dns_delete_success = False
+    access_app_delete_success = False
     zone_id_for_delete = None
+    access_app_id_for_delete = None
 
     with state_lock:
         rule_details = managed_rules.get(hostname)
         if rule_details:
             zone_id_for_delete = rule_details.get("zone_id")
-            logging.info(f"Found rule for {hostname} with zone ID: {zone_id_for_delete}")
+            access_app_id_for_delete = rule_details.get("access_app_id")
+            logging.info(f"Found rule for {hostname} with Zone ID: {zone_id_for_delete} and Access App ID: {access_app_id_for_delete}")
         else:
-            logging.warning(f"Rule {hostname} not found in state during force delete. Attempting DNS delete in default zone ID ({CF_ZONE_ID}) if available.")
+            logging.warning(f"Rule {hostname} not found in state during force delete. Attempting DNS delete in default zone ID ({CF_ZONE_ID}) if available. Access App cannot be determined.")
             zone_id_for_delete = CF_ZONE_ID
+            # access_app_id_for_delete remains None
 
-    # Handle both external and internal modes
-    tunnel_id = tunnel_state.get("id") or EXTERNAL_TUNNEL_ID
+    effective_tunnel_id = tunnel_state.get("id") if not USE_EXTERNAL_CLOUDFLARED else EXTERNAL_TUNNEL_ID
     
-    if zone_id_for_delete and tunnel_id:
-        logging.info(f"Attempting immediate DNS record deletion for force-deleted rule: {hostname} in zone {zone_id_for_delete} using tunnel {tunnel_id}")
-        dns_delete_success = delete_cloudflare_dns_record(zone_id_for_delete, hostname, tunnel_id)
+    # 1. Delete DNS Record
+    if zone_id_for_delete and effective_tunnel_id:
+        logging.info(f"Attempting immediate DNS record deletion for force-deleted rule: {hostname} in zone {zone_id_for_delete} using tunnel {effective_tunnel_id}")
+        dns_delete_success = delete_cloudflare_dns_record(zone_id_for_delete, hostname, effective_tunnel_id)
         if not dns_delete_success:
-            logging.error(f"Failed immediate DNS delete for {hostname} in zone {zone_id_for_delete}. Tunnel config update will proceed.")
-            cloudflared_agent_state["last_action_status"] = f"Warning: Failed DNS delete for {hostname}. Tunnel update proceeding."
+            logging.error(f"Failed immediate DNS delete for {hostname} in zone {zone_id_for_delete}.")
     elif not zone_id_for_delete:
         logging.error(f"Cannot delete DNS for {hostname}: Zone ID could not be determined.")
-        cloudflared_agent_state["last_action_status"] = f"Error: Cannot delete DNS for {hostname} (missing zone ID)."
-    else:
-        logging.error(f"Cannot delete DNS for {hostname}: Missing Tunnel ID.")
-        cloudflared_agent_state["last_action_status"] = f"Error: Cannot delete DNS for {hostname} (missing tunnel ID)."
+    elif not effective_tunnel_id:
+        logging.error(f"Cannot delete DNS for {hostname}: Missing effective Tunnel ID.")
 
+    # 2. Delete Access Application
+    if access_app_id_for_delete:
+        logging.info(f"Attempting immediate Access Application deletion for force-deleted rule: {hostname}, App ID: {access_app_id_for_delete}")
+        access_app_delete_success = delete_cloudflare_access_application(access_app_id_for_delete)
+        if not access_app_delete_success:
+            logging.error(f"Failed immediate Access App delete for {hostname}, App ID: {access_app_id_for_delete}.")
+    else:
+        logging.info(f"No Access App ID associated with rule {hostname} for force deletion.")
+        access_app_delete_success = True # No app to delete
+
+    # 3. Remove from local state
     with state_lock:
         if hostname in managed_rules:
             logging.info(f"Force deleting rule for {hostname} from local state.")
@@ -2441,33 +2737,45 @@ def force_delete_rule(hostname):
             save_state()
         else:
             logging.warning(f"Rule '{hostname}' was already removed from state when force delete requested.")
-            rule_removed_from_state = True
+            rule_removed_from_state = True # Still considered success for UI feedback if target isn't there
 
-    # Update Cloudflare tunnel config if not in external mode
-    if rule_removed_from_state and not USE_EXTERNAL_CLOUDFLARED:
-        logging.info(f"Triggering Cloudflare tunnel config update after force deleting {hostname}.")
-        if update_cloudflare_config():
-            logging.info(f"CF tunnel config update successful after force deleting {hostname}.")
-            status_msg = f"Successfully force deleted rule for {hostname} and updated Cloudflare."
-            if not dns_delete_success:
-                status_msg += " (Note: DNS deletion failed or was skipped)."
-            cloudflared_agent_state["last_action_status"] = status_msg
-        else:
-            logging.error(f"CRITICAL: State updated after force delete of {hostname} (DNS delete success: {dns_delete_success}), but subsequent tunnel config update FAILED!")
-            cloudflared_agent_state["last_action_status"] = f"Error: Removed {hostname} locally (DNS delete: {dns_delete_success}), but FAILED tunnel config update! Reconciliation needed."
-    elif rule_removed_from_state and USE_EXTERNAL_CLOUDFLARED:
-        # For external mode, we only handle DNS and local state
-        status_msg = f"Successfully removed rule for {hostname} from local state."
-        if dns_delete_success:
-            status_msg += " DNS record deleted."
-        else:
-            status_msg += " DNS deletion failed or skipped."
-        logging.info(status_msg)
-        cloudflared_agent_state["last_action_status"] = status_msg
+    status_msg_parts = [f"Rule for {hostname}"]
+    if rule_removed_from_state:
+        status_msg_parts.append("removed from local state.")
+    else:
+        status_msg_parts.append("not found in local state.")
+    
+    if zone_id_for_delete: # Only comment on DNS if zone_id was known
+        status_msg_parts.append(f"DNS delete: {'successful' if dns_delete_success else 'failed/skipped'}.")
+    
+    if access_app_id_for_delete is not None: # Only comment on Access App if one was expected
+        status_msg_parts.append(f"Access App delete: {'successful' if access_app_delete_success else 'failed'}.")
+    else:
+        status_msg_parts.append("No associated Access App to delete.")
 
-    time.sleep(1)
+
+    # 4. Update Cloudflare tunnel config (for ingress rules)
+    if rule_removed_from_state: # Only update tunnel if state was changed or intended to be changed
+        if not USE_EXTERNAL_CLOUDFLARED:
+            logging.info(f"Triggering Cloudflare tunnel config update after force deleting {hostname}.")
+            if update_cloudflare_config():
+                logging.info(f"CF tunnel config update successful after force deleting {hostname}.")
+                status_msg_parts.append("Tunnel config updated.")
+            else:
+                logging.error(f"CRITICAL: State updated after force delete of {hostname}, but subsequent tunnel config update FAILED!")
+                status_msg_parts.append("Tunnel config update FAILED!")
+                cloudflared_agent_state["last_action_status"] = f"Error: Removed {hostname} (DNS: {dns_delete_success}, Access: {access_app_delete_success}), but FAILED tunnel config update! Reconciliation needed."
+        else:
+            # For external mode, we only handle DNS, Access App, and local state. No tunnel config update.
+            logging.info(f"External mode: Skipping tunnel config update for force-deleted rule {hostname}.")
+            status_msg_parts.append("Tunnel config unchanged (external mode).")
+    
+    final_status_msg = " ".join(status_msg_parts)
+    cloudflared_agent_state["last_action_status"] = final_status_msg
+    logging.info(final_status_msg)
+
+    time.sleep(0.2) # Brief pause for state to settle if other ops are immediate
     return redirect(url_for('status_page'))
-
 @app.route('/stream-logs')
 def stream_logs():
     """Streams log messages using Server-Sent Events with proper WSGI compatibility."""
