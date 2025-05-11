@@ -1178,7 +1178,7 @@ def process_container_start(container):
                                         policy_include_rules.append({"identity_provider": {"id": idp_ids}})
                                 
                                 if not policy_include_rules:
-                                    policy_include_rules.append({"everyone": True}) 
+                                    policy_include_rules.append({"everyone": {}}) 
 
                                 cf_access_policies = [{"name": "Default Authenticated Access", "decision": "allow", "include": policy_include_rules}]
                         
@@ -1768,7 +1768,7 @@ def _run_reconciliation():
                                 except: logging.error(f"[Reconcile] Invalid custom_rules JSON for {hostname}")
                             if not cf_access_policies_list:
                                 if desired_access_policy_type == "bypass":
-                                    cf_access_policies_list = [{"name": "Public Bypass", "decision": "bypass", "include": [{"everyone": True}]}]
+                                    cf_access_policies_list = [{"name": "Public Bypass", "decision": "bypass", "include": [{"everyone": {}}]}]
                                 elif desired_access_policy_type == "authenticate":
                                     auth_include = []
                                     if desired_details["access_allowed_idps_str"]:
