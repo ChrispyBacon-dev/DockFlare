@@ -81,9 +81,28 @@
 
     <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
     <link rel="preconnect" href="https://rsms.me" crossorigin>
-    <script src="https://cdn.tailwindcss.com"></script>
     <script>
-      tailwind.config = { darkMode: 'class', theme: { extend: {} } }
+      (function() {
+        const currentProtocol = window.location.protocol;
+        const script = document.createElement('script');
+        script.src = `${currentProtocol}//cdn.tailwindcss.com`;
+        script.onload = function() {
+          if (typeof tailwind !== 'undefined') {
+            tailwind.config = { darkMode: 'class', theme: { extend: {} } };
+          }
+        };
+        script.onerror = function() {
+          const fallbackScript = document.createElement('script');
+          fallbackScript.src = "https://cdn.tailwindcss.com";
+          fallbackScript.onload = function() {
+            if (typeof tailwind !== 'undefined') {
+              tailwind.config = { darkMode: 'class', theme: { extend: {} } };
+            }
+          };
+          document.head.appendChild(fallbackScript);
+        };
+        document.head.appendChild(script);
+      })();
     </script>
     <link rel="stylesheet" href="https://rsms.me/inter/inter.css" crossorigin="anonymous">
     <style type="text/tailwindcss">
