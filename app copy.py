@@ -1710,24 +1710,20 @@ def _run_reconciliation():
                                 })
                             idx += 1
                         
-                        for config_item in hostname_configs_for_container:  
-                            hostname_val = config_item["hostname"] 
+                        for config in hostname_configs_for_container:
+                            hostname_val = config["hostname"] 
                             if hostname_val in running_labeled_hostnames_details:
                                 logging.warning(f"[Reconcile] Duplicate hostname '{hostname_val}' found from labels. Using latest encountered: {container_name_val}.")
                             running_labeled_hostnames_details[hostname_val] = {
-                                "hostname": hostname_val,  
-                                "service": config_item["service"], 
-                                "container_id": container_id_val, 
-                                "container_name": container_name_val,
-                                "zone_name": config_item["zone_name"], 
-                                "no_tls_verify": config_item["no_tls_verify"],
-                                "access_policy_type": config_item["access_policy_type"],
-                                "access_app_name": config_item["access_app_name"],
-                                "access_session_duration": config_item["access_session_duration"],
-                                "access_app_launcher_visible": config_item["access_app_launcher_visible"],
-                                "access_allowed_idps_str": config_item["access_allowed_idps_str"],
-                                "access_auto_redirect": config_item["access_auto_redirect"],
-                                "access_custom_rules_str": config_item["access_custom_rules_str"]
+                                "service": config["service"], "container_id": container_id_val, "container_name": container_name_val,
+                                "zone_name": config["zone_name"], "no_tls_verify": config["no_tls_verify"],
+                                "access_policy_type": config["access_policy_type"],
+                                "access_app_name": config["access_app_name"],
+                                "access_session_duration": config["access_session_duration"],
+                                "access_app_launcher_visible": config["access_app_launcher_visible"],
+                                "access_allowed_idps_str": config["access_allowed_idps_str"],
+                                "access_auto_redirect": config["access_auto_redirect"],
+                                "access_custom_rules_str": config["access_custom_rules_str"]
                             }
                     except Exception as e_cont:
                         logging.error(f"[Reconcile] Error processing container {c.id[:12]}: {e_cont}")
