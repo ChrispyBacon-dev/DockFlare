@@ -976,6 +976,132 @@ def generate_access_app_config_hash(policy_type, session_duration, app_launcher_
     hasher.update(consistent_config_string.encode('utf-8'))
     return hasher.hexdigest()
 
+def _handle_access_policy_from_labels(hostname_config_item, current_rule_in_state):
+    hostname = hostname_config_item["hostname"]
+    
+    desired_access_policy_type_from_label = hostname_config_item["access_policy_type"]
+    desired_access_app_name_from_label = hostname_config_item["access_app_name"] if hostname_config_item["access_app_name"] else f"DockFlare-{hostname}"
+    desired_session_duration_from_label = hostname_config_item["access_session_duration"]
+    desired_app_launcher_visible_from_label = hostname_config_item["access_app_launcher_visible"]
+    desired_allowed_idps_str_from_label = hostname_config_item["access_allowed_idps_str"]
+    desired_auto_redirect_from_label = hostname_config_item["access_auto_redirect"]
+    desired_custom_rules_str_from_label = hostname_config_item["access_custom_rules_str"]
+
+    local_state_changed_by_access_policy = False
+    current_access_app_id = current_rule_in_state.get("access_app_id")
+    current_access_policy_type_in_state = current_rule_in_state.get("access_policy_type")
+    current_access_app_config_hash_in_state = current_rule_in_state.get("access_app_config_hash")
+
+    if desired_access_policy_type_from_label: 
+        desired_access_app_config_hash_from_label = generate_access_app_config_hash(
+            desired_access_policy_type_from_label,
+            desired_session_duration_from_label,
+            desired_app_launcher_visible_from_label,
+            desired_allowed_idps_str_from_label,
+            desired_auto_redirect_from_label,
+            desired_custom_rules_str_from_label
+        )
+
+        if desired_access_policy_type_from_label == "default_tld":
+            if current_access_app_id:
+                logging.info(f"Label policy for {hostname} is 'default_tld'. Deleting existing Access App {current_access_app_id}.")
+                if delete_cloudflare_access_application(current_access_app_id):
+                    current_rule_in_state["access_app_id"] = None
+                    current_rule_in_state["access_policy_type"] = "default_tld"
+                    current_rule_in_state["access_app_config_hash"] = None
+                    local_state_changed_by_access_policy = True
+                else:
+                    logging.error(f"Failed to delete Access App {current_access_app_id} for {hostname} as per label 'default_tld'.")
+            elif current_access_policy_type_in_state != "default_tld":
+                current_rule_in_state["access_app_id"] = None
+                current_rule_in_state["access_policy_type"] = "default_tld"
+                current_rule_in_state["access_app_config_hash"] = None
+                local_state_changed_by_access_policy = True
+                logging.info(f"Label policy for {hostname} set to 'default_tld'. No specific app managed.")
+
+        elif desired_access_policy_type_from_label in ["bypass", "authenticate"]:
+            cf_access_policies = []
+            if desired_custom_rules_str_from_label:
+                try:
+                    cf_access_policies = json.loads(desired_custom_rules_str_from_label)
+                    if not isinstance(cf_access_policies, list):
+                        logging.error(f"Parsed 'custom_rules' label for {hostname} is not a list. Reverting to default for {desired_access_policy_type_from_label}.")
+                        cf_access_policies = [] 
+                except json.JSONDecodeError as json_err:
+                    logging.error(f"Error parsing 'custom_rules' label JSON for {hostname}: {json_err}. Reverting to default for {desired_access_policy_type_from_label}.")
+                    cf_access_policies = [] 
+            
+            if not cf_access_policies:
+                if desired_access_policy_type_from_label == "bypass":
+                    cf_access_policies = [{"name": "Label Bypass", "decision": "bypass", "include": [{"everyone": {}}]}]
+                elif desired_access_policy_type_from_label == "authenticate":
+                    policy_include_rules = []
+                    if desired_allowed_idps_str_from_label:
+                        idp_ids = [idp.strip() for idp in desired_allowed_idps_str_from_label.split(',') if idp.strip()]
+                        if idp_ids:
+                            policy_include_rules.append({"identity_provider": {"id": idp_ids}})
+                    if not policy_include_rules:
+                        policy_include_rules.append({"everyone": {}}) 
+                    cf_access_policies = [{"name": "Label Default Authenticated Access", "decision": "allow", "include": policy_include_rules}]
+            
+            allowed_idps_list_for_app = [idp.strip() for idp in desired_allowed_idps_str_from_label.split(',') if idp.strip()] if desired_allowed_idps_str_from_label else None
+            needs_action = False
+            if current_access_app_id:
+                if current_access_policy_type_in_state != desired_access_policy_type_from_label or \
+                   current_access_app_config_hash_in_state != desired_access_app_config_hash_from_label:
+                    needs_action = True
+            else:
+                needs_action = True
+
+            if needs_action:
+                if current_access_app_id:
+                    logging.info(f"Updating Access App {current_access_app_id} for {hostname} based on labels (type: {desired_access_policy_type_from_label}).")
+                    updated_app = update_cloudflare_access_application(
+                        current_access_app_id, hostname, desired_access_app_name_from_label,
+                        desired_session_duration_from_label, desired_app_launcher_visible_from_label,
+                        [hostname], cf_access_policies, allowed_idps_list_for_app, desired_auto_redirect_from_label
+                    )
+                    if updated_app:
+                        current_rule_in_state["access_policy_type"] = desired_access_policy_type_from_label
+                        current_rule_in_state["access_app_config_hash"] = desired_access_app_config_hash_from_label
+                        local_state_changed_by_access_policy = True
+                    else:
+                        logging.error(f"Failed to update Access App {current_access_app_id} for {hostname} based on labels.")
+                else:
+                    logging.info(f"Creating new Access App for {hostname} based on labels (type: '{desired_access_policy_type_from_label}').")
+                    created_app = create_cloudflare_access_application(
+                        hostname, desired_access_app_name_from_label,
+                        desired_session_duration_from_label, desired_app_launcher_visible_from_label,
+                        [hostname], cf_access_policies, allowed_idps_list_for_app, desired_auto_redirect_from_label
+                    )
+                    if created_app and created_app.get("id"):
+                        current_rule_in_state["access_app_id"] = created_app.get("id")
+                        current_rule_in_state["access_policy_type"] = desired_access_policy_type_from_label
+                        current_rule_in_state["access_app_config_hash"] = desired_access_app_config_hash_from_label
+                        local_state_changed_by_access_policy = True
+                    else:
+                        logging.error(f"Failed to create Access App for {hostname} based on labels.")
+        else:
+            logging.warning(f"Unknown access.policy type '{desired_access_policy_type_from_label}' from label for {hostname}. No Access App action taken based on this label.")
+    else: 
+        if current_access_app_id:
+            logging.info(f"No access policy label for {hostname}, but found managed Access App {current_access_app_id}. Deleting it as per label configuration.")
+            if delete_cloudflare_access_application(current_access_app_id):
+                current_rule_in_state["access_app_id"] = None
+                current_rule_in_state["access_policy_type"] = None
+                current_rule_in_state["access_app_config_hash"] = None
+                local_state_changed_by_access_policy = True
+            else:
+                logging.error(f"Failed to delete Access App {current_access_app_id} for {hostname} during label-based cleanup.")
+        elif current_access_policy_type_in_state is not None : 
+            current_rule_in_state["access_app_id"] = None
+            current_rule_in_state["access_policy_type"] = None
+            current_rule_in_state["access_app_config_hash"] = None
+            local_state_changed_by_access_policy = True
+            logging.debug(f"Ensuring policy type is None for {hostname} as no access labels are present.")
+            
+    return local_state_changed_by_access_policy
+
 def process_container_start(container):
     if not container:
         return
@@ -1005,18 +1131,18 @@ def process_container_start(container):
         default_access_auto_redirect_label = labels.get(f"{LABEL_PREFIX}.access.auto_redirect_to_identity", "false").lower() in ["true", "1", "t", "yes"]
         default_access_custom_rules_label_str = labels.get(f"{LABEL_PREFIX}.access.custom_rules")
 
-        hostname = labels.get(f"{LABEL_PREFIX}.hostname")
-        service = labels.get(f"{LABEL_PREFIX}.service") 
-        zone_name = labels.get(f"{LABEL_PREFIX}.zonename")
-        no_tls_verify = labels.get(f"{LABEL_PREFIX}.no_tls_verify", "false").lower() in ["true", "1", "t", "yes"]
+        hostname_label = labels.get(f"{LABEL_PREFIX}.hostname") 
+        service_label = labels.get(f"{LABEL_PREFIX}.service") 
+        zone_name_label = labels.get(f"{LABEL_PREFIX}.zonename") 
+        no_tls_verify_label = labels.get(f"{LABEL_PREFIX}.no_tls_verify", "false").lower() in ["true", "1", "t", "yes"] # Renamed
         
-        if hostname and service:
-            if is_valid_hostname(hostname) and is_valid_service(service):
+        if hostname_label and service_label:
+            if is_valid_hostname(hostname_label) and is_valid_service(service_label):
                 hostnames_to_process.append({
-                    "hostname": hostname,
-                    "service": service,
-                    "zone_name": zone_name,
-                    "no_tls_verify": no_tls_verify,
+                    "hostname": hostname_label,
+                    "service": service_label,
+                    "zone_name": zone_name_label,
+                    "no_tls_verify": no_tls_verify_label,
                     "access_policy_type": default_access_policy_type_label,
                     "access_app_name": default_access_app_name_label,
                     "access_session_duration": default_access_session_duration_label,
@@ -1026,7 +1152,7 @@ def process_container_start(container):
                     "access_custom_rules_str": default_access_custom_rules_label_str
                 })
             else:
-                logging.warning(f"Ignoring invalid direct label pair for {container_name}: Invalid hostname '{hostname}' or service '{service}'")
+                logging.warning(f"Ignoring invalid direct label pair for {container_name}: Invalid hostname '{hostname_label}' or service '{service_label}'")
         
         index = 0
         while True:
@@ -1088,23 +1214,15 @@ def process_container_start(container):
         for config_item in hostnames_to_process:
             hostname = config_item["hostname"]
             service = config_item["service"]
-            zone_name = config_item["zone_name"]
-            no_tls_verify = config_item["no_tls_verify"]
-
-            desired_access_policy_type = config_item["access_policy_type"]
-            desired_access_app_name = config_item["access_app_name"] if config_item["access_app_name"] else f"DockFlare-{hostname}"
-            desired_session_duration = config_item["access_session_duration"]
-            desired_app_launcher_visible = config_item["access_app_launcher_visible"]
-            desired_allowed_idps_str = config_item["access_allowed_idps_str"]
-            desired_auto_redirect = config_item["access_auto_redirect"]
-            desired_custom_rules_str = config_item["access_custom_rules_str"]
+            zone_name_from_item = config_item["zone_name"] 
+            no_tls_verify_from_item = config_item["no_tls_verify"] 
             
             target_zone_id = None
-            if zone_name:
-                logging.info(f"Hostname {hostname} specified zone name: '{zone_name}'. Looking up ID.")
-                target_zone_id = get_zone_id_from_name(zone_name)
+            if zone_name_from_item:
+                logging.info(f"Hostname {hostname} specified zone name: '{zone_name_from_item}'. Looking up ID.")
+                target_zone_id = get_zone_id_from_name(zone_name_from_item)
                 if not target_zone_id:
-                    logging.error(f"Failed to find Zone ID for specified name '{zone_name}' for hostname {hostname}. Skipping.")
+                    logging.error(f"Failed to find Zone ID for specified name '{zone_name_from_item}' for hostname {hostname}. Skipping.")
                     continue
             else:
                 logging.debug(f"Hostname {hostname} did not specify zone name. Using default Zone ID if available.")
@@ -1118,16 +1236,10 @@ def process_container_start(container):
             
             with state_lock:
                 existing_rule = managed_rules.get(hostname)
-                current_access_app_id = None
-                current_access_policy_type = None
-                current_access_app_config_hash = None
 
                 if existing_rule:
                     zone_id_changed = existing_rule.get("zone_id") != target_zone_id
-                    current_access_app_id = existing_rule.get("access_app_id")
-                    current_access_policy_type = existing_rule.get("access_policy_type")
-                    current_access_app_config_hash = existing_rule.get("access_app_config_hash")
-
+                    
                     if existing_rule.get("status") == "pending_deletion":
                         logging.info(f"Rule for {hostname} was pending deletion. Reactivating.")
                         existing_rule["status"] = "active"
@@ -1135,7 +1247,7 @@ def process_container_start(container):
                         existing_rule["service"] = service
                         existing_rule["container_id"] = container_id
                         existing_rule["zone_id"] = target_zone_id
-                        existing_rule["no_tls_verify"] = no_tls_verify
+                        existing_rule["no_tls_verify"] = no_tls_verify_from_item
                         state_changed_locally = True
                         needs_tunnel_config_update = True
                         if zone_id_changed:
@@ -1143,7 +1255,7 @@ def process_container_start(container):
                     elif existing_rule.get("status") == "active":
                         service_changed = existing_rule.get("service") != service
                         container_changed = existing_rule.get("container_id") != container_id
-                        no_tls_verify_changed = existing_rule.get("no_tls_verify") != no_tls_verify
+                        no_tls_verify_changed = existing_rule.get("no_tls_verify") != no_tls_verify_from_item
 
                         if container_changed:
                             logging.info(f"Updating container ID for active rule {hostname}: '{existing_rule.get('container_id')[:12]}' -> '{container_id[:12]}'.")
@@ -1155,8 +1267,8 @@ def process_container_start(container):
                             state_changed_locally = True
                             needs_tunnel_config_update = True
                         if no_tls_verify_changed:
-                            logging.info(f"Updating noTLSVerify for active rule {hostname}: '{existing_rule.get('no_tls_verify')}' -> '{no_tls_verify}'.")
-                            existing_rule["no_tls_verify"] = no_tls_verify
+                            logging.info(f"Updating noTLSVerify for active rule {hostname}: '{existing_rule.get('no_tls_verify')}' -> '{no_tls_verify_from_item}'.")
+                            existing_rule["no_tls_verify"] = no_tls_verify_from_item
                             state_changed_locally = True
                             needs_tunnel_config_update = True
                         if zone_id_changed:
@@ -1172,122 +1284,23 @@ def process_container_start(container):
                         "status": "active",
                         "delete_at": None,
                         "zone_id": target_zone_id,
-                        "no_tls_verify": no_tls_verify,
+                        "no_tls_verify": no_tls_verify_from_item,
                         "access_app_id": None, 
                         "access_policy_type": None,
-                        "access_app_config_hash": None
+                        "access_app_config_hash": None,
+                        "access_policy_ui_override": False 
                     }
                     existing_rule = managed_rules[hostname] 
-                    current_access_app_id = None 
-                    current_access_policy_type = None
-                    current_access_app_config_hash = None
                     state_changed_locally = True
                     needs_tunnel_config_update = True
-
-                if desired_access_policy_type: 
-                    desired_access_app_config_hash = generate_access_app_config_hash(
-                        desired_access_policy_type,
-                        desired_session_duration,
-                        desired_app_launcher_visible,
-                        desired_allowed_idps_str,
-                        desired_auto_redirect,
-                        desired_custom_rules_str
-                    )
-
-                    if desired_access_policy_type == "default_tld":
-                        if current_access_app_id:
-                            logging.info(f"Access policy for {hostname} changed to 'default_tld'. Deleting existing Access App {current_access_app_id}.")
-                            if delete_cloudflare_access_application(current_access_app_id):
-                                existing_rule["access_app_id"] = None
-                                existing_rule["access_policy_type"] = "default_tld"
-                                existing_rule["access_app_config_hash"] = None
-                                state_changed_locally = True
-                            else:
-                                logging.error(f"Failed to delete Access App {current_access_app_id} for {hostname}. State not fully updated.")
-                        elif existing_rule.get("access_policy_type") != "default_tld":
-                            existing_rule["access_app_id"] = None
-                            existing_rule["access_policy_type"] = "default_tld"
-                            existing_rule["access_app_config_hash"] = None
-                            state_changed_locally = True
-                            logging.info(f"Access policy for {hostname} set to 'default_tld'. No specific app managed.")
-
-                    elif desired_access_policy_type in ["bypass", "authenticate"]:
-                        cf_access_policies = []
-                        if desired_custom_rules_str:
-                            try:
-                                cf_access_policies = json.loads(desired_custom_rules_str)
-                                if not isinstance(cf_access_policies, list):
-                                    logging.error(f"Parsed 'custom_rules' for {hostname} is not a list. Reverting to default for {desired_access_policy_type}.")
-                                    cf_access_policies = [] 
-                            except json.JSONDecodeError as json_err:
-                                logging.error(f"Error parsing 'custom_rules' JSON for {hostname}: {json_err}. Reverting to default for {desired_access_policy_type}.")
-                                cf_access_policies = [] 
-                        
-                        if not cf_access_policies:
-                            if desired_access_policy_type == "bypass":
-                                cf_access_policies = [{"name": "Public Bypass", "decision": "bypass", "include": [{"everyone": {}}]}]
-                            elif desired_access_policy_type == "authenticate":
-                                policy_include_rules = []
-                                if desired_allowed_idps_str:
-                                    idp_ids = [idp.strip() for idp in desired_allowed_idps_str.split(',') if idp.strip()]
-                                    if idp_ids:
-                                        policy_include_rules.append({"identity_provider": {"id": idp_ids}})
-                                
-                                if not policy_include_rules:
-                                    policy_include_rules.append({"everyone": {}}) 
-
-                                cf_access_policies = [{"name": "Default Authenticated Access", "decision": "allow", "include": policy_include_rules}]
-                        
-                        allowed_idps_list_for_app = [idp.strip() for idp in desired_allowed_idps_str.split(',') if idp.strip()] if desired_allowed_idps_str else None
-
-                        if current_access_app_id:
-                            if current_access_policy_type != desired_access_policy_type or current_access_app_config_hash != desired_access_app_config_hash:
-                                logging.info(f"Updating Access App {current_access_app_id} for {hostname} due to policy/config change.")
-                                updated_app = update_cloudflare_access_application(
-                                    current_access_app_id, hostname, desired_access_app_name,
-                                    desired_session_duration, desired_app_launcher_visible,
-                                    [hostname], cf_access_policies, allowed_idps_list_for_app, desired_auto_redirect
-                                )
-                                if updated_app:
-                                    existing_rule["access_policy_type"] = desired_access_policy_type
-                                    existing_rule["access_app_config_hash"] = desired_access_app_config_hash
-                                    state_changed_locally = True
-                                else:
-                                    logging.error(f"Failed to update Access App {current_access_app_id} for {hostname}.")
-                        else:
-                            logging.info(f"Creating new Access App for {hostname} with policy type '{desired_access_policy_type}'.")
-                            created_app = create_cloudflare_access_application(
-                                hostname, desired_access_app_name,
-                                desired_session_duration, desired_app_launcher_visible,
-                                [hostname], cf_access_policies, allowed_idps_list_for_app, desired_auto_redirect
-                            )
-                            if created_app and created_app.get("id"):
-                                existing_rule["access_app_id"] = created_app.get("id")
-                                existing_rule["access_policy_type"] = desired_access_policy_type
-                                existing_rule["access_app_config_hash"] = desired_access_app_config_hash
-                                state_changed_locally = True
-                            else:
-                                logging.error(f"Failed to create Access App for {hostname}.")
-                    else:
-                        logging.warning(f"Unknown access.policy type '{desired_access_policy_type}' for {hostname}. No Access App action taken.")
-
-                else: 
-                    if current_access_app_id:
-                        logging.info(f"No access policy label for {hostname}, but found managed Access App {current_access_app_id}. Deleting it.")
-                        if delete_cloudflare_access_application(current_access_app_id):
-                            existing_rule["access_app_id"] = None
-                            existing_rule["access_policy_type"] = None
-                            existing_rule["access_app_config_hash"] = None
-                            state_changed_locally = True
-                        else:
-                            logging.error(f"Failed to delete Access App {current_access_app_id} for {hostname} during cleanup.")
-                    elif current_access_policy_type is not None : 
-                        existing_rule["access_app_id"] = None
-                        existing_rule["access_policy_type"] = None
-                        existing_rule["access_app_config_hash"] = None
+                
+                if existing_rule.get("access_policy_ui_override", False):
+                    logging.info(f"Access policy for {hostname} (current type: {existing_rule.get('access_policy_type')}) is UI-managed. Skipping label-based Access Policy processing.")
+                else:
+                    logging.debug(f"Processing Access Policy from labels for {hostname} (not UI-managed).")
+                    if _handle_access_policy_from_labels(config_item, existing_rule):
                         state_changed_locally = True
-
-
+                        
         if state_changed_locally:
             logging.debug(f"Saving state after processing start for container {container_name}.")
             save_state()
