@@ -62,7 +62,7 @@
                 }
                 return origFetch.call(this, url, options);
             };
-             // Place this within your main DOMContentLoaded listener or as a separate script block
+             
 
  const themeToggleButton = document.getElementById('theme-selector-btn'); // Updated ID
  const htmlElement = document.documentElement;
@@ -184,22 +184,19 @@
     <header class="sticky top-0 z-40 w-full backdrop-blur-sm shadow-sm bg-base-100/90">
         <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-4">
             <img src="{{ url_for('static', filename='images/bannertr.png') }}" alt="Dockflare Logo Banner" class="mx-auto block h-12 sm:h-16">
+        <div class="dropdown dropdown-end"> 
+            <button tabindex="0" role="button" id="theme-selector-btn" aria-label="Select Theme" class="btn btn-ghost btn-circle"> 
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.098 19.902a3.75 3.75 0 0 0 5.304 0l6.401-6.402M6.75 21A3.75 3.75 0 0 1 3 17.25V4.125C3 3.504 3.504 3 4.125 3h5.25c.621 0 1.125.504 1.125 1.125v4.072M6.75 21a3.75 3.75 0 0 0 3.75-3.75V8.197M6.75 21h13.125c.621 0 1.125-.504 1.125-1.125V4.125C21 3.504 20.496 3 19.875 3H12M4.098 19.902 19.902 4.098M18 11.25h-.008v.008H18V11.25Zm-2.25 0h.008v.008H15.75V11.25Zm-2.25 0h.008v.008H13.5V11.25Zm-2.25 0h.008v.008H11.25V11.25Zm-2.25 0h.008v.008H9V11.25Zm-2.25 0h.008v.008H6.75V11.25Zm.008 2.25h-.008V15H6.75v-.008Zm2.25 0h.008V15H9v-.008Zm2.25 0h.008V15H11.25v-.008Zm2.25 0h.008V15H13.5v-.008Zm2.25 0h.008V15H15.75v-.008Zm2.25 0h.008V15H18v-.008Z" />
+                </svg> 
+            </button>
+            <ul tabindex="0" id="theme-menu" class="dropdown-content z-[50] menu p-2 shadow bg-base-200 rounded-box w-52 max-h-60 overflow-y-auto mt-4"> 
+            
+            </ul>
         </div>
+
+    </div>
     </header>
-<!--
-    <button id="theme-toggle" aria-label="Toggle theme" class="btn btn-circle btn-ghost fixed bottom-4 right-4 z-50 shadow-lg">
-        <span class="text-xl">🌓</span>
-    </button>
--->
-    <div class="dropdown dropdown-top dropdown-end fixed bottom-4 right-4 z-50">
-     <button tabindex="0" role="button" id="theme-selector-btn" aria-label="Select Theme" class="btn btn-circle btn-ghost shadow-lg">
-         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
-             <path stroke-linecap="round" stroke-linejoin="round" d="M4.098 19.902a3.75 3.75 0 0 0 5.304 0l6.401-6.402M6.75 21A3.75 3.75 0 0 1 3 17.25V4.125C3 3.504 3.504 3 4.125 3h5.25c.621 0 1.125.504 1.125 1.125v4.072M6.75 21a3.75 3.75 0 0 0 3.75-3.75V8.197M6.75 21h13.125c.621 0 1.125-.504 1.125-1.125V4.125C21 3.504 20.496 3 19.875 3H12M4.098 19.902 19.902 4.098M18 11.25h-.008v.008H18V11.25Zm-2.25 0h.008v.008H15.75V11.25Zm-2.25 0h.008v.008H13.5V11.25Zm-2.25 0h.008v.008H11.25V11.25Zm-2.25 0h.008v.008H9V11.25Zm-2.25 0h.008v.008H6.75V11.25Zm.008 2.25h-.008V15H6.75v-.008Zm2.25 0h.008V15H9v-.008Zm2.25 0h.008V15H11.25v-.008Zm2.25 0h.008V15H13.5v-.008Zm2.25 0h.008V15H15.75v-.008Zm2.25 0h.008V15H18v-.008Z" />
-         </svg> 
-     </button>
-     <ul tabindex="0" id="theme-menu" class="dropdown-content z-[1] menu p-2 shadow bg-base-200 rounded-box w-52 max-h-60 overflow-y-auto">
-     </ul>
- </div>
 
     <main class="mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 flex-grow w-full max-w-screen-2xl">
 
