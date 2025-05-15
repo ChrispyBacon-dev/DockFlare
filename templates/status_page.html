@@ -1,20 +1,3 @@
-<!--
- DockFlare: Automates Cloudflare Tunnel ingress from Docker labels.
- Copyright (C) 2025 ChrispyBacon-Dev <https://github.com/ChrispyBacon-dev/DockFlare>
-
- This program is free software: you can redistribute it and/or modify
- it under the terms of the GNU General Public License as published by
- the Free Software Foundation, either version 3 of the License, or
- (at your option) any later version. .
-
- This program is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- GNU General Public License for more details.
-
- You should have received a copy of the GNU General Public License
- along with this program. If not, see <https://www.gnu.org/licenses/>.
--->
 <!DOCTYPE html>
 <html lang="en" class="">
 <head>
@@ -83,10 +66,6 @@
     
     <link rel="preconnect" href="https://rsms.me" crossorigin>
     <link rel="stylesheet" href="https://rsms.me/inter/inter.css" crossorigin="anonymous">
-    
-    <script>
-      tailwind.config = { darkMode: 'class', theme: { extend: {} } }
-    </script>
     
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; }
@@ -283,7 +262,7 @@
                 {% endif %}
             </div>
         </section>
-
+        
         <section class="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden mb-8 sm:mb-12 transition-shadow duration-300 hover:shadow-xl">
             <div class="px-6 py-5 sm:px-8 sm:py-6">
                 <h2 class="text-2xl sm:text-3xl font-semibold mb-6 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 pb-3">
@@ -512,35 +491,42 @@
             document.querySelectorAll('a[href]').forEach(link => {const href = link.getAttribute('href');if (href && (href.startsWith('/') || (href.startsWith('http') && new URL(href, window.location.origin).host === currentHost))) {try {const url = new URL(href, window.location.origin);if (url.host === currentHost && url.protocol !== currentProtocol) {url.protocol = currentProtocol;link.setAttribute('href', url.toString());}} catch (e) {}}});
             updateCountdowns();const countdownInterval = setInterval(updateCountdowns, 30000);connectEventSource();
             const themeToggleButton = document.getElementById('theme-toggle');const htmlElement = document.documentElement;
-            if (themeToggleButton) {const themeToggleIcon = themeToggleButton.querySelector('span');const setTheme = (theme) => {if (theme !== 'light' && theme !== 'dark') { return; }localStorage.setItem('theme', theme);if (theme === 'dark') {htmlElement.classList.add('dark'); if (themeToggleIcon) themeToggleIcon.textContent = '☀️';} else {htmlElement.classList.remove('dark'); if (themeToggleIcon) themeToggleIcon.textContent = '🌓';}};const toggleTheme = () => {const isCurrentlyDark = htmlElement.classList.contains('dark');const currentTheme = isCurrentlyDark ? 'dark' : 'light'; const newTheme = currentTheme === 'dark' ? 'light' : 'dark'; setTheme(newTheme);};themeToggleButton.addEventListener('click', toggleTheme);const initTheme = () => {const savedTheme = localStorage.getItem('theme'); const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;if (savedTheme === 'dark' || savedTheme === 'light') setTheme(savedTheme);else setTheme(prefersDark ? 'dark' : 'light');};initTheme();}
+            if (themeToggleButton) {
+                const themeToggleIcon = themeToggleButton.querySelector('span');
+                const setTheme = (theme) => {
+                    if (theme !== 'light' && theme !== 'dark') { return; }
+                    localStorage.setItem('theme', theme);
+                    if (theme === 'dark') {
+                        htmlElement.classList.add('dark');
+                        htmlElement.setAttribute('data-theme', 'dark'); 
+                        if (themeToggleIcon) themeToggleIcon.textContent = '☀️';
+                    } else {
+                        htmlElement.classList.remove('dark');
+                        htmlElement.setAttribute('data-theme', 'light');
+                        if (themeToggleIcon) themeToggleIcon.textContent = '🌓';
+                    }
+                };
+                const toggleTheme = () => {
+                    const isCurrentlyDark = htmlElement.classList.contains('dark');
+                    const newTheme = isCurrentlyDark ? 'light' : 'dark';
+                    setTheme(newTheme);
+                };
+                themeToggleButton.addEventListener('click', toggleTheme);
+                const initTheme = () => {
+                    const savedTheme = localStorage.getItem('theme');
+                    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    if (savedTheme === 'dark' || savedTheme === 'light') {
+                        setTheme(savedTheme);
+                    } else {
+                        setTheme(prefersDark ? 'dark' : 'light');
+                    }
+                };
+                initTheme();
+            }
             updateReconciliationStatus();setInterval(updateReconciliationStatus, 2000);
             
-        /*
-            document.querySelectorAll('.edit-policy-btn').forEach(button => {
-            button.addEventListener('click', function() {
-            const hostname = this.dataset.hostname;
-            const policyActionsCell = document.getElementById(`policy-actions-${hostname.replace(/\./g, '-')}`);
-            if (policyActionsCell) {
-                const formDiv = policyActionsCell.querySelector('.edit-policy-form');
-                const displayCell = document.getElementById(`access-policy-display-${hostname.replace(/\./g, '-')}`);
-                
-                if (formDiv) {
-                    formDiv.classList.remove('hidden'); // Show the form
-                    this.classList.add('hidden'); // Hide the "Edit Policy" button
-                    if (displayCell) {
-                       // displayCell.classList.add('hidden'); // Optionally hide the display text too
-                    }
-                    // Initialize visibility of email field based on current selection
-                    const policySelect = formDiv.querySelector('.policy-type-select');
-                    if (policySelect) {
-                        toggleAuthEmailField(policySelect.value, hostname);
-                    }
-                }
-            }
-        });*/
-    });
-
-        document.querySelectorAll('.cancel-edit-policy-btn').forEach(button => {
+       
+        /* document.querySelectorAll('.cancel-edit-policy-btn').forEach(button => {
             button.addEventListener('click', function() {
             const formDiv = this.closest('.edit-policy-form');
             if (formDiv) {
@@ -549,24 +535,24 @@
                 const displayCell = document.getElementById(`access-policy-display-${hostname.replace(/\./g, '-')}`);
 
 
-                formDiv.classList.add('hidden'); // Hide the form
+                formDiv.classList.add('hidden'); 
                 const editButton = policyActionsCell.querySelector('.edit-policy-btn');
                 if (editButton) {
-                    editButton.classList.remove('hidden'); // Show the "Edit Policy" button
+                    editButton.classList.remove('hidden'); 
                 }
                 if (displayCell) {
-                    // displayCell.classList.remove('hidden'); // Show display text again
+                    
                 }
             }
-        });
-    });
+          });
+        }); */
 
         document.querySelectorAll('.policy-type-select').forEach(select => {
             select.addEventListener('change', function() {
             const hostname = this.dataset.hostname;
             toggleAuthEmailField(this.value, hostname);
         });
-        // Initial check on page load for pre-selected values
+        
         toggleAuthEmailField(select.value, select.dataset.hostname);
     });
 
@@ -577,7 +563,7 @@
                 emailFieldDiv.classList.remove('hidden');
             } else {
                 emailFieldDiv.classList.add('hidden');
-                // Clear email field if hiding, to avoid submitting old value
+                
                 const emailInput = emailFieldDiv.querySelector('input[name="auth_email"]');
                 if (emailInput) {
                     emailInput.value = '';
