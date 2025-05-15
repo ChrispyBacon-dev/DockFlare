@@ -227,26 +227,20 @@
                         <table class="table table-zebra table-sm w-full">
                             <thead>
                                 <tr>
-                                    <th class="p-3 w-1/12">Status</th>
-                                    <th class="p-3 w-1/4">Hostname</th> 
-                                    <th class="p-3 w-1/5">Service Target</th>
-                                    <th class="p-3 w-1/6">Container</th>
-                                    <th class="p-3 w-1/5">Access Policy</th>
-                                    <th class="p-3 w-1/4">Manage Policy</th>
-                                    <th class="p-3 w-1/6">Expires At (UTC)</th>
-                                    <th class="p-3 w-auto">Actions</th>
+                                    <th class="w-1/5">Hostname</th> 
+                                    <th class="w-1/5">Service Target</th>
+                                    <th class="w-1/5">Access Policy</th>
+                                    <th class="w-1/12">Status</th>
+                                    <th class="w-1/6">Container</th>
+                                    <th class="w-1/6">Delete Scheduled (UTC)</th>
+                                    <th class="w-1/4">Manage Policy</th>
+                                    <th class="w-auto">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for hostname, details in rules.items()|sort %}
-                                    <tr class="hover">
-                                        {/* 1. Status */}
-                                        <td class="p-3 whitespace-nowrap">
-                                            {% set status_badge_color = 'badge-warning' if 'pending' in details.status else 'badge-success' %}
-                                            <span class="badge {{ status_badge_color }} badge-sm badge-outline">{{ details.status.replace('_',' ') }}</span>
-                                        </td>
-                                        {/* 2. Hostname */}
-                                        <td class="p-3 whitespace-nowrap">
+                                    <tr>
+                                        <td class="whitespace-nowrap">
                                             <a href="https://{{ hostname }}" target="_blank" rel="noopener noreferrer" title="Open https://{{ hostname }}" class="link link-hover link-primary text-sm">
                                                {{ hostname }}
                                            </a>
@@ -254,18 +248,15 @@
                                            <span class="badge badge-info badge-outline badge-xs ml-2">wildcard</span>
                                            {% endif %}
                                        </td>
-                                        {/* 3. Service Target */}
-                                        <td class="p-3 whitespace-nowrap"><code class="text-xs opacity-80">{{ details.service }}</code></td>
-                                        {/* 4. Container */}
-                                        <td class="p-3 whitespace-nowrap"><code class="text-xs opacity-80" title="{{ details.container_id if details.container_id else 'N/A' }}">{{ details.container_id[:12] if details.container_id else 'N/A' }}</code></td>
-                                        {/* 5. Access Policy */}
-                                        <td class="p-3 whitespace-nowrap text-sm opacity-80" id="access-policy-display-{{ hostname | replace('.', '-') }}">
+                                        <td class="whitespace-nowrap"><code class="text-xs opacity-80">{{ details.service }}</code></td>
+                                        
+                                        <td class="whitespace-nowrap text-sm opacity-80" id="access-policy-display-{{ hostname | replace('.', '-') }}">
                                             {% if details.access_policy_type %}
                                                 <span class="capitalize">
                                                     {{ details.access_policy_type.replace('_', ' ') if details.access_policy_type != 'pending_label_sync' else 'Pending Label Sync...' }}
                                                 </span>
                                                 {% if details.access_policy_type == 'pending_label_sync' %}
-                                                    <span class="loading loading-spinner loading-xs text-info ml-1 align-middle"></span>
+                                                    <span class="loading loading-spinner loading-xs text-info ml-1"></span>
                                                 {% elif details.access_app_id and CF_ACCOUNT_ID_CONFIGURED and ACCOUNT_ID_FOR_DISPLAY != "Not Configured" %}
                                                     <a href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/access/apps/self-hosted/{{ details.access_app_id }}/edit?tab=basic-info" target="_blank" rel="noopener noreferrer" title="Edit Access App in Cloudflare" class="link link-hover text-info ml-1 inline-block align-middle">
                                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
@@ -282,8 +273,20 @@
                                                 N/A
                                             {% endif %}
                                         </td>
-                                        {/* 6. Manage Policy */}
-                                        <td class="p-3 whitespace-nowrap text-sm policy-actions-cell" id="policy-actions-{{ hostname | replace('.', '-') }}" style="min-width: 180px;">
+                                        <td class="whitespace-nowrap">
+                                            {% set status_badge_color = 'badge-warning' if 'pending' in details.status else 'badge-success' %}
+                                            <span class="badge {{ status_badge_color }} badge-sm badge-outline">{{ details.status.replace('_',' ') }}</span>
+                                        </td>
+                                        <td class="whitespace-nowrap"><code class="text-xs opacity-80" title="{{ details.container_id if details.container_id else 'N/A' }}">{{ details.container_id[:12] if details.container_id else 'N/A' }}</code></td>
+                                        <td class="whitespace-nowrap text-sm opacity-70">
+                                            {% if details.status=='pending_deletion' and details.delete_at %}
+                                            <div data-delete-at="{{ details.delete_at.isoformat() }}">
+                                                <span class="absolute-time">{{ details.delete_at.strftime('%H:%M %d-%b-%Y') }}</span>
+                                                <span class="countdown-timer block text-xs opacity-80">(calculating...)</span>
+                                            </div>
+                                            {% else %} N/A {% endif %}
+                                        </td>
+                                        <td class="whitespace-nowrap text-sm policy-actions-cell" id="policy-actions-{{ hostname | replace('.', '-') }}" style="min-width: 180px;">
                                             <div class="flex items-center space-x-1 sm:space-x-2">
                                                 <div class="dropdown dropdown-end dropdown-hover"> 
                                                     <button tabindex="0" role="button" class="btn btn-xs btn-info btn-outline" data-hostname="{{ hostname }}">Edit</button> 
@@ -317,17 +320,7 @@
                                                 {% endif %}
                                             </div>
                                         </td>
-                                        {/* 7. Expires At (UTC) */}
-                                        <td class="p-3 whitespace-nowrap text-sm opacity-70">
-                                            {% if details.status=='pending_deletion' and details.delete_at %}
-                                            <div data-delete-at="{{ details.delete_at.isoformat() }}">
-                                                <span class="absolute-time">{{ details.delete_at.strftime('%H:%M %d-%b-%Y') }}</span>
-                                                <span class="countdown-timer block text-xs opacity-80">(calculating...)</span>
-                                            </div>
-                                            {% else %} N/A {% endif %}
-                                        </td>
-                                        {/* 8. Actions */}
-                                        <td class="p-3 whitespace-nowrap text-sm" style="min-width: 80px;">
+                                        <td class="whitespace-nowrap text-sm" style="min-width: 80px;">
                                             <form action="{{ url_for('force_delete_rule', hostname=hostname) }}" method="post" onsubmit="return confirm('Are you sure you want to force delete the rule and DNS record for {{ hostname }} immediately? This bypasses the grace period.');" class="protocol-aware-form">
                                                 <button type="submit" class="btn btn-xs btn-error btn-outline" {{ 'disabled' if not docker_available else '' }}>Delete</button>
                                             </form>
