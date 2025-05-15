@@ -92,30 +92,28 @@
             }
         
             function populateThemeMenu() {
-                if (!themeMenuScoped) return;
+                if (!themeMenuScoped) return; // themeMenuScoped is the ul#theme-menu
                 themeMenuScoped.innerHTML = ''; 
                 availableThemes.forEach(themeName => {
-                    const listItem = document.createElement('li');
-                    
-                    const link = document.createElement('a');
-                    link.textContent = themeName.charAt(0).toUpperCase() + themeName.slice(1);
-                    link.setAttribute('data-theme-value', themeName);
-                    link.href = "#";
-
-                    link.classList.add('flex', 'items-center', 'flex-grow', 'px-4', 'py-2'); 
-                    
-                    link.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        const selectedTheme = e.target.getAttribute('data-theme-value');
-                        setTheme(selectedTheme);
-                        if (document.activeElement && typeof document.activeElement.blur === 'function') {
-                            document.activeElement.blur(); 
-                        }
-                    });
-                    listItem.appendChild(link);
-                    themeMenuScoped.appendChild(listItem);
-                });
-            }
+                const listItem = document.createElement('li');
+                listItem.classList.add('w-full'); 
+                const link = document.createElement('a');
+                link.textContent = themeName.charAt(0).toUpperCase() + themeName.slice(1);
+                link.setAttribute('data-theme-value', themeName);
+                link.href = "#";
+                link.classList.add('flex', 'items-center', 'flex-grow', 'w-full', 'px-4', 'py-2'); 
+                link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const selectedTheme = e.target.getAttribute('data-theme-value');
+                setTheme(selectedTheme);
+                if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                document.activeElement.blur(); 
+                }
+            });
+        listItem.appendChild(link);
+        themeMenuScoped.appendChild(listItem);
+    });
+}
             
             function updateSelectedThemeInMenu(currentTheme) {
                 if (!themeMenuScoped) return;
