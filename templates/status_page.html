@@ -149,116 +149,6 @@
         <div id="reconciliation-status-message" class="text-secondary mb-1" style="font-size: 0.85rem;"></div>
 
         <section class="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden mb-8 sm:mb-12 transition-shadow duration-300 hover:shadow-xl">
-            <div class="px-6 py-5 sm:px-8 sm:py-6">
-                <h2 class="text-2xl sm:text-3xl font-semibold mb-6 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 pb-3">
-                    Tunnel & Agent Status
-                </h2>
-                <div class="mb-6">
-                    <h3 class="text-lg font-semibold mb-3 text-gray-600 dark:text-gray-400">Cloudflare API & Tunnel Setup</h3>
-                     {% set status_box_class = 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' %}
-                    {% if tunnel_state.get('error') and not external_cloudflared %}
-                      {% set status_box_class = 'border-red-500 bg-red-50 dark:bg-red-900/20' %}
-                    {% elif (tunnel_state.get('id') and tunnel_state.get('token')) or (external_cloudflared and tunnel_state.get('id')) %}
-                      {% set status_box_class = 'border-green-500 bg-green-50 dark:bg-green-900/20' %}
-                    {% endif %}
-                    <div class="status-box p-4 rounded-md border-l-4 {{ status_box_class }} text-gray-700 dark:text-gray-300 text-sm">
-                        <p><strong>API Status:</strong> {{ tunnel_state.status_message }}</p>
-                        {% if tunnel_state.get('error') %}
-                        <div class="mt-3">
-                            <strong class="block mb-1">Error Details:</strong>
-                            <pre class="bg-gray-100 dark:bg-gray-900/50 border border-gray-300 dark:border-gray-600 rounded p-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap break-words shadow-inner">{{ tunnel_state.error }}</pre>
-                        </div>
-                        {% endif %}
-                    </div>
-                </div>
-                <div class="mb-6">
-                    <h4 class="text-md font-semibold mb-3 text-gray-600 dark:text-gray-400">Tunnel Details</h4>
-                     <div class="space-y-2 text-sm">
-                        <p><strong class="inline-block w-36">Desired Name:</strong> <code class="bg-gray-200 dark:bg-gray-700 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded font-mono text-xs">{{ tunnel_state.name }}</code></p>
-                        <p><strong class="inline-block w-36">Tunnel ID:</strong> <code class="bg-gray-200 dark:bg-gray-700 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded font-mono text-xs">{{ tunnel_state.id if tunnel_state.id else 'N/A' }}</code></p>
-                        {% if not external_cloudflared %}
-                        <div>
-                            <strong class="inline-block w-36 align-top pt-1">Tunnel Token:</strong>
-                            <pre class="inline-block bg-gray-100 dark:bg-gray-900/50 border border-gray-300 dark:border-gray-600 rounded p-2 text-xs font-mono overflow-x-auto whitespace-pre-wrap break-words align-top shadow-inner max-w-full mt-1 sm:mt-0">{{ display_token }}</pre>
-                        </div>
-                        {% endif %}
-                    </div>
-                </div>
-                <div>
-                    <h3 class="text-lg font-semibold mb-3 text-gray-600 dark:text-gray-400">Agent Control</h3>
-                    {% if agent_state.last_action_status %}
-                        {% set action_box_class = 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' %}
-                        {% if 'Error:' in agent_state.last_action_status %}
-                            {% set action_box_class = 'border-red-500 bg-red-50 dark:bg-red-900/20' %}
-                        {% elif 'Warning:' in agent_state.last_action_status %}
-                             {% set action_box_class = 'border-amber-500 bg-amber-50 dark:bg-amber-900/20' %}
-                        {% endif %}
-                        <div class="status-box p-3 rounded-md border-l-4 {{ action_box_class }} text-gray-700 dark:text-gray-300 text-xs my-4">
-                            <p><strong>Last Action:</strong> {{ agent_state.last_action_status }}</p>
-                        </div>
-                    {% endif %}
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-6 mt-2 p-4 bg-gray-50 dark:bg-gray-700/30 rounded-md">
-                        {% if external_cloudflared %}
-                            <div class="agent-status-info flex-grow space-y-1.5">
-                                <div class="flex items-center space-x-3">
-                                    <strong class="text-sm font-medium flex-shrink-0 w-28">External Mode:</strong>
-                                    <span class="status-indicator inline-block flex-shrink-0 w-3 h-3 rounded-full bg-blue-500 animate-pulse-fast shadow-sm"></span>
-                                    <strong class="text-sm font-semibold capitalize text-blue-600 dark:text-blue-400">Using External Cloudflared</strong>
-                                </div>
-                                <div class="flex items-center text-sm">
-                                    <strong class="font-medium text-gray-600 dark:text-gray-400 flex-shrink-0 w-28">External ID:</strong>
-                                    <code class="ml-3 bg-gray-200 dark:bg-gray-700 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded font-mono text-xs align-middle truncate" title="{{ external_tunnel_id }}">{{ external_tunnel_id }}</code>
-                                </div>
-                                <div class="text-sm text-gray-600 dark:text-gray-400 mt-2">
-                                    <p class="italic">External cloudflared mode enabled. DockFlare manages tunnel configuration and DNS records, but not the agent container.</p>
-                                </div>
-                            </div>
-                        {% else %}
-                         <div class="agent-status-info flex-grow space-y-1.5">
-                            <div class="flex items-center space-x-3">
-                                <strong class="text-sm font-medium flex-shrink-0 w-28">Agent Status:</strong>
-                                {% set indicator_class = 'bg-gray-400' %}
-                                {% if agent_state.container_status == 'running' %} {% set indicator_class = 'bg-green-500 animate-pulse-fast' %}
-                                {% elif agent_state.container_status in ['exited', 'dead', 'not_found'] %} {% set indicator_class = 'bg-red-500' %}
-                                {% elif agent_state.container_status == 'docker_unavailable' %} {% set indicator_class = 'bg-gray-500' %}
-                                {% elif agent_state.container_status in ['created', 'paused', 'restarting'] %} {% set indicator_class = 'bg-amber-500' %}
-                                {% endif %}
-                                <span class="status-indicator inline-block flex-shrink-0 w-3 h-3 rounded-full {{ indicator_class }} shadow-sm"></span>
-                                {% set status_text_class = 'text-gray-600 dark:text-gray-400' %}
-                                {% if agent_state.container_status=='running' %} {% set status_text_class = 'text-green-600 dark:text-green-400' %}
-                                {% elif agent_state.container_status in ['exited', 'dead', 'not_found', 'docker_unavailable'] %} {% set status_text_class = 'text-red-600 dark:text-red-400' %}
-                                {% elif agent_state.container_status in ['created', 'paused', 'restarting'] %} {% set status_text_class = 'text-amber-600 dark:text-amber-400' %}
-                                {% endif %}
-                                <strong class="text-sm font-semibold capitalize {{ status_text_class }}">{{ agent_state.container_status.replace('_',' ') if agent_state.container_status else 'Unknown' }}</strong>
-                            </div>
-                            <div class="flex items-center text-sm">
-                                <strong class="font-medium text-gray-600 dark:text-gray-400 flex-shrink-0 w-28">Agent Name:</strong>
-                                <code class="ml-3 bg-gray-200 dark:bg-gray-700 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded font-mono text-xs align-middle truncate" title="{{ cloudflared_container_name }}">{{ cloudflared_container_name }}</code>
-                            </div>
-                         </div>
-                         <div class="agent-action-button w-full sm:w-auto flex-shrink-0">
-                             {% set base_button_style = 'w-full sm:w-auto inline-flex items-center justify-center px-5 py-2 rounded-md text-white font-semibold shadow-md transition-all duration-200 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none' %}
-                             {% set start_button_style = 'bg-green-600 hover:bg-green-700 focus:ring-green-500 disabled:bg-green-300 dark:disabled:bg-green-800' %}
-                             {% set stop_button_style = 'bg-red-600 hover:bg-red-700 focus:ring-red-500 disabled:bg-red-300 dark:disabled:bg-red-800' %}
-                             {% set is_startable = tunnel_state.get('id') and tunnel_state.get('token') and docker_available %}
-                             {% set is_stoppable = docker_available %}
-                             {% if agent_state.container_status=='running' %}
-                                 <form action="{{ url_for('stop_tunnel') }}" method="post" class="inline-block w-full sm:w-auto protocol-aware-form">
-                                     <button type="submit" class="{{ base_button_style }} {{ stop_button_style }}" {{ 'disabled' if not is_stoppable else '' }}>Stop Agent</button>
-                                 </form>
-                             {% else %}
-                                 <form action="{{ url_for('start_tunnel') }}" method="post" class="inline-block w-full sm:w-auto protocol-aware-form">
-                                     <button type="submit" class="{{ base_button_style }} {{ start_button_style }}" {{ 'disabled' if not is_startable else '' }}>Start Agent</button>
-                                 </form>
-                             {% endif %}
-                         </div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <section class="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden mb-8 sm:mb-12 transition-shadow duration-300 hover:shadow-xl">
              <div class="px-6 py-5 sm:px-8 sm:py-6">
                 <h2 class="text-2xl sm:text-3xl font-semibold mb-6 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 pb-3">
                     Managed Ingress Rules
@@ -396,6 +286,116 @@
                 {% else %}
                     <p class="text-center text-gray-500 dark:text-gray-400 py-8">No ingress rules are currently being managed.</p>
                 {% endif %}
+            </div>
+        </section>
+
+        <section class="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden mb-8 sm:mb-12 transition-shadow duration-300 hover:shadow-xl">
+            <div class="px-6 py-5 sm:px-8 sm:py-6">
+                <h2 class="text-2xl sm:text-3xl font-semibold mb-6 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 pb-3">
+                    Tunnel & Agent Status
+                </h2>
+                <div class="mb-6">
+                    <h3 class="text-lg font-semibold mb-3 text-gray-600 dark:text-gray-400">Cloudflare API & Tunnel Setup</h3>
+                     {% set status_box_class = 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' %}
+                    {% if tunnel_state.get('error') and not external_cloudflared %}
+                      {% set status_box_class = 'border-red-500 bg-red-50 dark:bg-red-900/20' %}
+                    {% elif (tunnel_state.get('id') and tunnel_state.get('token')) or (external_cloudflared and tunnel_state.get('id')) %}
+                      {% set status_box_class = 'border-green-500 bg-green-50 dark:bg-green-900/20' %}
+                    {% endif %}
+                    <div class="status-box p-4 rounded-md border-l-4 {{ status_box_class }} text-gray-700 dark:text-gray-300 text-sm">
+                        <p><strong>API Status:</strong> {{ tunnel_state.status_message }}</p>
+                        {% if tunnel_state.get('error') %}
+                        <div class="mt-3">
+                            <strong class="block mb-1">Error Details:</strong>
+                            <pre class="bg-gray-100 dark:bg-gray-900/50 border border-gray-300 dark:border-gray-600 rounded p-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap break-words shadow-inner">{{ tunnel_state.error }}</pre>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="mb-6">
+                    <h4 class="text-md font-semibold mb-3 text-gray-600 dark:text-gray-400">Tunnel Details</h4>
+                     <div class="space-y-2 text-sm">
+                        <p><strong class="inline-block w-36">Desired Name:</strong> <code class="bg-gray-200 dark:bg-gray-700 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded font-mono text-xs">{{ tunnel_state.name }}</code></p>
+                        <p><strong class="inline-block w-36">Tunnel ID:</strong> <code class="bg-gray-200 dark:bg-gray-700 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded font-mono text-xs">{{ tunnel_state.id if tunnel_state.id else 'N/A' }}</code></p>
+                        {% if not external_cloudflared %}
+                        <div>
+                            <strong class="inline-block w-36 align-top pt-1">Tunnel Token:</strong>
+                            <pre class="inline-block bg-gray-100 dark:bg-gray-900/50 border border-gray-300 dark:border-gray-600 rounded p-2 text-xs font-mono overflow-x-auto whitespace-pre-wrap break-words align-top shadow-inner max-w-full mt-1 sm:mt-0">{{ display_token }}</pre>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-3 text-gray-600 dark:text-gray-400">Agent Control</h3>
+                    {% if agent_state.last_action_status %}
+                        {% set action_box_class = 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' %}
+                        {% if 'Error:' in agent_state.last_action_status %}
+                            {% set action_box_class = 'border-red-500 bg-red-50 dark:bg-red-900/20' %}
+                        {% elif 'Warning:' in agent_state.last_action_status %}
+                             {% set action_box_class = 'border-amber-500 bg-amber-50 dark:bg-amber-900/20' %}
+                        {% endif %}
+                        <div class="status-box p-3 rounded-md border-l-4 {{ action_box_class }} text-gray-700 dark:text-gray-300 text-xs my-4">
+                            <p><strong>Last Action:</strong> {{ agent_state.last_action_status }}</p>
+                        </div>
+                    {% endif %}
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-6 mt-2 p-4 bg-gray-50 dark:bg-gray-700/30 rounded-md">
+                        {% if external_cloudflared %}
+                            <div class="agent-status-info flex-grow space-y-1.5">
+                                <div class="flex items-center space-x-3">
+                                    <strong class="text-sm font-medium flex-shrink-0 w-28">External Mode:</strong>
+                                    <span class="status-indicator inline-block flex-shrink-0 w-3 h-3 rounded-full bg-blue-500 animate-pulse-fast shadow-sm"></span>
+                                    <strong class="text-sm font-semibold capitalize text-blue-600 dark:text-blue-400">Using External Cloudflared</strong>
+                                </div>
+                                <div class="flex items-center text-sm">
+                                    <strong class="font-medium text-gray-600 dark:text-gray-400 flex-shrink-0 w-28">External ID:</strong>
+                                    <code class="ml-3 bg-gray-200 dark:bg-gray-700 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded font-mono text-xs align-middle truncate" title="{{ external_tunnel_id }}">{{ external_tunnel_id }}</code>
+                                </div>
+                                <div class="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                                    <p class="italic">External cloudflared mode enabled. DockFlare manages tunnel configuration and DNS records, but not the agent container.</p>
+                                </div>
+                            </div>
+                        {% else %}
+                         <div class="agent-status-info flex-grow space-y-1.5">
+                            <div class="flex items-center space-x-3">
+                                <strong class="text-sm font-medium flex-shrink-0 w-28">Agent Status:</strong>
+                                {% set indicator_class = 'bg-gray-400' %}
+                                {% if agent_state.container_status == 'running' %} {% set indicator_class = 'bg-green-500 animate-pulse-fast' %}
+                                {% elif agent_state.container_status in ['exited', 'dead', 'not_found'] %} {% set indicator_class = 'bg-red-500' %}
+                                {% elif agent_state.container_status == 'docker_unavailable' %} {% set indicator_class = 'bg-gray-500' %}
+                                {% elif agent_state.container_status in ['created', 'paused', 'restarting'] %} {% set indicator_class = 'bg-amber-500' %}
+                                {% endif %}
+                                <span class="status-indicator inline-block flex-shrink-0 w-3 h-3 rounded-full {{ indicator_class }} shadow-sm"></span>
+                                {% set status_text_class = 'text-gray-600 dark:text-gray-400' %}
+                                {% if agent_state.container_status=='running' %} {% set status_text_class = 'text-green-600 dark:text-green-400' %}
+                                {% elif agent_state.container_status in ['exited', 'dead', 'not_found', 'docker_unavailable'] %} {% set status_text_class = 'text-red-600 dark:text-red-400' %}
+                                {% elif agent_state.container_status in ['created', 'paused', 'restarting'] %} {% set status_text_class = 'text-amber-600 dark:text-amber-400' %}
+                                {% endif %}
+                                <strong class="text-sm font-semibold capitalize {{ status_text_class }}">{{ agent_state.container_status.replace('_',' ') if agent_state.container_status else 'Unknown' }}</strong>
+                            </div>
+                            <div class="flex items-center text-sm">
+                                <strong class="font-medium text-gray-600 dark:text-gray-400 flex-shrink-0 w-28">Agent Name:</strong>
+                                <code class="ml-3 bg-gray-200 dark:bg-gray-700 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded font-mono text-xs align-middle truncate" title="{{ cloudflared_container_name }}">{{ cloudflared_container_name }}</code>
+                            </div>
+                         </div>
+                         <div class="agent-action-button w-full sm:w-auto flex-shrink-0">
+                             {% set base_button_style = 'w-full sm:w-auto inline-flex items-center justify-center px-5 py-2 rounded-md text-white font-semibold shadow-md transition-all duration-200 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-800 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none' %}
+                             {% set start_button_style = 'bg-green-600 hover:bg-green-700 focus:ring-green-500 disabled:bg-green-300 dark:disabled:bg-green-800' %}
+                             {% set stop_button_style = 'bg-red-600 hover:bg-red-700 focus:ring-red-500 disabled:bg-red-300 dark:disabled:bg-red-800' %}
+                             {% set is_startable = tunnel_state.get('id') and tunnel_state.get('token') and docker_available %}
+                             {% set is_stoppable = docker_available %}
+                             {% if agent_state.container_status=='running' %}
+                                 <form action="{{ url_for('stop_tunnel') }}" method="post" class="inline-block w-full sm:w-auto protocol-aware-form">
+                                     <button type="submit" class="{{ base_button_style }} {{ stop_button_style }}" {{ 'disabled' if not is_stoppable else '' }}>Stop Agent</button>
+                                 </form>
+                             {% else %}
+                                 <form action="{{ url_for('start_tunnel') }}" method="post" class="inline-block w-full sm:w-auto protocol-aware-form">
+                                     <button type="submit" class="{{ base_button_style }} {{ start_button_style }}" {{ 'disabled' if not is_startable else '' }}>Start Agent</button>
+                                 </form>
+                             {% endif %}
+                         </div>
+                        {% endif %}
+                    </div>
+                </div>
             </div>
         </section>
 
