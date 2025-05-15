@@ -227,20 +227,24 @@
                         <table class="table table-zebra table-sm w-full">
                             <thead>
                                 <tr>
-                                    <th class="w-1/5">Hostname</th> 
-                                    <th class="w-1/5">Service Target</th>
-                                    <th class="w-1/5">Access Policy</th>
-                                    <th class="w-1/12">Status</th>
-                                    <th class="w-1/6">Container</th>
-                                    <th class="w-1/6">Delete Scheduled (UTC)</th>
-                                    <th class="w-1/4">Manage Policy</th>
-                                    <th class="w-auto">Actions</th>
+                                    <th class="p-3 w-1/12">Status</th>
+                                    <th class="p-3 w-1/4">Hostname</th> 
+                                    <th class="p-3 w-1/5">Service Target</th>
+                                    <th class="p-3 w-1/6">Container</th>
+                                    <th class="p-3 w-1/5">Access Policy</th>
+                                    <th class="p-3 w-1/4">Manage Policy</th>
+                                    <th class="p-3 w-1/6">Expires At (UTC)</th>
+                                    <th class="p-3 w-auto">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for hostname, details in rules.items()|sort %}
-                                    <tr>
-                                        <td class="whitespace-nowrap">
+                                    <tr class="hover">
+                                        <td class="p-3 whitespace-nowrap">
+                                            {% set status_badge_color = 'badge-warning' if 'pending' in details.status else 'badge-success' %}
+                                            <span class="badge {{ status_badge_color }} badge-sm badge-outline">{{ details.status.replace('_',' ') }}</span>
+                                        </td>
+                                        <td class="p-3 whitespace-nowrap">
                                             <a href="https://{{ hostname }}" target="_blank" rel="noopener noreferrer" title="Open https://{{ hostname }}" class="link link-hover link-primary text-sm">
                                                {{ hostname }}
                                            </a>
@@ -248,9 +252,9 @@
                                            <span class="badge badge-info badge-outline badge-xs ml-2">wildcard</span>
                                            {% endif %}
                                        </td>
-                                        <td class="whitespace-nowrap"><code class="text-xs opacity-80">{{ details.service }}</code></td>
-                                        
-                                        <td class="whitespace-nowrap text-sm opacity-80" id="access-policy-display-{{ hostname | replace('.', '-') }}">
+                                        <td class="p-3 whitespace-nowrap"><code class="text-xs opacity-80">{{ details.service }}</code></td>
+                                        <td class="p-3 whitespace-nowrap"><code class="text-xs opacity-80" title="{{ details.container_id if details.container_id else 'N/A' }}">{{ details.container_id[:12] if details.container_id else 'N/A' }}</code></td>
+                                        <td class="p-3 whitespace-nowrap text-sm opacity-80" id="access-policy-display-{{ hostname | replace('.', '-') }}">
                                             {% if details.access_policy_type %}
                                                 <span class="capitalize">
                                                     {{ details.access_policy_type.replace('_', ' ') if details.access_policy_type != 'pending_label_sync' else 'Pending Label Sync...' }}
@@ -273,20 +277,7 @@
                                                 N/A
                                             {% endif %}
                                         </td>
-                                        <td class="whitespace-nowrap">
-                                            {% set status_badge_color = 'badge-warning' if 'pending' in details.status else 'badge-success' %}
-                                            <span class="badge {{ status_badge_color }} badge-sm badge-outline">{{ details.status.replace('_',' ') }}</span>
-                                        </td>
-                                        <td class="whitespace-nowrap"><code class="text-xs opacity-80" title="{{ details.container_id if details.container_id else 'N/A' }}">{{ details.container_id[:12] if details.container_id else 'N/A' }}</code></td>
-                                        <td class="whitespace-nowrap text-sm opacity-70">
-                                            {% if details.status=='pending_deletion' and details.delete_at %}
-                                            <div data-delete-at="{{ details.delete_at.isoformat() }}">
-                                                <span class="absolute-time">{{ details.delete_at.strftime('%H:%M %d-%b-%Y') }}</span>
-                                                <span class="countdown-timer block text-xs opacity-80">(calculating...)</span>
-                                            </div>
-                                            {% else %} N/A {% endif %}
-                                        </td>
-                                        <td class="whitespace-nowrap text-sm policy-actions-cell" id="policy-actions-{{ hostname | replace('.', '-') }}" style="min-width: 180px;">
+                                        <td class="p-3 whitespace-nowrap text-sm policy-actions-cell" id="policy-actions-{{ hostname | replace('.', '-') }}" style="min-width: 180px;">
                                             <div class="flex items-center space-x-1 sm:space-x-2">
                                                 <div class="dropdown dropdown-end dropdown-hover"> 
                                                     <button tabindex="0" role="button" class="btn btn-xs btn-info btn-outline" data-hostname="{{ hostname }}">Edit</button> 
@@ -320,7 +311,15 @@
                                                 {% endif %}
                                             </div>
                                         </td>
-                                        <td class="whitespace-nowrap text-sm" style="min-width: 80px;">
+                                        <td class="p-3 whitespace-nowrap text-sm opacity-70">
+                                            {% if details.status=='pending_deletion' and details.delete_at %}
+                                            <div data-delete-at="{{ details.delete_at.isoformat() }}">
+                                                <span class="absolute-time">{{ details.delete_at.strftime('%H:%M %d-%b-%Y') }}</span>
+                                                <span class="countdown-timer block text-xs opacity-80">(calculating...)</span>
+                                            </div>
+                                            {% else %} N/A {% endif %}
+                                        </td>
+                                        <td class="p-3 whitespace-nowrap text-sm" style="min-width: 80px;">
                                             <form action="{{ url_for('force_delete_rule', hostname=hostname) }}" method="post" onsubmit="return confirm('Are you sure you want to force delete the rule and DNS record for {{ hostname }} immediately? This bypasses the grace period.');" class="protocol-aware-form">
                                                 <button type="submit" class="btn btn-xs btn-error btn-outline" {{ 'disabled' if not docker_available else '' }}>Delete</button>
                                             </form>
@@ -336,12 +335,6 @@
             </div>
         </section>
         
-        <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
-            <div class="card-body">
-                <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">Tunnel & Agent Status</h2>
-            </div>
-        </section>
-
         <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
             <div class="card-body">
                 <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">All Cloudflare Tunnels on Account</h2>
