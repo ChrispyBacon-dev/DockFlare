@@ -218,14 +218,14 @@ def save_state():
 def cf_api_request(method, endpoint, json_data=None, params=None):
     url = f"{CF_API_BASE_URL}{endpoint}"
     error_msg = None
-    api_call_start_time = time.time() 
+    api_call_start_time = time.time() # <<< FIX: Added for timing
     try:
         logging.info(f"API Request: {method} {url} Params: {params}")
         if json_data:
-            
+             # Using json.dumps for potentially complex data, ensure it's appropriate for your debug needs
              logging.debug(f"API Request Data: {json.dumps(json_data)}")
         response = requests.request(method, url, headers=CF_HEADERS, json=json_data, params=params, timeout=30)
-        response.raise_for_status() 
+        response.raise_for_status() # Raises HTTPError for bad responses (4XX or 5XX)
         logging.info(f"API Response Status: {response.status_code}")
         if response.status_code == 204 or not response.content: # Handle No Content
             return {"success": True, "result": None}
@@ -235,7 +235,7 @@ def cf_api_request(method, endpoint, json_data=None, params=None):
             logging.debug(f"API Response Body (first 500 chars): {str(response_data)[:500]}")
             if isinstance(response_data, dict) and 'success' in response_data:
                  if response_data['success']:
-                      return response_data 
+                      return response_data # Cloudflare's typical success response
                  else: # success: false
                       cf_errors = response_data.get('errors', [])
                       error_code = None # Initialize error_code
@@ -246,47 +246,40 @@ def cf_api_request(method, endpoint, json_data=None, params=None):
                            error_msg = f"API reported failure but no error details provided. Response: {response_data}"
                       logging.error(f"API Request Failed ({method} {url}): {error_msg} - Full Errors: {cf_errors}")
                       api_exception = requests.exceptions.RequestException(error_msg, response=response)
-                      if error_code is not None: 
-                          api_exception.cf_error_code = error_code 
+                      if error_code is not None: # Check before assigning
+                          api_exception.cf_error_code = error_code # Attach code if available
                       raise api_exception
-            else: 
+            else: # Valid JSON but not typical Cloudflare success/error structure
                  logging.warning(f"API response for {method} {url} was valid JSON but missing 'success' field or not a dict. Status: {response.status_code}. Body: {str(response_data)[:200]}")
-                 
-                 if 200 <= response.status_code < 300:
-                     return {"success": True, "result": response_data} 
-                 
+                 if 200 <= response.status_code < 300: # Treat as success if HTTP 2xx
+                     return {"success": True, "result": response_data}
                  raise requests.exceptions.RequestException(f"Unexpected JSON response format from API. Status: {response.status_code}", response=response)
         except json.JSONDecodeError: # Response not JSON
             logging.error(f"API response for {method} {url} was not valid JSON. Status: {response.status_code}. Body: {response.text[:200]}")
             raise requests.exceptions.RequestException(f"Invalid JSON response from API. Status: {response.status_code}", response=response)
     except requests.exceptions.RequestException as e:
-        
-        if error_msg is None: 
-            logging.error(f"API Request Failed: {method} {url} (Exception: {type(e).__name__})") 
-            error_msg = f"Request Exception: {e}" # Base error
+        if error_msg is None:
+            logging.error(f"API Request Failed: {method} {url} (Exception: {type(e).__name__})")
+            error_msg = f"Request Exception: {e}"
             if e.response is not None:
                 try:
-                    error_data = e.response.json() 
+                    error_data = e.response.json()
                     cf_errors = error_data.get('errors', [])
                     if cf_errors and isinstance(cf_errors, list) and len(cf_errors) > 0 and isinstance(cf_errors[0], dict):
                         error_msg = f"API Error: {cf_errors[0].get('message', 'Unknown error')}"
-                        
                         if hasattr(e, 'cf_error_code') and cf_errors[0].get('code') is not None : e.cf_error_code = cf_errors[0].get('code')
-                    else: 
-                         error_msg = f"HTTP {e.response.status_code} - {e.response.text[:100]}" 
+                    else:
+                         error_msg = f"HTTP {e.response.status_code} - {e.response.text[:100]}"
                     logging.error(f"API Error Response Body: {error_data}")
-                except (ValueError, AttributeError, json.JSONDecodeError): 
-                     error_msg = f"HTTP {e.response.status_code} - {e.response.text[:100]}" 
+                except (ValueError, AttributeError, json.JSONDecodeError):
+                     error_msg = f"HTTP {e.response.status_code} - {e.response.text[:100]}"
             logging.error(f"Final error message for {method} {url}: {error_msg}")
-
-        
-        if "cfd_tunnel" in endpoint and tunnel_state.get("id") is None and "token" not in endpoint: 
-             with state_lock:
-                tunnel_state["error"] = error_msg
-        raise e 
+        if "cfd_tunnel" in endpoint and tunnel_state.get("id") is None and "token" not in endpoint:
+             with state_lock: tunnel_state["error"] = error_msg
+        raise e
     finally:
         api_call_duration = time.time() - api_call_start_time
-        logging.info(f"API Request to {url} took {api_call_duration:.2f} seconds.")
+        logging.info(f"API Request to {url} took {api_call_duration:.2f} seconds.") # <<< FIX: Added timing log
 
 def get_zone_id_from_name(zone_name):
     global zone_id_cache
@@ -406,7 +399,7 @@ def get_tunnel_token_via_api(tunnel_id):
     logging.info(f"Getting token for tunnel ID '{tunnel_id}'")
     endpoint = f"/accounts/{CF_ACCOUNT_ID}/cfd_tunnel/{tunnel_id}/token"
     url = f"{CF_API_BASE_URL}{endpoint}"
-    api_call_start_time = time.time() 
+    api_call_start_time = time.time()
     try:
         logging.info(f"API Request: GET {url} (for token)")
         response = requests.request("GET", url, headers={"Authorization": f"Bearer {CF_API_TOKEN}"}, timeout=30)
@@ -422,19 +415,18 @@ def get_tunnel_token_via_api(tunnel_id):
         if e.response is not None:
              error_msg += f" Status: {e.response.status_code} Body: {e.response.text[:100]}"
         logging.error(error_msg)
-        
-        with state_lock: 
+        with state_lock: # Ensure thread-safe update
             tunnel_state["error"] = error_msg
         raise
     except Exception as e:
          logging.error(f"Unexpected error getting tunnel token for {tunnel_id}: {e}", exc_info=True)
-         # Ensure thread-safe update to global state
-         with state_lock:
+         with state_lock: # Ensure thread-safe update
             tunnel_state["error"] = f"Unexpected error getting token: {e}"
          raise
     finally:
         api_call_duration = time.time() - api_call_start_time
-        logging.info(f"API Request to {url} (for token) took {api_call_duration:.2f} seconds.") # <--- Already there
+        logging.info(f"API Request to {url} (for token) took {api_call_duration:.2f} seconds.")
+
 def create_tunnel_via_api(name):
     logging.info(f"Creating tunnel '{name}' via API")
     endpoint = f"/accounts/{CF_ACCOUNT_ID}/cfd_tunnel"
@@ -2421,43 +2413,40 @@ def update_cloudflare_config():
     return False 
 
 def get_all_account_cloudflare_tunnels():
-    global _all_tunnels_cache, _all_tunnels_cache_time 
+    global _all_tunnels_cache, _all_tunnels_cache_time # For modifying globals
 
     if not CF_ACCOUNT_ID:
         logging.warning("CF_ACCOUNT_ID is not configured. Cannot list all Cloudflare tunnels from the account.")
         return []
-    if not CF_API_TOKEN: 
+    if not CF_API_TOKEN:
         logging.error("Cloudflare API token not configured. Cannot list all account tunnels.")
         return []
 
     current_time = time.time()
-
-    with state_lock:
+    with state_lock: # Protects access to cache variables
         if _all_tunnels_cache is not None and (current_time - _all_tunnels_cache_time < _ALL_TUNNELS_CACHE_TTL):
             logging.info("Returning all_account_tunnels from cache.")
-            return copy.deepcopy(_all_tunnels_cache) 
+            return copy.deepcopy(_all_tunnels_cache) # Return a deep copy
 
-    
+    # Cache miss or expired
     endpoint = f"/accounts/{CF_ACCOUNT_ID}/cfd_tunnel"
-    params = {"is_deleted": "false"} 
+    params = {"is_deleted": "false"}
     logging.info(f"Attempting to list all Cloudflare tunnels for account ID {CF_ACCOUNT_ID} with params: {params} (CACHE MISS OR EXPIRED)")
 
     try:
-        response_data = cf_api_request("GET", endpoint, params=params) 
+        response_data = cf_api_request("GET", endpoint, params=params) # Uses the timed cf_api_request
 
-      
         if response_data and response_data.get("result") is not None:
             try:
                 logging.info(f"Raw response size for all tunnels (response_data): {len(str(response_data))} characters.")
-            except Exception as len_e: # Catch any error trying to get length (e.g., if response_data is not stringifiable easily)
+            except Exception as len_e:
                 logging.warning(f"Could not get length of response_data for tunnel list: {len_e}")
         elif response_data and response_data.get("result") is None and response_data.get("success") is True:
-            # This case handles an API success but with an empty result (e.g., no tunnels found)
-            logging.info("API reported success for all tunnels list but result is None. Caching empty list.")
+            logging.info("API reported success for all tunnels list but result is None (e.g., no tunnels found). Caching empty list.")
             with state_lock:
                 _all_tunnels_cache = []
                 _all_tunnels_cache_time = current_time
-            return [] 
+            return []
         else: 
             logging.warning(f"No valid result in response_data for all tunnels list. Caching empty list.")
             with state_lock:
@@ -2465,21 +2454,20 @@ def get_all_account_cloudflare_tunnels():
                 _all_tunnels_cache_time = current_time
             return []
 
-        tunnels_api_result = response_data.get("result", []) 
+        tunnels_api_result = response_data.get("result", [])
 
         if isinstance(tunnels_api_result, list):
-            
-            desired_statuses = {"healthy", "degraded", "down", "inactive"} 
+            desired_statuses = {"healthy", "degraded", "down", "inactive"}
             filtered_tunnels = [
                 tunnel for tunnel in tunnels_api_result if tunnel.get("status") in desired_statuses
             ]
             logging.info(f"Returning {len(filtered_tunnels)} tunnels after client-side status check for relevant statuses.")
             filtered_tunnels.sort(key=lambda t: t.get("name", "").lower())
 
-            with state_lock: 
+            with state_lock: # Update cache
                 _all_tunnels_cache = filtered_tunnels
                 _all_tunnels_cache_time = current_time
-            return copy.deepcopy(filtered_tunnels) 
+            return copy.deepcopy(filtered_tunnels)
         else:
             logging.error(f"Unexpected data format for account tunnels list: {type(tunnels_api_result)}. Expected a list. Response: {response_data}")
             with state_lock: # Cache empty on unexpected format
@@ -2487,13 +2475,11 @@ def get_all_account_cloudflare_tunnels():
                 _all_tunnels_cache_time = current_time
             return []
     except Exception as e:
-        
-        if not isinstance(e, requests.exceptions.RequestException):
+        if not isinstance(e, requests.exceptions.RequestException): # Already logged by cf_api_request
             logging.error(f"Unexpected error in get_all_account_cloudflare_tunnels after API call: {e}", exc_info=True)
-        else: 
-            logging.error(f"API RequestException caught in get_all_account_cloudflare_tunnels: {e}")
-
-        with state_lock: 
+        else:
+             logging.error(f"API RequestException caught in get_all_account_cloudflare_tunnels: {e}")
+        with state_lock: # Cache an empty list on any failure
             _all_tunnels_cache = []
             _all_tunnels_cache_time = current_time
         return []
