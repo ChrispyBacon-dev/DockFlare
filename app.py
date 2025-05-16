@@ -3074,7 +3074,7 @@ def status_page():
 
     all_account_tunnels_list = get_all_account_cloudflare_tunnels()
 
-    return render_template('status_page.html',
+    return render_template('mini.html',
                         tunnel_state=template_tunnel_state,
                         agent_state=template_agent_state,
                         initialization=initialization_status,
