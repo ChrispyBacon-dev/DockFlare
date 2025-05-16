@@ -32,14 +32,19 @@ def inject_protocol():
     }
 
 @app.route('/')
-def super_minimal_route():
-    logging.info("Attempting to render super_minimal.html")
+def current_test_route(): # Use a distinct name for clarity
+    logging.info("Attempting to render status_page.html (extremely simplified content)")
     try:
-        # If inject_protocol is added, make sure super_minimal.html doesn't try to use these vars
-        # or pass dummy values if it does. For now, it doesn't.
-        return render_template('super_minimal.html')
+        # Pass only variables that might be used by the surrounding shell of status_page.html
+        # (like those used in your base template if you extend one, or by the header/footer)
+        # For now, let's assume very few are needed by the shell if the content is minimal.
+        return render_template('status_page.html', 
+                               CF_ACCOUNT_ID_CONFIGURED=True, # Dummy
+                               ACCOUNT_ID_FOR_DISPLAY="Test", # Dummy
+                               # Add any other vars your base template/header/footer might need
+                              ) 
     except Exception as e:
-        logging.error(f"Error rendering super_minimal.html: {e}", exc_info=True)
+        logging.error(f"Error rendering status_page.html (simplified): {e}", exc_info=True)
         return "Error rendering template, check logs", 500
 
 if __name__ == '__main__':
