@@ -71,6 +71,9 @@ missing_vars = [var for var in required_vars if not globals().get(var)]
 _cached_account_email = None
 _cached_account_email_timestamp = 0
 _ACCOUNT_EMAIL_CACHE_TTL = 3600
+_all_tunnels_cache = None
+_all_tunnels_cache_time = 0
+_ALL_TUNNELS_CACHE_TTL = 120 # Cache for 2min
 
 if not USE_EXTERNAL_CLOUDFLARED:
     if not TUNNEL_NAME:
@@ -2309,29 +2312,29 @@ def update_cloudflare_config():
                 else:
                     logging.warning(f"Rule {hostname} (type: {rule_details.get('management_type')}) is active but missing 'service' detail. Skipping.")
 
-        # Compare current CF rules that *should* be managed by DockFlare with desired state
+        
         current_cf_managed_part_ingress = [
             r for r in current_cf_ingress
-            if r.get("hostname") in current_managed_hostnames_in_state # Only hostnames DockFlare thinks it manages
+            if r.get("hostname") in current_managed_hostnames_in_state 
         ]
 
 
         def rule_to_canonical(rule):
-            # Include noTLSVerify in canonical form for accurate comparison
+            
             items = sorted([
                 ("hostname", rule.get("hostname")),
                 ("service", rule.get("service")),
-                ("noTLSVerify", rule.get("originRequest", {}).get("noTLSVerify", False)) # Default to False if not present
+                ("noTLSVerify", rule.get("originRequest", {}).get("noTLSVerify", False)) 
             ])
             return tuple(items)
 
         try:
-            # Canonical representation of rules currently in CF that DockFlare *should* manage
+            
             current_cf_set_for_managed_hostnames = {
                 rule_to_canonical(r) for r in current_cf_managed_part_ingress
                 if r.get("hostname") and r.get("service") # Ensure basic validity
             }
-            # Canonical representation of rules DockFlare *wants* to have in CF
+            
             desired_set_from_managed_rules = {
                 rule_to_canonical(r) for r in desired_ingress_rules
                 if r.get("hostname") and r.get("service")
@@ -2372,7 +2375,7 @@ def update_cloudflare_config():
         config = {
             "config": {
                 "ingress": final_ingress_rules,
-                "originRequest": {"connectTimeout": 30, "noTLSVerify": False}, # Default, per-rule can override noTLSVerify
+                "originRequest": {"connectTimeout": 30, "noTLSVerify": False}, 
                 "warp-routing": {"enabled": False}
             }
         }
@@ -2402,11 +2405,12 @@ def update_cloudflare_config():
             tunnel_state["error"] = f"Unexpected error updating tunnel configuration: {e}"
             return False
     elif not needs_api_update:
-        return True # No update needed is a success
-    return False # If needs_api_update was true but final_ingress_rules was None (should not happen)
-
+        return True 
+    return False 
 
 def get_all_account_cloudflare_tunnels():
+    global _all_tunnels_cache, _all_tunnels_cache_time 
+
     if not CF_ACCOUNT_ID:
         logging.warning("CF_ACCOUNT_ID is not configured. Cannot list all Cloudflare tunnels from the account.")
         return []
@@ -2414,35 +2418,49 @@ def get_all_account_cloudflare_tunnels():
         logging.error("Cloudflare API token not configured. Cannot list all account tunnels.")
         return []
 
-    endpoint = f"/accounts/{CF_ACCOUNT_ID}/cfd_tunnel"
-    params = {
-        "is_deleted": "false"
-    }
+    current_time = time.time()
 
-    logging.info(f"Attempting to list all Cloudflare tunnels for account ID {CF_ACCOUNT_ID} with params: {params}")
+    with state_lock: 
+        if _all_tunnels_cache is not None and (current_time - _all_tunnels_cache_time < _ALL_TUNNELS_CACHE_TTL):
+            logging.info("Returning all_account_tunnels from cache.")
+            return _all_tunnels_cache
+
+    endpoint = f"/accounts/{CF_ACCOUNT_ID}/cfd_tunnel"
+    params = {"is_deleted": "false"}
+    logging.info(f"Attempting to list all Cloudflare tunnels for account ID {CF_ACCOUNT_ID} with params: {params} (CACHE MISS OR EXPIRED)")
+
     try:
         response_data = cf_api_request("GET", endpoint, params=params)
         if response_data and response_data.get("result") is not None:
             logging.info(f"Raw response size for all tunnels: {len(str(response_data))} characters.")
         else:
             logging.warning(f"No result in response_data for all tunnels list or response_data is None.")
+            
+            with state_lock: 
+                _all_tunnels_cache = []
+                _all_tunnels_cache_time = current_time
+            return []
 
-        tunnels = response_data.get("result", []) if response_data else []
+        tunnels_api_result = response_data.get("result", [])
 
-
-        if isinstance(tunnels, list):
-            logging.info(f"Successfully retrieved {len(tunnels)} Cloudflare tunnels from the account (any status).")
-
+        if isinstance(tunnels_api_result, list):
+            logging.info(f"Successfully retrieved {len(tunnels_api_result)} Cloudflare tunnels from the account (any status).")
             desired_statuses = {"healthy", "degraded", "down", "inactive"}
             filtered_tunnels = [
-                tunnel for tunnel in tunnels if tunnel.get("status") in desired_statuses
+                tunnel for tunnel in tunnels_api_result if tunnel.get("status") in desired_statuses
             ]
-
             logging.info(f"Returning {len(filtered_tunnels)} tunnels after client-side status check for relevant statuses.")
             filtered_tunnels.sort(key=lambda t: t.get("name", "").lower())
+
+            with state_lock: 
+                _all_tunnels_cache = filtered_tunnels
+                _all_tunnels_cache_time = current_time
             return filtered_tunnels
         else:
-            logging.error(f"Unexpected data format for account tunnels list: {type(tunnels)}. Expected a list. Response: {response_data}")
+            logging.error(f"Unexpected data format for account tunnels list: {type(tunnels_api_result)}. Expected a list. Response: {response_data}")
+            with state_lock: 
+                _all_tunnels_cache = [] 
+                _all_tunnels_cache_time = current_time
             return []
     except requests.exceptions.RequestException as e:
         logging.error(f"API error listing all Cloudflare tunnels for the account: {e}")
@@ -2451,9 +2469,16 @@ def get_all_account_cloudflare_tunnels():
                 logging.error("Permission denied (403) listing account tunnels. Ensure API token has 'Account:Cloudflare Tunnel:Read' permission for the account.")
             elif e.response.status_code == 400:
                 logging.error(f"Bad Request (400) listing account tunnels. API Response: {e.response.text}")
+        # Cache an empty list on failure
+        with state_lock: 
+            _all_tunnels_cache = []
+            _all_tunnels_cache_time = current_time
         return []
     except Exception as e:
         logging.error(f"Unexpected error listing all Cloudflare tunnels for the account: {e}", exc_info=True)
+        with state_lock: 
+            _all_tunnels_cache = []
+            _all_tunnels_cache_time = current_time
         return []
 
 def get_dns_records_for_tunnel(zone_id, tunnel_id):
