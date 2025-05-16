@@ -334,13 +334,13 @@
                 <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
                     Docker-Managed Ingress Rules
                 </h2>
-{% set docker_rules_list = [] %}
+{% set temp_docker_rules_list = [] %}
                 {% for hostname, details in rules.items() %}
                     {% if details.source is not defined or details.source == 'docker' %}
-                        {% do docker_rules_list.append((hostname, details)) %}
+                        {% set temp_docker_rules_list = temp_docker_rules_list + [(hostname, details)] %}
                     {% endif %}
                 {% endfor %}
-                {% if docker_rules_list %}
+                {% set docker_rules_list = temp_docker_rules_list %}
                     <div class="overflow-x-auto -mx-6 sm:-mx-8 pb-24">
                         <table class="table table-zebra table-sm w-full">
                             <thead>
