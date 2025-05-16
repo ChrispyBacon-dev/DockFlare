@@ -476,36 +476,57 @@
 -->
         
 <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
-                <div class="card-body">
-                    <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
-                        Add New Manual Host
-                    </h2>
-                    <form action="/temp-add-manual-host-url" method="POST" class="protocol-aware-form space-y-4">
+            <div class="card-body">
+                <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
+                    Add New Manual Host
+                </h2>
+                <form action="/temp-add-manual-host-url" method="POST" class="protocol-aware-form space-y-4">
+                    <div>
+                        <label for="manual_hostname" class="label">
+                            <span class="label-text">Hostname <span class="text-error">*</span></span>
+                        </label>
+                        <input type="text" name="manual_hostname"
+                               id="manual_hostname"
+                               placeholder="e.g., mynas.example.com"
+                               class="input input-bordered w-full"
+                               required>
+                    </div>
+
+                    <div>
+                        <label for="manual_service_target" class="label">
+                            <span class="label-text">Service Target URL <span class="text-error">*</span></span>
+                        </label>
+                        <input type="url" id="manual_service_target" name="manual_service_target" placeholder="e.g., https://192.168.1.10:8006 or http://internal-app:3000" class="input input-bordered w-full" required>
+                         <p class="text-xs text-base-content/70 mt-1">Must include protocol (http:// or https://).</p>
+                    </div>
+
+                    <!-- ADDED THIS BLOCK (Test M.2) -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label for="manual_hostname" class="label">
-                                <span class="label-text">Hostname <span class="text-error">*</span></span>
+                            <label for="manual_zone_name" class="label">
+                                <span class="label-text">Cloudflare Zone Name (Optional)</span>
                             </label>
-                            <input type="text" name="manual_hostname"
-                                   id="manual_hostname"
-                                   placeholder="e.g., mynas.example.com"
-                                   class="input input-bordered w-full"
-                                   required>
+                            <input type="text" id="manual_zone_name" name="manual_zone_name" placeholder="e.g., example.com (defaults to CF_ZONE_ID)" class="input input-bordered w-full">
+                            {% if not CF_ZONE_ID_CONFIGURED %}
+                            <p class="text-xs text-warning mt-1">Warning: CF_ZONE_ID is not set. You must provide a zone name.</p>
+                            {% endif %}
                         </div>
 
-                        <div>  <!-- ADDED THIS BLOCK -->
-                            <label for="manual_service_target" class="label">
-                                <span class="label-text">Service Target URL <span class="text-error">*</span></span>
+                        <div class="form-control">
+                            <label class="label cursor-pointer justify-start gap-2">
+                                <input type="checkbox" id="manual_no_tls_verify" name="manual_no_tls_verify" value="true" class="checkbox checkbox-sm">
+                                <span class="label-text">Disable TLS Verify (for https to self-signed certs)</span>
                             </label>
-                            <input type="url" id="manual_service_target" name="manual_service_target" placeholder="e.g., https://192.168.1.10:8006 or http://internal-app:3000" class="input input-bordered w-full" required>
-                             <p class="text-xs text-base-content/70 mt-1">Must include protocol (http:// or https://).</p>
-                        </div>  <!-- END ADDED BLOCK -->
-
-                        <div class="card-actions justify-end mt-6">
-                            <button type="submit" class="btn btn-primary">Add Manual Host</button>
                         </div>
-                    </form>
-                </div>
-            </section>
+                    </div>
+                    <!-- END ADDED BLOCK (Test M.2) -->
+
+                    <div class="card-actions justify-end mt-6">
+                        <button type="submit" class="btn btn-primary">Add Manual Host</button>
+                    </div>
+                </form>
+            </div>
+        </section>
 
         <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
             <div class="card-body">
