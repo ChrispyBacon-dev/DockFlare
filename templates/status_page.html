@@ -480,7 +480,7 @@
                 <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
                     Add New Manual Host
                 </h2>
-                <form action="/temp-add-manual-host-url" method="POST" class="protocol-aware-form space-y-4">
+                <form action="{{ url_for('add_manual_host') }}" method="POST" class="protocol-aware-form space-y-4">
                     <div>
                         <label for="manual_hostname" class="label">
                             <span class="label-text">Hostname <span class="text-error">*</span></span>
