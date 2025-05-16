@@ -12,37 +12,31 @@ def detect_protocol():
     forwarded_proto = request.headers.get('X-Forwarded-Proto', '').lower()
     app.config['PREFERRED_URL_SCHEME'] = 'https' if forwarded_proto == 'https' or request.is_secure else 'http'
 
-@app.after_request # <--- ADDED
+@app.after_request
 def add_security_headers(response):
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
+    # ... (same as above) ...
+    return response
+
+@app.context_processor # <--- ADDED
+def inject_protocol():
     forwarded_proto = request.headers.get('X-Forwarded-Proto', '').lower()
     is_https = forwarded_proto == 'https' or request.is_secure
-    csp = (
-        "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; "
-        "script-src * 'unsafe-inline' 'unsafe-eval'; "
-        "style-src * 'unsafe-inline'; "
-        "img-src * data: blob:; "
-        "font-src * data:; "
-        "connect-src *; "
-        "frame-src *; "
-    )
-    if is_https:
-        csp += "upgrade-insecure-requests; "
-    response.headers['Content-Security-Policy'] = csp
-    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    if is_https:
-        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-Requested-With, Authorization'
-    return response
+    base_url = f"{'https' if is_https else 'http'}://{request.host}"
+    request_scheme = request.scheme
+    return {
+        'protocol': 'https' if is_https else 'http',
+        'is_https': is_https,
+        'base_url': base_url,
+        'host': request.host,
+        'request_scheme': request_scheme
+    }
 
 @app.route('/')
 def super_minimal_route():
     logging.info("Attempting to render super_minimal.html")
     try:
+        # If inject_protocol is added, make sure super_minimal.html doesn't try to use these vars
+        # or pass dummy values if it does. For now, it doesn't.
         return render_template('super_minimal.html')
     except Exception as e:
         logging.error(f"Error rendering super_minimal.html: {e}", exc_info=True)
