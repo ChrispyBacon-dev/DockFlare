@@ -52,9 +52,6 @@ docker-compose.yml.original
 node_modules/
 npm-debug.log*
 yarn-error.log*
-# if you build css locally for testing, you might want to ignore the output
-# static/css/output.css 
-# (but Dockerfile needs it from build stage, so this ignore is for local commits)
 
 # Environment files
 .env
