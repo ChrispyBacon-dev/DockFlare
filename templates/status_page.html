@@ -500,7 +500,6 @@
                          <p class="text-xs text-base-content/70 mt-1">Must include protocol (http:// or https://).</p>
                     </div>
 
-                    <!-- ADDED THIS BLOCK (Test M.2) -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label for="manual_zone_name" class="label">
@@ -519,7 +518,20 @@
                             </label>
                         </div>
                     </div>
-                    <!-- END ADDED BLOCK (Test M.2) -->
+
+                    <!-- ADDED THIS BLOCK (Test M.3) -->
+                    <div>
+                        <label for="manual_access_policy_type" class="label">
+                            <span class="label-text">Access Policy</span>
+                        </label>
+                        <select name="manual_access_policy_type" id="manual_access_policy_type" class="manual-policy-type-select select select-bordered w-full">
+                            <option value="none" selected>None (Public - No Access App)</option>
+                            <option value="bypass">Bypass (Public Access App)</option>
+                            <option value="authenticate_email">Authenticate by Email</option>
+                            <option value="default_tld">Use Default *.tld Policy (if one exists)</option>
+                        </select>
+                    </div>
+                    <!-- END ADDED BLOCK (Test M.3) -->
 
                     <div class="card-actions justify-end mt-6">
                         <button type="submit" class="btn btn-primary">Add Manual Host</button>
