@@ -482,7 +482,10 @@
                 </h2>
                 <form action="/temp-add-manual-host-url" method="POST" class="protocol-aware-form space-y-4">
                     <div>
-                        <p>Test Div Content</p>
+                        <label for="manual_hostname" class="label">
+                            <span class="label-text">Hostname <span class="text-error">*</span></span>
+                        </label>
+                        <input type="text" id="manual_hostname" name="manual_hostname" placeholder="e.g., mynas.example.com" class="input input-bordered w-full" required>
                     </div>
                     <div class="card-actions justify-end mt-6">
                         <button type="submit" class="btn btn-primary">Add Manual Host</button>
