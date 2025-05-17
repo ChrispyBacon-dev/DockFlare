@@ -11,9 +11,6 @@
 
 DockFlare automates Cloudflare Tunnel ingress rule management and Zero Trust Access policies based on Docker container labels, simplifying the secure public exposure of your Dockerized applications. It minimizes manual Cloudflare configuration, acting as a dynamic, self-hosted ingress controller and basic access manager.
 
-Okay, let's update your `README.md` "Key Features" section to include the new manual rule management functionality. We want to integrate it smoothly and highlight its benefits.
-
-Here's a suggestion, incorporating the new feature and slightly rephrasing/reordering for flow:
 
 ## Key Features
 
