@@ -9,53 +9,33 @@
 [![GitHub last commit](https://img.shields.io/github/last-commit/ChrispyBacon-dev/dockflare)](https://github.com/ChrispyBacon-dev/dockflare/commits/stable)
 [![GitHub commit activity](https://img.shields.io/github/commit-activity/m/ChrispyBacon-dev/dockflare)](https://github.com/ChrispyBacon-dev/dockflare/commits/stable)
 
-DockFlare automates Cloudflare Tunnel ingress rule management and Zero Trust Access policies based on Docker container labels, simplifying the secure public exposure of your Dockerized applications. It minimizes manual Cloudflare configuration, acting as a dynamic, self-hosted ingress controller and basic access manager.
-
+DockFlare streamlines Cloudflare Tunnel and Zero Trust Access policy management by leveraging Docker labels for automated configuration and a comprehensive web UI for manual service definition and policy overrides for any rule. It simplifies secure public exposure for both Dockerized and non-Dockerized applications, minimizing direct Cloudflare interaction. DockFlare acts as a dynamic, self-hosted ingress controller, offering persistent, UI-driven control over Access Policies, effectively centralizing your basic access management.
 
 ## Key Features
 
 -   **Unified Cloudflare Tunnel Management**:
-    -   **Automated Tunnel Setup**: Creates/uses a specified Cloudflare Tunnel, retrieves its ID & Token.
-    -   **`cloudflared` Agent Lifecycle**: Optionally deploys & manages the `cloudflared` agent container (using the Tunnel Token) or works with an externally managed `cloudflared` instance.
--   **Dynamic Ingress Configuration via Docker Labels**:
-    -   Monitors Docker events for containers with specific labels (default prefix: `cloudflare.tunnel.`).
-    -   Supports `enable="true"`, `hostname="subdomain.example.com"`, `service="http://target_ip_or_hostname:port"`, `zonename="yourdomain.com"` (optional if global `CF_ZONE_ID` is set), and `no_tls_verify="true"`.
-    -   Automatically updates the Cloudflare Tunnel's ingress rules and associated DNS CNAME records to match running, labeled containers.
+    -   Automates Tunnel creation/use & `cloudflared` agent lifecycle (optional internal deployment or external).
+-   **Dynamic Ingress via Docker Labels**:
+    -   Auto-configures Tunnel ingress & DNS from Docker labels (e.g., `cloudflare.tunnel.hostname`, `service`) by monitoring container events.
 -   **Manual Ingress Rule Management (New!)**:
-    -   **Add Non-Docker Services**: Easily add and manage public hostnames for services not running in Docker (e.g., router UI, Proxmox, NAS) directly through the DockFlare web UI.
-    -   Specify hostname, target service URL (e.g., `http://192.168.0.1:80`, `https://myserver.local:8443`), optional zone name, and TLS verification settings.
-    -   DockFlare handles the Cloudflare Tunnel ingress rule and DNS CNAME record creation/deletion for these manual entries.
--   **Versatile Access Policy Management (for both Docker & Manual Rules)**:
-    -   **Via Docker Labels (for Dockerized services)**: Define Access Policies (e.g., `bypass`, `authenticate`, `default_tld`, or fully custom JSON rules) for each hostname directly through Docker labels. DockFlare automatically creates, updates, or deletes the corresponding Cloudflare Access Applications. Supports configuring application name, session duration, IdP restrictions, and more via labels.
-    -   **Via Web UI (Overrides Labels/Provides for Manual Rules)**: Interactively change the Access Policy for any managed rule (Docker-derived or manual) directly from the web UI (e.g., switch from Bypass to Authenticate by Email, set to public, or use a TLD default).
-        -   **Persistent UI Changes**: UI-set policies are saved and persist across DockFlare restarts and container restarts, overriding any Access Policy labels on Docker containers.
-        -   **"Revert to Labels/Default"**: A dedicated option in the UI allows reverting a UI-managed policy back to be controlled by container labels (for Docker rules) or to a default state (for manual rules, effectively removing specific UI-set policies).
-        -   **Clear Indication**: The UI clearly indicates when an Access Policy is being managed by the UI.
--   **Multi-Hostname & Multi-Zone Support**:
-    -   Configure multiple hostnames for a single Docker container using indexed labels, each with its own service target, zone configuration, and Access Policy.
-    -   Manual rules can also specify different zone names if needed.
--   **Graceful Deletion & State Persistence**:
-    -   Configurable grace period before removing ingress rules, DNS records, and associated Access Applications when a Docker container stops. (Manual rules are deleted immediately via UI action).
-    -   Saves `managed_rules` (including `source` type, Access Application IDs, configurations, and UI override status) to `state.json` for persistence.
--   **Optimized Reconciliation & Operations**:
-    -   On startup and periodically, ensures consistency between Docker containers (labels), manual entries, saved state (respecting UI overrides for Access Policies), Cloudflare Tunnel configuration, DNS, and Cloudflare Access Applications.
-    *   Efficiently processes DNS operations.
-    *   Shows real-time reconciliation progress in the UI.
--   **Comprehensive Web UI (Styled with DaisyUI)**:
-    -   Modern and responsive status dashboard.
-    -   Tunnel & agent status, with Start/Stop agent controls (if not in external mode).
-    -   **Unified Managed Ingress Rule List**:
-        -   Displays all rules (Docker & Manual) with Hostname, Service Target, Status/Type (Manual/Active/Pending Deletion), Identifier (Container ID or "Manual Rule"), Expiration Schedule (for pending Docker rule deletions).
-        -   **Access Policy Display**: Shows the applied Cloudflare Access Policy with a direct link to the Access Application in Cloudflare and a "UI Override" badge if applicable.
-        -   "Force Delete" option for Docker rules and "Delete" for manual rules (also removes associated Access App and DNS).
-    -   **"Add Manual Rule" Functionality**: Integrated button and modal for adding non-Docker services.
-    -   **Account Tunnel Overview**: Lists all Cloudflare Tunnels on the configured account, with an option to view their associated DNS records.
-    -   **Real-time Activity Logs**: Streamed directly to the browser via Server-Sent Events (SSE).
-    -   **Multiple Theme Options**: DaisyUI theme selector for user preference.
-    -   Basic reconciliation status display.
+    -   Add & manage public hostnames for non-Docker services (e.g., router, NAS) via Web UI; DockFlare handles Tunnel rules & DNS.
+-   **Versatile Access Policy Control (Docker & Manual)**:
+    -   Define Cloudflare Access Policies (e.g., `bypass`, `authenticate`, custom JSON) via Docker labels; auto-manages Access Applications.
+    -   Web UI to manage/override policies for *any* rule; UI changes persist, override labels, with revert option & clear indicators.
+-   **Multi-Hostname & Multi-Zone**:
+    -   Supports multiple hostnames (unique targets, zones, policies) per Docker container (indexed labels) or manual rule.
+-   **State Persistence & Graceful Deletion**:
+    -   Configurable grace period for Docker rule cleanup; persists all managed rules, Access App IDs, & UI overrides in `state.json`.
+-   **Intelligent Reconciliation**:
+    *   Continuously syncs Docker, manual entries, & saved state (respecting UI overrides) with Cloudflare (Tunnel, DNS, Access Apps); shows UI progress.
+-   **Comprehensive Web UI (DaisyUI)**:
+    -   **Dashboard**: Tunnel/agent status & controls.
+    -   **Unified Rule List**: View/manage all rules (Docker & manual) with status, target, Access Policy (Cloudflare links, UI override badges), & delete options.
+    -   **Easy Manual Entry**: Add non-Docker services via UI.
+    -   **Account Tools**: View account tunnels/DNS.
+    -   **Real-time Logs & Themes**: SSE activity logs & multiple UI themes.
 -   **Secure & Robust**:
-    -   Content Security Policy (CSP) for secure resource loading.
-    -   Handles API retries and error reporting.
+    -   Content Security Policy (CSP), API retries, and error reporting.
 
 [Learn more on the GitHub Wiki](https://github.com/ChrispyBacon-dev/DockFlare/wiki)
 
