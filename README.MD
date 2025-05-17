@@ -110,38 +110,38 @@ DockFlare listens for Docker container events.
 
 2. **Create `.env` File**:
    ```dotenv
-# Cloudflare API Token (REQUIRED)
-CF_API_TOKEN=your_cloudflare_api_token
-# Cloudflare Account ID (REQUIRED) - dash.cloudflare.com/ACCOUNT_ID
-CF_ACCOUNT_ID=your_cloudflare_account_id
-# Cloudflare Zone ID (REQUIRED)
-CF_ZONE_ID=your_cloudflare_zone_id
-# Tunnel Name (REQUIRED only when NOT using external cloudflared)
-TUNNEL_NAME=DockFlare-tunnel
-# Use External Cloudflared (OPTIONAL)
-USE_EXTERNAL_CLOUDFLARED=false
-# External Tunnel ID (REQUIRED if USE_EXTERNAL_CLOUDFLARED=true) 
-EXTERNAL_TUNNEL_ID=6ff42ae2-765d-4adf-befc-ca51f8e4e688 # Example Tunnel ID format
-# Docker Network Name (internal cloudflared mode)
-CLOUDFLARED_NETWORK_NAME=cloudflare-net
-# Label Prefix for Docker Containers
-LABEL_PREFIX=cloudflare.tunnel
-# Grace Period for Rule Deletion (seconds, default: 1h)
-GRACE_PERIOD_SECONDS=6000
-# Cleanup Interval (seconds)
-CLEANUP_INTERVAL_SECONDS=300
-# Agent Status Update Interval (seconds)
-AGENT_STATUS_UPDATE_INTERVAL_SECONDS=10
-# Scan All Docker Networks (default: false)
-SCAN_ALL_NETWORKS=false
-# Max Concurrent DNS Operations (default: 3)
-MAX_CONCURRENT_DNS_OPS=3
-# Reconciliation Batch Size (default: 3)
-RECONCILIATION_BATCH_SIZE=3
-# Trusted Proxies (IPs/CIDR ranges)
-# TRUSTED_PROXIES=172.16.0.0/12,192.168.0.0/16
-# Default TLS Verification Setting (skip verification) (default: false)
-DEFAULT_NO_TLS_VERIFY=false
+   # Cloudflare API Token (REQUIRED)
+   CF_API_TOKEN=your_cloudflare_api_token
+   # Cloudflare Account ID (REQUIRED) - dash.cloudflare.com/ACCOUNT_ID
+   CF_ACCOUNT_ID=your_cloudflare_account_id
+   # Cloudflare Zone ID (REQUIRED)
+   CF_ZONE_ID=your_cloudflare_zone_id
+   # Tunnel Name (REQUIRED only when NOT using external cloudflared)
+   TUNNEL_NAME=DockFlare-tunnel
+   # Use External Cloudflared (OPTIONAL)
+   USE_EXTERNAL_CLOUDFLARED=false
+   # External Tunnel ID (REQUIRED if USE_EXTERNAL_CLOUDFLARED=true) 
+   EXTERNAL_TUNNEL_ID=6ff42ae2-765d-4adf-befc-ca51f8e4e688 # Example Tunnel ID format
+   # Docker Network Name (internal cloudflared mode)
+   CLOUDFLARED_NETWORK_NAME=cloudflare-net
+   # Label Prefix for Docker Containers
+   LABEL_PREFIX=cloudflare.tunnel
+   # Grace Period for Rule Deletion (seconds, default: 1h)
+   GRACE_PERIOD_SECONDS=6000
+   # Cleanup Interval (seconds)
+   CLEANUP_INTERVAL_SECONDS=300
+   # Agent Status Update Interval (seconds)
+   AGENT_STATUS_UPDATE_INTERVAL_SECONDS=10
+   # Scan All Docker Networks (default: false)
+   SCAN_ALL_NETWORKS=false
+   # Max Concurrent DNS Operations (default: 3)
+   MAX_CONCURRENT_DNS_OPS=3
+   # Reconciliation Batch Size (default: 3)
+   RECONCILIATION_BATCH_SIZE=3
+   # Trusted Proxies (IPs/CIDR ranges)
+   # TRUSTED_PROXIES=172.16.0.0/12,192.168.0.0/16
+   # Default TLS Verification Setting (skip verification) (default: false)
+   DEFAULT_NO_TLS_VERIFY=false
 
 3. **Run DockFlare**:
 
