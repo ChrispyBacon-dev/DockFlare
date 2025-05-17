@@ -436,7 +436,7 @@
                                                 </div>
                                                 {% if details.access_policy_ui_override %}
                                                 <form action="{{ url_for('revert_access_policy_to_labels', hostname=hostname) }}" method="POST" 
-                                                      onsubmit="return confirm('Are you sure you want to revert the Access Policy for {{ hostname }}? {% if details.source == 'manual' %}The current UI-set policy will be removed, and it will become public or use a TLD policy if one exists.{% else %}The current UI-set policy will be removed, and it will be managed by its container labels.{% endif %}');" 
+                                                      onsubmit="return confirm('Are you sure you want to revert the Access Policy for {{ hostname }}? {% if details.source == "manual" %}The current UI-set policy will be removed, and it will become public or use a TLD policy if one exists.{% else %}The current UI-set policy will be removed, and it will be managed by its container labels.{% endif %}');" 
                                                       class="protocol-aware-form inline-block">
                                                     <button type="submit" class="btn btn-xs btn-warning btn-outline" title="Revert to Label/Default Policy">Revert</button>
                                                 </form>
