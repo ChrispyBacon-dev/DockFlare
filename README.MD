@@ -93,11 +93,11 @@ DockFlare listens for Docker container events.
          - dockflare_data:/app/data  # Persistent storage for state
        networks:
          - cloudflare-net  # Network for communication with cloudflared agent
-         logging:
        labels: # Optional keep in mind to set access policy
          - cloudflare.tunnel.enable=true
          - cloudflare.tunnel.hostname=dockflare.yourdomain.tld # update your domain 
          - cloudflare.tunnel.service=http://dockflare:5000 
+       logging:
        driver: "json-file"
        options:
          max-size: "10m"
