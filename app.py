@@ -383,12 +383,9 @@ def get_tunnel_token_via_api(tunnel_id):
     """Gets the token for a specific tunnel ID."""
     logging.info(f"Getting token for tunnel ID '{tunnel_id}'")
     endpoint = f"/accounts/{CF_ACCOUNT_ID}/cfd_tunnel/{tunnel_id}/token"
-    url = f"{CF_API_BASE_URL}{endpoint}"
     try:
-        logging.info(f"API Request: GET {url} (for token)")
-        response = requests.request("GET", url, headers={"Authorization": f"Bearer {CF_API_TOKEN}"}, timeout=30)
-        response.raise_for_status()
-        token = response.text.strip()
+        response_data = cf_api_request("GET", endpoint)
+        token = response_data.get("result")
         if not token or len(token) < 50:
             logging.error(f"Retrieved token for tunnel {tunnel_id} appears invalid.")
             raise ValueError("Invalid token format received from API")
@@ -397,14 +394,19 @@ def get_tunnel_token_via_api(tunnel_id):
     except requests.exceptions.RequestException as e:
         error_msg = f"API Error getting token for tunnel {tunnel_id}: {e}"
         if e.response is not None:
-             error_msg += f" Status: {e.response.status_code} Body: {e.response.text[:100]}"
+            error_msg += (
+                f" Status: {e.response.status_code} Body: {e.response.text[:100]}"
+            )
         logging.error(error_msg)
         tunnel_state["error"] = error_msg
         raise
     except Exception as e:
-         logging.error(f"Unexpected error getting tunnel token for {tunnel_id}: {e}", exc_info=True)
-         tunnel_state["error"] = f"Unexpected error getting token: {e}"
-         raise
+        logging.error(
+            f"Unexpected error getting tunnel token for {tunnel_id}: {e}", exc_info=True
+        )
+        tunnel_state["error"] = f"Unexpected error getting token: {e}"
+        raise
+
 
 def create_tunnel_via_api(name):
     """Creates a new tunnel and returns its ID and token."""
