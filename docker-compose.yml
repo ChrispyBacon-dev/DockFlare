@@ -17,8 +17,14 @@ services:
     environment:
       - STATE_FILE_PATH=/app/data/state.json
       - TZ=Europe/London  # Set your timezone here
-      
-      # Optional: Uncomment any of these to override .env file settings
+    #labels: # Optional
+    #- cloudflare.tunnel.enable=true
+    #- cloudflare.tunnel.hostname=dockflare.yourdomain.tld
+    #- cloudflare.tunnel.service=http://dockflare:5000  
+    # cloudflare.tunnel.access.policy: "authenticate"
+      #cloudflare.tunnel.access.app_launcher_visible: "false"
+      #cloudflare.tunnel.access.name: "Custom Rules" # Example for Custom Rule Access authentication via Email and Allow a specifiy IP - You can change everything in UI as well.
+      #cloudflare.tunnel.access.custom_rules: '[{"name": "Allow Specific Email", "decision": "allow", "include": [{"email": {"email": "your@email.com"}}]},{"name": "Allow Your IP", "decision": "allow", "include": [{"ip": {"ip": "YOURIP/32"}}]},{"name": "Deny Everyone Else", "decision": "deny", "include": [{"everyone": {}}]}]'
       
       # Container Scanning:
       # - SCAN_ALL_NETWORKS=true  # Scan containers across all Docker networks
@@ -32,7 +38,11 @@ services:
       
       # SSL verification for origin services:
       # - DEFAULT_NO_TLS_VERIFY=false  # Set to true to skip SSL verification for all services
-
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "2"
 volumes:
   dockflare_data:  # Persistent volume for state data
 
