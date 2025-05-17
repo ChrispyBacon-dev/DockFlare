@@ -101,6 +101,7 @@ DockFlare listens for Docker container events.
      dockflare_data:
    networks:
      cloudflare-net:
+      external: true   
    ```
 
 2. **Create `.env` File**:
@@ -175,7 +176,7 @@ services:
       # Optional: Disable TLS verification for this service
       # cloudflare.tunnel.no_tls_verify: "true"
     networks:
-      - cloudflare-net  # Must be in a network that DockFlare can reach
+      - cloudflare-net  # Must be in a network that DockFlare can reach     
 ```
 
 #### 2. Indexed Labels (Multiple Domains)
