@@ -362,7 +362,9 @@
                                                 <span class="badge badge-info badge-sm badge-outline">Manual</span>
                                             {% else %}
                                                 {% set status_badge_color = 'badge-warning' if 'pending' in details.status else 'badge-success' %}
-                                                <span class="badge {{ status_badge_color }} badge-sm badge-outline">{{ details.status.replace('_',' ') }}</span>
+                                                <span class="badge {{ status_badge_color }} badge-sm badge-outline {% if details.status == 'active' %}animate-pulse{% endif %}"> 
+                                                {{ details.status.replace('_',' ') }}
+                                                </span>
                                             {% endif %}
                                         </td>
                                         <td class="p-3 whitespace-nowrap">
@@ -398,7 +400,7 @@
                                                     <span class="badge badge-ghost badge-xs ml-1">(Managed)</span>
                                                 {% endif %}
                                                 {% if details.access_policy_ui_override %}
-                                                    <span class="badge badge-accent badge-outline badge-xs ml-2" title="This policy is managed by the UI{% if details.source != 'manual' %} and overrides container labels{% endif %}.">UI Override</span>
+                                                <span class="badge badge-accent badge-outline badge-xs ml-2 animate-pulse" title="This policy is managed by the UI{% if details.source != 'manual' %} and overrides container labels{% endif %}.">UI Override</span>
                                                 {% endif %}
                                             {% elif details.get('status') == 'active' %} 
                                                 <span class="opacity-60 italic">None (Public)</span>
