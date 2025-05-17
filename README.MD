@@ -113,7 +113,7 @@ DockFlare listens for Docker container events.
    # Cloudflare Zone ID (REQUIRED)
    CF_ZONE_ID=your_cloudflare_zone_id
    # Tunnel Name (REQUIRED only when NOT using external cloudflared)
-   TUNNEL_NAME=DockFlare-tunnel
+   TUNNEL_NAME=DockFlare
    # Use External Cloudflared (OPTIONAL)
    USE_EXTERNAL_CLOUDFLARED=false
    # External Tunnel ID (REQUIRED if USE_EXTERNAL_CLOUDFLARED=true) 
