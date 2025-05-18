@@ -68,7 +68,8 @@ DockFlare listens for Docker container events.
 - Cloudflare Account with:
   - API Token with Account:Cloudflare Tunnel:Edit, Account:Account Settings:Read, Account:Access: Apps and Policies:Edit, Zone:Zone:Read, Zone:DNS:Edit
   ![Cloudflare API](images/cf.png)
-  (Account Settings Read is currently not needed as per ver.1.7)
+
+  (Account Settings Read is no needed but planned for upcoming new feature)
   - Account ID (found in Cloudflare Dashboard → Overview)
   - Zone ID (found in Cloudflare Dashboard → Overview)
   
