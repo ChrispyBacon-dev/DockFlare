@@ -66,10 +66,12 @@ DockFlare listens for Docker container events.
 - Docker: [Install Docker](https://docs.docker.com/engine/install/)
 - Docker Compose: [Install Docker Compose](https://docs.docker.com/compose/install/)
 - Cloudflare Account with:
-  - API Token with Zone:DNS:Edit and Account:Cloudflare Tunnel:Edit permissions
+  - API Token with Account:Cloudflare Tunnel:Edit, Account:Account Settings:Read, Account:Access: Apps and Policies:Edit, Zone:Zone:Read, Zone:DNS:Edit
+  ![Cloudflare API](images/cf.png)
+  (Account Settings Read is currently not needed as per ver.1.7)
   - Account ID (found in Cloudflare Dashboard → Overview)
   - Zone ID (found in Cloudflare Dashboard → Overview)
-
+  
 ### Quick Start (Using Docker Compose)
 
 1. **Create `docker-compose.yml`**:
