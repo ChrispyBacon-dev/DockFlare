@@ -67,6 +67,7 @@ DockFlare listens for Docker container events.
 - Docker Compose: [Install Docker Compose](https://docs.docker.com/compose/install/)
 - Cloudflare Account with:
   - API Token with Zone:DNS:Edit and Account:Cloudflare Tunnel:Edit permissions
+    - Account:Access: Apps and Policies:Edit permission is needed for access policy control
   - Account ID (found in Cloudflare Dashboard → Overview)
   - Zone ID (found in Cloudflare Dashboard → Overview)
 
