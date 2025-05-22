@@ -37,16 +37,9 @@ services:
       # - EXTERNAL_TUNNEL_ID=your-external-tunnel-id
       
       # SSL verification for origin services:
-      # - DEFAULT_NO_TLS_VERIFY=false  # Set to true to skip SSL verification for all services
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "2"
-        
+      # - DEFAULT_NO_TLS_VERIFY=false  # Set to true to skip SSL verification for all services         
 volumes:
   dockflare_data:  # Persistent volume for state data
-
 networks:
-  cloudflare-net:  # Default network for cloudflared and services
-    name: cloudflare-net
+  cloudflare-net:
+   name: cloudflare-net

@@ -13,7 +13,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-#######################################################################
 # reading upon best practices imports by Python's official style guide, PEP 8, in alphabetical order by group of standard lib. imports than thirdparty imports
 # Standard library imports
 import copy

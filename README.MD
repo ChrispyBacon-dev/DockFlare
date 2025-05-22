@@ -9,56 +9,33 @@
 [![GitHub last commit](https://img.shields.io/github/last-commit/ChrispyBacon-dev/dockflare)](https://github.com/ChrispyBacon-dev/dockflare/commits/stable)
 [![GitHub commit activity](https://img.shields.io/github/commit-activity/m/ChrispyBacon-dev/dockflare)](https://github.com/ChrispyBacon-dev/dockflare/commits/stable)
 
-DockFlare automates Cloudflare Tunnel ingress rule management and Zero Trust Access policies based on Docker container labels, simplifying the secure public exposure of your Dockerized applications. It minimizes manual Cloudflare configuration, acting as a dynamic, self-hosted ingress controller and basic access manager.
-
-Okay, let's update your `README.md` "Key Features" section to include the new manual rule management functionality. We want to integrate it smoothly and highlight its benefits.
-
-Here's a suggestion, incorporating the new feature and slightly rephrasing/reordering for flow:
+DockFlare streamlines Cloudflare Tunnel and Zero Trust Access policy management by leveraging Docker labels for automated configuration and a comprehensive web UI for manual service definition and policy overrides for any rule. It simplifies secure public exposure for both Dockerized and non-Dockerized applications, minimizing direct Cloudflare interaction. DockFlare acts as a dynamic, self-hosted ingress controller, offering persistent, UI-driven control over Access Policies, effectively centralizing your basic access management.
 
 ## Key Features
 
 -   **Unified Cloudflare Tunnel Management**:
-    -   **Automated Tunnel Setup**: Creates/uses a specified Cloudflare Tunnel, retrieves its ID & Token.
-    -   **`cloudflared` Agent Lifecycle**: Optionally deploys & manages the `cloudflared` agent container (using the Tunnel Token) or works with an externally managed `cloudflared` instance.
--   **Dynamic Ingress Configuration via Docker Labels**:
-    -   Monitors Docker events for containers with specific labels (default prefix: `cloudflare.tunnel.`).
-    -   Supports `enable="true"`, `hostname="subdomain.example.com"`, `service="http://target_ip_or_hostname:port"`, `zonename="yourdomain.com"` (optional if global `CF_ZONE_ID` is set), and `no_tls_verify="true"`.
-    -   Automatically updates the Cloudflare Tunnel's ingress rules and associated DNS CNAME records to match running, labeled containers.
+    -   Automates Tunnel creation/use & `cloudflared` agent lifecycle (optional internal deployment or external).
+-   **Dynamic Ingress via Docker Labels**:
+    -   Auto-configures Tunnel ingress & DNS from Docker labels (e.g., `cloudflare.tunnel.hostname`, `service`) by monitoring container events.
 -   **Manual Ingress Rule Management (New!)**:
-    -   **Add Non-Docker Services**: Easily add and manage public hostnames for services not running in Docker (e.g., router UI, Proxmox, NAS) directly through the DockFlare web UI.
-    -   Specify hostname, target service URL (e.g., `http://192.168.0.1:80`, `https://myserver.local:8443`), optional zone name, and TLS verification settings.
-    -   DockFlare handles the Cloudflare Tunnel ingress rule and DNS CNAME record creation/deletion for these manual entries.
--   **Versatile Access Policy Management (for both Docker & Manual Rules)**:
-    -   **Via Docker Labels (for Dockerized services)**: Define Access Policies (e.g., `bypass`, `authenticate`, `default_tld`, or fully custom JSON rules) for each hostname directly through Docker labels. DockFlare automatically creates, updates, or deletes the corresponding Cloudflare Access Applications. Supports configuring application name, session duration, IdP restrictions, and more via labels.
-    -   **Via Web UI (Overrides Labels/Provides for Manual Rules)**: Interactively change the Access Policy for any managed rule (Docker-derived or manual) directly from the web UI (e.g., switch from Bypass to Authenticate by Email, set to public, or use a TLD default).
-        -   **Persistent UI Changes**: UI-set policies are saved and persist across DockFlare restarts and container restarts, overriding any Access Policy labels on Docker containers.
-        -   **"Revert to Labels/Default"**: A dedicated option in the UI allows reverting a UI-managed policy back to be controlled by container labels (for Docker rules) or to a default state (for manual rules, effectively removing specific UI-set policies).
-        -   **Clear Indication**: The UI clearly indicates when an Access Policy is being managed by the UI.
--   **Multi-Hostname & Multi-Zone Support**:
-    -   Configure multiple hostnames for a single Docker container using indexed labels, each with its own service target, zone configuration, and Access Policy.
-    -   Manual rules can also specify different zone names if needed.
--   **Graceful Deletion & State Persistence**:
-    -   Configurable grace period before removing ingress rules, DNS records, and associated Access Applications when a Docker container stops. (Manual rules are deleted immediately via UI action).
-    -   Saves `managed_rules` (including `source` type, Access Application IDs, configurations, and UI override status) to `state.json` for persistence.
--   **Optimized Reconciliation & Operations**:
-    -   On startup and periodically, ensures consistency between Docker containers (labels), manual entries, saved state (respecting UI overrides for Access Policies), Cloudflare Tunnel configuration, DNS, and Cloudflare Access Applications.
-    *   Efficiently processes DNS operations.
-    *   Shows real-time reconciliation progress in the UI.
--   **Comprehensive Web UI (Styled with DaisyUI)**:
-    -   Modern and responsive status dashboard.
-    -   Tunnel & agent status, with Start/Stop agent controls (if not in external mode).
-    -   **Unified Managed Ingress Rule List**:
-        -   Displays all rules (Docker & Manual) with Hostname, Service Target, Status/Type (Manual/Active/Pending Deletion), Identifier (Container ID or "Manual Rule"), Expiration Schedule (for pending Docker rule deletions).
-        -   **Access Policy Display**: Shows the applied Cloudflare Access Policy with a direct link to the Access Application in Cloudflare and a "UI Override" badge if applicable.
-        -   "Force Delete" option for Docker rules and "Delete" for manual rules (also removes associated Access App and DNS).
-    -   **"Add Manual Rule" Functionality**: Integrated button and modal for adding non-Docker services.
-    -   **Account Tunnel Overview**: Lists all Cloudflare Tunnels on the configured account, with an option to view their associated DNS records.
-    -   **Real-time Activity Logs**: Streamed directly to the browser via Server-Sent Events (SSE).
-    -   **Multiple Theme Options**: DaisyUI theme selector for user preference.
-    -   Basic reconciliation status display.
+    -   Add & manage public hostnames for non-Docker services (e.g., router, NAS) via Web UI; DockFlare handles Tunnel rules & DNS.
+-   **Versatile Access Policy Control (Docker & Manual)**:
+    -   Define Cloudflare Access Policies (e.g., `bypass`, `authenticate`, custom JSON) via Docker labels; auto-manages Access Applications.
+    -   Web UI to manage/override policies for *any* rule; UI changes persist, override labels, with revert option & clear indicators.
+-   **Multi-Hostname & Multi-Zone**:
+    -   Supports multiple hostnames (unique targets, zones, policies) per Docker container (indexed labels) or manual rule.
+-   **State Persistence & Graceful Deletion**:
+    -   Configurable grace period for Docker rule cleanup; persists all managed rules, Access App IDs, & UI overrides in `state.json`.
+-   **Intelligent Reconciliation**:
+    *   Continuously syncs Docker, manual entries, & saved state (respecting UI overrides) with Cloudflare (Tunnel, DNS, Access Apps); shows UI progress.
+-   **Comprehensive Web UI (DaisyUI)**:
+    -   **Dashboard**: Tunnel/agent status & controls.
+    -   **Unified Rule List**: View/manage all rules (Docker & manual) with status, target, Access Policy (Cloudflare links, UI override badges), & delete options.
+    -   **Easy Manual Entry**: Add non-Docker services via UI.
+    -   **Account Tools**: View account tunnels/DNS.
+    -   **Real-time Logs & Themes**: SSE activity logs & multiple UI themes.
 -   **Secure & Robust**:
-    -   Content Security Policy (CSP) for secure resource loading.
-    -   Handles API retries and error reporting.
+    -   Content Security Policy (CSP), API retries, and error reporting.
 
 [Learn more on the GitHub Wiki](https://github.com/ChrispyBacon-dev/DockFlare/wiki)
 
@@ -89,10 +66,13 @@ DockFlare listens for Docker container events.
 - Docker: [Install Docker](https://docs.docker.com/engine/install/)
 - Docker Compose: [Install Docker Compose](https://docs.docker.com/compose/install/)
 - Cloudflare Account with:
-  - API Token with Zone:DNS:Edit and Account:Cloudflare Tunnel:Edit permissions
+  - API Token with Account:Cloudflare Tunnel:Edit, Account:Account Settings:Read, Account:Access: Apps and Policies:Edit, Zone:Zone:Read, Zone:DNS:Edit
+  ![Cloudflare API](images/cf.png)
+
+  (Account Settings Read is no needed but planned for upcoming new feature)
   - Account ID (found in Cloudflare Dashboard → Overview)
   - Zone ID (found in Cloudflare Dashboard → Overview)
-
+  
 ### Quick Start (Using Docker Compose)
 
 1. **Create `docker-compose.yml`**:
@@ -108,39 +88,56 @@ DockFlare listens for Docker container events.
          - "5000:5000"  # Web UI port
        env_file:
          - .env  # Load environment variables from .env file
+       environment:
+         - STATE_FILE_PATH=/app/data/state.json
+         - TZ=Europe/Zurich  # Set your timezone here  
        volumes:
          - /var/run/docker.sock:/var/run/docker.sock:ro  # Required to monitor Docker events
          - dockflare_data:/app/data  # Persistent storage for state
        networks:
          - cloudflare-net  # Network for communication with cloudflared agent
+       labels: # Optional keep in mind to set access policy
+         - cloudflare.tunnel.enable=true
+         - cloudflare.tunnel.hostname=dockflare.yourdomain.tld # update your domain 
+         - cloudflare.tunnel.service=http://dockflare:5000 
    volumes:
      dockflare_data:
    networks:
      cloudflare-net:
+      name: cloudflare-net
    ```
 
 2. **Create `.env` File**:
-
    ```dotenv
-   # Required Cloudflare credentials
+   # Cloudflare API Token (REQUIRED)
    CF_API_TOKEN=your_cloudflare_api_token
+   # Cloudflare Account ID (REQUIRED) - dash.cloudflare.com/ACCOUNT_ID
    CF_ACCOUNT_ID=your_cloudflare_account_id
+   # Cloudflare Zone ID (REQUIRED)
    CF_ZONE_ID=your_cloudflare_zone_id
-   
-   # Tunnel configuration
-   TUNNEL_NAME=your_tunnel_name
-   
-   # Optional configuration
-   GRACE_PERIOD_SECONDS=28800  # 8 hours before removing rules after container stops
-   LABEL_PREFIX=cloudflare.tunnel  # Prefix for Docker labels
-   
-   # Optional: External cloudflared mode
-   # USE_EXTERNAL_CLOUDFLARED=true
-   # EXTERNAL_TUNNEL_ID=your_external_tunnel_id
-   
-   # Optional: Scanning configuration
-   # SCAN_ALL_NETWORKS=true  # Scan containers across all Docker networks
-   ```
+   # Tunnel Name (REQUIRED only when NOT using external cloudflared)
+   TUNNEL_NAME=DockFlare
+   # Docker Network Name (internal cloudflared mode)
+   CLOUDFLARED_NETWORK_NAME=cloudflare-net
+   # Label Prefix for Docker Containers
+   LABEL_PREFIX=cloudflare.tunnel
+   # Grace Period for Rule Deletion (seconds, default: 1h)
+   GRACE_PERIOD_SECONDS=6000
+   # Cleanup Interval (seconds)
+   CLEANUP_INTERVAL_SECONDS=300
+   # Agent Status Update Interval (seconds)
+   AGENT_STATUS_UPDATE_INTERVAL_SECONDS=10
+   # Scan All Docker Networks (default: false)
+   SCAN_ALL_NETWORKS=false
+   # Max Concurrent DNS Operations (default: 3)
+   MAX_CONCURRENT_DNS_OPS=3
+   # Reconciliation Batch Size (default: 3)
+   RECONCILIATION_BATCH_SIZE=3
+   # Trusted Proxies (IPs/CIDR ranges)
+   # TRUSTED_PROXIES=172.16.0.0/12,192.168.0.0/16
+   # Default TLS Verification Setting (skip verification) (default: false)
+   DEFAULT_NO_TLS_VERIFY=false
+   STATE_FILE_PATH=/app/data/state.json
 
 3. **Run DockFlare**:
 
@@ -178,7 +175,7 @@ services:
       # Optional: Disable TLS verification for this service
       # cloudflare.tunnel.no_tls_verify: "true"
     networks:
-      - cloudflare-net  # Must be in a network that DockFlare can reach
+      - cloudflare-net  # Must be in a network that DockFlare can reach     
 ```
 
 #### 2. Indexed Labels (Multiple Domains)
@@ -329,7 +326,35 @@ After the switch, DockFlare will:
 | `{prefix}.zonename` | Zone name for this hostname | No | `"example.com"` |
 | `{prefix}.no_tls_verify` | Disable TLS verification | No | `"true"` |
 
-### External Cloudflared Mode
+### Access Policy Labels (Zero Trust)
+
+These labels define the initial Cloudflare Access Policy for the exposed `hostname`. **Note:** These label-defined policies can be overridden by changes made in the DockFlare [Web UI](UsingtheWebUI.md). If a UI override is active, these labels will not be re-applied unless the policy is "Reverted to Labels" via the UI.
+
+| Label                                   | Description                                                                                                                                                                                             | Default | Example                                                  |
+| :-------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :------ | :------------------------------------------------------- |
+| `{prefix}.access.policy`                | Defines the type of Access Policy. Common values: `bypass` (public), `authenticate` (requires login via configured IdPs), `default_tld` (inherits from `*.yourdomain.com` policy, no app created for this specific hostname). | (None)  | `cloudflare.tunnel.access.policy="authenticate"`       |
+| `{prefix}.access.name`                  | Custom name for the Cloudflare Access Application.                                                                                                                                                      | `DockFlare-{hostname}` | `cloudflare.tunnel.access.name="My Web App Access"`     |
+| `{prefix}.access.session_duration`      | Session duration for the Access Application (e.g., `24h`, `30m`).                                                                                                                                       | `24h`   | `cloudflare.tunnel.access.session_duration="1h"`       |
+| `{prefix}.access.app_launcher_visible`  | If `"true"`, the application will be visible in the Cloudflare App Launcher.                                                                                                                            | `false` | `cloudflare.tunnel.access.app_launcher_visible="true"` |
+| `{prefix}.access.allowed_idps`          | Comma-separated list of allowed Identity Provider (IdP) UUIDs. If `access.policy="authenticate"` and this is not set, it typically allows any configured IdP for the account.                            | (Account Default) | `cloudflare.tunnel.access.allowed_idps="<IdP_UUID_1>,<IdP_UUID_2>"` |
+| `{prefix}.access.auto_redirect_to_identity` | If `"true"`, automatically redirects to the identity provider login page.                                                                                                                               | `false` | `cloudflare.tunnel.access.auto_redirect_to_identity="true"` |
+| `{prefix}.access.custom_rules`          | A JSON string representing an array of Cloudflare Access Policy rules. Overrides `access.policy` if set to `authenticate` or `bypass` for policy decision. See [Cloudflare Access Policy Docs](https://developers.cloudflare.com/api/operations/access-policies-create-an-access-policy) for schema. | (None)  | `cloudflare.tunnel.access.custom_rules='[{"email":{"email":"user@example.com"},"action":"allow"}]'` |
+
+**Example of Access Policy Labels:**
+
+```yaml
+labels:
+  cloudflare.tunnel.enable: "true"
+  cloudflare.tunnel.hostname: "secure-app.example.com"
+  cloudflare.tunnel.service: "http://my-secure-app:8080"
+  cloudflare.tunnel.access.policy: "authenticate"
+  cloudflare.tunnel.access.session_duration: "8h"
+  cloudflare.tunnel.access.allowed_idps: "YOUR_GITHUB_IDP_UUID_HERE" 
+  # This creates an Access Application named "DockFlare-secure-app.example.com"
+  # that requires authentication via the specified GitHub IdP with an 8-hour session.
+```
+
+### External Cloudflared Mode (DANGER ZONE)
 
 DockFlare can work with an existing `cloudflared` container. This is useful if you're already using cloudflared for other services or prefer to manage it separately. To enable this mode:
 
@@ -342,6 +367,10 @@ In this mode, DockFlare will only manage DNS records and ingress rules, but not 
 USE_EXTERNAL_CLOUDFLARED=true
 EXTERNAL_TUNNEL_ID=your-tunnel-id-from-cloudflare
 ```
+Update on version 1.7
+The `update_cloudflare_config` function now takes a more authoritative stance: for the DockFlare-managed tunnel, any non-wildcard, non-catch-all ingress rule found on Cloudflare that is *not* present in DockFlare's `managed_rules` (either from Docker labels or manual UI entries) will be removed by DockFlare. This ensures the tunnel configuration accurately reflects DockFlare's intended state. True external wildcards and the API's catch-all rule are still preserved.
+
+This means as well that DNS records that are not present in the DockFlare rules will be removed from your DNS Zone. External Mode is not recommended only if you know what to do and are for Edge cases. 
 
 ### Real-time Log Streaming
 
