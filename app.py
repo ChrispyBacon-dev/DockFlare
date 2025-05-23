@@ -1624,7 +1624,7 @@ def _run_reconciliation():
     needs_tunnel_config_update = False 
     state_changed_locally = False
     
-    max_total_time = 180 
+    max_total_time = 240 
     reconciliation_start = time.time()
     
     app.reconciliation_info = {
@@ -2430,7 +2430,6 @@ def get_all_account_cloudflare_tunnels():
         logging.error(f"Unexpected error listing all Cloudflare tunnels for the account: {e}", exc_info=True)
         return []
 
-# app.py
 def get_dns_records_for_tunnel(zone_id, tunnel_id):
     if not zone_id or not tunnel_id:
         logging.warning("get_dns_records_for_tunnel: Missing zone_id or tunnel_id.")
