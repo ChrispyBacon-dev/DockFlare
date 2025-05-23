@@ -9,7 +9,7 @@
 [![GitHub last commit](https://img.shields.io/github/last-commit/ChrispyBacon-dev/dockflare)](https://github.com/ChrispyBacon-dev/dockflare/commits/stable)
 [![GitHub commit activity](https://img.shields.io/github/commit-activity/m/ChrispyBacon-dev/dockflare)](https://github.com/ChrispyBacon-dev/dockflare/commits/stable)
 
-DockFlare streamlines Cloudflare Tunnel and Zero Trust Access policy management by leveraging Docker labels for automated configuration and a comprehensive web UI for manual service definition and policy overrides for any rule. It simplifies secure public exposure for both Dockerized and non-Dockerized applications, minimizing direct Cloudflare interaction. DockFlare acts as a dynamic, self-hosted ingress controller, offering persistent, UI-driven control over Access Policies, effectively centralizing your basic access management.
+DockFlare simplifies Cloudflare Tunnel and Zero Trust Access policy management by using Docker labels for automated configuration, while also providing a powerful web UI for manual service definitions and policy overrides. It enables secure, hassle-free public access to both Dockerized and non-Dockerized applications with minimal direct interaction with Cloudflare. Acting as a dynamic, self-hosted ingress controller, DockFlare offers persistent, UI-driven control over access policies—centralizing and streamlining your access management.
 
 ## Key Features
 
