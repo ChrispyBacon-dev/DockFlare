@@ -1546,7 +1546,7 @@ def process_container_start(container):
 
                         if path_changed:
                             logging.info(
-                                f"Updating path for active rule {hostname}: '{existing_rule.get('path')}' -> '{path}'."
+                                f"Updating path for active rule {hostname}: '{existing_rule.get('path')}' -> '{path_from_item}'."
                             )
                             existing_rule["path"] = path_from_item
                             state_changed_locally = True
@@ -4170,4 +4170,3 @@ if __name__ == "__main__":
             else 0
         )
         sys.exit(exit_code)
-
