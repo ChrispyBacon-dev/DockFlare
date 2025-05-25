@@ -70,7 +70,7 @@ jobs:
       - name: Build and Push Docker Image (Multi-Arch)
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./dockflare
           # Build for multiple architectures
           platforms: linux/amd64 #,linux/arm64 # Enable multi-architecture builds
           # Push only on direct pushes to stable or unstable branches
