@@ -21,14 +21,14 @@
 FROM node:20-alpine as frontend-builder
 LABEL stage=frontend-builder
 WORKDIR /usr/src/frontend_build # Changed WORKDIR to avoid conflict with runtime WORKDIR /app
-COPY package.json ./package.json
-COPY package-lock.json* ./
+COPY ./dockflare/package.json ./package.json
+COPY ./dockflare/package-lock.json* ./
 RUN npm install
 
-COPY tailwind.config.js ./tailwind.config.js
-COPY postcss.config.js ./postcss.config.js
-COPY ./app/templates/input.css ./app/templates/input.css
-COPY ./app/templates ./app/templates
+COPY ./dockflare/tailwind.config.js ./tailwind.config.js
+COPY ./dockflare/postcss.config.js ./postcss.config.js
+COPY ./dockflare/app/templates/input.css ./app/templates/input.css
+COPY ./dockflare/app/templates ./app/templates
 RUN npm run build:css
 FROM python:3.13-slim as runtime
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -54,10 +54,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cloudflared --version && \
     mkdir -p /root/.cloudflared
 
-COPY requirements.txt .
+COPY ./dockflare/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY --from=frontend-builder /usr/src/frontend_build/app/static/css/output.css /app/static/css/output.css
-COPY ./app /app
+COPY ./dockflare/app /app
 COPY ./images /app/static/images/
 EXPOSE 5000
 CMD ["python", "main.py"]
