@@ -15,21 +15,26 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 # Use an official Python runtime as a parent image
 # Using slim variant for smaller size
+# DockFlare: Automates Cloudflare Tunnel ingress from Docker labels.
+# Copyright (C) 2025 ChrispyBacon-Dev <https://github.com/ChrispyBacon-dev/DockFlare>
+# (License header remains the same)
 FROM node:20-alpine as frontend-builder
 LABEL stage=frontend-builder
-WORKDIR /usr/src/app
-COPY package.json ./
-COPY package-lock.json* ./ 
+WORKDIR /usr/src/frontend_build # Changed WORKDIR to avoid conflict with runtime WORKDIR /app
+COPY package.json ./package.json
+COPY package-lock.json* ./
 RUN npm install
-COPY tailwind.config.js ./
-COPY postcss.config.js ./
-COPY ./templates/input.css ./templates/input.css 
-COPY ./templates ./templates
+
+COPY tailwind.config.js ./tailwind.config.js
+COPY postcss.config.js ./postcss.config.js
+COPY ./app/templates/input.css ./app/templates/input.css
+COPY ./app/templates ./app/templates
 RUN npm run build:css
 FROM python:3.13-slim as runtime
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-WORKDIR /app
+
+WORKDIR /app # This is correct, our application will run from /app inside the container
 ENV CLOUDFLARED_VERSION="2024.1.5"
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
@@ -48,13 +53,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm cloudflared-$CLOUDFLARED_ARCH.deb && \
     cloudflared --version && \
     mkdir -p /root/.cloudflared
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-RUN mkdir -p /app/static/css
-RUN mkdir -p /app/static/images
-COPY --from=frontend-builder /usr/src/app/static/css/output.css /app/static/css/output.css
-COPY app.py .
-COPY templates /app/templates/
-COPY images /app/static/images/
+COPY --from=frontend-builder /usr/src/frontend_build/app/static/css/output.css /app/static/css/output.css
+COPY ./app /app
+COPY ./images /app/static/images/
 EXPOSE 5000
-CMD ["python", "app.py"]
+CMD ["python", "main.py"]
