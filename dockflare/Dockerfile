@@ -25,7 +25,7 @@ FROM python:3.13-slim as runtime
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 WORKDIR /app # This will be the application root in the final image
-ENV CLOUDFLARED_VERSION="2024.1.5" # Consider keeping this up-to-date
+ENV CLOUDFLARED_VERSION="2024.1.5"
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     ca-certificates \
