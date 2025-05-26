@@ -24,8 +24,8 @@ import random
 import queue 
 from datetime import datetime, timezone
 import traceback 
-import json 
-
+import json
+ 
 from flask import (
     Blueprint, render_template, jsonify, redirect, url_for, request, Response,
     stream_with_context, current_app
@@ -52,7 +52,8 @@ from app.core.access_manager import (
     delete_cloudflare_access_application,
     create_cloudflare_access_application,
     update_cloudflare_access_application,
-    generate_access_app_config_hash 
+    generate_access_app_config_hash,
+    find_cloudflare_access_application_by_hostname 
 )
 from app.core.reconciler import reconcile_state_threaded 
 from app.core.docker_handler import is_valid_hostname, is_valid_service 
@@ -287,7 +288,7 @@ def ui_update_access_policy(hostname):
             effective_app_id_for_operation = current_access_app_id
             if not effective_app_id_for_operation:
                 logging.info(f"UI Update: No local Access App ID for {hostname}. Checking Cloudflare API...")
-                existing_cf_app = find_cloudflare_access_application_by_hostname(hostname) 
+                existing_cf_app = access_manager.find_cloudflare_access_application_by_hostname(hostname)
                 if existing_cf_app and existing_cf_app.get("id"):
                     effective_app_id_for_operation = existing_cf_app.get("id")
                     logging.info(f"UI Update: Found existing Access App ID '{effective_app_id_for_operation}' on Cloudflare for {hostname}.")
