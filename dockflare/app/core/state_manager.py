@@ -43,54 +43,54 @@ def _deserialize_datetime(dt_str):
         return None
 
 def load_state():
-    global managed_rules
     logging.info(f"LOAD_STATE: Start. Initial managed_rules ID: {id(managed_rules)}, Current len: {len(managed_rules)}")
     state_dir = os.path.dirname(config.STATE_FILE_PATH)
-    if not os.path.exists(state_dir):
-        try:
-            os.makedirs(state_dir, exist_ok=True)
-            logging.info(f"LOAD_STATE: Created directory for state file: {state_dir}")
-        except OSError as e:
-            logging.error(f"LOAD_STATE: FATAL - Could not create directory {state_dir}: {e}. State persistence will fail.")
-            managed_rules = {} # Reset to empty
-            logging.info(f"LOAD_STATE: After failed dir create, managed_rules ID: {id(managed_rules)}, len: {len(managed_rules)}")
+    
+    with state_lock: 
+        managed_rules.clear() 
+        logging.info(f"LOAD_STATE: After .clear(), managed_rules ID: {id(managed_rules)}, len: {len(managed_rules)}")
+
+        if not os.path.exists(state_dir):
+            try:
+                os.makedirs(state_dir, exist_ok=True)
+                logging.info(f"LOAD_STATE: Created directory for state file: {state_dir}")
+            except OSError as e:
+                logging.error(f"LOAD_STATE: FATAL - Could not create directory {state_dir}: {e}. State will be empty.")
+                return
+
+        if not os.path.exists(config.STATE_FILE_PATH):
+            logging.info(f"LOAD_STATE: State file '{config.STATE_FILE_PATH}' not found, starting fresh (already cleared).")
             return
 
-    if not os.path.exists(config.STATE_FILE_PATH):
-        logging.info(f"LOAD_STATE: State file '{config.STATE_FILE_PATH}' not found, starting fresh.")
-        managed_rules = {} # Reset to empty
-        logging.info(f"LOAD_STATE: After file not found, managed_rules ID: {id(managed_rules)}, len: {len(managed_rules)}")
-        return
-
-    with state_lock:
         try:
-            logging.info(f"LOAD_STATE: Reading from {config.STATE_FILE_PATH}. managed_rules ID before read: {id(managed_rules)}")
+            logging.info(f"LOAD_STATE: Reading from {config.STATE_FILE_PATH}.")
             with open(config.STATE_FILE_PATH, 'r') as f:
                 loaded_data = json.load(f)
             
-            processed_rules = {}
-            for hostname, rule in loaded_data.items():
-                # ... (your deserialization logic for rule items) ...
-                rule_copy = rule.copy()
+            for hostname, rule_data in loaded_data.items():
+                rule_copy = rule_data.copy() 
                 delete_at_val = rule_copy.get("delete_at")
-                if isinstance(delete_at_val, str): rule_copy["delete_at"] = _deserialize_datetime(delete_at_val)
-                elif not isinstance(delete_at_val, (datetime, type(None))): rule_copy["delete_at"] = None
-                if "zone_id" not in rule_copy: rule_copy["zone_id"] = None
-                rule_copy.setdefault("access_app_id", None); rule_copy.setdefault("access_policy_type", None)
-                rule_copy.setdefault("access_app_config_hash", None); rule_copy.setdefault("access_policy_ui_override", False)
+                if isinstance(delete_at_val, str):
+                    rule_copy["delete_at"] = _deserialize_datetime(delete_at_val)
+                elif not isinstance(delete_at_val, (datetime, type(None))):
+                    rule_copy["delete_at"] = None
+                
+                if "zone_id" not in rule_copy:
+                    rule_copy["zone_id"] = None
+                
+                rule_copy.setdefault("access_app_id", None)
+                rule_copy.setdefault("access_policy_type", None)
+                rule_copy.setdefault("access_app_config_hash", None)
+                rule_copy.setdefault("access_policy_ui_override", False)
                 rule_copy.setdefault("source", "docker")
-                processed_rules[hostname] = rule_copy
+                managed_rules[hostname] = rule_copy 
             
-            managed_rules = processed_rules # This rebinds the global 'managed_rules'
-            logging.info(f"LOAD_STATE: Loaded {len(managed_rules)} rules. managed_rules ID after assignment: {id(managed_rules)}")
+            logging.info(f"LOAD_STATE: Loaded {len(managed_rules)} rules. managed_rules ID after populating: {id(managed_rules)}")
         except (json.JSONDecodeError, IOError, OSError) as e:
-            logging.error(f"LOAD_STATE: Error loading state from {config.STATE_FILE_PATH}: {e}. Starting fresh.", exc_info=True)
-            managed_rules = {}
-            logging.info(f"LOAD_STATE: After error, managed_rules ID: {id(managed_rules)}, len: {len(managed_rules)}")
+            logging.error(f"LOAD_STATE: Error loading state from {config.STATE_FILE_PATH}: {e}. Starting fresh (already cleared).", exc_info=True)
         except Exception as e_load_unexp:
-            logging.error(f"LOAD_STATE: Unexpected error loading state: {e_load_unexp}. Starting fresh.", exc_info=True)
-            managed_rules = {}
-            logging.info(f"LOAD_STATE: After unexpected error, managed_rules ID: {id(managed_rules)}, len: {len(managed_rules)}")
+            logging.error(f"LOAD_STATE: Unexpected error loading state: {e_load_unexp}. Starting fresh (already cleared).", exc_info=True)
+
 
 def save_state():
     global managed_rules # Ensures we are working with the module-level global
