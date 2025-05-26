@@ -256,7 +256,7 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
     desired_custom_rules_str_from_label = hostname_config_item.get("access_custom_rules_str")
 
     local_state_changed_by_access_policy = False
-    current_access_app_id = current_rule_in_state.get("access_app_id")
+    current_access_app_id_from_state = current_rule_in_state.get("access_app_id") 
     current_access_policy_type_in_state = current_rule_in_state.get("access_policy_type")
     current_access_app_config_hash_in_state = current_rule_in_state.get("access_app_config_hash")
 
@@ -271,106 +271,120 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
         )
 
         if desired_access_policy_type_from_label == "default_tld":
-            if current_access_app_id:
-                logging.info(f"Label policy for {hostname} is 'default_tld'. Deleting existing Access App {current_access_app_id}.")
-                if delete_cloudflare_access_application(current_access_app_id):
+            if current_access_app_id_from_state: 
+                logging.info(f"Label policy for {hostname} is 'default_tld'. Deleting existing Access App {current_access_app_id_from_state}.")
+                if delete_cloudflare_access_application(current_access_app_id_from_state):
                     current_rule_in_state["access_app_id"] = None
                     current_rule_in_state["access_policy_type"] = "default_tld"
                     current_rule_in_state["access_app_config_hash"] = None
                     local_state_changed_by_access_policy = True
                 else:
-                    logging.error(f"Failed to delete Access App {current_access_app_id} for {hostname} as per label 'default_tld'.")
-            elif current_access_policy_type_in_state != "default_tld":
+                    logging.error(f"Failed to delete Access App {current_access_app_id_from_state} for {hostname} as per label 'default_tld'.")
+            elif current_access_policy_type_in_state != "default_tld": 
                 current_rule_in_state["access_app_id"] = None 
                 current_rule_in_state["access_policy_type"] = "default_tld"
                 current_rule_in_state["access_app_config_hash"] = None
                 local_state_changed_by_access_policy = True
-                logging.info(f"Label policy for {hostname} set to 'default_tld'. No specific app managed.")
+                logging.info(f"Label policy for {hostname} set to 'default_tld'. No specific app managed or was previously managed.")
+
 
         elif desired_access_policy_type_from_label in ["bypass", "authenticate"]:
             cf_access_policies = []
             if desired_custom_rules_str_from_label:
                 try:
                     parsed_rules = json.loads(desired_custom_rules_str_from_label)
-                    if isinstance(parsed_rules, list):
-                        cf_access_policies = parsed_rules
-                    else:
-                        logging.error(f"Parsed 'custom_rules' label for {hostname} is not a list. Reverting to default for {desired_access_policy_type_from_label}.")
-                except json.JSONDecodeError as json_err:
-                    logging.error(f"Error parsing 'custom_rules' label JSON for {hostname}: {json_err}. Reverting to default for {desired_access_policy_type_from_label}.")
+                    if isinstance(parsed_rules, list): cf_access_policies = parsed_rules
+                    else: logging.error(f"Parsed 'custom_rules' label for {hostname} is not a list...")
+                except json.JSONDecodeError as json_err: logging.error(f"Error parsing 'custom_rules' JSON for {hostname}: {json_err}...")
             
             if not cf_access_policies: 
-                if desired_access_policy_type_from_label == "bypass":
-                    cf_access_policies = [{"name": "Label Default Bypass", "decision": "bypass", "include": [{"everyone": {}}]}]
+                if desired_access_policy_type_from_label == "bypass": cf_access_policies = [{"name": "Label Default Bypass", "decision": "bypass", "include": [{"everyone": {}}]}]
                 elif desired_access_policy_type_from_label == "authenticate":
                     policy_include_rules = []
                     if desired_allowed_idps_str_from_label:
                         idp_ids = [idp.strip() for idp in desired_allowed_idps_str_from_label.split(',') if idp.strip()]
-                        if idp_ids: 
-                            policy_include_rules.append({"identity_provider": {"id": idp_ids}})
-                    
-                    if not policy_include_rules: 
-                        policy_include_rules.append({"everyone": {}}) 
-                    
+                        if idp_ids: policy_include_rules.append({"identity_provider": {"id": idp_ids}})
+                    if not policy_include_rules: policy_include_rules.append({"everyone": {}}) 
                     cf_access_policies = [{"name": "Label Default Authenticated Access", "decision": "allow", "include": policy_include_rules}]
             
             allowed_idps_list_for_app = [idp.strip() for idp in desired_allowed_idps_str_from_label.split(',') if idp.strip()] if desired_allowed_idps_str_from_label else None
+
             
             needs_api_action = False
-            if current_access_app_id:
+            
+            if current_access_app_id_from_state: 
                 if current_access_policy_type_in_state != desired_access_policy_type_from_label or \
                    current_access_app_config_hash_in_state != desired_access_app_config_hash_from_label:
                     needs_api_action = True
-                    logging.info(f"Access App {current_access_app_id} for {hostname} needs update. Current type: '{current_access_policy_type_in_state}', hash: '{current_access_app_config_hash_in_state}'. Desired type: '{desired_access_policy_type_from_label}', hash: '{desired_access_app_config_hash_from_label}'.")
+                    logging.info(f"Access App {current_access_app_id_from_state} for {hostname} (from local state) needs update/re-evaluation.")
             else: 
                 needs_api_action = True
-                logging.info(f"No Access App for {hostname}. Needs creation with type: '{desired_access_policy_type_from_label}'.")
+                logging.info(f"No Access App ID for {hostname} in local state. API action required (find or create).")
+
             if needs_api_action:
-                existing_cf_app = None
-                if not current_access_app_id: # If not known in local state, check CF
-                        logging.info(f"No local Access App ID for {hostname}. Checking Cloudflare API...")
-                        existing_cf_app = find_cloudflare_access_application_by_hostname(hostname)
-                if existing_cf_app and existing_cf_app.get("id"):
-                        logging.info(f"Found existing Access App ID '{existing_cf_app.get('id')}' on Cloudflare for {hostname}. Will attempt update.")
-                        current_access_app_id = existing_cf_app.get("id") # Use this ID for update
-                        current_rule_in_state["access_app_id"] = current_access_app_id
-                if current_access_app_id: 
-                        logging.info(f"Updating Access App {current_access_app_id} for {hostname} based on labels (type: {desired_access_policy_type_from_label}).")
-                else: # Create new app (no local ID and not found on CF)
-                        logging.info(f"Creating new Access App for {hostname} based on labels (type: '{desired_access_policy_type_from_label}').")
-                        created_app = create_cloudflare_access_application(
+                effective_app_id_for_operation = current_access_app_id_from_state 
+                
+                if not effective_app_id_for_operation: 
+                    logging.info(f"No local Access App ID for {hostname}. Checking Cloudflare API...")
+                    existing_cf_app = find_cloudflare_access_application_by_hostname(hostname)
+                    if existing_cf_app and existing_cf_app.get("id"):
+                        effective_app_id_for_operation = existing_cf_app.get("id")
+                        logging.info(f"Found existing Access App ID '{effective_app_id_for_operation}' on Cloudflare for {hostname}. Will attempt update.")
+                        
+                        current_rule_in_state["access_app_id"] = effective_app_id_for_operation
+                                                
+                        local_state_changed_by_access_policy = True 
+                
+                if effective_app_id_for_operation: 
+                    logging.info(f"Updating Access App {effective_app_id_for_operation} for {hostname} based on labels (type: {desired_access_policy_type_from_label}).")
+                    updated_app = update_cloudflare_access_application(
+                        effective_app_id_for_operation, hostname, desired_access_app_name_from_label,
+                        desired_session_duration_from_label, desired_app_launcher_visible_from_label,
+                        [hostname], cf_access_policies, allowed_idps_list_for_app, desired_auto_redirect_from_label
+                    )
+                    if updated_app:
+                        current_rule_in_state["access_app_id"] = updated_app.get("id") 
+                        current_rule_in_state["access_policy_type"] = desired_access_policy_type_from_label
+                        current_rule_in_state["access_app_config_hash"] = desired_access_app_config_hash_from_label
+                        local_state_changed_by_access_policy = True
+                    else:
+                        logging.error(f"Failed to update Access App {effective_app_id_for_operation} for {hostname} based on labels.")
+                
+                else: 
+                    logging.info(f"Creating new Access App for {hostname} based on labels (type: '{desired_access_policy_type_from_label}').")
+                    created_app = create_cloudflare_access_application(
                         hostname, desired_access_app_name_from_label,
                         desired_session_duration_from_label, desired_app_launcher_visible_from_label,
                         [hostname], cf_access_policies, allowed_idps_list_for_app, desired_auto_redirect_from_label
                     )
-                if created_app and created_app.get("id"):
+                    if created_app and created_app.get("id"):
                         current_rule_in_state["access_app_id"] = created_app.get("id")
                         current_rule_in_state["access_policy_type"] = desired_access_policy_type_from_label
                         current_rule_in_state["access_app_config_hash"] = desired_access_app_config_hash_from_label
                         local_state_changed_by_access_policy = True
-                else:
+                    else:
                         logging.error(f"Failed to create Access App for {hostname} based on labels.")
-        else: # Unknown access policy type
-            logging.warning(f"Unknown access.policy type '{desired_access_policy_type_from_label}' from label for {hostname}. No Access App action taken based on this specific label type.")
+        else: 
+            logging.warning(f"Unknown access.policy type '{desired_access_policy_type_from_label}' from label for {hostname}. No Access App action taken.")
     
     else: 
-        if current_access_app_id: 
-            logging.info(f"No access policy label for {hostname}, but found managed Access App {current_access_app_id}. Deleting it as per label configuration (or lack thereof).")
-            if delete_cloudflare_access_application(current_access_app_id):
+        if current_access_app_id_from_state: 
+            logging.info(f"No access policy label for {hostname}, but found managed Access App {current_access_app_id_from_state}. Deleting it.")
+            if delete_cloudflare_access_application(current_access_app_id_from_state):
                 current_rule_in_state["access_app_id"] = None
                 current_rule_in_state["access_policy_type"] = None
                 current_rule_in_state["access_app_config_hash"] = None
                 local_state_changed_by_access_policy = True
             else:
-                logging.error(f"Failed to delete Access App {current_access_app_id} for {hostname} during label-based cleanup (no policy label).")
+                logging.error(f"Failed to delete Access App {current_access_app_id_from_state} for {hostname} during label cleanup.")
         elif current_rule_in_state.get("access_policy_type") is not None : 
             current_rule_in_state["access_app_id"] = None 
             current_rule_in_state["access_policy_type"] = None
             current_rule_in_state["access_app_config_hash"] = None
             local_state_changed_by_access_policy = True
-            logging.debug(f"Ensuring access policy type is None for {hostname} as no access labels are present and no app was managed.")
+            logging.debug(f"Ensuring access policy type is None for {hostname} as no access labels are present.")
             
     if local_state_changed_by_access_policy and state_manager_save_func:
-        logging.debug(f"Access policy changes for {hostname} triggered a state save.")
+        logging.debug(f"Access policy changes for {hostname} indicate state should be saved by caller.")
 
     return local_state_changed_by_access_policy
