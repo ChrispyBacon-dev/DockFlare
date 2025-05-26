@@ -185,7 +185,7 @@ def update_cloudflare_config():
             logging.info("Ingress rule configuration content differs from Cloudflare. Update required.")
             needs_api_update = True
         else:
-
+            pass    
         if not needs_api_update and len(current_api_ingress_rules) == len(final_ingress_rules_to_put):
 
             logging.info("Cloudflare configuration content matches desired state. No API update needed.")
