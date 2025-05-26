@@ -73,7 +73,6 @@ def process_container_start(container_obj):
             return
 
         hostnames_to_process = []
-        # ... (Your label parsing logic to populate hostnames_to_process - this seemed correct)
         default_access_policy_type_label = labels.get(f"{config.LABEL_PREFIX}.access.policy")
         default_access_app_name_label = labels.get(f"{config.LABEL_PREFIX}.access.name")
         default_access_session_duration_label = labels.get(f"{config.LABEL_PREFIX}.access.session_duration", "24h")
@@ -166,7 +165,7 @@ def process_container_start(container_obj):
                     
                     rule_data_changed = False
                     if existing_rule.get("service") != service: existing_rule["service"] = service; rule_data_changed = True
-                    if existing_rule.get("container_id") != container_id_val: existing_rule["container_id"] = container_id_val # Does not trigger tunnel update but needs save
+                    if existing_rule.get("container_id") != container_id_val: existing_rule["container_id"] = container_id_val 
                     if existing_rule.get("zone_id") != target_zone_id: existing_rule["zone_id"] = target_zone_id; rule_data_changed = True
                     if existing_rule.get("no_tls_verify") != no_tls_verify_from_item: existing_rule["no_tls_verify"] = no_tls_verify_from_item; rule_data_changed = True
                     
@@ -175,7 +174,7 @@ def process_container_start(container_obj):
                     if existing_rule.get("status") == "pending_deletion":
                         existing_rule["status"] = "active"
                         existing_rule["delete_at"] = None
-                        rule_data_changed = True # Status change is significant
+                        rule_data_changed = True 
                     
                     if rule_data_changed:
                         needs_tunnel_config_update_for_this_container = True

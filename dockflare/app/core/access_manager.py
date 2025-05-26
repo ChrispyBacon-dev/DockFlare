@@ -121,7 +121,6 @@ def find_cloudflare_access_application_by_hostname(hostname):
                 if app.get("domain") == hostname:
                     logging.info(f"Found Access Application ID '{app.get('id')}' for hostname '{hostname}' via full list scan (domain match).")
                     return app
-                # Also check self_hosted_domains for a match
                 if hostname in app.get("self_hosted_domains", []):
                     logging.info(f"Found Access Application ID '{app.get('id')}' for hostname '{hostname}' (in self_hosted_domains) via full list scan.")
                     return app
@@ -130,7 +129,7 @@ def find_cloudflare_access_application_by_hostname(hostname):
         return None
     except requests.exceptions.RequestException as e:
         logging.error(f"API error finding Cloudflare Access Application for '{hostname}': {e}")
-        return None # Or re-raise if the caller should handle API errors directly
+        return None 
     except Exception as e:
         logging.error(f"Unexpected error finding Cloudflare Access Application for '{hostname}': {e}", exc_info=True)
         return None

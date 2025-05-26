@@ -23,7 +23,6 @@ from datetime import datetime, timedelta, timezone
 import json 
 
 from app import config, docker_client, tunnel_state, cloudflared_agent_state
-# DO NOT import 'app' (the Flask instance) at the top level here.
 from flask import current_app 
 
 from app.core.state_manager import managed_rules, state_lock, save_state
@@ -37,7 +36,6 @@ from app.core.access_manager import (
     delete_cloudflare_access_application 
 )
 from app.core.tunnel_manager import update_cloudflare_config
-
 
 def _get_hostname_configs_from_container(container_obj):
     # ... (no changes in this helper function) ...
@@ -109,13 +107,10 @@ def _get_hostname_configs_from_container(container_obj):
     return hostnames_configs
 
 def _run_reconciliation_logic(): 
-    # Import the app instance *inside* the function that runs in the thread
     from app import app as main_app_instance_for_context 
 
     with main_app_instance_for_context.app_context(): 
         logging.info("[Reconcile Thread] Starting state reconciliation logic (with app context).")
-        # ... (rest of _run_reconciliation_logic function, using current_app.reconciliation_info) ...
-        # (Make sure all previous logic using current_app.reconciliation_info is within this 'with' block)
         needs_tunnel_config_update = False 
         state_changed_locally = False
         max_total_time = 480 
@@ -175,7 +170,6 @@ def _run_reconciliation_logic():
             current_managed_hostnames_in_state = set(managed_rules.keys())
                             
             for hostname, desired_details in running_labeled_hostnames_details.items():
-                # ... (rest of this loop using current_app.reconciliation_info)
                 processed_reconcile_items +=1
                 current_app.reconciliation_info["processed_items"] = processed_reconcile_items
                 current_app.reconciliation_info["progress"] = min(100, int((processed_reconcile_items / current_app.reconciliation_info["total_items"]) * 100)) if current_app.reconciliation_info["total_items"] > 0 else 0
@@ -250,7 +244,6 @@ def _run_reconciliation_logic():
                 current_app.reconciliation_info["status"] = "Saving reconciled state..."
                 save_state()
 
-        # ... (rest of the function: tunnel config update, DNS setup, using current_app.reconciliation_info)
         if time.time() - reconciliation_start_time > max_total_time - 15:
             logging.warning("[Reconcile] Timeout before Tunnel/DNS operations.")
             needs_tunnel_config_update = False 
@@ -305,7 +298,6 @@ def reconcile_state_threaded():
         logging.warning("Tunnel not initialized (no ID), skipping reconciliation.")
         return
     
-    # Import app instance here, only when the thread is about to be created
     from app import app as main_app_instance_for_thread_check
 
     if not hasattr(main_app_instance_for_thread_check, 'reconciliation_info'):
@@ -326,7 +318,6 @@ def reconcile_state_threaded():
 
 
 def cleanup_expired_rules(stop_event_param):
-    # ... (no changes needed in this function regarding app context) ...
     logging.info("Starting cleanup task for expired rules...")
     if stop_event_param is None:
         logging.error("cleanup_expired_rules called with None stop_event_param. Task will not run correctly.")

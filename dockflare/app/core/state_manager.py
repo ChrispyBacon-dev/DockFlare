@@ -93,7 +93,7 @@ def save_state():
     global managed_rules
     current_thread_name = threading.current_thread().name
     
-    with state_lock: # Make sure this line is present to acquire the RLock
+    with state_lock: 
         logging.info(f"SAVE_STATE: Start (RLock acquired). THREAD: {current_thread_name}. managed_rules item count: {len(managed_rules)}")
         
         serializable_state = {}
