@@ -593,10 +593,6 @@ def ui_add_manual_rule_route():
     return redirect(url_for('web.status_page'))
 
 @bp.route('/ui/manual-rules/delete/<path:hostname>', methods=['POST'])
-# app/web/routes.py
-# ... (other imports and blueprint definition) ...
-
-@bp.route('/ui/manual-rules/delete/<path:hostname>', methods=['POST'])
 def ui_delete_manual_rule_route(hostname):
     if not docker_client: 
         cloudflared_agent_state["last_action_status"] = "Error: System not ready to delete manual rule. Docker client unavailable."
