@@ -433,7 +433,7 @@
             <p class="mt-2 text-xs opacity-60">DockFlare v1.8.0</p>
         </div>
     </footer>
-        <dialog id="add_manual_rule_modal" class="modal">
+            <dialog id="add_manual_rule_modal" class="modal">
       <div class="modal-box w-11/12 max-w-lg">
         <form method="dialog">
           <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
@@ -441,25 +441,30 @@
         <h3 class="font-bold text-lg mb-4">Add New Manual Ingress Rule</h3>
         <form action="{{ url_for('web.ui_add_manual_rule_route') }}" method="POST" class="space-y-4 protocol-aware-form">
             <div>
-                <label class="label" for="manual_hostname"><span class="label-text">Hostname (e.g., router.example.com)</span></label>
-                <input type="text" id="manual_hostname" name="manual_hostname" placeholder="mydevice.yourdomain.com" class="input input-bordered w-full" required />
+                <label class="label" for="manual_subdomain"><span class="label-text">Subdomain (Optional, e.g., mydevice)</span></label>
+                <input type="text" id="manual_subdomain" name="manual_subdomain" placeholder="subdomain" class="input input-bordered w-full" />
+            </div>
+            <div>
+                <label class="label" for="manual_domain_name"><span class="label-text">Domain Name (Required, e.g., example.com)</span></label>
+                <input type="text" id="manual_domain_name" name="manual_domain_name" placeholder="yourdomain.com" class="input input-bordered w-full" required />
+                <div class="text-xs opacity-60 mt-1">This will be combined with the subdomain. If CF_ZONE_ID is set and this matches its domain, that Zone ID will be used. Otherwise, provide a full Zone Name below if different.</div>
             </div>
             <div>
                 <label class="label" for="manual_path"><span class="label-text">Path (Optional, e.g., /app or /api/v1)</span></label>
                 <input type="text" id="manual_path" name="manual_path" placeholder="/optional-service-path" class="input input-bordered w-full" />
-                <div class="text-xs opacity-60 mt-1">If blank, rule applies to the root of the hostname. Must start with '/' if specified.</div>
+                <div class="text-xs opacity-60 mt-1">If blank, rule applies to the root. Must start with '/' if specified.</div>
             </div>
             <div>
                 <label class="label" for="manual_service"><span class="label-text">Service URL (e.g., http://192.168.1.1:80)</span></label>
                 <input type="text" id="manual_service" name="manual_service" placeholder="http://internal-ip:port" class="input input-bordered w-full" required />
             </div>
             <div>
-                <label class="label" for="manual_zone_name"><span class="label-text">Cloudflare Zone Name (Optional if CF_ZONE_ID is set)</span></label>
-                <input type="text" id="manual_zone_name" name="manual_zone_name" placeholder="yourdomain.com" class="input input-bordered w-full" {% if not CF_ZONE_ID_CONFIGURED %}required{% endif %}/>
+                <label class="label" for="manual_zone_name_override"><span class="label-text">Cloudflare Zone Name (Override/Specific)</span></label>
+                <input type="text" id="manual_zone_name_override" name="manual_zone_name_override" placeholder="yourdomain.com (if different from Domain Name above or CF_ZONE_ID)" class="input input-bordered w-full" />
                 {% if CF_ZONE_ID_CONFIGURED and CF_ZONE_ID %}
-                <div class="text-xs opacity-60 mt-1">If blank, default Zone ID ({{ CF_ZONE_ID[:12] }}...) will be used.</div>
-                {% elif not CF_ZONE_ID_CONFIGURED %}
-                <div class="text-xs text-warning mt-1">CF_ZONE_ID is not set globally, so Zone Name is required here.</div>
+                <div class="text-xs opacity-60 mt-1">If blank and "Domain Name" above matches the domain of CF_ZONE_ID ({{ CF_ZONE_ID[:12] }}...), CF_ZONE_ID will be used. Otherwise, the Zone ID for "Domain Name" will be looked up. Use this field to explicitly target a different Zone ID if needed.</div>
+                {% else %}
+                <div class="text-xs opacity-60 mt-1">If blank, Zone ID for "Domain Name" will be looked up. Use this to explicitly target a specific Zone ID if "Domain Name" is ambiguous or different from desired zone.</div>
                 {% endif %}
             </div>
             <div class="form-control">
