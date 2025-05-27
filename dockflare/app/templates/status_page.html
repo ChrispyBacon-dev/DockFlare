@@ -433,10 +433,10 @@
             <p class="mt-2 text-xs opacity-60">DockFlare v1.8.0</p>
         </div>
     </footer>
-            <dialog id="add_manual_rule_modal" class="modal">
-      <div class="modal-box w-11/12 max-w-lg">
+        <dialog id="add_manual_rule_modal" class="modal">
+             <div class="modal-box w-11/12 max-w-lg">
         <form method="dialog">
-          <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
         </form>
         <h3 class="font-bold text-lg mb-4">Add New Manual Ingress Rule</h3>
         <form action="{{ url_for('web.ui_add_manual_rule_route') }}" method="POST" class="space-y-4 protocol-aware-form">
@@ -447,7 +447,7 @@
             <div>
                 <label class="label" for="manual_domain_name"><span class="label-text">Domain Name (Required, e.g., example.com)</span></label>
                 <input type="text" id="manual_domain_name" name="manual_domain_name" placeholder="yourdomain.com" class="input input-bordered w-full" required />
-                <div class="text-xs opacity-60 mt-1">This will be combined with the subdomain. If CF_ZONE_ID is set and this matches its domain, that Zone ID will be used. Otherwise, provide a full Zone Name below if different.</div>
+                <div class="text-xs opacity-60 mt-1">This will be combined with the subdomain to form the full hostname.</div>
             </div>
             <div>
                 <label class="label" for="manual_path"><span class="label-text">Path (Optional, e.g., /app or /api/v1)</span></label>
@@ -455,32 +455,50 @@
                 <div class="text-xs opacity-60 mt-1">If blank, rule applies to the root. Must start with '/' if specified.</div>
             </div>
             <div>
-                <label class="label" for="manual_service"><span class="label-text">Service URL (e.g., http://192.168.1.1:80)</span></label>
-                <input type="text" id="manual_service" name="manual_service" placeholder="http://internal-ip:port" class="input input-bordered w-full" required />
+                <label class="label" for="manual_service_type"><span class="label-text">Service Type (Required)</span></label>
+                <select name="manual_service_type" id="manual_service_type" class="select select-bordered w-full" required>
+                    <option value="" disabled selected>Select type...</option>
+                    <option value="http">HTTP</option>
+                    <option value="https">HTTPS</option>
+                    <option value="tcp">TCP</option>
+                    <option value="ssh">SSH</option>
+                    <option value="rdp">RDP</option>
+                    <option value="http_status">HTTP Status Code</option>
+                </select>
+            </div>
+            <div>
+                <label class="label" for="manual_service_address">
+                    <span class="label-text" id="manual_service_address_label">Service Address (Required for most types)</span>
+                </label>
+                <div class="join w-full"> 
+                    <span id="manual_service_prefix_span" class="join-item btn btn-disabled normal-case pointer-events-none hidden bg-base-200 border-base-300"></span>
+                    <input type="text" id="manual_service_address" name="manual_service_address" placeholder="host:port or status code" class="input input-bordered join-item w-full" />
+                </div>
+                <div id="manual_service_help" class="text-xs opacity-60 mt-1">e.g., 192.168.1.10:8000 or my-service.local:3000 for HTTP/S/TCP etc.</div>
             </div>
             <div>
                 <label class="label" for="manual_zone_name_override"><span class="label-text">Cloudflare Zone Name (Override/Specific)</span></label>
-                <input type="text" id="manual_zone_name_override" name="manual_zone_name_override" placeholder="yourdomain.com (if different from Domain Name above or CF_ZONE_ID)" class="input input-bordered w-full" />
+                <input type="text" id="manual_zone_name_override" name="manual_zone_name_override" placeholder="yourdomain.com (if different from Domain Name or CF_ZONE_ID)" class="input input-bordered w-full" />
                 {% if CF_ZONE_ID_CONFIGURED and CF_ZONE_ID %}
-                <div class="text-xs opacity-60 mt-1">If blank and "Domain Name" above matches the domain of CF_ZONE_ID ({{ CF_ZONE_ID[:12] }}...), CF_ZONE_ID will be used. Otherwise, the Zone ID for "Domain Name" will be looked up. Use this field to explicitly target a different Zone ID if needed.</div>
+                <div class="text-xs opacity-60 mt-1">If blank, DockFlare will attempt to use "Domain Name" to find the zone, or fall back to default CF_ZONE_ID ({{ CF_ZONE_ID[:12] }}...). Use this to explicitly target a different Zone.</div>
                 {% else %}
-                <div class="text-xs opacity-60 mt-1">If blank, Zone ID for "Domain Name" will be looked up. Use this to explicitly target a specific Zone ID if "Domain Name" is ambiguous or different from desired zone.</div>
+                <div class="text-xs opacity-60 mt-1">If blank, DockFlare will attempt to use "Domain Name" to find the zone. Use this to explicitly target a specific Zone if "Domain Name" is ambiguous or if CF_ZONE_ID is not set.</div>
                 {% endif %}
             </div>
-            <div class="form-control">
+            <div id="manual_no_tls_verify_div" class="form-control"> 
               <label class="label cursor-pointer">
                 <span class="label-text">Disable TLS Verification (No TLS Verify)</span>
                 <input type="checkbox" name="manual_no_tls_verify" id="manual_no_tls_verify" class="checkbox checkbox-sm" />
               </label>
-              <div class="text-xs opacity-60">Check if the service uses a self-signed certificate or HTTP.</div>
+              <div class="text-xs opacity-60">Check if the origin service uses self-signed SSL or is HTTP. (Only applies to HTTP/HTTPS services).</div>
             </div>
             <div class="modal-action">
               <button type="submit" class="btn btn-primary">Add Rule</button>
             </div>
         </form>
-      </div>
-       <form method="dialog" class="modal-backdrop"><button>close</button></form>
-    </dialog>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>

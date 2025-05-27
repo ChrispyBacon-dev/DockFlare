@@ -20,6 +20,7 @@ import logging
 import time
 import requests
 import copy 
+import re
 from docker.errors import NotFound, APIError
 
 from app import config, docker_client, cloudflared_agent_state, tunnel_state 
@@ -47,11 +48,44 @@ def is_valid_hostname(hostname):
         if label.startswith('-') or label.endswith('-'): return False
     return True
 
-def is_valid_service(service): 
-    import re 
-    if not service: return False
-    return (re.match(r"^(https?|tcp|unix)://", service) or 
-            re.match(r"^[a-zA-Z0-9._-]+:\d+$", service)) is not None
+def is_valid_service(service_str):
+    if not service_str or not isinstance(service_str, str):
+        return False
+
+    service_str = service_str.strip()
+    # Regex patterns for different service types
+
+    # Hostname/IP part: Allows domain names, IPv4, and bracketed IPv6
+    host_ip_pattern = r"([a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*\.?|[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|\[[0-9a-fA-F:]+\])"
+    port_pattern = r"[0-9]{1,5}" # Ports 0-65535
+
+    # HTTP/HTTPS: http(s)://host:port
+    http_https_pattern = rf"^(?:https?)://{host_ip_pattern}:{port_pattern}$"
+    
+    # TCP: tcp://host:port
+    tcp_pattern = rf"^(?:tcp)://{host_ip_pattern}:{port_pattern}$"
+    
+    # SSH: ssh://host:port
+    ssh_pattern = rf"^(?:ssh)://{host_ip_pattern}:{port_pattern}$"
+    
+    # RDP: rdp://host:port
+    rdp_pattern = rf"^(?:rdp)://{host_ip_pattern}:{port_pattern}$"
+
+    # HTTP Status: http_status:CODE
+    http_status_pattern = r"^http_status:([1-5][0-9]{2})$" # Matches 100-599
+
+    if re.fullmatch(http_https_pattern, service_str):
+        return True
+    if re.fullmatch(tcp_pattern, service_str):
+        return True
+    if re.fullmatch(ssh_pattern, service_str):
+        return True
+    if re.fullmatch(rdp_pattern, service_str):
+        return True
+    if re.fullmatch(http_status_pattern, service_str):
+        return True
+    logging.warning(f"Invalid service string format: '{service_str}' does not match supported patterns (HTTP, HTTPS, TCP, SSH, RDP, HTTP_STATUS).")
+    return False
 
 def process_container_start(container_obj):
     if not container_obj:

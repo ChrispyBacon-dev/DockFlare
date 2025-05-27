@@ -306,7 +306,21 @@ function updateReconciliationStatus() {
 document.addEventListener('DOMContentLoaded', function() {
     fixResourcesAndBase(); 
     themeManager.initialize();
+    const manualServiceTypeSelect = document.getElementById('manual_service_type');
+    const noTlsVerifyDiv = document.getElementById('manual_no_tls_verify_div'); 
 
+    if (manualServiceTypeSelect && noTlsVerifyDiv) {
+        function toggleNoTlsVerifyVisibility() {
+            const selectedType = manualServiceTypeSelect.value.toLowerCase();
+            if (selectedType === 'http' || selectedType === 'https') {
+                noTlsVerifyDiv.style.display = ''; 
+            } else {
+                noTlsVerifyDiv.style.display = 'none'; 
+            }
+        }
+        manualServiceTypeSelect.addEventListener('change', toggleNoTlsVerifyVisibility);
+        toggleNoTlsVerifyVisibility(); 
+    }
     document.querySelectorAll('form.protocol-aware-form').forEach(form => {
         if (form.getAttribute('action')) {
             let actionUrl = form.getAttribute('action');

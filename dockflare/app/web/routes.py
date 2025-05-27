@@ -502,9 +502,6 @@ def stream_logs_route():
     response.headers['Access-Control-Allow-Methods'] = 'GET'
     return response
 
-# app/web/routes.py
-# ... (imports) ...
-
 @bp.route('/ui/manual-rules/add', methods=['POST'])
 def ui_add_manual_rule_route():
     if not docker_client: 
@@ -517,13 +514,19 @@ def ui_add_manual_rule_route():
         return redirect(url_for('web.status_page'))
 
     subdomain_input = request.form.get('manual_subdomain', '').strip()
-    domain_name_input = request.form.get('manual_domain_name', '').strip() # Required
+    domain_name_input = request.form.get('manual_domain_name', '').strip()
     path_input = request.form.get('manual_path', '').strip()
-    service_input = request.form.get('manual_service', '').strip() 
+    
+    service_type_input = request.form.get('manual_service_type', '').strip().lower() # http, https, tcp, ssh, rdp, http_status
+    service_address_input = request.form.get('manual_service_address', '').strip()
+    
     zone_name_override_input = request.form.get('manual_zone_name_override', '').strip()
     no_tls_verify = request.form.get('manual_no_tls_verify') == 'on'
-    if not domain_name_input or not service_input: 
-        cloudflared_agent_state["last_action_status"] = "Error: Domain Name and Service URL are required for manual rule."
+    if not domain_name_input or not service_type_input: 
+        cloudflared_agent_state["last_action_status"] = "Error: Domain Name and Service Type are required for manual rule."
+        return redirect(url_for('web.status_page'))
+    if service_type_input not in ["http_status", "bastion"] and not service_address_input:
+        cloudflared_agent_state["last_action_status"] = f"Error: Service Address is required for type '{service_type_input.upper()}'."
         return redirect(url_for('web.status_page'))
     if subdomain_input:
         full_hostname = f"{subdomain_input}.{domain_name_input}"
@@ -541,74 +544,78 @@ def ui_add_manual_rule_route():
         if len(processed_path) > 1 and processed_path.endswith('/'):
             processed_path = processed_path.rstrip('/')
     processed_service_for_cf = ""
-    try:
-        parsed_url = urlparse(service_input)
-        if not parsed_url.scheme or not parsed_url.netloc:
-            raise ValueError("Service URL must include scheme (e.g., http:// or https://) and host/IP.")
-        processed_service_for_cf = urlunparse((parsed_url.scheme, parsed_url.netloc, '', '', '', ''))
-    except ValueError as e:
-        cloudflared_agent_state["last_action_status"] = f"Error: Invalid service URL format '{service_input}': {e}"
-        return redirect(url_for('web.status_page'))
-    if not is_valid_service(processed_service_for_cf): 
-        cloudflared_agent_state["last_action_status"] = f"Error: Processed service URL '{processed_service_for_cf}' is invalid."
+    if service_type_input in ["http", "https"]:
+        if ":" not in service_address_input and "." not in service_address_input and service_address_input != "localhost": 
+             cloudflared_agent_state["last_action_status"] = f"Error: For HTTP/S, address '{service_address_input}' should be host:port or a resolvable hostname."
+             return redirect(url_for('web.status_page'))
+        processed_service_for_cf = f"{service_type_input}://{service_address_input}"
+    elif service_type_input in ["tcp", "ssh", "rdp"]:
+        if ":" not in service_address_input: 
+            cloudflared_agent_state["last_action_status"] = f"Error: For {service_type_input.upper()}, address '{service_address_input}' must be in host:port format."
+            return redirect(url_for('web.status_page'))
+        processed_service_for_cf = f"{service_type_input}://{service_address_input}"
+    elif service_type_input == "http_status":
+        if not service_address_input.isdigit() or not (100 <= int(service_address_input) <= 599):
+            cloudflared_agent_state["last_action_status"] = f"Error: Invalid HTTP status code '{service_address_input}'. Must be 100-599."
+            return redirect(url_for('web.status_page'))
+        processed_service_for_cf = f"http_status:{service_address_input}"
+    else:
+        cloudflared_agent_state["last_action_status"] = f"Error: Unsupported service type '{service_type_input}' submitted."
         return redirect(url_for('web.status_page'))
 
+    if not is_valid_service(processed_service_for_cf): 
+        cloudflared_agent_state["last_action_status"] = f"Error: Constructed service string '{processed_service_for_cf}' is invalid."
+        return redirect(url_for('web.status_page'))
     target_zone_id = None
     zone_name_to_lookup = None
-
     if zone_name_override_input:
         zone_name_to_lookup = zone_name_override_input
-        logging.info(f"Using zone name override from form: {zone_name_to_lookup}")
-    else:
-        zone_name_to_lookup = domain_name_input 
-        logging.info(f"No zone override. Attempting to use domain part '{domain_name_input}' or default CF_ZONE_ID for Zone ID lookup.")
+    else: 
+        parts = domain_name_input.split('.')
+        if len(parts) >= 2:
+            potential_zone = f"{parts[-2]}.{parts[-1]}"
+            zone_name_to_lookup = potential_zone
+        else: 
+            zone_name_to_lookup = None 
 
     if zone_name_to_lookup:
         target_zone_id = get_zone_id_from_name(zone_name_to_lookup)
-        if not target_zone_id:
-            if config.CF_ZONE_ID and not zone_name_override_input:
-                default_zone_details = get_zone_details_by_id(config.CF_ZONE_ID)
-                if default_zone_details and domain_name_input.endswith(default_zone_details.get("name")):
-                    target_zone_id = config.CF_ZONE_ID
-                    logging.info(f"Using default CF_ZONE_ID as '{domain_name_input}' is part of default zone '{default_zone_details.get('name')}'.")
-                else:
-                    cloudflared_agent_state["last_action_status"] = f"Error: Could not find Zone ID for '{zone_name_to_lookup}', and '{domain_name_input}' not in default CF_ZONE_ID's domain (if set)."
-                    return redirect(url_for('web.status_page'))
-            else: 
-                 cloudflared_agent_state["last_action_status"] = f"Error: Could not find Zone ID for '{zone_name_to_lookup}'."
-                 return redirect(url_for('web.status_page'))
-    elif config.CF_ZONE_ID: 
+        if not target_zone_id and config.CF_ZONE_ID: 
+            logging.info(f"Could not find zone for '{zone_name_to_lookup}', trying default CF_ZONE_ID.")
+            target_zone_id = config.CF_ZONE_ID 
+        elif not target_zone_id:
+            cloudflared_agent_state["last_action_status"] = f"Error: Could not find Zone ID for '{zone_name_to_lookup}' and no default CF_ZONE_ID to fallback."
+            return redirect(url_for('web.status_page'))
+    elif config.CF_ZONE_ID:
         target_zone_id = config.CF_ZONE_ID
-        logging.info(f"Using default CF_ZONE_ID because no specific zone name was provided or derived.")
-    else: 
-        cloudflared_agent_state["last_action_status"] = "Error: Cloudflare Zone Name is required as CF_ZONE_ID is not set globally and couldn't be derived."
+        logging.info(f"Using default CF_ZONE_ID as no specific zone name was provided or derivable.")
+    else:
+        cloudflared_agent_state["last_action_status"] = "Error: Cloudflare Zone Name/ID is required."
         return redirect(url_for('web.status_page'))
+
     with state_lock:
         existing_rule_details = managed_rules.get(full_hostname)
-        
-        if existing_rule_details and existing_rule_details.get("source", "docker") == "docker":
-            cloudflared_agent_state["last_action_status"] = f"Error: Hostname {full_hostname} is already managed by Docker labels. Manual rule not added/updated."
+        if existing_rule_details and existing_rule_details.get("source", "docker") == "docker" and \
+           (existing_rule_details.get("path") or None) == (processed_path or None): 
+            cloudflared_agent_state["last_action_status"] = f"Error: Rule for {full_hostname} (Path: {processed_path or '(root)'}) is Docker-managed."
             return redirect(url_for('web.status_page'))
-        
-        log_action = "Adding new" if not existing_rule_details else "Updating existing"
+        log_action = "Adding new" if not existing_rule_details or (existing_rule_details.get("path") or None) != (processed_path or None) else "Updating existing"
         logging.info(f"{log_action} manual rule for FQDN: {full_hostname} (Path: {processed_path if processed_path else '(root)'}) with service {processed_service_for_cf}")
-
         managed_rules[full_hostname] = { 
             "service": processed_service_for_cf,
-            "path": processed_path,
+            "path": processed_path, 
             "container_id": None, 
             "status": "active",
             "delete_at": None,
             "zone_id": target_zone_id, 
             "no_tls_verify": no_tls_verify,
-            "access_app_id": existing_rule_details.get("access_app_id") if existing_rule_details else None,
-            "access_policy_type": existing_rule_details.get("access_policy_type") if existing_rule_details else None,
-            "access_app_config_hash": existing_rule_details.get("access_app_config_hash") if existing_rule_details else None,
-            "access_policy_ui_override": existing_rule_details.get("access_policy_ui_override", False) if existing_rule_details else False,
+            "access_app_id": existing_rule_details.get("access_app_id") if existing_rule_details and (existing_rule_details.get("path") or None) == (processed_path or None) else None,
+            "access_policy_type": existing_rule_details.get("access_policy_type") if existing_rule_details and (existing_rule_details.get("path") or None) == (processed_path or None) else None,
+            "access_app_config_hash": existing_rule_details.get("access_app_config_hash") if existing_rule_details and (existing_rule_details.get("path") or None) == (processed_path or None) else None,
+            "access_policy_ui_override": existing_rule_details.get("access_policy_ui_override", False) if existing_rule_details and (existing_rule_details.get("path") or None) == (processed_path or None) else False,
             "source": "manual"
         }
         save_state() 
-
     if update_cloudflare_config(): 
         create_cloudflare_dns_record(target_zone_id, full_hostname, effective_tunnel_id)
         cloudflared_agent_state["last_action_status"] = f"Success: Manual rule for {full_hostname} (Path: {processed_path if processed_path else '(root)'}) added/updated."
