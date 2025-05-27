@@ -16,7 +16,7 @@ There are many ways you can contribute to DockFlare:
 ## Getting Started (If You Plan to Code)
 
 1.  **Fork the repository** on GitHub.
-2.  **Clone your fork** locally: `git clone https://github.com/YOUR_USERNAME/DockFlare.git`
+2.  **Clone your fork** locally: `git clone https://github.com/ChrispyBacon-dev/DockFlare.git`
 3.  **Create a new branch** for your feature or bug fix: `git checkout -b feature/your-feature-name` or `git checkout -b fix/bug-description`.
 4.  **Set up your development environment.** Ensure you have Python (matching the project version), Docker, Docker Compose, and Node.js/npm (for frontend assets) installed.
 5.  **Install dependencies:**
