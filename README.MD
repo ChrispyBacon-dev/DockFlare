@@ -57,7 +57,7 @@ DockFlare simplifies Cloudflare Tunnel and Zero Trust Access policy management b
 ## ⚙️ Getting Started
 
 <details>
-<summary>📋 Important Prerequisites - Cloudflare API</summary>
+<summary>📋 Important Prerequisites for Cloudflare API</summary>
 
 - Docker: [Install Docker](https://docs.docker.com/engine/install/)
 - Docker Compose: [Install Docker Compose](https://docs.docker.com/compose/install/)

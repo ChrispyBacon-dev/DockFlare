@@ -1,9 +1,7 @@
-```markdown
 # GNU General Public License v3.0
 
 This project, DockFlare, is licensed under the GNU General Public License version 3.0.
 
-```
 GNU GENERAL PUBLIC LICENSE
 Version 3, 29 June 2007
 
