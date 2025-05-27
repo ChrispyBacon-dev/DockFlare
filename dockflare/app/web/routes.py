@@ -31,8 +31,8 @@ from flask import (
     stream_with_context, current_app
 )
 
-from app import config, docker_client, tunnel_state, cloudflared_agent_state, log_queue # Globals from app/__init__
-from app.core.state_manager import managed_rules, state_lock, save_state, load_state # load_state if UI triggers it
+from app import config, docker_client, tunnel_state, cloudflared_agent_state, log_queue 
+from app.core.state_manager import managed_rules, state_lock, save_state, load_state 
 from app.core.tunnel_manager import (
     start_cloudflared_container,
     stop_cloudflared_container,
@@ -606,7 +606,6 @@ def ui_delete_manual_rule_route(hostname):
         rule_details = managed_rules.get(hostname)
         if rule_details and rule_details.get("source") == "manual":
             logging.info(f"Found manual rule for {hostname} to delete. Details: {rule_details}")
-            # Assign to outer scope variables
             zone_id_for_delete = rule_details.get("zone_id")
             access_app_id_for_delete = rule_details.get("access_app_id")
             

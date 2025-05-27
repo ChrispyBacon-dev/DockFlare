@@ -246,7 +246,7 @@ def update_cloudflared_container_status():
             logging.warning("Docker client unavailable in update_cloudflared_container_status, attempting reconnect...")
             try:
                 
-                import docker as docker_lib # Use an alias to avoid conflict if any
+                import docker as docker_lib 
                 docker_client = docker_lib.from_env(timeout=5)
                 docker_client.ping()
                 logging.info("Reconnected to Docker daemon during agent status update.")

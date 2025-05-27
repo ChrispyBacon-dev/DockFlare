@@ -179,7 +179,6 @@ def process_container_start(container_obj):
                     if rule_data_changed:
                         needs_tunnel_config_update_for_this_container = True
                     
-                    # Check if anything at all changed in the rule (including just container_id)
                     if original_existing_rule_for_comparison != existing_rule:
                          state_changed_locally_for_this_container = True
                     logging.info(f"DOCKER_HANDLER_UPD_RULE_POST: For {hostname}. Rule: {existing_rule}. state_changed: {state_changed_locally_for_this_container}, tunnel_update: {needs_tunnel_config_update_for_this_container}")

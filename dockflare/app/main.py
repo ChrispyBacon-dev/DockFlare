@@ -66,7 +66,6 @@ def run_all_background_tasks():
 
     if not config.USE_EXTERNAL_CLOUDFLARED and docker_client:
         logging.info("Starting periodic agent status updater thread...")
-        # Ensure periodic_agent_status_updater is defined or imported
         agent_status_updater_thread = threading.Thread(target=periodic_agent_status_updater, name="AgentStatusUpdater", daemon=True)
         threads_to_start.append(agent_status_updater_thread)
     
@@ -179,7 +178,7 @@ def main_application_entrypoint():
     global main_initialization_thread
 
     logging.info("-" * 52)
-    logging.info("--- DockFlare Starting (Refactored Build) ---")
+    logging.info("--- DockFlare Starting ---")
     logging.info(f"--- Version: 1.8.0 ---") 
     logging.info("-" * 52)
 
@@ -227,7 +226,6 @@ def main_application_entrypoint():
                     break
             if agent_status_updater_thread and agent_status_updater_thread.is_alive() and not agent_status_updater_thread.daemon:
                 all_daemons_or_stopped = False
-            # Check main_initialization_thread
             if main_initialization_thread and main_initialization_thread.is_alive() and not main_initialization_thread.daemon:
                 all_daemons_or_stopped = False
             
