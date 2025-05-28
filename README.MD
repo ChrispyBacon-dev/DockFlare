@@ -124,11 +124,7 @@ DockFlare simplifies Cloudflare Tunnel and Zero Trust Access policy management b
     # Name for the Cloudflare Tunnel managed by DockFlare
     # (Required if NOT using an external cloudflared instance)
     TUNNEL_NAME=DockFlare-Tunnel
-    
-    # --- External Cloudflared Mode (Advanced) ---
-    # USE_EXTERNAL_CLOUDFLARED=false
-    # EXTERNAL_TUNNEL_ID=your_existing_external_tunnel_id
-    
+      
     # === DOCKFLARE BEHAVIOR & CUSTOMIZATION ===
     LABEL_PREFIX=cloudflare.tunnel
     GRACE_PERIOD_SECONDS=28800
@@ -286,29 +282,57 @@ This creates an Access Application named "DockFlare-secure-app.example.com" requ
 <details>
 <summary>🔄 External `cloudflared` Mode & Switching</summary>
 
-IMPORTANT: Currently this Mode is under heavy development and not recommended. 
-DockFlare can manage DNS and Access Applications for an existing `cloudflared` tunnel that you manage separately. 
+> [!CAUTION]
+> **ADVANCED USERS ONLY - HIGH POTENTIAL FOR MISCONFIGURATION**
+>
+> External `cloudflared` mode is powerful but requires a **deep understanding of Docker networking and Cloudflare Tunnels.** Misconfiguration can easily lead to services being unreachable or DockFlare being unable to manage resources correctly.
+>
+> **Proceed with extreme caution and only if you are comfortable managing `cloudflared` and Docker network configurations independently.** This mode is **not recommended** for users new to Docker or Cloudflare Tunnels.
 
-**To use External Mode:**
-1. Set `USE_EXTERNAL_CLOUDFLARED=true` in your `.env`.
-2. Set `EXTERNAL_TUNNEL_ID` to your existing tunnel's ID.
-   <details>
-   <summary>Find Your Tunnel ID</summary>
-   
-   1. Log in to [Cloudflare Dashboard](https://dash.cloudflare.com).
-   2. Navigate to **Zero Trust** -> **Access** -> **Tunnels**.
-   3. Select your tunnel. The ID is in the URL and on the overview page.
-   </details>
+DockFlare can integrate with an existing `cloudflared` tunnel that you manage completely separately (i.e., not started or configured by DockFlare). In this mode, DockFlare focuses on DNS and Cloudflare Access Application management for that tunnel.
+
+**Critical Prerequisite: Docker Network Configuration**
+
+*   For DockFlare to successfully interact with your services when using an external `cloudflared` tunnel, **all relevant containers (DockFlare itself, your target application containers, and potentially your externally managed `cloudflared` agent if it needs to resolve services by Docker DNS) must share a common Docker network and be able to communicate.**
+*   You are responsible for ensuring that the "Service Address" you define in DockFlare (via labels or UI) is resolvable and reachable from your *externally managed* `cloudflared` agent.
+*   Incorrect network setup is the most common source of issues in this mode.
+
+**To Use External Mode:**
+
+1.  Set `USE_EXTERNAL_CLOUDFLARED=true` in your `.env` file.
+2.  Set `EXTERNAL_TUNNEL_ID` in your `.env` file to your existing tunnel's UUID.
+    <details>
+    <summary>How to Find Your Existing Tunnel ID</summary>
+
+    1.  Log in to the [Cloudflare Dashboard](https://dash.cloudflare.com).
+    2.  Navigate to **Zero Trust** -> **Access** -> **Tunnels**.
+    3.  Select your desired pre-existing tunnel.
+    4.  The Tunnel ID (a UUID) is displayed on the tunnel's overview page and is also present in the URL.
+    </details>
 
 **DockFlare's Behavior in External Mode:**
-- DockFlare will **not** start or manage a `cloudflared` agent container.
-- It **will** create/delete CNAME DNS records pointing to your `EXTERNAL_TUNNEL_ID`.
-- It **will** create/update/delete Cloudflare Access Applications based on labels or UI interactions for services it manages.
-- It will **not** modify the tunnel's ingress rules directly (as this is typically managed by the external `cloudflared` agent's configuration file).
+
+*   ✅ **WILL** create/update/delete CNAME DNS records in your configured Cloudflare zones, pointing to your `EXTERNAL_TUNNEL_ID`.
+*   ✅ **WILL** create/update/delete Cloudflare Access Applications based on Docker labels or UI interactions for services it manages.
+*   ❌ **WILL NOT** start, stop, or manage a `cloudflared` agent Docker container. You are fully responsible for the lifecycle and configuration of your `cloudflared` agent.
+*   ❌ **WILL NOT** modify the tunnel's ingress rules via the Cloudflare API. Ingress routing (which public hostnames/paths map to which internal services) must be configured directly in your externally managed `cloudflared` agent's configuration file (e.g., `config.yml`). DockFlare assumes your external `cloudflared` agent is already correctly routing traffic for the hostnames it manages DNS for.
 
 > [!WARNING]
 > **Authoritative DNS Management in External Mode:**
-> When `USE_EXTERNAL_CLOUDFLARED=true`, DockFlare assumes it has authoritative control over CNAME records in the specified zones that point to the `EXTERNAL_TUNNEL_ID`. It may remove CNAMEs it doesn't recognize as actively managed by its rules if they point to the same tunnel ID. Ensure no other systems are creating CNAMEs for this specific external tunnel in the zones DockFlare monitors.
+> When `USE_EXTERNAL_CLOUDFLARED=true`, DockFlare assumes it has **authoritative control** over CNAME DNS records in the specified Cloudflare zones that point to the `EXTERNAL_TUNNEL_ID`.
+>
+> *   It **may remove CNAME records** it doesn't recognize as actively managed by its current rules if those CNAMEs point to the same `EXTERNAL_TUNNEL_ID` within the monitored zones.
+> *   Ensure no other systems or manual configurations are creating CNAMEs for this specific external tunnel in the zones DockFlare monitors, as they might be overwritten or deleted.
+
+**Before Enabling External Mode, Ensure You Can Answer "Yes" To:**
+
+1.  Do I have a `cloudflared` tunnel already running and configured independently of DockFlare?
+2.  Does my external `cloudflared` agent's configuration file (`config.yml`) correctly define ingress rules for the services I want DockFlare to manage DNS/Access for?
+3.  Are DockFlare, my target application containers, and my external `cloudflared` agent (if resolving services by Docker DNS) all on a shared Docker network that allows them to communicate as needed?
+4.  Am I comfortable troubleshooting Docker networking issues independently?
+5.  Do I understand that DockFlare will manage DNS records pointing to my external tunnel ID and may remove conflicting ones?
+
+If you cannot confidently answer "yes" to all these questions, using DockFlare's default managed `cloudflared` mode is strongly recommended.
 
 **Switching Modes (e.g., Internal to External):**
 This requires careful steps to avoid conflicts.
