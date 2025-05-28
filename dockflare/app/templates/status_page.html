@@ -226,14 +226,13 @@
                                             {% endif %}
                                         </td>
                                         <td class="p-3 whitespace-nowrap">
-                                            <a href="{{ protocol }}://{{ details.hostname_for_dns }}{{ details.path if details.path else '' }}" target="_blank" rel="noopener noreferrer" title="Open {{ protocol }}://{{ details.hostname_for_dns }}{{ details.path if details.path else '' }}" class="link link-hover link-primary text-sm">
+                                            <a href="{{ protocol }}://{{ details.hostname_for_dns }}{% if details.path %}{{ details.path }}{% endif %}" target="_blank" rel="noopener noreferrer" title="Open {{ protocol }}://{{ details.hostname_for_dns }}{% if details.path %}{{ details.path }}{% endif %}" class="link link-hover link-primary text-sm">
                                                {{ details.hostname_for_dns }}
                                            </a>
                                            {% if details.hostname_for_dns and details.hostname_for_dns.startswith('*.') %}
                                            <span class="badge badge-info badge-xs ml-2">wildcard</span>
                                            {% endif %}
                                        </td>
-                                       {# Path Column (already correct) #}
                                        <td class="p-3 whitespace-nowrap">
                                             {% if details.path and details.path.strip() %}
                                                 <code class="text-xs opacity-70">{{ details.path }}</code>
@@ -303,7 +302,7 @@
                                                 </div>
                                                 {% if details.access_policy_ui_override %}
                                                 <form action="{{ url_for('web.revert_access_policy_to_labels', hostname=hostname) }}" method="POST" 
-                                                      onsubmit="return confirm('Are you sure you want to revert the Access Policy for {{ hostname }}? {% if details.source == "manual" %}The current UI-set policy will be removed, and it will become public or use a TLD policy if one exists.{% else %}The current UI-set policy will be removed, and it will be managed by its container labels.{% endif %}');" 
+                                                      onsubmit="return confirm('Are you sure you want to revert the Access Policy for {{ details.hostname_for_dns }}{% if details.path %}{{ details.path }}{% endif %}? {% if details.source == "manual" %}The current UI-set policy will be removed, and it will become public or use a TLD policy if one exists.{% else %}The current UI-set policy will be removed, and it will be managed by its container labels.{% endif %}');" 
                                                       class="protocol-aware-form inline-block">
                                                     <button type="submit" class="btn btn-xs btn-warning btn-outline" title="Revert to Label/Default Policy">Revert</button>
                                                 </form>
@@ -324,12 +323,11 @@
                                         </td>
                                         <td class="p-3 whitespace-nowrap text-sm" style="min-width: 80px;">
                                             {% if details.source == 'manual' %}
-                                                <form action="{{ url_for('web.ui_delete_manual_rule_route', rule_key_from_url=hostname) }}" method="post" onsubmit="return confirm('Are you sure you want to delete the manual rule for {{ details.hostname_for_dns }}{{ details.path if details.path else \'\' }}?');" class="protocol-aware-form">
+                                                <form action="{{ url_for('web.ui_delete_manual_rule_route', rule_key_from_url=hostname) }}" method="post" onsubmit="return confirm('Are you sure you want to delete the manual rule for {{ details.hostname_for_dns }}{% if details.path %}{{ details.path }}{% endif %}?');" class="protocol-aware-form">
                                                     <button type="submit" class="btn btn-xs btn-error btn-outline">Delete</button>
                                                 </form>
                                             {% else %}
-                                                {# Force delete for Docker rules - uses 'hostname' which is the rule_key #}
-                                                <form action="{{ url_for('web.force_delete_rule_route', hostname=hostname) }}" method="post" onsubmit="return confirm('Are you sure you want to force delete the rule and DNS record for {{ details.hostname_for_dns }}{{ details.path if details.path else \'\' }} immediately? This bypasses the grace period.');" class="protocol-aware-form">
+                                                <form action="{{ url_for('web.force_delete_rule_route', hostname=hostname) }}" method="post" onsubmit="return confirm('Are you sure you want to force delete the rule and DNS record for {{ details.hostname_for_dns }}{% if details.path %}{{ details.path }}{% endif %} immediately? This bypasses the grace period.');" class="protocol-aware-form">
                                                     <button type="submit" class="btn btn-xs btn-error btn-outline" {{ 'disabled' if not docker_available else '' }}>Delete</button>
                                                 </form>
                                             {% endif %}
