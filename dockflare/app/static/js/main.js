@@ -306,7 +306,34 @@ function updateReconciliationStatus() {
 document.addEventListener('DOMContentLoaded', function() {
     fixResourcesAndBase(); 
     themeManager.initialize();
+    const manualServiceTypeSelect = document.getElementById('manual_service_type');
+    const noTlsVerifyDiv = document.getElementById('manual_no_tls_verify_div'); 
+    const manualPathDisplay = document.getElementById('manual_path_display'); 
+    const manualPathHidden = document.getElementById('manual_path');         
 
+    if (manualServiceTypeSelect && noTlsVerifyDiv) {
+        function toggleNoTlsVerifyVisibility() {
+            const selectedType = manualServiceTypeSelect.value.toLowerCase();
+            if (selectedType === 'http' || selectedType === 'https') {
+                noTlsVerifyDiv.style.display = ''; 
+            } else {
+                noTlsVerifyDiv.style.display = 'none'; 
+            }
+        }
+        manualServiceTypeSelect.addEventListener('change', toggleNoTlsVerifyVisibility);
+        toggleNoTlsVerifyVisibility(); 
+    }
+    if (manualPathDisplay && manualPathHidden) {
+        manualPathDisplay.addEventListener('input', function () {
+            let displayValue = this.value.trim();
+            if (displayValue) {
+                let pathSegment = displayValue.replace(/^\/+/, '');
+                manualPathHidden.value = '/' + pathSegment;
+            } else {
+                manualPathHidden.value = ''; 
+            }
+        });
+    }
     document.querySelectorAll('form.protocol-aware-form').forEach(form => {
         if (form.getAttribute('action')) {
             let actionUrl = form.getAttribute('action');

@@ -81,6 +81,7 @@ def load_state():
                 rule_copy.setdefault("access_app_config_hash", None)
                 rule_copy.setdefault("access_policy_ui_override", False)
                 rule_copy.setdefault("source", "docker")
+                rule_copy.setdefault("path", None)
                 managed_rules[hostname] = rule_copy 
             
             logging.info(f"LOAD_STATE: Loaded {len(managed_rules)} rules. managed_rules ID after populating: {id(managed_rules)}")
@@ -114,7 +115,8 @@ def save_state():
                 "access_app_id": rule.get("access_app_id"), "access_policy_type": rule.get("access_policy_type"),
                 "access_app_config_hash": rule.get("access_app_config_hash"),
                 "access_policy_ui_override": rule.get("access_policy_ui_override", False),
-                "source": rule.get("source", "docker")
+                "source": rule.get("source", "docker"),
+                "path": rule.get("path")
             }
             delete_at_val = rule.get("delete_at")
             if isinstance(delete_at_val, datetime): 

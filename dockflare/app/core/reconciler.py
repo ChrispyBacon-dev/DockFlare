@@ -44,6 +44,7 @@ def _get_hostname_configs_from_container(container_obj):
     
     hostnames_configs = []
 
+    default_path_label = labels.get(f"{config.LABEL_PREFIX}.path") 
     default_access_policy_type = labels.get(f"{config.LABEL_PREFIX}.access.policy")
     default_access_app_name = labels.get(f"{config.LABEL_PREFIX}.access.name")
     default_session_duration = labels.get(f"{config.LABEL_PREFIX}.access.session_duration", "24h")
@@ -60,7 +61,9 @@ def _get_hostname_configs_from_container(container_obj):
 
     if h_main and s_main: 
         hostnames_configs.append({
-            "hostname": h_main, "service": s_main, "zone_name": zn_main, "no_tls_verify": ntv_main,
+            "hostname": h_main, "service": s_main, "zone_name": zn_main, 
+            "path": default_path_label, 
+            "no_tls_verify": ntv_main,
             "container_id": container_id_val, "container_name": container_name_val,
             "access_policy_type": default_access_policy_type,
             "access_app_name": default_access_app_name,
@@ -78,10 +81,12 @@ def _get_hostname_configs_from_container(container_obj):
         if not h_idx: break
         
         s_idx = labels.get(f"{pfx}.service", s_main)
-        if not s_idx: idx += 1; continue
+        if not s_idx: 
+            idx += 1; continue
             
+        path_idx = labels.get(f"{pfx}.path", default_path_label) 
         zn_idx = labels.get(f"{pfx}.zonename", zn_main)
-        ntv_idx_str = labels.get(f"{pfx}.no_tls_verify", ntv_main_str)
+        ntv_idx_str = labels.get(f"{pfx}.no_tls_verify", ntv_main_str) 
         ntv_idx = ntv_idx_str.lower() in ["true", "1", "t", "yes"]
 
         acc_pol_idx = labels.get(f"{pfx}.access.policy", default_access_policy_type)
@@ -95,7 +100,9 @@ def _get_hostname_configs_from_container(container_obj):
         acc_custom_idx = labels.get(f"{pfx}.access.custom_rules", default_custom_rules_str)
         
         hostnames_configs.append({
-            "hostname": h_idx, "service": s_idx, "zone_name": zn_idx, "no_tls_verify": ntv_idx,
+            "hostname": h_idx, "service": s_idx, "zone_name": zn_idx, 
+            "path": path_idx, 
+            "no_tls_verify": ntv_idx,
             "container_id": container_id_val, "container_name": container_name_val,
             "access_policy_type": acc_pol_idx, "access_app_name": acc_name_idx,
             "access_session_duration": acc_sess_idx, "access_app_launcher_visible": acc_vis_idx,

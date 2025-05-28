@@ -21,7 +21,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <title>DockFlare v1.8.0 - Cloudflare Tunnel ingress Manager</title>
+    <title>DockFlare v1.8.4 - Cloudflare Tunnel ingress Manager</title>
  
     <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
     <link rel="preconnect" href="https://rsms.me" crossorigin>
@@ -40,11 +40,10 @@
     </style>
 </head>
 
-<body class="min-h-screen flex flex-col font-sans transition-colors duration-300">
-    <div style="position: fixed; top: 0; left: 0; z-index: 50; pointer-events: none;">
-        <div class="fixed top-6 left-[-38px] sm:top-7 sm:left-[-35px] z-50 transform -rotate-45 bg-indigo-600 text-white text-xs font-semibold tracking-wider text-center py-1 w-36 shadow-md">
-         version 1.8.0
-        </div>
+<body class="min_h-screen flex flex-col font-sans transition-colors duration-300">
+    <div class="fixed bottom-6 right-[-38px] sm:bottom-7 sm:right-[-35px] z-50 transform -rotate-45 bg-indigo-600 text-white text-xs font-semibold tracking-wider text-center py-1 w-36 shadow-md"
+         style="pointer-events: none;">
+        version 1.8.4
     </div>
 
    <header class="sticky top-0 z-40 w-full backdrop-blur-sm shadow-sm bg-base-100/90">
@@ -186,7 +185,6 @@
                 </div>
             </div>
         </section>
-
         <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
              <div class="card-body">
                 <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
@@ -202,19 +200,21 @@
                         <table class="table table-zebra table-sm w-full">
                             <thead>
                                 <tr>
-                                    <th class="p-3 w-1/12">Status</th>
+                                    <th class="p-3 w-auto">Status</th>
                                     <th class="p-3 w-1/4">Hostname</th> 
+                                    <th class="p-3 w-1/6">Path</th>
                                     <th class="p-3 w-1/5">Service Target</th>
-                                    <th class="p-3 w-1/6">Identifier</th>
+                                    <th class="p-3 w-auto">Identifier</th>
                                     <th class="p-3 w-1/5">Access Policy</th>
                                     <th class="p-3 w-1/4">Manage Policy</th>
-                                    <th class="p-3 w-1/6">Expires At</th>
+                                    <th class="p-3 w-auto">Expires At</th>
                                     <th class="p-3 w-auto">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for hostname, details in rules.items()|sort %}
-                                    <td class="p-3 whitespace-nowrap">
+                                    <tr> 
+                                        <td class="p-3 whitespace-nowrap">
                                             {% if details.source == 'manual' %}
                                                 <span class="badge badge-info badge-sm">Manual</span>                                               
                                             {% else %}
@@ -225,13 +225,22 @@
                                             {% endif %}
                                         </td>
                                         <td class="p-3 whitespace-nowrap">
-                                            <a href="https://{{ hostname }}" target="_blank" rel="noopener noreferrer" title="Open https://{{ hostname }}" class="link link-hover link-primary text-sm">
-                                               {{ hostname }}
-                                           </a>
-                                           {% if hostname.startswith('*.') %}
-                                           <span class="badge badge-info badge-xs ml-2">wildcard</span>
-                                           {% endif %}
-                                       </td>
+                                        {% set display_hostname = details.hostname_for_dns if details.hostname_for_dns else hostname.split('|')[0] %}
+                                        {% set display_path = details.path if details.path else (hostname.split('|')[1] if '|' in hostname else None) %}
+                                        <a href="https://{{ display_hostname }}{% if display_path %}{{ display_path }}{% endif %}" target="_blank" rel="noopener noreferrer" title="Open {{ protocol }}://{{ display_hostname }}{% if display_path %}{{ display_path }}{% endif %}" class="link link-hover link-primary text-sm">
+                                           {{ display_hostname }}
+                                       </a>
+                                       {% if display_hostname and display_hostname.startswith('*.') %}
+                                       <span class="badge badge-info badge-xs ml-2">wildcard</span>
+                                       {% endif %}
+                                   </td>
+                                       <td class="p-3 whitespace-nowrap">
+                                        {% if display_path and display_path.strip() %}
+                                            <code class="text-xs opacity-70">{{ display_path }}</code>
+                                        {% else %}
+                                            <span class="text-xs opacity-50 italic">(root)</span>
+                                        {% endif %}
+                                    </td>
                                         <td class="p-3 whitespace-nowrap"><code class="text-xs opacity-80">{{ details.service }}</code></td>
                                         <td class="p-3 whitespace-nowrap">
                                             {% if details.source == 'manual' %}
@@ -294,7 +303,7 @@
                                                 </div>
                                                 {% if details.access_policy_ui_override %}
                                                 <form action="{{ url_for('web.revert_access_policy_to_labels', hostname=hostname) }}" method="POST" 
-                                                      onsubmit="return confirm('Are you sure you want to revert the Access Policy for {{ hostname }}? {% if details.source == "manual" %}The current UI-set policy will be removed, and it will become public or use a TLD policy if one exists.{% else %}The current UI-set policy will be removed, and it will be managed by its container labels.{% endif %}');" 
+                                                      onsubmit="return confirm('Are you sure you want to revert the Access Policy for {{ details.hostname_for_dns }}{% if details.path %}{{ details.path }}{% endif %}? {% if details.source == "manual" %}The current UI-set policy will be removed, and it will become public or use a TLD policy if one exists.{% else %}The current UI-set policy will be removed, and it will be managed by its container labels.{% endif %}');" 
                                                       class="protocol-aware-form inline-block">
                                                     <button type="submit" class="btn btn-xs btn-warning btn-outline" title="Revert to Label/Default Policy">Revert</button>
                                                 </form>
@@ -315,11 +324,11 @@
                                         </td>
                                         <td class="p-3 whitespace-nowrap text-sm" style="min-width: 80px;">
                                             {% if details.source == 'manual' %}
-                                                <form action="{{ url_for('web.ui_delete_manual_rule_route', hostname=hostname) }}" method="post" onsubmit="return confirm('Are you sure you want to delete the manual rule for {{ hostname }}?');" class="protocol-aware-form">
+                                                <form action="{{ url_for('web.ui_delete_manual_rule_route', rule_key_from_url=hostname) }}" method="post" onsubmit="return confirm('Are you sure you want to delete the manual rule for {{ details.hostname_for_dns }}{% if details.path %}{{ details.path }}{% endif %}?');" class="protocol-aware-form">
                                                     <button type="submit" class="btn btn-xs btn-error btn-outline">Delete</button>
                                                 </form>
                                             {% else %}
-                                                <form action="{{ url_for('web.force_delete_rule_route', hostname=hostname) }}" method="post" onsubmit="return confirm('Are you sure you want to force delete the rule and DNS record for {{ hostname }} immediately? This bypasses the grace period.');" class="protocol-aware-form">
+                                                <form action="{{ url_for('web.force_delete_rule_route', hostname=hostname) }}" method="post" onsubmit="return confirm('Are you sure you want to force delete the rule and DNS record for {{ details.hostname_for_dns }}{% if details.path %}{{ details.path }}{% endif %} immediately? This bypasses the grace period.');" class="protocol-aware-form">
                                                     <button type="submit" class="btn btn-xs btn-error btn-outline" {{ 'disabled' if not docker_available else '' }}>Delete</button>
                                                 </form>
                                             {% endif %}
@@ -334,7 +343,6 @@
                 {% endif %}
             </div>
         </section>
-        
         <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
             <div class="card-body">
                 <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">All Cloudflare Tunnels on Account</h2>
@@ -406,7 +414,6 @@
                 {% endif %}
             </div>
         </section>
-
         <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
              <div class="card-body">
                  <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-4">
@@ -418,54 +425,116 @@
             </div>
         </section>
     </main>
-
     <footer class="text-center py-6 mt-auto text-sm opacity-70 border-t border-base-300">
         <div class="container mx-auto px-4 sm:px-6 lg:px-8">
             <p class="mb-1"><a href="https://github.com/ChrispyBacon-dev/DockFlare" target="_blank" rel="noopener noreferrer" class="link link-hover link-primary">DockFlare on GitHub</a></p>
             <p class="mb-1"><a href="https://github.com/ChrispyBacon-dev/DockFlare/wiki" target="_blank" rel="noopener noreferrer" class="link link-hover link-primary">DockFlare Documentation</a></p>
             <p class="mb-1">Enjoying DockFlare? Consider supporting the project!</p>
             <p><a href="https://github.com/sponsors/ChrispyBacon-dev" target="_blank" rel="noopener noreferrer" class="inline-flex items-center link link-hover"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-pink-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" /></svg>Sponsor ChrispyBacon-dev on GitHub</a></p>
-            <p class="mt-2 text-xs opacity-60">DockFlare v1.8.0</p>
+            <p class="mt-2 text-xs opacity-60">DockFlare v1.8.4</p>
         </div>
     </footer>
-    <dialog id="add_manual_rule_modal" class="modal">
-      <div class="modal-box w-11/12 max-w-lg">
+<dialog id="add_manual_rule_modal" class="modal">
+    <div class="modal-box w-11/12 max-w-5xl bg-base-100/70 dark:bg-neutral/70 backdrop-blur-md shadow-xl">
         <form method="dialog">
-          <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
         </form>
-        <h3 class="font-bold text-lg mb-4">Add New Manual Ingress Rule</h3>
-        <form action="{{ url_for('web.ui_add_manual_rule_route') }}" method="POST" class="space-y-4 protocol-aware-form">
+        <h3 class="font-bold text-lg mb-6">Add New Manual Ingress Rule</h3>
+        <form action="{{ url_for('web.ui_add_manual_rule_route') }}" method="POST" class="space-y-6 protocol-aware-form">
             <div>
-                <label class="label" for="manual_hostname"><span class="label-text">Hostname (e.g., router.example.com)</span></label>
-                <input type="text" id="manual_hostname" name="manual_hostname" placeholder="mydevice.yourdomain.com" class="input input-bordered w-full" required />
+                <h4 class="text-md font-semibold mb-2">Public Hostname</h4>
+                <div class="grid grid-cols-1 md:grid-cols-7 gap-4 items-start">
+                    <div class="md:col-span-2">
+                        <label class="label" for="manual_subdomain"><span class="label-text">Subdomain</span></label>
+                        <input type="text" id="manual_subdomain" name="manual_subdomain" placeholder="(optional) subdomain" class="input input-bordered w-full" />
+                    </div>
+                    <div class="md:col-span-3">
+                        <label class="label" for="manual_domain_name"><span class="label-text">Domain (Required)</span></label>
+                        <input type="text" id="manual_domain_name" name="manual_domain_name" placeholder="example.com" class="input input-bordered w-full" required />
+                        <div class="text-xs opacity-60 mt-1">This will be combined with the subdomain to form the full hostname.</div>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="label" for="manual_path_display"><span class="label-text">Path</span></label>
+                        <div class="join w-full">
+                            <span class="join-item btn btn-disabled normal-case pointer-events-none bg-base-200 border-base-300 !min-h-[3rem] !h-[3rem] px-3">/</span>
+                            <input type="text" id="manual_path_display" placeholder="(optional) path" class="input input-bordered join-item w-full" />
+                        </div>
+                        <input type="hidden" id="manual_path" name="manual_path" />
+                         <div class="text-xs opacity-60 mt-1">If blank, rule applies to the root. User types "app", submitted as "/app".</div>
+                    </div>
+                </div>
             </div>
             <div>
-                <label class="label" for="manual_service"><span class="label-text">Service URL (e.g., http://192.168.1.1:80)</span></label>
-                <input type="text" id="manual_service" name="manual_service" placeholder="http://internal-ip:port" class="input input-bordered w-full" required />
+                <h4 class="text-md font-semibold mb-2">Service</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+                    <div>
+                        <label class="label" for="manual_service_type"><span class="label-text">Type (Required)</span></label>
+                        <select name="manual_service_type" id="manual_service_type" class="select select-bordered w-full" required>
+                            <option value="" disabled selected>Select...</option>
+                            <option value="http">HTTP</option>
+                            <option value="https">HTTPS</option>
+                            <option value="tcp">TCP</option>
+                            <option value="ssh">SSH</option>
+                            <option value="rdp">RDP</option>
+                            <option value="http_status">HTTP Status Code</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="label" for="manual_service_address">
+                            <span class="label-text" id="manual_service_address_label">URL (Required for most types)</span>
+                        </label>
+                        <div class="join w-full">
+                            <span id="manual_service_prefix_span" class="join-item btn btn-disabled normal-case pointer-events-none hidden bg-base-200 border-base-300 !min-h-[3rem] !h-[3rem] px-3">://</span>
+                            <input type="text" id="manual_service_address" name="manual_service_address" placeholder="host:port or status code" class="input input-bordered join-item w-full" />
+                        </div>
+                        <div id="manual_service_help" class="text-xs opacity-60 mt-1">e.g., 192.168.1.10:8000 or my-service.local:3000 for HTTP/S/TCP etc.</div>
+                    </div>
+                </div>
             </div>
             <div>
-                <label class="label" for="manual_zone_name"><span class="label-text">Cloudflare Zone Name (Optional if CF_ZONE_ID is set)</span></label>
-                <input type="text" id="manual_zone_name" name="manual_zone_name" placeholder="yourdomain.com" class="input input-bordered w-full" {% if not CF_ZONE_ID_CONFIGURED %}required{% endif %}/>
-                {% if CF_ZONE_ID_CONFIGURED and CF_ZONE_ID %}
-                <div class="text-xs opacity-60 mt-1">If blank, default Zone ID ({{ CF_ZONE_ID[:12] }}...) will be used.</div>
-                {% elif not CF_ZONE_ID_CONFIGURED %}
-                <div class="text-xs text-warning mt-1">CF_ZONE_ID is not set globally, so Zone Name is required here.</div>
-                {% endif %}
+                <h4 class="text-md font-semibold mb-2">Access Policy (Optional)</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+                    <div>
+                        <label class="label" for="manual_access_policy_type"><span class="label-text">Policy Type</span></label>
+                        <select name="manual_access_policy_type" id="manual_access_policy_type" class="select select-bordered w-full policy-type-select">
+                            <option value="none" selected>None (Public - No App)</option>
+                            <option value="bypass">Bypass (Public App)</option>
+                            <option value="authenticate_email">Authenticate by Email</option>
+                            <option value="default_tld">Use Default *.tld Policy</option>
+                        </select>
+                    </div>
+                    <div class="auth-email-field hidden md:col-span-1">
+                        <label class="label" for="manual_auth_email"><span class="label-text">Allowed Email(s) or Domain(s)</span></label>
+                        <input type="text" id="manual_auth_email" name="manual_auth_email" placeholder="user@example.com, @domain.com" class="input input-bordered w-full" />
+                        <div class="text-xs opacity-60 mt-1">Comma-separated. e.g., test@example.com, @another.org</div>
+                    </div>
+                </div>
             </div>
-            <div class="form-control">
-              <label class="label cursor-pointer">
-                <span class="label-text">Disable TLS Verification (No TLS Verify)</span>
-                <input type="checkbox" name="manual_no_tls_verify" id="manual_no_tls_verify" class="checkbox checkbox-sm" />
-              </label>
-              <div class="text-xs opacity-60">Check if the service uses a self-signed certificate or HTTP.</div>
+            <div class="space-y-4 pt-4 border-t border-base-300 mt-6">
+                 <div>
+                    <label class="label" for="manual_zone_name_override"><span class="label-text">Cloudflare Zone Name (Override/Specific)</span></label>
+                    <input type="text" id="manual_zone_name_override" name="manual_zone_name_override" placeholder="yourdomain.com (if different from Domain Name or CF_ZONE_ID)" class="input input-bordered w-full" />
+                    {% if CF_ZONE_ID_CONFIGURED and CF_ZONE_ID %}
+                    <div class="text-xs opacity-60 mt-1">If blank, DockFlare will use "Domain Name" or default CF_ZONE_ID ({{ CF_ZONE_ID[:12] }}...). Target a different Zone if needed.</div>
+                    {% else %}
+                    <div class="text-xs opacity-60 mt-1">If blank, DockFlare will use "Domain Name". Target a specific Zone if "Domain Name" is ambiguous or CF_ZONE_ID is not set.</div>
+                    {% endif %}
+                </div>
+                <div id="manual_no_tls_verify_div" class="form-control">
+                  <label class="label cursor-pointer justify-start gap-2">
+                    <input type="checkbox" name="manual_no_tls_verify" id="manual_no_tls_verify" class="checkbox checkbox-sm" />
+                    <span class="label-text">Disable TLS Verification (No TLS Verify)</span>
+                  </label>
+                  <div class="text-xs opacity-60 ml-8">Check if the origin service uses self-signed SSL or is HTTP. (Only applies to HTTP/HTTPS services).</div>
+                </div>
             </div>
-            <div class="modal-action">
+            <div class="modal-action mt-8">
               <button type="submit" class="btn btn-primary">Add Rule</button>
             </div>
         </form>
-      </div>
-       <form method="dialog" class="modal-backdrop"><button>close</button></form>
-    </dialog>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>

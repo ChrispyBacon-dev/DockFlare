@@ -96,20 +96,45 @@ def update_cloudflare_config():
         logging.warning("Cannot update CF config, tunnel ID missing in state.")
         return False
 
-    with state_lock:
+    with state_lock: 
         logging.info("Constructing desired Cloudflare tunnel configuration from managed rules...")
         desired_dockflare_rules = []
-        for hostname, rule_details in managed_rules.items():
+        for rule_key, rule_details in managed_rules.items():
             if rule_details.get("status") == "active":
-                service = rule_details.get("service")
-                if service:
-                    no_tls_verify = rule_details.get("no_tls_verify", False)
-                    rule_config = {"hostname": hostname, "service": service}
-                    if no_tls_verify:
+                service_str = rule_details.get("service") 
+                
+                actual_hostname_for_cf = rule_details.get("hostname_for_dns")
+                actual_path_for_cf = rule_details.get("path") 
+
+                if not actual_hostname_for_cf: 
+                    parts = rule_key.split('|', 1)
+                    actual_hostname_for_cf = parts[0]
+                    if not actual_path_for_cf and len(parts) > 1 and parts[1]: 
+                         actual_path_for_cf = parts[1] 
+                
+                if service_str and actual_hostname_for_cf: 
+                    no_tls_verify_flag = rule_details.get("no_tls_verify", False) 
+                    rule_config = {"hostname": actual_hostname_for_cf, "service": service_str} 
+                    
+                    if actual_path_for_cf and actual_path_for_cf.strip(): 
+                        processed_path = actual_path_for_cf.strip()
+                        if not processed_path.startswith('/'):
+                            processed_path = '/' + processed_path
+                        if len(processed_path) > 1 and processed_path.endswith('/'):
+                            processed_path = processed_path.rstrip('/')
+                        rule_config["path"] = processed_path
+                    
+                    if no_tls_verify_flag and isinstance(service_str, str) and \
+                       (service_str.lower().startswith("http://") or service_str.lower().startswith("https://")):
                         rule_config["originRequest"] = {"noTLSVerify": True}
+                    elif no_tls_verify_flag:
+                        logging.debug(f"Rule for {rule_key} has no_tls_verify=true, but service '{service_str}' is not HTTP/HTTPS. 'noTLSVerify' will be ignored by Cloudflare for this service type.")
+                    
                     desired_dockflare_rules.append(rule_config)
-                else:
-                    logging.warning(f"Rule {hostname} is active but missing 'service'. Skipping.")
+                elif not service_str:
+                    logging.warning(f"Rule {rule_key} is active but missing 'service'. Skipping.")
+                elif not actual_hostname_for_cf:
+                    logging.warning(f"Rule {rule_key} is active but could not determine a valid hostname for Cloudflare. Skipping.")
         
         try:
             current_api_config_ruleset = cloudflare_api.get_current_cf_config(tunnel_state["id"])
@@ -123,58 +148,87 @@ def update_cloudflare_config():
             return False
             
         current_api_ingress_rules = current_api_config_ruleset.get("ingress", [])
-
         preserved_api_rules = []
-        catch_all_rule_template = {"service": "http_status:404"}
+        catch_all_rule_template = {"service": "http_status:404"} 
 
         for api_rule in current_api_ingress_rules:
             api_hostname = api_rule.get("hostname")
             api_service = api_rule.get("service")
+            api_path = api_rule.get("path") 
 
-            is_catch_all = api_service == catch_all_rule_template["service"] and not api_hostname
-            is_wildcard_not_managed_by_dockflare = api_hostname and '*' in api_hostname and not any(
-                managed_host == api_hostname and managed_rules[managed_host].get("status") == "active"
-                for managed_host in managed_rules
-            )
+            is_catch_all = api_service == catch_all_rule_template["service"] and \
+                           (api_hostname is None or api_hostname == "") and \
+                           (api_path is None or api_path == "")
+
+            is_actively_managed_by_dockflare = False
+            if not is_catch_all : 
+                for df_rule_key, df_rule_details in managed_rules.items():
+                    df_hostname_for_cf = df_rule_details.get("hostname_for_dns")
+                    df_path_for_cf = df_rule_details.get("path")
+                    if not df_hostname_for_cf: 
+                        parts = df_rule_key.split('|',1)
+                        df_hostname_for_cf = parts[0]
+                        if not df_path_for_cf and len(parts) > 1 and parts[1]:
+                            df_path_for_cf = parts[1]
+
+                    if df_rule_details.get("status") == "active" and \
+                       df_hostname_for_cf == api_hostname and \
+                       (df_path_for_cf or None) == (api_path or None): 
+                        is_actively_managed_by_dockflare = True
+                        break
             
-            if is_catch_all or is_wildcard_not_managed_by_dockflare:
+            is_wildcard_not_actively_managed = api_hostname and '*' in api_hostname and not is_actively_managed_by_dockflare
+
+            if is_catch_all or is_wildcard_not_actively_managed:
+                if is_catch_all: logging.debug(f"Preserving API catch-all rule: {api_rule}")
+                if is_wildcard_not_actively_managed: logging.debug(f"Preserving API wildcard rule (not actively managed by DockFlare): {api_rule}")
                 preserved_api_rules.append(api_rule)
                 continue
             
-            is_managed_by_dockflare = False
-            for df_rule_hostname, df_rule_details in managed_rules.items():
-                if df_rule_hostname == api_hostname and df_rule_details.get("status") == "active":
-
-                    is_managed_by_dockflare = True
-                    break
-            
-            if not is_managed_by_dockflare and not is_catch_all and not is_wildcard_not_managed_by_dockflare:
-                 logging.info(f"Non-DockFlare, non-wildcard, non-catch-all rule found in API: {api_rule}. It will be removed by authoritative update.")
-
+            if not is_actively_managed_by_dockflare:
+                 logging.info(f"Non-DockFlare managed rule found in API (hostname: {api_hostname}, path: {api_path}, service: {api_service}). It will be removed by authoritative update.")
 
         final_ingress_rules_to_put = list(desired_dockflare_rules) 
-        
-
         for p_rule in preserved_api_rules:
             is_duplicate = False
             p_hostname = p_rule.get("hostname")
             p_service = p_rule.get("service")
+            p_path = p_rule.get("path") 
             for f_rule in final_ingress_rules_to_put:
-                if f_rule.get("hostname") == p_hostname and f_rule.get("service") == p_service: 
+                if f_rule.get("hostname") == p_hostname and \
+                   f_rule.get("service") == p_service and \
+                   (f_rule.get("path") or None) == (p_path or None):
                     is_duplicate = True
                     break
             if not is_duplicate:
                 final_ingress_rules_to_put.append(p_rule)
 
-        has_catch_all = any(r.get("service") == catch_all_rule_template["service"] and not r.get("hostname") for r in final_ingress_rules_to_put)
-        if not has_catch_all:
-            final_ingress_rules_to_put.append(catch_all_rule_template)
-            logging.info("Adding default catch-all rule as none was found/preserved.")
+        has_explicit_catch_all_in_final_list = any(
+            r.get("service") == catch_all_rule_template["service"] and \
+            (r.get("hostname") is None or r.get("hostname") == "") and \
+            (r.get("path") is None or r.get("path") == "")
+            for r in final_ingress_rules_to_put
+        )
+        if not has_explicit_catch_all_in_final_list:
+            final_ingress_rules_to_put.append(catch_all_rule_template.copy()) 
+            logging.info("Adding default catch-all rule as none was found/preserved from API or generated by DockFlare rules.")
 
         def rule_to_comparable_dict(rule):          
-            comp_dict = {"hostname": rule.get("hostname"), "service": rule.get("service")}
-            if rule.get("originRequest", {}).get("noTLSVerify"):
-                comp_dict["noTLSVerify"] = True
+            comp_dict = {} 
+            if rule.get("hostname") is not None: 
+                 comp_dict["hostname"] = rule.get("hostname")
+            comp_dict["service"] = rule.get("service") 
+            path_val = rule.get("path")
+            if path_val and path_val.strip():
+                processed_path_comp = path_val.strip()
+                if not processed_path_comp.startswith('/'):
+                    processed_path_comp = '/' + processed_path_comp
+                if len(processed_path_comp) > 1 and processed_path_comp.endswith('/'):
+                    processed_path_comp = processed_path_comp.rstrip('/')
+                comp_dict["path"] = processed_path_comp
+            origin_request = rule.get("originRequest")
+            if isinstance(origin_request, dict) and origin_request.get("noTLSVerify") is True:
+                comp_dict["noTLSVerify"] = True 
             return comp_dict
 
         current_api_comparable_set = {json.dumps(rule_to_comparable_dict(r), sort_keys=True) for r in current_api_ingress_rules}
@@ -184,20 +238,49 @@ def update_cloudflare_config():
         if current_api_comparable_set != final_put_comparable_set:
             logging.info("Ingress rule configuration content differs from Cloudflare. Update required.")
             needs_api_update = True
-        else:
-            pass    
-        if not needs_api_update and len(current_api_ingress_rules) == len(final_ingress_rules_to_put):
+        elif len(current_api_ingress_rules) != len(final_ingress_rules_to_put): 
+            logging.info("Number of ingress rules differs from Cloudflare. Update required.")
+            needs_api_update = True
+        
+        if not needs_api_update:
+            logging.info("Cloudflare configuration content and rule count match desired state. No API update deemed necessary.")
+            return True 
 
-            logging.info("Cloudflare configuration content matches desired state. No API update needed.")
-            return True
+        logging.info(f"--- FINAL RULES TO PUT (PRE-SORT, {len(final_ingress_rules_to_put)} total) ---")
+        for i, rule_to_log in enumerate(final_ingress_rules_to_put):
+            logging.info(f"Pre-sort Rule {i}: {json.dumps(rule_to_log)}")
+        
+        actual_catch_all_rule = None
+        rules_without_catch_all = []
+        for r_to_sort in final_ingress_rules_to_put: 
+            if r_to_sort.get("service") == catch_all_rule_template["service"] and \
+               (r_to_sort.get("hostname") is None or r_to_sort.get("hostname") == "") and \
+               (r_to_sort.get("path") is None or r_to_sort.get("path") == ""):
+                if actual_catch_all_rule is None: 
+                    actual_catch_all_rule = r_to_sort
+                else:
+                    logging.warning(f"Multiple catch-all like rules found: {r_to_sort} and {actual_catch_all_rule}. Using first.")
+            else:
+                rules_without_catch_all.append(r_to_sort)
+        
+        rules_without_catch_all.sort(key=lambda r_sort_key: (
+            r_sort_key.get("hostname") or "\uffff", 
+            0 if not r_sort_key.get("path") else 1, 
+            -len(r_sort_key.get("path") or ""), 
+            r_sort_key.get("path") or "" 
+        ))
 
-        logging.info(f"Updating Cloudflare tunnel config. Rules to PUT ({len(final_ingress_rules_to_put)} total):")
-        for r_idx, r_val in enumerate(final_ingress_rules_to_put):
-            logging.debug(f"  Rule {r_idx+1}: {json.dumps(r_val)}")
-    
-    if needs_api_update or not (len(current_api_ingress_rules) == len(final_ingress_rules_to_put) and current_api_comparable_set == final_put_comparable_set):
+        final_sorted_rules_for_put = rules_without_catch_all
+        if actual_catch_all_rule:
+            final_sorted_rules_for_put.append(actual_catch_all_rule) 
+
+        logging.info(f"--- FINAL RULES TO PUT (SORTED, {len(final_sorted_rules_for_put)} total) ---")
+        for i, rule_to_log in enumerate(final_sorted_rules_for_put):
+            logging.info(f"Sorted Rule {i}: {json.dumps(rule_to_log)}")
+        
+    if needs_api_update:
         endpoint = f"/accounts/{config.CF_ACCOUNT_ID}/cfd_tunnel/{tunnel_state['id']}/configurations"
-        config_payload = {"config": {"ingress": final_ingress_rules_to_put}}
+        config_payload = {"config": {"ingress": final_sorted_rules_for_put}} 
         
         try:
             cloudflare_api.cf_api_request("PUT", endpoint, json_data=config_payload) 
@@ -207,6 +290,7 @@ def update_cloudflare_config():
             logging.error(f"Failed to update CF tunnel config: {e}", exc_info=True)
             tunnel_state["error"] = f"Failed update tunnel config: {e}" 
             return False
+            
     return True
 
 def get_cloudflared_container():
