@@ -99,17 +99,25 @@ def update_cloudflare_config():
     with state_lock: 
         logging.info("Constructing desired Cloudflare tunnel configuration from managed rules...")
         desired_dockflare_rules = []
-        for hostname, rule_details in managed_rules.items(): 
+        for rule_key, rule_details in managed_rules.items():
             if rule_details.get("status") == "active":
                 service_str = rule_details.get("service") 
-                path = rule_details.get("path") 
                 
-                if service_str:
+                actual_hostname_for_cf = rule_details.get("hostname_for_dns")
+                actual_path_for_cf = rule_details.get("path") 
+
+                if not actual_hostname_for_cf: 
+                    parts = rule_key.split('|', 1)
+                    actual_hostname_for_cf = parts[0]
+                    if not actual_path_for_cf and len(parts) > 1 and parts[1]: 
+                         actual_path_for_cf = parts[1] 
+                
+                if service_str and actual_hostname_for_cf: 
                     no_tls_verify_flag = rule_details.get("no_tls_verify", False) 
-                    rule_config = {"hostname": hostname, "service": service_str} 
+                    rule_config = {"hostname": actual_hostname_for_cf, "service": service_str} 
                     
-                    if path and path.strip(): 
-                        processed_path = path.strip()
+                    if actual_path_for_cf and actual_path_for_cf.strip(): 
+                        processed_path = actual_path_for_cf.strip()
                         if not processed_path.startswith('/'):
                             processed_path = '/' + processed_path
                         if len(processed_path) > 1 and processed_path.endswith('/'):
@@ -120,11 +128,13 @@ def update_cloudflare_config():
                        (service_str.lower().startswith("http://") or service_str.lower().startswith("https://")):
                         rule_config["originRequest"] = {"noTLSVerify": True}
                     elif no_tls_verify_flag:
-                        logging.debug(f"Rule for {hostname} has no_tls_verify=true, but service '{service_str}' is not HTTP/HTTPS. 'noTLSVerify' will be ignored by Cloudflare for this service type.")
+                        logging.debug(f"Rule for {rule_key} has no_tls_verify=true, but service '{service_str}' is not HTTP/HTTPS. 'noTLSVerify' will be ignored by Cloudflare for this service type.")
                     
                     desired_dockflare_rules.append(rule_config)
-                else:
-                    logging.warning(f"Rule {hostname} is active but missing 'service'. Skipping.")
+                elif not service_str:
+                    logging.warning(f"Rule {rule_key} is active but missing 'service'. Skipping.")
+                elif not actual_hostname_for_cf:
+                    logging.warning(f"Rule {rule_key} is active but could not determine a valid hostname for Cloudflare. Skipping.")
         
         try:
             current_api_config_ruleset = cloudflare_api.get_current_cf_config(tunnel_state["id"])
@@ -138,7 +148,6 @@ def update_cloudflare_config():
             return False
             
         current_api_ingress_rules = current_api_config_ruleset.get("ingress", [])
-
         preserved_api_rules = []
         catch_all_rule_template = {"service": "http_status:404"} 
 
@@ -153,10 +162,18 @@ def update_cloudflare_config():
 
             is_actively_managed_by_dockflare = False
             if not is_catch_all : 
-                for df_hostname, df_rule_details in managed_rules.items():
+                for df_rule_key, df_rule_details in managed_rules.items():
+                    df_hostname_for_cf = df_rule_details.get("hostname_for_dns")
+                    df_path_for_cf = df_rule_details.get("path")
+                    if not df_hostname_for_cf: 
+                        parts = df_rule_key.split('|',1)
+                        df_hostname_for_cf = parts[0]
+                        if not df_path_for_cf and len(parts) > 1 and parts[1]:
+                            df_path_for_cf = parts[1]
+
                     if df_rule_details.get("status") == "active" and \
-                       df_hostname == api_hostname and \
-                       (df_rule_details.get("path") or None) == (api_path or None): 
+                       df_hostname_for_cf == api_hostname and \
+                       (df_path_for_cf or None) == (api_path or None): 
                         is_actively_managed_by_dockflare = True
                         break
             
@@ -172,13 +189,11 @@ def update_cloudflare_config():
                  logging.info(f"Non-DockFlare managed rule found in API (hostname: {api_hostname}, path: {api_path}, service: {api_service}). It will be removed by authoritative update.")
 
         final_ingress_rules_to_put = list(desired_dockflare_rules) 
-        
         for p_rule in preserved_api_rules:
             is_duplicate = False
             p_hostname = p_rule.get("hostname")
             p_service = p_rule.get("service")
             p_path = p_rule.get("path") 
-
             for f_rule in final_ingress_rules_to_put:
                 if f_rule.get("hostname") == p_hostname and \
                    f_rule.get("service") == p_service and \
@@ -202,9 +217,7 @@ def update_cloudflare_config():
             comp_dict = {} 
             if rule.get("hostname") is not None: 
                  comp_dict["hostname"] = rule.get("hostname")
-            
             comp_dict["service"] = rule.get("service") 
-
             path_val = rule.get("path")
             if path_val and path_val.strip():
                 processed_path_comp = path_val.strip()
@@ -213,7 +226,6 @@ def update_cloudflare_config():
                 if len(processed_path_comp) > 1 and processed_path_comp.endswith('/'):
                     processed_path_comp = processed_path_comp.rstrip('/')
                 comp_dict["path"] = processed_path_comp
-            
             origin_request = rule.get("originRequest")
             if isinstance(origin_request, dict) and origin_request.get("noTLSVerify") is True:
                 comp_dict["noTLSVerify"] = True 
@@ -279,7 +291,7 @@ def update_cloudflare_config():
             tunnel_state["error"] = f"Failed update tunnel config: {e}" 
             return False
             
-    return True 
+    return True
 
 def get_cloudflared_container():
     if not docker_client:

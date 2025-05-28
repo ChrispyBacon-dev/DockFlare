@@ -226,20 +226,22 @@
                                             {% endif %}
                                         </td>
                                         <td class="p-3 whitespace-nowrap">
-                                            <a href="{{ protocol }}://{{ details.hostname_for_dns }}{% if details.path %}{{ details.path }}{% endif %}" target="_blank" rel="noopener noreferrer" title="Open {{ protocol }}://{{ details.hostname_for_dns }}{% if details.path %}{{ details.path }}{% endif %}" class="link link-hover link-primary text-sm">
-                                               {{ details.hostname_for_dns }}
-                                           </a>
-                                           {% if details.hostname_for_dns and details.hostname_for_dns.startswith('*.') %}
-                                           <span class="badge badge-info badge-xs ml-2">wildcard</span>
-                                           {% endif %}
-                                       </td>
+                                        {% set display_hostname = details.hostname_for_dns if details.hostname_for_dns else hostname.split('|')[0] %}
+                                        {% set display_path = details.path if details.path else (hostname.split('|')[1] if '|' in hostname else None) %}
+                                        <a href="{{ protocol }}://{{ display_hostname }}{% if display_path %}{{ display_path }}{% endif %}" target="_blank" rel="noopener noreferrer" title="Open {{ protocol }}://{{ display_hostname }}{% if display_path %}{{ display_path }}{% endif %}" class="link link-hover link-primary text-sm">
+                                           {{ display_hostname }}
+                                       </a>
+                                       {% if display_hostname and display_hostname.startswith('*.') %}
+                                       <span class="badge badge-info badge-xs ml-2">wildcard</span>
+                                       {% endif %}
+                                   </td>
                                        <td class="p-3 whitespace-nowrap">
-                                            {% if details.path and details.path.strip() %}
-                                                <code class="text-xs opacity-70">{{ details.path }}</code>
-                                            {% else %}
-                                                <span class="text-xs opacity-50 italic">(root)</span>
-                                            {% endif %}
-                                        </td>
+                                        {% if display_path and display_path.strip() %}
+                                            <code class="text-xs opacity-70">{{ display_path }}</code>
+                                        {% else %}
+                                            <span class="text-xs opacity-50 italic">(root)</span>
+                                        {% endif %}
+                                    </td>
                                         <td class="p-3 whitespace-nowrap"><code class="text-xs opacity-80">{{ details.service }}</code></td>
                                         <td class="p-3 whitespace-nowrap">
                                             {% if details.source == 'manual' %}
