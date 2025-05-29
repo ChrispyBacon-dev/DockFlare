@@ -2,7 +2,7 @@
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/ChrispyBacon-dev/baconflip)
 [![OS](https://img.shields.io/badge/os-linux%20%7C%20windows%20%7C%20macos-brightgreen)]()
 [![CPU Architectures](https://img.shields.io/badge/CPU-x86_64%20%7C%20arm64-brightgreen)](https://en.wikipedia.org/wiki/Central_processing_unit)
-[![Generic badge](https://img.shields.io/badge/Release-1.8.0-blue.svg)](https://github.com/ChrispyBacon-dev/DockFlare/releases/tag/v1.8.0)
+[![Generic badge](https://img.shields.io/badge/Release-1.8.5-blue.svg)](https://github.com/ChrispyBacon-dev/DockFlare/releases/tag/v1.8.5)
 [![Docker Pulls](https://img.shields.io/docker/pulls/alplat/dockflare)](https://hub.docker.com/r/alplat/dockflare)
 [![made-with-python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/)
 [![GitHub issues](https://img.shields.io/github/issues/ChrispyBacon-dev/dockflare)](https://github.com/ChrispyBacon-dev/dockflare/issues)
@@ -21,7 +21,9 @@ DockFlare simplifies Cloudflare Tunnel and Zero Trust Access policy management b
 -   **Unified Cloudflare Tunnel Management**:
     -   Automates Tunnel creation/use & `cloudflared` agent lifecycle (optional internal deployment or external).
 -   **Dynamic Ingress via Docker Labels**:
-    -   Auto-configures Tunnel ingress & DNS from Docker labels (e.g., `cloudflare.tunnel.hostname`, `service`) by monitoring container events.
+    -   Auto-configures Tunnel ingress & DNS from Docker labels (e.g., `hostname`, `service`, `path`).
+    -   Supports various service types (`http`, `https`, `tcp`, `ssh`, `rdp`, `http_status`).
+    -   Controls `no_tls_verify` and `originServerName` (SNI) for origin connections.
 -   **Manual Ingress Rule Management**:
     -   Add & manage public hostnames for non-Docker services (e.g., router, NAS) via Web UI; DockFlare handles Tunnel rules & DNS.
 -   **Versatile Access Policy Control (Docker & Manual)**:
@@ -173,21 +175,28 @@ services:
     image: nginx:latest
     labels:
       # Enable DockFlare management for this container
-      - "cloudflare.tunnel.enable=true" # Use quotes for boolean-like strings
+      - "cloudflare.tunnel.enable=true" 
       
       # The public hostname to expose
       - "cloudflare.tunnel.hostname=my-service.example.com"
       
       # The internal service address (protocol://container_name_or_ip:port)
-      - "cloudflare.tunnel.service=http://my-service:80" # Or http://<container_name>:<port>
+      # Service type (http, https, tcp, ssh, rdp, http_status) is inferred from the prefix.
+      - "cloudflare.tunnel.service=http://my-service:80" 
+      
+      # Optional: Specify a URL path. Only requests to hostname/path will match.
+      # - "cloudflare.tunnel.path=/app"
       
       # Optional: Specify a different Cloudflare Zone for this hostname
       # - "cloudflare.tunnel.zonename=another.example.com"
       
       # Optional: Disable TLS verification if your internal service uses HTTP or a self-signed cert
       # - "cloudflare.tunnel.no_tls_verify=true"
+
+      # Optional: Specify Origin Server Name (SNI) for TLS connection to origin
+      # - "cloudflare.tunnel.originsrvname=internal.service.local" 
     networks:
-      - cloudflare-net # Ensure it's on a network DockFlare can reach or its own agent can reach
+      - cloudflare-net 
 ```
 
 #### 2. Indexed Labels (Multiple Hostnames/Services from One Container)
@@ -204,15 +213,20 @@ services:
       # First hostname configuration
       - "cloudflare.tunnel.0.hostname=app1.example.com"
       - "cloudflare.tunnel.0.service=http://multi-host-app:8080" # Points to port 8080
-      # - "cloudflare.tunnel.0.access.policy=authenticate" # Specific policy for this hostname
+      - "cloudflare.tunnel.0.path=/frontend" # Path for this specific hostname/service
+      # - "cloudflare.tunnel.0.originsrvname=app1-sni.internal" 
+      # - "cloudflare.tunnel.0.access.policy=authenticate" 
       
       # Second hostname configuration
       - "cloudflare.tunnel.1.hostname=api.example.com"
-      - "cloudflare.tunnel.1.service=http://multi-host-app:3000" # Points to port 3000
-      # - "cloudflare.tunnel.1.zonename=otherexample.com" # Can be in a different zone
+      - "cloudflare.tunnel.1.service=tcp://multi-host-app:3000" # Example of TCP service
+      # - "cloudflare.tunnel.1.path=/rpc" # Path might be less common for TCP but possible
+      # - "cloudflare.tunnel.1.zonename=otherexample.com" 
+      # - "cloudflare.tunnel.1.no_tls_verify=true" # Not typical for TCP but shown as an option
+      # - "cloudflare.tunnel.1.originsrvname=api-sni.internal"
       
-      # Default service if an indexed service is not specified (less common with indexed setups)
-      # - "cloudflare.tunnel.service=http://multi-host-app:80" 
+      # Note: Default service/path/originsrvname can also be set without index,
+      # and indexed entries will fall back to them if not specified.
     networks:
       - cloudflare-net
 ```
