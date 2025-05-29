@@ -1,4 +1,4 @@
-// app/static/js/main.js -> don't forget to review the countdown function
+// app/static/js/main.js
 
 const maxLogLines = 250;
 let initialConnectMessageCleared = false;
@@ -307,21 +307,79 @@ document.addEventListener('DOMContentLoaded', function() {
     fixResourcesAndBase(); 
     themeManager.initialize();
     const manualServiceTypeSelect = document.getElementById('manual_service_type');
-    const noTlsVerifyDiv = document.getElementById('manual_no_tls_verify_div'); 
+    const noTlsVerifyDiv = document.getElementById('manual_no_tls_verify_div');
+    const originServerNameDiv = document.getElementById('manual_origin_server_name_div'); 
     const manualPathDisplay = document.getElementById('manual_path_display'); 
     const manualPathHidden = document.getElementById('manual_path');         
 
-    if (manualServiceTypeSelect && noTlsVerifyDiv) {
-        function toggleNoTlsVerifyVisibility() {
-            const selectedType = manualServiceTypeSelect.value.toLowerCase();
-            if (selectedType === 'http' || selectedType === 'https') {
+    const manualServiceAddressInput = document.getElementById('manual_service_address');
+    const manualServiceAddressLabel = document.getElementById('manual_service_address_label');
+    const manualServiceHelpText = document.getElementById('manual_service_help');
+    const manualServicePrefixSpan = document.getElementById('manual_service_prefix_span');
+
+    function updateManualRuleServiceFields() {
+        const selectedType = manualServiceTypeSelect.value.toLowerCase();
+        let showNoTlsVerify = false;
+        let showOriginServerName = false;
+
+        if(manualServicePrefixSpan) manualServicePrefixSpan.classList.add('hidden');
+        if(manualServiceAddressInput) manualServiceAddressInput.placeholder = 'host:port or status code';
+        if(manualServiceAddressLabel) manualServiceAddressLabel.textContent = 'URL (Required for most types)';
+        if(manualServiceHelpText) manualServiceHelpText.textContent = 'e.g., 192.168.1.10:8000 or my-service.local:3000 for HTTP/S/TCP etc.';
+
+
+        if (selectedType === 'http' || selectedType === 'https') {
+            if(manualServicePrefixSpan) {
+                manualServicePrefixSpan.textContent = selectedType + '://';
+                manualServicePrefixSpan.classList.remove('hidden');
+            }
+            if(manualServiceAddressInput) manualServiceAddressInput.placeholder = 'host:port or resolvable hostname';
+            if(manualServiceAddressLabel) manualServiceAddressLabel.textContent = 'Origin URL (Required)';
+            if(manualServiceHelpText) manualServiceHelpText.textContent = 'e.g., 192.168.1.10:8000 or my-service.local:3000';
+            showNoTlsVerify = true;
+            showOriginServerName = true;
+        } else if (selectedType === 'tcp' || selectedType === 'ssh' || selectedType === 'rdp') {
+            if(manualServicePrefixSpan) {
+                manualServicePrefixSpan.textContent = selectedType + '://';
+                manualServicePrefixSpan.classList.remove('hidden');
+            }
+            if(manualServiceAddressInput) manualServiceAddressInput.placeholder = 'host:port';
+            if(manualServiceAddressLabel) manualServiceAddressLabel.textContent = `Origin Address for ${selectedType.toUpperCase()} (host:port)`;
+            if(manualServiceHelpText) manualServiceHelpText.textContent = `e.g., my-internal-server:22`;
+            showNoTlsVerify = false; 
+            showOriginServerName = false;
+        } else if (selectedType === 'http_status') {
+            if(manualServiceAddressInput) manualServiceAddressInput.placeholder = 'e.g., 404';
+            if(manualServiceAddressLabel) manualServiceAddressLabel.textContent = 'HTTP Status Code (e.g., 200, 404, 503)';
+            if(manualServiceHelpText) manualServiceHelpText.textContent = 'Enter a valid HTTP status code (100-599).';
+            showNoTlsVerify = false;
+            showOriginServerName = false;
+        }
+
+        if (noTlsVerifyDiv) {
+            if (showNoTlsVerify) {
                 noTlsVerifyDiv.style.display = ''; 
             } else {
                 noTlsVerifyDiv.style.display = 'none'; 
+                const noTlsVerifyCheckbox = document.getElementById('manual_no_tls_verify');
+                if (noTlsVerifyCheckbox) noTlsVerifyCheckbox.checked = false;
             }
         }
-        manualServiceTypeSelect.addEventListener('change', toggleNoTlsVerifyVisibility);
-        toggleNoTlsVerifyVisibility(); 
+
+        if (originServerNameDiv) {
+            if (showOriginServerName) {
+                originServerNameDiv.style.display = '';
+            } else {
+                originServerNameDiv.style.display = 'none';
+                const originServerNameInput = document.getElementById('manual_origin_server_name');
+                if (originServerNameInput) originServerNameInput.value = '';
+            }
+        }
+    }
+
+    if (manualServiceTypeSelect) { 
+        manualServiceTypeSelect.addEventListener('change', updateManualRuleServiceFields);
+        updateManualRuleServiceFields(); // Initial call
     }
     if (manualPathDisplay && manualPathHidden) {
         manualPathDisplay.addEventListener('input', function () {
@@ -370,7 +428,6 @@ document.addEventListener('DOMContentLoaded', function() {
     updateReconciliationStatus();
     setInterval(updateReconciliationStatus, 2000);
 
-    // Policy type select logic
     function toggleAuthEmailField(policyType, selectElement) {
         const form = selectElement.closest('form');
         if (!form) return;
@@ -392,7 +449,6 @@ document.addEventListener('DOMContentLoaded', function() {
         toggleAuthEmailField(select.value, select); 
     });        
     
-    // Tunnel DNS toggle logic
     document.querySelectorAll('.tunnel-dns-toggle').forEach(button => {
         button.addEventListener('click', async function() {
             const tunnelId = this.dataset.tunnelId;

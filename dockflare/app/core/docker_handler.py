@@ -110,6 +110,7 @@ def process_container_start(container_obj):
         hostnames_to_process = []
         
         default_path_label = labels.get(f"{config.LABEL_PREFIX}.path") 
+        default_originsrvname_label = labels.get(f"{config.LABEL_PREFIX}.originsrvname")
         default_access_policy_type_label = labels.get(f"{config.LABEL_PREFIX}.access.policy")
         default_access_app_name_label = labels.get(f"{config.LABEL_PREFIX}.access.name")
         default_access_session_duration_label = labels.get(f"{config.LABEL_PREFIX}.access.session_duration", "24h")
@@ -129,6 +130,7 @@ def process_container_start(container_obj):
                     "hostname": hostname_label, "service": service_label, "zone_name": zone_name_label,
                     "path": default_path_label, 
                     "no_tls_verify": no_tls_verify_label,
+                    "origin_server_name": default_originsrvname_label.strip() if default_originsrvname_label else None,
                     "access_policy_type": default_access_policy_type_label, 
                     "access_app_name": default_access_app_name_label,
                     "access_session_duration": default_access_session_duration_label, 
@@ -153,6 +155,8 @@ def process_container_start(container_obj):
             zone_name_indexed = labels.get(f"{prefix}.zonename", zone_name_label)
             no_tls_verify_indexed_val = labels.get(f"{prefix}.no_tls_verify", str(no_tls_verify_label).lower())
             no_tls_verify_indexed = no_tls_verify_indexed_val.lower() in ["true", "1", "t", "yes"]
+            originsrvname_indexed_val = labels.get(f"{prefix}.originsrvname", default_originsrvname_label)
+            
             access_policy_type_indexed = labels.get(f"{prefix}.access.policy", default_access_policy_type_label)
             access_app_name_indexed = labels.get(f"{prefix}.access.name", default_access_app_name_label)
             access_session_duration_indexed = labels.get(f"{prefix}.access.session_duration", default_access_session_duration_label)
@@ -168,6 +172,7 @@ def process_container_start(container_obj):
                     "hostname": hostname_indexed, "service": service_indexed, "zone_name": zone_name_indexed, 
                     "path": path_indexed, 
                     "no_tls_verify": no_tls_verify_indexed,
+                    "origin_server_name": originsrvname_indexed_val.strip() if originsrvname_indexed_val else None,
                     "access_policy_type": access_policy_type_indexed, 
                     "access_app_name": access_app_name_indexed,
                     "access_session_duration": access_session_duration_indexed, 
@@ -193,6 +198,8 @@ def process_container_start(container_obj):
             path_from_item = config_item.get("path") 
             zone_name_from_item = config_item["zone_name"] 
             no_tls_verify_from_item = config_item["no_tls_verify"] 
+            origin_server_name_from_item = config_item.get("origin_server_name")
+
             target_zone_id = None
             if zone_name_from_item:
                 target_zone_id = get_zone_id_from_name(zone_name_from_item) 
@@ -205,7 +212,7 @@ def process_container_start(container_obj):
                 logging.error(f"DOCKER_HANDLER: No Zone ID for {hostname}. Skipping.")
                 continue
             
-            logging.debug(f"DOCKER_HANDLER_LOOP_ITEM: For {hostname}, Path: {path_from_item}. Before lock.")
+            logging.debug(f"DOCKER_HANDLER_LOOP_ITEM: For {hostname}, Path: {path_from_item}, SNI: {origin_server_name_from_item}. Before lock.")
             with state_lock: 
                 existing_rule = managed_rules.get(hostname) 
                 
@@ -224,6 +231,7 @@ def process_container_start(container_obj):
                     if existing_rule.get("container_id") != container_id_val: existing_rule["container_id"] = container_id_val 
                     if existing_rule.get("zone_id") != target_zone_id: existing_rule["zone_id"] = target_zone_id; rule_data_changed = True
                     if existing_rule.get("no_tls_verify") != no_tls_verify_from_item: existing_rule["no_tls_verify"] = no_tls_verify_from_item; rule_data_changed = True
+                    if existing_rule.get("origin_server_name") != origin_server_name_from_item: existing_rule["origin_server_name"] = origin_server_name_from_item; rule_data_changed = True
                     
                     existing_rule["source"] = "docker"
 
@@ -244,8 +252,9 @@ def process_container_start(container_obj):
                     managed_rules[hostname] = {
                         "service": service, "container_id": container_id_val,
                         "status": "active", "delete_at": None, "zone_id": target_zone_id,
-                        "path": path_from_item, # <-- ADDED: Store path
+                        "path": path_from_item, 
                         "no_tls_verify": no_tls_verify_from_item,
+                        "origin_server_name": origin_server_name_from_item,
                         "access_app_id": None, "access_policy_type": None, 
                         "access_app_config_hash": None, "access_policy_ui_override": False,
                         "source": "docker"

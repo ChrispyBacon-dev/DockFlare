@@ -45,6 +45,7 @@ def _get_hostname_configs_from_container(container_obj):
     hostnames_configs = []
 
     default_path_label = labels.get(f"{config.LABEL_PREFIX}.path") 
+    default_originsrvname_label = labels.get(f"{config.LABEL_PREFIX}.originsrvname")
     default_access_policy_type = labels.get(f"{config.LABEL_PREFIX}.access.policy")
     default_access_app_name = labels.get(f"{config.LABEL_PREFIX}.access.name")
     default_session_duration = labels.get(f"{config.LABEL_PREFIX}.access.session_duration", "24h")
@@ -64,6 +65,7 @@ def _get_hostname_configs_from_container(container_obj):
             "hostname": h_main, "service": s_main, "zone_name": zn_main, 
             "path": default_path_label, 
             "no_tls_verify": ntv_main,
+            "origin_server_name": default_originsrvname_label.strip() if default_originsrvname_label else None,
             "container_id": container_id_val, "container_name": container_name_val,
             "access_policy_type": default_access_policy_type,
             "access_app_name": default_access_app_name,
@@ -88,6 +90,7 @@ def _get_hostname_configs_from_container(container_obj):
         zn_idx = labels.get(f"{pfx}.zonename", zn_main)
         ntv_idx_str = labels.get(f"{pfx}.no_tls_verify", ntv_main_str) 
         ntv_idx = ntv_idx_str.lower() in ["true", "1", "t", "yes"]
+        osn_idx_val = labels.get(f"{pfx}.originsrvname", default_originsrvname_label)
 
         acc_pol_idx = labels.get(f"{pfx}.access.policy", default_access_policy_type)
         acc_name_idx = labels.get(f"{pfx}.access.name", default_access_app_name)
@@ -103,6 +106,7 @@ def _get_hostname_configs_from_container(container_obj):
             "hostname": h_idx, "service": s_idx, "zone_name": zn_idx, 
             "path": path_idx, 
             "no_tls_verify": ntv_idx,
+            "origin_server_name": osn_idx_val.strip() if osn_idx_val else None,
             "container_id": container_id_val, "container_name": container_name_val,
             "access_policy_type": acc_pol_idx, "access_app_name": acc_name_idx,
             "access_session_duration": acc_sess_idx, "access_app_launcher_visible": acc_vis_idx,

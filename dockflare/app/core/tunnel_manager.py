@@ -114,6 +114,7 @@ def update_cloudflare_config():
                 
                 if service_str and actual_hostname_for_cf: 
                     no_tls_verify_flag = rule_details.get("no_tls_verify", False) 
+                    origin_server_name_val = rule_details.get("origin_server_name")
                     rule_config = {"hostname": actual_hostname_for_cf, "service": service_str} 
                     
                     if actual_path_for_cf and actual_path_for_cf.strip(): 
@@ -124,11 +125,21 @@ def update_cloudflare_config():
                             processed_path = processed_path.rstrip('/')
                         rule_config["path"] = processed_path
                     
+                    origin_request_settings = {}
                     if no_tls_verify_flag and isinstance(service_str, str) and \
                        (service_str.lower().startswith("http://") or service_str.lower().startswith("https://")):
-                        rule_config["originRequest"] = {"noTLSVerify": True}
+                        origin_request_settings["noTLSVerify"] = True
                     elif no_tls_verify_flag:
                         logging.debug(f"Rule for {rule_key} has no_tls_verify=true, but service '{service_str}' is not HTTP/HTTPS. 'noTLSVerify' will be ignored by Cloudflare for this service type.")
+
+                    if origin_server_name_val and isinstance(service_str, str) and \
+                       (service_str.lower().startswith("http://") or service_str.lower().startswith("https://")):
+                        origin_request_settings["originServerName"] = origin_server_name_val
+                    elif origin_server_name_val:
+                        logging.debug(f"Rule for {rule_key} has origin_server_name='{origin_server_name_val}', but service '{service_str}' is not HTTP/HTTPS. 'originServerName' might be ignored by Cloudflare for this service type or cause issues.")
+
+                    if origin_request_settings:
+                        rule_config["originRequest"] = origin_request_settings
                     
                     desired_dockflare_rules.append(rule_config)
                 elif not service_str:
@@ -226,9 +237,13 @@ def update_cloudflare_config():
                 if len(processed_path_comp) > 1 and processed_path_comp.endswith('/'):
                     processed_path_comp = processed_path_comp.rstrip('/')
                 comp_dict["path"] = processed_path_comp
+            
             origin_request = rule.get("originRequest")
-            if isinstance(origin_request, dict) and origin_request.get("noTLSVerify") is True:
-                comp_dict["noTLSVerify"] = True 
+            if isinstance(origin_request, dict):
+                if origin_request.get("noTLSVerify") is True:
+                    comp_dict["noTLSVerify"] = True 
+                if origin_request.get("originServerName"):
+                    comp_dict["originServerName"] = origin_request.get("originServerName")
             return comp_dict
 
         current_api_comparable_set = {json.dumps(rule_to_comparable_dict(r), sort_keys=True) for r in current_api_ingress_rules}

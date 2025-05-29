@@ -520,6 +520,7 @@ def ui_add_manual_rule_route():
     service_address_input = request.form.get('manual_service_address', '').strip()
     zone_name_override_input = request.form.get('manual_zone_name_override', '').strip()
     no_tls_verify = request.form.get('manual_no_tls_verify') == 'on'
+    origin_server_name_input = request.form.get('manual_origin_server_name', '').strip()
     manual_access_policy_type = request.form.get('manual_access_policy_type', 'none').strip().lower()
     manual_auth_email = request.form.get('manual_auth_email', '').strip()
 
@@ -610,7 +611,7 @@ def ui_add_manual_rule_route():
     access_app_final_config_hash = None
     cf_access_policies_for_app = [] 
     custom_rules_for_hash_str = None 
-    desired_session_duration = "24h"
+    desired_session_duration = "24h" 
     desired_app_launcher_visible = False 
     desired_allowed_idps_str = None 
     desired_auto_redirect = False
@@ -681,6 +682,7 @@ def ui_add_manual_rule_route():
             "delete_at": None,
             "zone_id": target_zone_id, 
             "no_tls_verify": no_tls_verify,
+            "origin_server_name": origin_server_name_input if origin_server_name_input else None,
             "access_app_id": access_app_created_or_updated_id if manual_access_policy_type in ["bypass", "authenticate_email"] \
                              else (existing_rule_details.get("access_app_id") if existing_rule_details else None),
             "access_policy_type": manual_access_policy_type if manual_access_policy_type != "none" else None,
