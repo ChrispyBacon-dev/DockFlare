@@ -22,7 +22,7 @@ import time
 import traceback 
 import json 
 from datetime import datetime, timezone
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, jsonify, request, current_app, url_for
 
 from app import config, docker_client, tunnel_state, cloudflared_agent_state, log_queue
 from app.core.state_manager import managed_rules, state_lock, save_state
@@ -103,6 +103,12 @@ def get_overview_data():
                     account_email_for_tld_api = get_cloudflare_account_email()
     
     all_account_tunnels_list_api = get_all_account_cloudflare_tunnels()
+    
+    log_stream_url = "/stream-logs"
+    try:
+        log_stream_url = url_for('web.stream_logs_route', _external=False)
+    except RuntimeError as e:
+        logging.error(f"RuntimeError generating url_for for 'web.stream_logs_route': {e}. Falling back to static path.")
 
     return jsonify({
         "tunnel_state": api_tunnel_state,
@@ -127,7 +133,7 @@ def get_overview_data():
             "in_progress": False, "progress": 0, "total_items": 0,
             "processed_items": 0, "status": "Not started"
         }),
-        "log_stream_path": url_for('web.stream_logs_route', _external=False) 
+        "log_stream_path": log_stream_url
     })
 
 @api_v2_bp.route('/reconciliation-status', methods=['GET'])
