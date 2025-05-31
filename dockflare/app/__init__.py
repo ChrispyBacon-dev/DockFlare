@@ -93,7 +93,9 @@ def create_app():
         from .web import routes as web_routes 
         app_instance.register_blueprint(web_routes.bp)
         logging.info("Web blueprint registered.")
-        
+        from .web.api_v2_routes import api_v2_bp 
+        app_instance.register_blueprint(api_v2_bp) 
+        logging.info("API v2 blueprint registered.")
     return app_instance
 
 app = create_app()
