@@ -1,0 +1,10 @@
+# .dockerignore
+node_modules
+.next
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.env
+*.env.local
+.DS_Store
+# Add other files/directories you don't want in the image
