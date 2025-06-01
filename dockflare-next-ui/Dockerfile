@@ -24,7 +24,7 @@ LABEL stage=nextjs-runner # This label is optional, but good for clarity
 WORKDIR /app
 
 ENV NODE_ENV production
-# ENV PORT 3000 # Already set in compose, EXPOSE is enough here
+# ENV PORT 3000 Already set in compose, EXPOSE is enough here
 
 # Copy the standalone application from the 'builder' stage
 COPY --from=builder /app/.next/standalone ./
