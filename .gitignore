@@ -87,3 +87,4 @@ data/state.json
 *.swp
 *.log
 logs/
+dockflare-next-ui/

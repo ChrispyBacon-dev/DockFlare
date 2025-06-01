@@ -72,7 +72,7 @@ def get_effective_tunnel_id():
 @api_v2_bp.route('/overview', methods=['GET'])
 def get_overview_data():
     rules_for_api = {}
-    api_tunnel_state = {}
+    api_tunnel_state = {} 
     api_agent_state = {}
     initialization_status_api = {}
     tld_policy_exists_val_api = False
@@ -83,7 +83,7 @@ def get_overview_data():
         for hostname_key, rule_value in managed_rules.items():
             rules_for_api[hostname_key] = serialize_rule(rule_value)
         
-        api_tunnel_state = tunnel_state.copy()
+        api_tunnel_state = tunnel_state.copy() 
         api_agent_state = cloudflared_agent_state.copy() 
 
         initialization_status_api = {
@@ -92,7 +92,7 @@ def get_overview_data():
                             api_tunnel_state.get("status_message", "").lower().startswith("init")
         }
 
-        if config.CF_ZONE_ID and docker_client:
+        if config.CF_ZONE_ID and docker_client: 
             zone_details = get_zone_details_by_id(config.CF_ZONE_ID)
             if zone_details and zone_details.get("name"):
                 relevant_zone_name_for_tld_policy_api = zone_details.get("name")
@@ -104,6 +104,29 @@ def get_overview_data():
     
     all_account_tunnels_list_api = get_all_account_cloudflare_tunnels()
     
+    effective_id_for_live_status = get_effective_tunnel_id() 
+    
+    api_tunnel_state["live_status"] = "unknown" 
+
+    if effective_id_for_live_status and all_account_tunnels_list_api:
+        
+        managed_tunnel_details = next(
+            (tunnel for tunnel in all_account_tunnels_list_api if tunnel.get("id") == effective_id_for_live_status), 
+            None  
+        )
+        if managed_tunnel_details:
+            
+            api_tunnel_state["live_status"] = managed_tunnel_details.get("status", "unknown")
+           
+        else:
+           
+            api_tunnel_state["live_status"] = "not_found_in_list"
+            logging.warning(f"API Overview: Effective tunnel ID '{effective_id_for_live_status}' not found in all_account_tunnels list.")
+    elif not effective_id_for_live_status:
+
+        api_tunnel_state["live_status"] = "id_missing_for_lookup" # Or 'uninitialized'
+        logging.info("API Overview: No effective tunnel ID available to look up live status.")
+    
     log_stream_url = "/stream-logs"
     try:
         log_stream_url = url_for('web.stream_logs_route', _external=False)
@@ -111,10 +134,10 @@ def get_overview_data():
         logging.error(f"RuntimeError generating url_for for 'web.stream_logs_route': {e}. Falling back to static path.")
 
     return jsonify({
-        "tunnel_state": api_tunnel_state,
+        "tunnel_state": api_tunnel_state, 
         "agent_state": api_agent_state,
         "initialization": initialization_status_api,
-        "display_token": tunnel_state.get("token"), 
+        "display_token": api_tunnel_state.get("token"), 
         "cloudflared_container_name": config.CLOUDFLARED_CONTAINER_NAME,
         "docker_available": docker_client is not None,
         "external_cloudflared": config.USE_EXTERNAL_CLOUDFLARED,
