@@ -1,0 +1,75 @@
+/* src/components/common/AnimatedLogo.module.css */
+
+.logoContainer { 
+    position: relative;
+    width: 400px; 
+    height: 100px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: auto; 
+}
+
+.logoText {
+    position: absolute;
+    font-size: 40px; 
+    font-weight: 700;
+    white-space: nowrap;
+    z-index: 10;
+    letter-spacing: -1px; 
+    font-family: 'Inter', sans-serif; 
+}
+
+.dockText {
+    color: #1a4a7f;
+    left: calc(50% - 100px); 
+}
+
+.flareText {
+    color: #f7931e;
+    left: calc(50% - 5px);  
+}
+
+.portal {
+    position: absolute;
+    border-radius: 50%;
+    z-index: 10;
+    filter: blur(0.5px);
+}
+
+.inPortal {
+    width: 50px; 
+    height: 70px;
+    border: 3px solid #1a4a7f; 
+    left: calc(50% - 145px);  
+    top: 15px;   
+    box-shadow: 0 0 10px 2px rgba(26, 74, 127, 0.7); 
+    animation: portal-glow-blue 2s infinite alternate;
+}
+
+.outPortal {
+    width: 50px; 
+    height: 70px;
+    border: 3px solid #f7931e; 
+    left: calc(50% + 85px); 
+    top: 15px;  
+    box-shadow: 0 0 10px 2px rgba(247, 147, 30, 0.7); 
+    animation: portal-glow-orange 2s infinite alternate;
+}
+
+
+@keyframes portal-glow-blue {
+    from { box-shadow: 0 0 10px 2px rgba(26, 74, 127, 0.5), 0 0 5px 1px rgba(96, 165, 250, 0.3) inset; }
+    to { box-shadow: 0 0 25px 7px rgba(26, 74, 127, 0.8), 0 0 10px 3px rgba(96, 165, 250, 0.5) inset; }
+}
+@keyframes portal-glow-orange {
+    from { box-shadow: 0 0 10px 2px rgba(247, 147, 30, 0.5), 0 0 5px 1px rgba(251, 191, 36, 0.3) inset; }
+    to { box-shadow: 0 0 25px 7px rgba(247, 147, 30, 0.8), 0 0 10px 3px rgba(251, 191, 36, 0.5) inset; }
+}
+
+.canvasElement { 
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 5;
+}

@@ -1,0 +1,72 @@
+/* src/components/effects/PortalEffects.module.css - Portal! mühsam aber es hat sich gelohnt.. */
+
+.portalBase {
+  position: absolute;
+  left: 50%; 
+  top: 50%;  
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.7); 
+  filter: blur(10px);
+  transition: opacity 0.3s ease-out, transform 0.3s ease-out, filter 0.3s ease-out;
+}
+
+.portalVisible {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1); 
+  filter: blur(0.5px); 
+}
+
+.ovalShape {
+
+  border-radius: 50%; 
+  overflow: hidden; 
+}
+
+.tableBluePortal {
+  composes: ovalShape;
+  
+  border: 2px solid #1a4a7f; 
+  box-shadow: 0 0 10px 2px rgba(26, 74, 127, 0.7); 
+  animation: portal-glow-blue-effect 2s infinite alternate; 
+  z-index: 1;
+}
+
+.tableOrangePortal {
+  composes: ovalShape;
+  border: 2px solid #f7931e;
+  box-shadow: 0 0 10px 2px rgba(247, 147, 30, 0.7); 
+  animation: portal-glow-orange-effect 2s infinite alternate;
+  z-index: 1;
+}
+
+@keyframes portal-glow-blue-effect {
+  from { 
+    box-shadow: 0 0 5px 1px rgba(26, 74, 127, 0.6), 0 0 3px 0px rgba(96, 165, 250, 0.4) inset; 
+    border-color: rgba(96, 165, 250, 0.7);
+}
+  to { 
+    box-shadow: 0 0 15px 3px rgba(26, 74, 127, 0.9), 0 0 7px 1px rgba(96, 165, 250, 0.6) inset; 
+    border-color: rgba(59, 130, 246, 0.9);
+}
+}
+
+@keyframes portal-glow-orange-effect {
+  from { 
+    box-shadow: 0 0 5px 1px rgba(247, 147, 30, 0.6), 0 0 3px 0px rgba(251, 191, 36, 0.4) inset; 
+    border-color: rgba(251, 191, 36, 0.7);
+}
+  to { 
+    box-shadow: 0 0 15px 3px rgba(247, 147, 30, 0.9), 0 0 7px 1px rgba(251, 191, 36, 0.6) inset; 
+    border-color: rgba(245, 158, 11, 0.9);
+}
+}
+
+.portalCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0; 
+}
