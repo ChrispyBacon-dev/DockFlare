@@ -23,7 +23,7 @@ import traceback
 import json 
 from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request, current_app, url_for
-
+from flask_cors import CORS # pip install Flask-CORS
 from app import config, docker_client, tunnel_state, cloudflared_agent_state, log_queue
 from app.core.state_manager import managed_rules, state_lock, save_state
 from app.core.tunnel_manager import (
@@ -52,6 +52,7 @@ from app.core.reconciler import reconcile_state_threaded
 from app.core.docker_handler import is_valid_hostname, is_valid_service
 
 api_v2_bp = Blueprint('api_v2', __name__, url_prefix='/api/v2')
+CORS(api_v2_bp, resources={r"/api/v2/*": {"origins": "*"}}) # Allow all origins for this blueprint for now
 
 def serialize_rule(rule_data):
     if not rule_data:

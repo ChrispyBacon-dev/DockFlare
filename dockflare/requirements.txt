@@ -18,4 +18,5 @@ requests
 docker
 python-dotenv
 Flask
+Flask-CORS
 waitress
