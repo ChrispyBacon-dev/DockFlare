@@ -2,7 +2,7 @@
 import React from 'react';
 import GlassCard from '@/components/ui/GlassCard';
 
-interface StatusWidgetProps {
+export interface StatusWidgetProps {
   title: string;
   value: string | number;
   status?: 'connected' | 'running' | 'disconnected' | 'stopped' | 'error' | 'degraded' | 'unknown' | 'info';
