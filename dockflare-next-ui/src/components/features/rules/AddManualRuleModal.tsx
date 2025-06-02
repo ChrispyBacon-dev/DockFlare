@@ -1,7 +1,7 @@
 // src/components/features/rules/AddManualRuleModal.tsx
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react'; // Removed useCallback
 import { useSWRConfig } from 'swr';
 import GlassCard from '@/components/ui/GlassCard';
 import { ManualRulePayload, AccessPolicyType, ServiceType } from '@/lib/types';
@@ -86,7 +86,7 @@ export default function AddManualRuleModal({ isOpen, onClose }: AddManualRuleMod
       await addManualRuleApi(formData);
       mutate(API_OVERVIEW_URL);
       onClose();
-      setFormData(initialFormData); // Reset form
+      setFormData(initialFormData); 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred.');
     } finally {
