@@ -5,7 +5,7 @@ import GlassCard from '@/components/ui/GlassCard';
 export interface StatusWidgetProps {
   title: string;
   value: string | number;
-  status?: 'connected' | 'running' | 'disconnected' | 'stopped' | 'error' | 'degraded' | 'unknown' | 'info';
+  status?: 'connected' | 'running' | 'disconnected' | 'stopped' | 'error' | 'degraded' | 'unknown' | 'info' | 'starting';
   onClick?: () => void;
   isLoading?: boolean;
   className?: string;
