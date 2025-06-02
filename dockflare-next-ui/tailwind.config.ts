@@ -1,7 +1,7 @@
 // tailwind.config.ts
-import type { Config } from 'tailwindcss'
+import type { Config } from 'tailwindcss';
 
-const config: Config = {
+const typedConfig: Config & { daisyui?: Record<string, unknown> } = {
   content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
@@ -10,10 +10,10 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        'holo-cyan': '#00E0FF', // Example holographic cyan
-        'holo-magenta': '#FF00E0', // Example holographic magenta
-        'dark-bg': '#0F172A', // slate-900
-        'panel-bg': 'rgba(30, 41, 59, 0.5)', // slate-800 with opacity
+        'holo-cyan': '#00E0FF',
+        'holo-magenta': '#FF00E0',
+        'dark-bg': '#0F172A',
+        'panel-bg': 'rgba(30, 41, 59, 0.5)',
       },
       boxShadow: {
         'holo-glow-cyan': '0 0 15px 5px rgba(0, 224, 255, 0.3), 0 0 5px 1px rgba(0, 224, 255, 0.2)',
@@ -24,12 +24,14 @@ const config: Config = {
         'gradient-conic':
           'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
       },
-      
     },
   },
-  plugins: [require('daisyui')], 
-  daisyui: { 
-    themes: ["dark"], 
+  plugins: [
+    require('daisyui'),
+  ],
+  daisyui: {
+    themes: ["dark"],
   },
-}
-export default config
+};
+
+export default typedConfig;
