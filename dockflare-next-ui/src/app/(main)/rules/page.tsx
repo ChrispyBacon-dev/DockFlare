@@ -279,7 +279,7 @@ export default function ManagedRulesPage() {
                         )}
                         {rule.access_app_id && overviewData?.config_status.account_id_for_display && overviewData.config_status.account_id_for_display !== "Not Configured" && (
                           <a 
-                            href={`https://one.dash.cloudflare.com/${overviewData.config_status.account_id_for_display}/access/apps/${rule.access_app_id}`}
+                            href={`https://one.dash.cloudflare.com/${overviewData.config_status.account_id_for_display}/access/apps/self-hosted/${rule.access_app_id}/edit?tab=basic-info`}
                             target="_blank"
                             rel="noopener noreferrer"
                             title="View Access Application in Cloudflare"
