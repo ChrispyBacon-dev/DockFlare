@@ -13,6 +13,8 @@ services:
       - dockflare_data:/app/data  # Persistent storage for state
     networks:
       - cloudflare-net  # Network for communication with other containers
+    ports:
+      - "5000:5000" #for development and testing to access from IP
     env_file:
       - .env  # Load environment variables from .env file  
     environment:
