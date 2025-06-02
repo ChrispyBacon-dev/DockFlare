@@ -34,7 +34,7 @@ export async function deleteManualRuleApi(ruleKey: string): Promise<{ status: st
     try {
       const errorData = await response.json();
       errorMessage = errorData.message || errorMessage;
-    } catch (e) {
+    } catch (_e) {
 
     }
     throw new Error(errorMessage);

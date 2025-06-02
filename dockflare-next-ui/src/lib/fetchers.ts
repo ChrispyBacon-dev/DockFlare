@@ -1,7 +1,6 @@
 // src/lib/fetchers.ts
 
-// Generic fetcher function for SWR (template maybe need to adjust in the future...)
-export const fetcher = async <T = any>(url: string): Promise<T> => {
+export const fetcher = async <T = unknown>(url: string): Promise<T> => {
   const res = await fetch(url);
 
   if (!res.ok) {
@@ -9,11 +8,11 @@ export const fetcher = async <T = any>(url: string): Promise<T> => {
     
     try {
       const errorData = await res.json();
-      // @ts-ignore (custom properties on Error object)
+      // @ts-expect-error (custom properties on Error object)
       error.info = errorData;
-      // @ts-ignore
+      // @ts-expect-error
       error.status = res.status;
-    } catch (e) {
+    } catch (_e) {
       
     }
     throw error;
