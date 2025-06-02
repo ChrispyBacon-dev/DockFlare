@@ -14,7 +14,6 @@ import LogViewer from '@/components/features/logs/LogViewer';
 import { useRealtimeLogs } from '@/hooks/useRealtimeLogs';
 import { fetcher } from '@/lib/fetchers'; 
 
-const sseStreamUrl = "/stream-logs";
 
 const Loader = ({ message = "Loading..." }: { message?: string }) => {
   return (
@@ -91,7 +90,7 @@ export default function DashboardPage() {
       <GlassCard className="mt-8 text-center !border-red-500/70 p-6">
         <h2 className="text-2xl font-semibold text-red-400 mb-2">Error Loading Dashboard</h2>
         <p className="text-slate-300 mb-4">
-          {/* @ts-ignore (accessing custom properties on error) */}
+          {/* @ts-expect-error (accessing custom properties on error) */}
           {fetchApiError.info?.message || fetchApiError.message || 'An unknown error occurred.'}
         </p>
         {/* SWR automatically retries on error based on its config. 

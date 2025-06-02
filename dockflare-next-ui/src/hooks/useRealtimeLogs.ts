@@ -166,6 +166,7 @@ export function useRealtimeLogs({
     initialReconnectDelay,
     maxReconnectDelay,
     autoConnect,
+    errorCount,
   ]);
 
   useEffect(() => {
