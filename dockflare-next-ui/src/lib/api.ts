@@ -41,3 +41,24 @@ export async function deleteManualRuleApi(ruleKey: string): Promise<{ status: st
   }
   return response.json();
 }
+
+export async function forceDeleteRuleApi(ruleKey: string): Promise<{ status: string; message: string; details?: any }> {
+  const encodedRuleKey = encodeURIComponent(ruleKey);
+  const response = await fetch(`${API_BASE_URL}/rules/${encodedRuleKey}/force-delete`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+  if (!response.ok) {
+    let errorMessage = `Failed to force delete rule. Status: ${response.status}`;
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData.message || errorMessage;
+    } catch {
+      // Error parsing error response body, use default message
+    }
+    throw new Error(errorMessage);
+  }
+  return response.json();
+}

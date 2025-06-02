@@ -1,11 +1,10 @@
-// src/app/(main)/rules/page.tsx
 'use client';
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import useSWR from 'swr';
 import { DockFlareFullOverview, RuleValue } from '@/lib/types';
 import { fetcher } from '@/lib/fetchers';
-import { deleteManualRuleApi } from '@/lib/api'; 
+import { deleteManualRuleApi, forceDeleteRuleApi } from '@/lib/api';
 import GlassCard from '@/components/ui/GlassCard';
 import BluePortalEffect from '@/components/effects/BluePortalEffect';
 import OrangePortalEffect from '@/components/effects/OrangePortalEffect';
@@ -24,11 +23,45 @@ const Loader = ({ message = "Loading rules..." }: { message?: string }) => {
   );
 };
 
+const formatRemainingTime = (deleteAtISO?: string | null): string => {
+  if (!deleteAtISO) return "";
+  const deleteTime = new Date(deleteAtISO).getTime();
+  const now = Date.now();
+  const remainingMs = deleteTime - now;
+
+  if (remainingMs <= 0) return "Deleting now...";
+
+  const totalSeconds = Math.floor(remainingMs / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  let parts = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0) parts.push(`${minutes}m`);
+  if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
+
+  return `Deletes in ${parts.join(' ')}`;
+};
+
+
 export default function ManagedRulesPage() {
   const [hoveredRuleKey, setHoveredRuleKey] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [ruleToDelete, setRuleToDelete] = useState<[string, RuleValue] | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [actionRuleKey, setActionRuleKey] = useState<string | null>(null);
+
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setTick(prevTick => prevTick + 1);
+    }, 1000);
+    return () => clearInterval(intervalId);
+  }, []);
+
 
   const { 
     data: overviewData, 
@@ -57,8 +90,10 @@ export default function ManagedRulesPage() {
 
   const confirmDeleteRule = useCallback(async () => {
     if (!ruleToDelete) return;
-    setIsDeleting(true);
+    
     const [ruleKeyToDelete, ruleValueToDelete] = ruleToDelete;
+    setActionRuleKey(ruleKeyToDelete);
+    setIsDeleting(true);
 
     mutate(
       (currentData) => {
@@ -85,6 +120,7 @@ export default function ManagedRulesPage() {
       setIsDeleting(false);
       setShowDeleteConfirm(false);
       setRuleToDelete(null);
+      setActionRuleKey(null);
     }
   }, [ruleToDelete, mutate]);
 
@@ -92,6 +128,36 @@ export default function ManagedRulesPage() {
     setShowDeleteConfirm(false);
     setRuleToDelete(null);
   }, []);
+
+  const handleForceDeleteClick = useCallback(async (ruleKey: string, rule: RuleValue) => {
+    if (!confirm(`Are you sure you want to force delete the rule for ${rule.hostname_for_dns || ruleKey}? This will happen immediately and may affect running services if the source container is still up.`)) {
+      return;
+    }
+    setActionRuleKey(ruleKey);
+    setIsDeleting(true);
+
+    mutate(
+      (currentData) => {
+        if (!currentData || !currentData.rules) return currentData;
+        const updatedRules = { ...currentData.rules };
+        delete updatedRules[ruleKey];
+        return { ...currentData, rules: updatedRules };
+      },
+      false 
+    );
+
+    try {
+      await forceDeleteRuleApi(ruleKey);
+    } catch (error) {
+      console.error("Failed to force delete rule:", error);
+      mutate(); 
+      alert(`Error force deleting rule: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsDeleting(false);
+      setActionRuleKey(null);
+    }
+  }, [mutate]);
+
 
   if (isOverviewLoading && !overviewData) {
     return <Loader />;
@@ -114,7 +180,7 @@ export default function ManagedRulesPage() {
   const portalSize = 64; 
 
   const getFullUrl = (hostname: string, path?: string | null): string => {
-    const protocol = 'https://'; // Assume HTTPS for Cloudflare Tunnels
+    const protocol = 'https://';
     const basePath = path && path !== '/' ? path : '';
     return `${protocol}${hostname}${basePath}`;
   };
@@ -166,6 +232,9 @@ export default function ManagedRulesPage() {
               {ruleArray.length > 0 && ruleArray.map(([ruleKey, rule]) => {
                   const isHovered = hoveredRuleKey === ruleKey;
                   const displayHostname = rule.hostname_for_dns || ruleKey.split('|')[0];
+                  const isPendingDeletion = rule.status === 'pending_deletion';
+                  const isButtonActionInProgress = isDeleting && actionRuleKey === ruleKey;
+
                   return (
                     <tr 
                       key={ruleKey} 
@@ -174,13 +243,20 @@ export default function ManagedRulesPage() {
                       onMouseLeave={handleMouseLeave}
                     >
                       <td className="pl-4 pr-2 py-3 whitespace-nowrap text-sm sm:pl-6 align-middle">
-                        <span className={`px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          rule.status === 'active' ? 'bg-green-500/30 text-green-200 border border-green-500/50' : 
-                          rule.status === 'pending_deletion' ? 'bg-yellow-500/30 text-yellow-200 border border-yellow-500/50' :
-                          'bg-red-500/30 text-red-200 border border-red-500/50'
-                        }`}>
-                          {rule.status}
-                        </span>
+                        <div className="flex flex-col items-start">
+                          <span className={`px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                            rule.status === 'active' ? 'bg-green-500/30 text-green-200 border border-green-500/50' : 
+                            isPendingDeletion ? 'bg-yellow-600/40 text-yellow-300 border border-yellow-600/60 animate-pulse' :
+                            'bg-red-500/30 text-red-200 border border-red-500/50'
+                          }`}>
+                            {rule.status}
+                          </span>
+                          {isPendingDeletion && rule.delete_at && (
+                            <span className="text-yellow-400 text-[10px] italic mt-0.5" title={`Actual deletion time: ${new Date(rule.delete_at).toLocaleString()}`}>
+                              {formatRemainingTime(rule.delete_at)}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="relative px-1 py-3 text-center w-10 align-middle">
                         <BluePortalEffect isVisible={isHovered} size={portalSize} />
@@ -221,14 +297,31 @@ export default function ManagedRulesPage() {
                         )}
                       </td>
                       <td className="pl-2 pr-4 py-3 whitespace-nowrap text-sm space-x-2 sm:pr-6 align-middle">
-                        <button className="text-cyan-400 hover:text-cyan-200 transition-colors text-xs font-medium relative z-[5]">Edit Policy</button>
-                        {rule.source === 'manual' && (
+                        {isPendingDeletion ? (
+                          <button 
+                            onClick={() => handleForceDeleteClick(ruleKey, rule)}
+                            disabled={isButtonActionInProgress}
+                            className="text-orange-400 hover:text-orange-300 transition-colors text-xs font-medium relative z-[5] disabled:opacity-50"
+                            title="Delete this rule from Cloudflare immediately"
+                          >
+                            {isButtonActionInProgress ? 'Forcing...' : 'Force Delete'}
+                          </button>
+                        ) : (
+                          <button 
+                            onClick={() => { alert('Edit Policy clicked for ' + ruleKey + '. Implement me!'); }}
+                            className="text-cyan-400 hover:text-cyan-200 transition-colors text-xs font-medium relative z-[5]"
+                          >
+                            Edit Policy
+                          </button>
+                        )}
+
+                        {rule.source === 'manual' && !isPendingDeletion && (
                           <button 
                             onClick={() => handleDeleteClick(ruleKey, rule)}
-                            disabled={isDeleting && ruleToDelete?.[0] === ruleKey}
+                            disabled={isButtonActionInProgress}
                             className="text-red-400 hover:text-red-200 transition-colors text-xs font-medium relative z-[5] disabled:opacity-50"
                           >
-                            {isDeleting && ruleToDelete?.[0] === ruleKey ? 'Deleting...' : 'Delete'}
+                            {isButtonActionInProgress && ruleToDelete?.[0] === ruleKey ? 'Deleting...' : 'Delete'}
                           </button>
                         )}
                       </td>
@@ -262,7 +355,7 @@ export default function ManagedRulesPage() {
                 disabled={isDeleting}
                 className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors disabled:opacity-50"
               >
-                {isDeleting ? 'Deleting...' : 'Delete Rule'}
+                {isDeleting && ruleToDelete?.[0] === ruleToDelete[0] ? 'Deleting...' : 'Delete Rule'}
               </button>
             </div>
           </GlassCard>
