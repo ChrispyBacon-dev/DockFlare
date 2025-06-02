@@ -216,7 +216,7 @@ export default function AddManualRuleModal({ isOpen, onClose }: AddManualRuleMod
                         onChange={handleChange} 
                         className="input input-sm input-bordered w-full bg-slate-700/50 border-slate-600 focus:border-cyan-500" 
                     />
-                    <div className="text-xs text-slate-400 mt-1 px-1">If blank, DockFlare uses "Domain" or default CF_ZONE_ID.</div>
+                    <div className="text-xs text-slate-400 mt-1 px-1">If blank, DockFlare uses &quot;Domain&quot; or default CF_ZONE_ID.</div>
                 </div>
                 
                 <div className="form-control">
