@@ -1,3 +1,4 @@
+# dockflare-next-ui/Dockerfile
 # Stage 1: Install dependencies and build the Next.js application
 FROM node:18-alpine AS builder # <<< THIS LINE WAS MISSING/INCOMPLETE
 LABEL stage=nextjs-builder
