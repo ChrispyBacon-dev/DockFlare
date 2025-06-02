@@ -113,6 +113,12 @@ export default function ManagedRulesPage() {
 
   const portalSize = 64; 
 
+  const getFullUrl = (hostname: string, path?: string | null): string => {
+    const protocol = 'https://'; // Assume HTTPS for Cloudflare Tunnels
+    const basePath = path && path !== '/' ? path : '';
+    return `${protocol}${hostname}${basePath}`;
+  };
+
   return (
     <div className="space-y-6 sm:space-y-8">
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
@@ -159,6 +165,7 @@ export default function ManagedRulesPage() {
               )}
               {ruleArray.length > 0 && ruleArray.map(([ruleKey, rule]) => {
                   const isHovered = hoveredRuleKey === ruleKey;
+                  const displayHostname = rule.hostname_for_dns || ruleKey.split('|')[0];
                   return (
                     <tr 
                       key={ruleKey} 
@@ -180,11 +187,39 @@ export default function ManagedRulesPage() {
                       </td>
                       <td className="px-2 py-3 whitespace-nowrap text-sm text-slate-300 font-mono break-all align-middle">{rule.service}</td>
                       <td className="px-3 py-3 whitespace-nowrap text-sm text-slate-400 align-middle">{rule.source}</td>
-                      <td className="px-3 py-3 whitespace-nowrap text-sm text-slate-100 font-medium break-all align-middle">{rule.hostname_for_dns || ruleKey.split('|')[0]}</td>
+                      <td className="px-3 py-3 whitespace-nowrap text-sm text-slate-100 font-medium break-all align-middle">
+                        {displayHostname ? (
+                          <a 
+                            href={`https://${displayHostname}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="hover:text-cyan-300 hover:underline transition-colors"
+                            title={`Open https://${displayHostname} in new tab`}
+                          >
+                            {displayHostname}
+                          </a>
+                        ) : (
+                          <span className="italic text-slate-500">N/A</span>
+                        )}
+                      </td>
                       <td className="relative px-1 py-3 text-center w-10 align-middle">
                        <OrangePortalEffect isVisible={isHovered} size={portalSize} />
                       </td>
-                      <td className="px-3 py-3 whitespace-nowrap text-sm text-slate-300 align-middle">{rule.path || <span className="italic text-slate-500">/ (root)</span>}</td>
+                      <td className="px-3 py-3 whitespace-nowrap text-sm text-slate-300 align-middle">
+                        {displayHostname ? (
+                           <a
+                            href={getFullUrl(displayHostname, rule.path)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:text-cyan-300 hover:underline transition-colors"
+                            title={`Open ${getFullUrl(displayHostname, rule.path)} in new tab`}
+                          >
+                            {rule.path || <span className="italic text-slate-500">/ (root)</span>}
+                          </a>
+                        ) : (
+                          rule.path || <span className="italic text-slate-500">/ (root)</span>
+                        )}
+                      </td>
                       <td className="pl-2 pr-4 py-3 whitespace-nowrap text-sm space-x-2 sm:pr-6 align-middle">
                         <button className="text-cyan-400 hover:text-cyan-200 transition-colors text-xs font-medium relative z-[5]">Edit Policy</button>
                         {rule.source === 'manual' && (
