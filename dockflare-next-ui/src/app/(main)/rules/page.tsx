@@ -1,3 +1,4 @@
+// src/app/(main)/rules/page.tsx
 'use client';
 
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
@@ -37,7 +38,7 @@ const formatRemainingTime = (deleteAtISO?: string | null): string => {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
 
-  const parts = [];
+  const parts: string[] = [];
   if (days > 0) parts.push(`${days}d`);
   if (hours > 0) parts.push(`${hours}h`);
   if (minutes > 0) parts.push(`${minutes}m`);
@@ -53,15 +54,8 @@ export default function ManagedRulesPage() {
   const [ruleToDelete, setRuleToDelete] = useState<[string, RuleValue] | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [actionRuleKey, setActionRuleKey] = useState<string | null>(null);
-
+  const [confirmActionType, setConfirmActionType] = useState<'manual_delete' | 'force_delete' | null>(null);
   const [, setTick] = useState(0);
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      setTick(prevTick => prevTick + 1);
-    }, 1000);
-    return () => clearInterval(intervalId);
-  }, []);
-
 
   const { 
     data: overviewData, 
@@ -73,6 +67,13 @@ export default function ManagedRulesPage() {
     revalidateOnFocus: true,
   });
 
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setTick(prevTick => prevTick + 1);
+    }, 1000);
+    return () => clearInterval(intervalId);
+  }, []);
+
   const rulesData = useMemo(() => overviewData?.rules || null, [overviewData]);
   const ruleArray = useMemo(() => (rulesData ? Object.entries(rulesData) : []), [rulesData]);
 
@@ -82,81 +83,64 @@ export default function ManagedRulesPage() {
 
   const handleMouseEnter = useCallback((ruleKey: string) => setHoveredRuleKey(ruleKey), []);
   const handleMouseLeave = useCallback(() => setHoveredRuleKey(null), []);
+  
+  const cancelDelete = useCallback(() => {
+    setShowDeleteConfirm(false);
+    setRuleToDelete(null);
+    setConfirmActionType(null); 
+  }, [setShowDeleteConfirm, setRuleToDelete, setConfirmActionType]);
+
+  const handleForceDeleteClick = useCallback((ruleKey: string, rule: RuleValue) => {
+    setRuleToDelete([ruleKey, rule]);
+    setConfirmActionType('force_delete'); 
+    setShowDeleteConfirm(true);
+  }, [setRuleToDelete, setConfirmActionType, setShowDeleteConfirm]);
 
   const handleDeleteClick = useCallback((ruleKey: string, rule: RuleValue) => {
     setRuleToDelete([ruleKey, rule]);
+    setConfirmActionType('manual_delete');
     setShowDeleteConfirm(true);
-  }, []);
+  }, [setRuleToDelete, setConfirmActionType, setShowDeleteConfirm]);
 
-  const confirmDeleteRule = useCallback(async () => {
-    if (!ruleToDelete) return;
-    
-    const [ruleKeyToDelete, ruleValueToDelete] = ruleToDelete;
-    setActionRuleKey(ruleKeyToDelete);
+  const confirmAction = useCallback(async () => {
+    if (!ruleToDelete || !confirmActionType) return;
+
+    const [ruleKeyToActOn, ruleValueToActOn] = ruleToDelete;
+    setActionRuleKey(ruleKeyToActOn);
     setIsDeleting(true);
 
     mutate(
-      (currentData) => {
+      (currentData: DockFlareFullOverview | undefined) => {
         if (!currentData || !currentData.rules) return currentData;
         const updatedRules = { ...currentData.rules };
-        delete updatedRules[ruleKeyToDelete];
+        delete updatedRules[ruleKeyToActOn];
         return { ...currentData, rules: updatedRules };
-      }, 
-      false 
+      },
+      false
     );
 
     try {
-      if (ruleValueToDelete.source === 'manual') {
-        await deleteManualRuleApi(ruleKeyToDelete);
-      } else {
-        console.warn("Attempted to delete a non-manual rule via simple delete:", ruleKeyToDelete);
-        throw new Error("This delete function is for manual rules only.");
+      if (confirmActionType === 'manual_delete') {
+        if (ruleValueToActOn.source === 'manual') {
+          await deleteManualRuleApi(ruleKeyToActOn);
+        } else {
+          throw new Error("Attempted to manually delete a non-manual rule.");
+        }
+      } else if (confirmActionType === 'force_delete') {
+        await forceDeleteRuleApi(ruleKeyToActOn);
       }
     } catch (error) {
-      console.error("Failed to delete rule:", error);
+      console.error(`Failed to ${confirmActionType}:`, error);
       mutate(); 
-      alert(`Error deleting rule: ${error instanceof Error ? error.message : String(error)}`);
+      alert(`Error during ${confirmActionType === 'manual_delete' ? 'deletion' : 'force deletion'}: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsDeleting(false);
       setShowDeleteConfirm(false);
       setRuleToDelete(null);
       setActionRuleKey(null);
+      setConfirmActionType(null);
     }
-  }, [ruleToDelete, mutate]);
-
-  const cancelDelete = useCallback(() => {
-    setShowDeleteConfirm(false);
-    setRuleToDelete(null);
-  }, []);
-
-  const handleForceDeleteClick = useCallback(async (ruleKey: string, rule: RuleValue) => {
-    if (!confirm(`Are you sure you want to force delete the rule for ${rule.hostname_for_dns || ruleKey}? This will happen immediately and may affect running services if the source container is still up.`)) {
-      return;
-    }
-    setActionRuleKey(ruleKey);
-    setIsDeleting(true);
-
-    mutate(
-      (currentData) => {
-        if (!currentData || !currentData.rules) return currentData;
-        const updatedRules = { ...currentData.rules };
-        delete updatedRules[ruleKey];
-        return { ...currentData, rules: updatedRules };
-      },
-      false 
-    );
-
-    try {
-      await forceDeleteRuleApi(ruleKey);
-    } catch (error) {
-      console.error("Failed to force delete rule:", error);
-      mutate(); 
-      alert(`Error force deleting rule: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setIsDeleting(false);
-      setActionRuleKey(null);
-    }
-  }, [mutate]);
+  }, [ruleToDelete, confirmActionType, mutate, setActionRuleKey, setIsDeleting, setShowDeleteConfirm, setRuleToDelete, setConfirmActionType]);
 
 
   if (isOverviewLoading && !overviewData) {
@@ -209,6 +193,7 @@ export default function ManagedRulesPage() {
                 <th scope="col" className="px-2 py-3.5 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider">Internal Service</th>
                 <th scope="col" className="px-3 py-3.5 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider">Source</th>
                 <th scope="col" className="px-3 py-3.5 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider">Hostname</th>
+                <th scope="col" className="px-3 py-3.5 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider">Access Policy</th>
                 <th scope="col" className="px-1 py-3.5 text-center w-10 h-full"><span className="sr-only">Right Portal Area</span></th>
                 <th scope="col" className="px-3 py-3.5 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider">Path</th>
                 <th scope="col" className="pl-2 pr-4 py-3.5 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider sm:pr-6">Actions</th>
@@ -217,14 +202,14 @@ export default function ManagedRulesPage() {
             <tbody className="bg-slate-900/40 divide-y divide-slate-700/50">
               {overviewData && ruleArray.length === 0 && !isOverviewLoading && !isOverviewValidating && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-400 italic">
+                  <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-400 italic">
                     No managed ingress rules found.
                   </td>
                 </tr>
               )}
               {isOverviewValidating && !rulesData && !isOverviewLoading && (
                  <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-400 italic">
+                  <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-400 italic">
                     Checking for rules...
                   </td>
                 </tr>
@@ -278,6 +263,35 @@ export default function ManagedRulesPage() {
                           <span className="italic text-slate-500">N/A</span>
                         )}
                       </td>
+                      <td className="px-3 py-3 whitespace-nowrap text-sm text-slate-300 align-middle">
+                        {rule.access_policy_type ? (
+                          <span className={`px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full
+                            ${rule.access_policy_type === 'bypass' ? 'bg-sky-500/30 text-sky-200 border border-sky-500/50' :
+                              rule.access_policy_type === 'authenticate_email' ? 'bg-purple-500/30 text-purple-200 border border-purple-500/50' :
+                              rule.access_policy_type === 'default_tld' ? 'bg-gray-500/30 text-gray-200 border border-gray-500/50' :
+                              'bg-slate-600/30 text-slate-200 border border-slate-600/50'
+                            }`}>
+                            {rule.access_policy_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} 
+                            {rule.auth_email && ` (${rule.auth_email})`}
+                          </span>
+                        ) : (
+                          <span className="italic text-slate-500">None (Public)</span>
+                        )}
+                        {rule.access_app_id && overviewData?.config_status.account_id_for_display && overviewData.config_status.account_id_for_display !== "Not Configured" && (
+                          <a 
+                            href={`https://one.dash.cloudflare.com/${overviewData.config_status.account_id_for_display}/access/apps/${rule.access_app_id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="View Access Application in Cloudflare"
+                            className="ml-1.5 text-cyan-400 hover:text-cyan-200 transition-colors text-xs"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 inline-block relative -top-px">
+                              <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clipRule="evenodd" />
+                              <path fillRule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.19a.75.75 0 00-.053 1.06z" clipRule="evenodd" />
+                            </svg>
+                          </a>
+                        )}
+                      </td>
                       <td className="relative px-1 py-3 text-center w-10 align-middle">
                        <OrangePortalEffect isVisible={isHovered} size={portalSize} />
                       </td>
@@ -314,7 +328,6 @@ export default function ManagedRulesPage() {
                             Edit Policy
                           </button>
                         )}
-
                         {rule.source === 'manual' && !isPendingDeletion && (
                           <button 
                             onClick={() => handleDeleteClick(ruleKey, rule)}
@@ -334,13 +347,17 @@ export default function ManagedRulesPage() {
         </div>
       </GlassCard>
 
-      {showDeleteConfirm && ruleToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
+      {showDeleteConfirm && ruleToDelete && confirmActionType && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4">
           <GlassCard className="w-full max-w-md p-6 shadow-2xl border border-slate-700">
-            <h3 className="text-xl font-semibold text-slate-100 mb-3">Confirm Deletion</h3>
+            <h3 className="text-xl font-semibold text-slate-100 mb-3">
+              {confirmActionType === 'force_delete' ? 'Confirm Force Deletion' : 'Confirm Deletion'}
+            </h3>
             <p className="text-slate-300 mb-6">
-              Are you sure you want to delete the rule for <strong className="font-mono text-cyan-300 break-all">{ruleToDelete[0]}</strong>?
-              This action cannot be undone.
+              Are you sure you want to {confirmActionType === 'force_delete' ? 'force delete' : 'delete'} the rule for <strong className="font-mono text-cyan-300 break-all">{ruleToDelete[0]}</strong>?
+              {confirmActionType === 'force_delete' 
+                ? " This will happen immediately and may affect running services if the source container is still up."
+                : " This action cannot be undone."}
             </p>
             <div className="flex justify-end space-x-3">
               <button
@@ -351,11 +368,15 @@ export default function ManagedRulesPage() {
                 Cancel
               </button>
               <button
-                onClick={confirmDeleteRule}
+                onClick={confirmAction}
                 disabled={isDeleting}
-                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors disabled:opacity-50"
+                className={`px-4 py-2 text-sm font-medium text-white rounded-md transition-colors disabled:opacity-50 ${
+                  confirmActionType === 'force_delete' ? 'bg-orange-600 hover:bg-orange-700' : 'bg-red-600 hover:bg-red-700'
+                }`}
               >
-                {isDeleting && ruleToDelete?.[0] === ruleToDelete[0] ? 'Deleting...' : 'Delete Rule'}
+                {isDeleting 
+                  ? (confirmActionType === 'force_delete' ? 'Forcing...' : 'Deleting...') 
+                  : (confirmActionType === 'force_delete' ? 'Force Delete Rule' : 'Delete Rule')}
               </button>
             </div>
           </GlassCard>
