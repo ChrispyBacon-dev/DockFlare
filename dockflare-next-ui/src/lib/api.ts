@@ -42,7 +42,7 @@ export async function deleteManualRuleApi(ruleKey: string): Promise<{ status: st
   return response.json();
 }
 
-export async function forceDeleteRuleApi(ruleKey: string): Promise<{ status: string; message: string; details?: any }> {
+export async function forceDeleteRuleApi(ruleKey: string): Promise<{ status: string; message: string; details?: Record<string, unknown> }> {
   const encodedRuleKey = encodeURIComponent(ruleKey);
   const response = await fetch(`${API_BASE_URL}/rules/${encodedRuleKey}/force-delete`, {
     method: 'POST',
