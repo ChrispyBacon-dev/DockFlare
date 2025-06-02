@@ -1,7 +1,7 @@
 // src/components/features/rules/AddManualRuleModal.tsx
 'use client';
 
-import React, { useState } from 'react'; // Removed useCallback
+import React, { useState } from 'react';
 import { useSWRConfig } from 'swr';
 import GlassCard from '@/components/ui/GlassCard';
 import { ManualRulePayload, AccessPolicyType, ServiceType } from '@/lib/types';
