@@ -84,4 +84,3 @@ data/state.json
 *.bak
 *.swp
 *.log
-logs/
