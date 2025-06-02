@@ -9,6 +9,7 @@ import { deleteManualRuleApi, forceDeleteRuleApi } from '@/lib/api';
 import GlassCard from '@/components/ui/GlassCard';
 import BluePortalEffect from '@/components/effects/BluePortalEffect';
 import OrangePortalEffect from '@/components/effects/OrangePortalEffect';
+import AddManualRuleModal from '@/components/features/rules/AddManualRuleModal';
 
 const API_OVERVIEW_URL = "/api/v2/overview";
 
@@ -56,6 +57,8 @@ export default function ManagedRulesPage() {
   const [actionRuleKey, setActionRuleKey] = useState<string | null>(null);
   const [confirmActionType, setConfirmActionType] = useState<'manual_delete' | 'force_delete' | null>(null);
   const [, setTick] = useState(0);
+  const [isAddManualRuleModalOpen, setIsAddManualRuleModalOpen] = useState(false);
+
 
   const { 
     data: overviewData, 
@@ -88,19 +91,19 @@ export default function ManagedRulesPage() {
     setShowDeleteConfirm(false);
     setRuleToDelete(null);
     setConfirmActionType(null); 
-  }, [setShowDeleteConfirm, setRuleToDelete, setConfirmActionType]);
+  }, []);
 
   const handleForceDeleteClick = useCallback((ruleKey: string, rule: RuleValue) => {
     setRuleToDelete([ruleKey, rule]);
     setConfirmActionType('force_delete'); 
     setShowDeleteConfirm(true);
-  }, [setRuleToDelete, setConfirmActionType, setShowDeleteConfirm]);
+  }, []);
 
   const handleDeleteClick = useCallback((ruleKey: string, rule: RuleValue) => {
     setRuleToDelete([ruleKey, rule]);
     setConfirmActionType('manual_delete');
     setShowDeleteConfirm(true);
-  }, [setRuleToDelete, setConfirmActionType, setShowDeleteConfirm]);
+  }, []);
 
   const confirmAction = useCallback(async () => {
     if (!ruleToDelete || !confirmActionType) return;
@@ -108,16 +111,6 @@ export default function ManagedRulesPage() {
     const [ruleKeyToActOn, ruleValueToActOn] = ruleToDelete;
     setActionRuleKey(ruleKeyToActOn);
     setIsDeleting(true);
-
-    mutate(
-      (currentData: DockFlareFullOverview | undefined) => {
-        if (!currentData || !currentData.rules) return currentData;
-        const updatedRules = { ...currentData.rules };
-        delete updatedRules[ruleKeyToActOn];
-        return { ...currentData, rules: updatedRules };
-      },
-      false
-    );
 
     try {
       if (confirmActionType === 'manual_delete') {
@@ -129,6 +122,15 @@ export default function ManagedRulesPage() {
       } else if (confirmActionType === 'force_delete') {
         await forceDeleteRuleApi(ruleKeyToActOn);
       }
+      mutate(
+        (currentData: DockFlareFullOverview | undefined) => {
+          if (!currentData || !currentData.rules) return currentData;
+          const updatedRules = { ...currentData.rules };
+          delete updatedRules[ruleKeyToActOn];
+          return { ...currentData, rules: updatedRules };
+        },
+        true 
+      );
     } catch (error) {
       console.error(`Failed to ${confirmActionType}:`, error);
       mutate(); 
@@ -140,7 +142,7 @@ export default function ManagedRulesPage() {
       setActionRuleKey(null);
       setConfirmActionType(null);
     }
-  }, [ruleToDelete, confirmActionType, mutate, setActionRuleKey, setIsDeleting, setShowDeleteConfirm, setRuleToDelete, setConfirmActionType]);
+  }, [ruleToDelete, confirmActionType, mutate]);
 
 
   if (isOverviewLoading && !overviewData) {
@@ -175,12 +177,23 @@ export default function ManagedRulesPage() {
         <h1 className="text-3xl sm:text-4xl font-bold text-slate-100 tracking-tight">
           Managed Ingress Rules
         </h1>
-        {isOverviewValidating && overviewData && (
-          <span className="text-xs text-slate-400 animate-pulse">Updating...</span>
-        )}
-        {fetchApiError && overviewData && (
-             <span className="text-xs text-red-400" title={fetchApiError.message}>Failed to update. Displaying cached rules.</span>
-        )}
+        <div className='flex items-center gap-4'>
+          {isOverviewValidating && overviewData && (
+            <span className="text-xs text-slate-400 animate-pulse">Updating...</span>
+          )}
+          {fetchApiError && overviewData && (
+              <span className="text-xs text-red-400" title={fetchApiError.message}>Failed to update. Displaying cached rules.</span>
+          )}
+          <button 
+            onClick={() => setIsAddManualRuleModalOpen(true)}
+            className="btn btn-sm btn-primary bg-cyan-600 hover:bg-cyan-700 border-cyan-500 hover:border-cyan-600 text-white"
+          >
+             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4 mr-1">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            Add Manual Rule
+          </button>
+        </div>
       </div>
 
       <GlassCard className="p-0 shadow-2xl overflow-hidden">
@@ -207,6 +220,13 @@ export default function ManagedRulesPage() {
                   </td>
                 </tr>
               )}
+              {isOverviewLoading && !rulesData && (
+                 <tr>
+                  <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-400 italic">
+                    <Loader message="Fetching rules..." />
+                  </td>
+                </tr>
+              )}
               {isOverviewValidating && !rulesData && !isOverviewLoading && (
                  <tr>
                   <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-400 italic">
@@ -214,7 +234,7 @@ export default function ManagedRulesPage() {
                   </td>
                 </tr>
               )}
-              {ruleArray.length > 0 && ruleArray.map(([ruleKey, rule]) => {
+              {ruleArray.map(([ruleKey, rule]) => {
                   const isHovered = hoveredRuleKey === ruleKey;
                   const displayHostname = rule.hostname_for_dns || ruleKey.split('|')[0];
                   const isPendingDeletion = rule.status === 'pending_deletion';
@@ -232,7 +252,8 @@ export default function ManagedRulesPage() {
                           <span className={`px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full ${
                             rule.status === 'active' ? 'bg-green-500/30 text-green-200 border border-green-500/50' : 
                             isPendingDeletion ? 'bg-yellow-600/40 text-yellow-300 border border-yellow-600/60 animate-pulse' :
-                            'bg-red-500/30 text-red-200 border border-red-500/50'
+                            rule.status === 'error' ? 'bg-red-500/30 text-red-200 border border-red-500/50' :
+                            'bg-slate-600/30 text-slate-200 border border-slate-600/50'
                           }`}>
                             {rule.status}
                           </span>
@@ -264,33 +285,40 @@ export default function ManagedRulesPage() {
                         )}
                       </td>
                       <td className="px-3 py-3 whitespace-nowrap text-sm text-slate-300 align-middle">
-                        {rule.access_policy_type ? (
-                          <span className={`px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full
-                            ${rule.access_policy_type === 'bypass' ? 'bg-sky-500/30 text-sky-200 border border-sky-500/50' :
-                              rule.access_policy_type === 'authenticate_email' ? 'bg-purple-500/30 text-purple-200 border border-purple-500/50' :
-                              rule.access_policy_type === 'default_tld' ? 'bg-gray-500/30 text-gray-200 border border-gray-500/50' :
-                              'bg-slate-600/30 text-slate-200 border border-slate-600/50'
-                            }`}>
-                            {rule.access_policy_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} 
-                            {rule.auth_email && ` (${rule.auth_email})`}
-                          </span>
-                        ) : (
-                          <span className="italic text-slate-500">None (Public)</span>
-                        )}
-                        {rule.access_app_id && overviewData?.config_status.account_id_for_display && overviewData.config_status.account_id_for_display !== "Not Configured" && (
-                          <a 
-                            href={`https://one.dash.cloudflare.com/${overviewData.config_status.account_id_for_display}/access/apps/self-hosted/${rule.access_app_id}/edit?tab=basic-info`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title="View Access Application in Cloudflare"
-                            className="ml-1.5 text-cyan-400 hover:text-cyan-200 transition-colors text-xs"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 inline-block relative -top-px">
-                              <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clipRule="evenodd" />
-                              <path fillRule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.19a.75.75 0 00-.053 1.06z" clipRule="evenodd" />
-                            </svg>
-                          </a>
-                        )}
+                        <div className="flex flex-col items-start">
+                            {rule.access_policy_type ? (
+                            <span className={`px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full
+                                ${rule.access_policy_type === 'bypass' ? 'bg-sky-500/30 text-sky-200 border border-sky-500/50' :
+                                rule.access_policy_type === 'authenticate_email' ? 'bg-purple-500/30 text-purple-200 border border-purple-500/50' :
+                                rule.access_policy_type === 'default_tld' ? 'bg-gray-500/30 text-gray-200 border border-gray-500/50' :
+                                rule.access_policy_type === 'pending_label_sync' ? 'bg-yellow-600/40 text-yellow-300 border border-yellow-600/60 animate-pulse' :
+                                'bg-slate-600/30 text-slate-200 border border-slate-600/50'
+                                }`}>
+                                {rule.access_policy_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())} 
+                                {rule.access_policy_type === 'authenticate_email' && rule.auth_email && ` (${rule.auth_email})`}
+                            </span>
+                            ) : (
+                            <span className="italic text-slate-500">None (Public)</span>
+                            )}
+                            {rule.access_app_id && overviewData?.config_status.account_id_for_display && overviewData.config_status.account_id_for_display !== "Not Configured" && (
+                            <a 
+                                href={`https://one.dash.cloudflare.com/${overviewData.config_status.account_id_for_display}/access/apps/self-hosted/${rule.access_app_id}/edit?tab=basic-info`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="View Access Application in Cloudflare"
+                                className="mt-0.5 text-cyan-400 hover:text-cyan-200 transition-colors text-xs"
+                            >
+                                CF App
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 inline-block ml-0.5 relative -top-px">
+                                <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clipRule="evenodd" />
+                                <path fillRule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.19a.75.75 0 00-.053 1.06z" clipRule="evenodd" />
+                                </svg>
+                            </a>
+                            )}
+                            {rule.access_policy_ui_override && (
+                                <span className="mt-0.5 text-[10px] text-yellow-400 italic" title="Policy managed by UI, overriding labels if applicable.">UI Override</span>
+                            )}
+                        </div>
                       </td>
                       <td className="relative px-1 py-3 text-center w-10 align-middle">
                        <OrangePortalEffect isVisible={isHovered} size={portalSize} />
@@ -318,7 +346,7 @@ export default function ManagedRulesPage() {
                             className="text-orange-400 hover:text-orange-300 transition-colors text-xs font-medium relative z-[5] disabled:opacity-50"
                             title="Delete this rule from Cloudflare immediately"
                           >
-                            {isButtonActionInProgress ? 'Forcing...' : 'Force Delete'}
+                            {isButtonActionInProgress && confirmActionType === 'force_delete' ? 'Forcing...' : 'Force Delete'}
                           </button>
                         ) : (
                           <button 
@@ -334,7 +362,7 @@ export default function ManagedRulesPage() {
                             disabled={isButtonActionInProgress}
                             className="text-red-400 hover:text-red-200 transition-colors text-xs font-medium relative z-[5] disabled:opacity-50"
                           >
-                            {isButtonActionInProgress && ruleToDelete?.[0] === ruleKey ? 'Deleting...' : 'Delete'}
+                            {isButtonActionInProgress && confirmActionType === 'manual_delete' && ruleToDelete?.[0] === ruleKey ? 'Deleting...' : 'Delete'}
                           </button>
                         )}
                       </td>
@@ -382,6 +410,10 @@ export default function ManagedRulesPage() {
           </GlassCard>
         </div>
       )}
+      <AddManualRuleModal 
+        isOpen={isAddManualRuleModalOpen} 
+        onClose={() => setIsAddManualRuleModalOpen(false)} 
+      />
     </div>
   );
 }

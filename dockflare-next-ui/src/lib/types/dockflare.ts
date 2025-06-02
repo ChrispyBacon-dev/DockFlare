@@ -1,37 +1,32 @@
 // dockflare-next-ui/src/lib/types/dockflare.ts
 
-// --- Cloudflare API Specific Types ---
 export interface CloudflareTunnelConnection {
   colo_name: string;
   is_pending_reconnect: boolean;
   origin_ip: string;
-  opened_at: string; // ISO 8601 datetime string
+  opened_at: string; 
   uuid: string;
-  client_id?: string; // Often present
-  client_version?: string; // Often present
+  client_id?: string; 
+  client_version?: string; 
 }
 
 export interface CloudflareTunnelInfo {
   id: string;
   name: string;
-  status: 'healthy' | 'degraded' | 'down' | 'pending' | 'inactive' | string; // Added 'inactive' from your backend's mapTunnelStatus
-  created_at: string; // ISO 8601 datetime string
-  deleted_at?: string | null; // ISO 8601 datetime string
+  status: 'healthy' | 'degraded' | 'down' | 'pending' | 'inactive' | string; 
+  created_at: string; 
+  deleted_at?: string | null; 
   connections?: CloudflareTunnelConnection[];
-  tun_type?: 'cfd_tunnel' | 'warp_connector' | string; // Common types
-  // Any other fields you might get from the get_all_account_cloudflare_tunnels() call
+  tun_type?: 'cfd_tunnel' | 'warp_connector' | string; 
 }
-
-
-// --- DockFlare Application Specific Types ---
 
 export interface TunnelState {
   id?: string | null;
-  name?: string; // This might be the name of the tunnel DockFlare manages
-  status?: 'healthy' | 'degraded' | 'down' | 'unknown' | string; // Current known status from DockFlare's perspective
-  token?: string | null; // The tunnel token
-  status_message?: string; // More detailed message from DockFlare
-  live_status?: 'healthy' | 'degraded' | 'down' | 'inactive' | 'unknown' | 'not_found_in_list' | 'id_missing_for_lookup' | string; // Added from backend logic
+  name?: string; 
+  status?: 'healthy' | 'degraded' | 'down' | 'unknown' | string; 
+  token?: string | null; 
+  status_message?: string; 
+  live_status?: 'healthy' | 'degraded' | 'down' | 'inactive' | 'unknown' | 'not_found_in_list' | 'id_missing_for_lookup' | string; 
 }
 
 export interface AgentState {
@@ -45,20 +40,30 @@ export interface InitializationStatus {
   in_progress: boolean;
 }
 
+export type AccessPolicyType = 
+  | 'none' 
+  | 'bypass' 
+  | 'authenticate_email' 
+  | 'default_tld' 
+  | 'authenticate' 
+  | 'pending_label_sync'
+  | string 
+  | null;
+
 export interface RuleValue {
-  service: string; // e.g., "http://localhost:3000", "tcp://192.168.1.10:22"
-  path?: string | null; // e.g., "/grafana"
-  hostname_for_dns: string; // e.g., "grafana.example.com"
-  container_id?: string | null; // Only for Docker-managed rules
+  service: string; 
+  path?: string | null; 
+  hostname_for_dns: string; 
+  container_id?: string | null; 
   status: 'active' | 'pending_deletion' | 'error' | string;
-  delete_at?: string | null; // ISO 8601 datetime string (from serialize_rule)
+  delete_at?: string | null; 
   zone_id: string;
   no_tls_verify?: boolean;
   origin_server_name?: string | null;
   access_app_id?: string | null;
-  access_policy_type?: 'bypass' | 'authenticate_email' | 'default_tld' | string | null; // Added default_tld
+  access_policy_type?: AccessPolicyType;
   access_app_config_hash?: string | null;
-  auth_email?: string | null;
+  auth_email?: string | null; 
   access_policy_ui_override?: boolean;
   access_session_duration?: string; 
   access_app_launcher_visible?: boolean;
@@ -106,4 +111,42 @@ export interface DockFlareDashboardDisplayData {
   managed_rules_count: number;
   last_reconciliation_status_display?: string;
   last_reconciliation_time_display?: string;
+}
+
+export interface AccessPolicyPayload {
+  access_policy_type: AccessPolicyType; // 'none', 'bypass', 'authenticate_email', 'default_tld'
+  auth_email?: string | null; // e.g., "user@example.com, @domain.com"
+  session_duration?: string | null; // e.g., "24h"
+  app_launcher_visible?: boolean | null;
+  allowed_idps_str?: string | null; // Comma-separated UUIDs
+  auto_redirect?: boolean | null;
+}
+
+export type ServiceType = 
+  | 'http' 
+  | 'https' 
+  | 'tcp' 
+  | 'ssh' 
+  | 'rdp' 
+  | 'http_status' 
+  | string; 
+
+export interface ManualRulePayload {
+  subdomain?: string | null;
+  domain_name: string; 
+  path?: string | null; 
+  
+  service_type: ServiceType; 
+  service_address: string; 
+
+  no_tls_verify?: boolean | null;
+  origin_server_name?: string | null;
+  zone_name_override?: string | null; 
+
+  access_policy_type?: AccessPolicyType;
+  auth_email?: string | null;
+  access_session_duration?: string | null;
+  access_app_launcher_visible?: boolean | null;
+  access_allowed_idps_str?: string | null;
+  access_auto_redirect?: boolean | null;
 }
