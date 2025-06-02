@@ -34,9 +34,8 @@ export async function deleteManualRuleApi(ruleKey: string): Promise<{ status: st
     try {
       const errorData = await response.json();
       errorMessage = errorData.message || errorMessage;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (_e) {
-
+    } catch {
+      // Error parsing error response body, use default message
     }
     throw new Error(errorMessage);
   }
