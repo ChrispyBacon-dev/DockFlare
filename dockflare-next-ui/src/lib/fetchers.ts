@@ -10,8 +10,9 @@ export const fetcher = async <T = unknown>(url: string): Promise<T> => {
       const errorData = await res.json();
       // @ts-expect-error (custom properties on Error object)
       error.info = errorData;
-      // @ts-expect-error
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       error.status = res.status;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (_e) {
       
     }
