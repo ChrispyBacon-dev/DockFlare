@@ -7,7 +7,6 @@ const AnimatedLogo: React.FC = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const logoContainerRef = useRef<HTMLDivElement>(null); 
     const animationFrameId = useRef<number | null>(null);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const allContainersRef = useRef<any[]>([]); 
 
     useEffect(() => {
