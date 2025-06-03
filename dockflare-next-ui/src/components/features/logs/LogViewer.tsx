@@ -1,4 +1,5 @@
 // src/components/features/logs/LogViewer.tsx
+// line 91          {log.timestamp && <span className="text-slate-500 mr-2 select-none">{log.timestamp}</span>}
 import React, { useEffect, useRef, useState } from 'react';
 import { LogEntry } from '@/hooks/useRealtimeLogs';
 import GlassCard from '@/components/ui/GlassCard';
@@ -87,7 +88,7 @@ const LogViewer: React.FC<LogViewerProps> = ({
 
         {logs.map((log) => (
           <div key={log.id} className="text-xs mb-0.5 font-mono break-all" title={log.rawMessage}> 
-            {log.timestamp && <span className="text-slate-500 mr-2 select-none">{log.timestamp}</span>}
+
             {log.level && !log.rawMessage.startsWith('---') && (
               <span className={`font-semibold mr-1 ${getLogColor(log.level)}`}>
                 [{log.level}]
