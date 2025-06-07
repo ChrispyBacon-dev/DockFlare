@@ -21,7 +21,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <title>DockFlare v1.8.5 - Cloudflare Tunnel ingress Manager</title>
+    <title>DockFlare v1.8.6 - Cloudflare Tunnel ingress Manager</title>
  
     <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
     <link rel="preconnect" href="https://rsms.me" crossorigin>
@@ -43,7 +43,7 @@
 <body class="min_h-screen flex flex-col font-sans transition-colors duration-300">
     <div class="fixed bottom-6 right-[-38px] sm:bottom-7 sm:right-[-35px] z-50 transform -rotate-45 bg-indigo-600 text-white text-xs font-semibold tracking-wider text-center py-1 w-36 shadow-md"
          style="pointer-events: none;">
-        version 1.8.5
+        version 1.8.6
     </div>
 
    <header class="sticky top-0 z-40 w-full backdrop-blur-sm shadow-sm bg-base-100/90">
@@ -330,16 +330,23 @@
                                                 N/A 
                                             {% endif %}
                                         </td>
-                                        <td class="p-3 whitespace-nowrap text-sm" style="min-width: 80px;">
-                                            {% if details.source == 'manual' %}
-                                                <form action="{{ url_for('web.ui_delete_manual_rule_route', rule_key_from_url=hostname) }}" method="post" onsubmit="return confirm('Are you sure you want to delete the manual rule for {{ details.hostname_for_dns }}{% if details.path %}{{ details.path }}{% endif %}?');" class="protocol-aware-form">
-                                                    <button type="submit" class="btn btn-xs btn-error btn-outline">Delete</button>
-                                                </form>
-                                            {% else %}
-                                                <form action="{{ url_for('web.force_delete_rule_route', hostname=hostname) }}" method="post" onsubmit="return confirm('Are you sure you want to force delete the rule and DNS record for {{ details.hostname_for_dns }}{% if details.path %}{{ details.path }}{% endif %} immediately? This bypasses the grace period.');" class="protocol-aware-form">
-                                                    <button type="submit" class="btn btn-xs btn-error btn-outline" {{ 'disabled' if not docker_available else '' }}>Delete</button>
-                                                </form>
-                                            {% endif %}
+                                        <td class="p-3 whitespace-nowrap text-sm" style="min-width: 120px;">
+                                            <div class="flex items-center gap-2">
+                                                {% if details.source == 'manual' %}
+                                                    <button class="btn btn-xs btn-info btn-outline edit-manual-rule-btn" 
+                                                            data-rule-key="{{ hostname }}" 
+                                                            data-rule-details="{{ details|tojson|forceescape }}">
+                                                        Edit
+                                                    </button>
+                                                    <form action="{{ url_for('web.ui_delete_manual_rule_route', rule_key_from_url=hostname) }}" method="post" onsubmit="return confirm('Are you sure you want to delete the manual rule for {{ details.hostname_for_dns }}{% if details.path %}{{ details.path }}{% endif %}?');" class="protocol-aware-form">
+                                                        <button type="submit" class="btn btn-xs btn-error btn-outline">Delete</button>
+                                                    </form>
+                                                {% else %}
+                                                    <form action="{{ url_for('web.force_delete_rule_route', hostname=hostname) }}" method="post" onsubmit="return confirm('Are you sure you want to force delete the rule and DNS record for {{ details.hostname_for_dns }}{% if details.path %}{{ details.path }}{% endif %} immediately? This bypasses the grace period.');" class="protocol-aware-form">
+                                                        <button type="submit" class="btn btn-xs btn-error btn-outline" {{ 'disabled' if not docker_available else '' }}>Delete</button>
+                                                    </form>
+                                                {% endif %}
+                                            </div>
                                         </td>
                                     </tr>
                                 {% endfor %}
@@ -439,7 +446,7 @@
             <p class="mb-1"><a href="https://github.com/ChrispyBacon-dev/DockFlare/wiki" target="_blank" rel="noopener noreferrer" class="link link-hover link-primary">DockFlare Documentation</a></p>
             <p class="mb-1">Enjoying DockFlare? Consider supporting the project!</p>
             <p><a href="https://github.com/sponsors/ChrispyBacon-dev" target="_blank" rel="noopener noreferrer" class="inline-flex items-center link link-hover"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-pink-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" /></svg>Sponsor ChrispyBacon-dev on GitHub</a></p>
-            <p class="mt-2 text-xs opacity-60">DockFlare v1.8.5</p>
+            <p class="mt-2 text-xs opacity-60">DockFlare v1.8.6</p>
         </div>
     </footer>
 <dialog id="add_manual_rule_modal" class="modal">
@@ -553,6 +560,99 @@
     </div>
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+<dialog id="edit_manual_rule_modal" class="modal">
+    <div class="modal-box w-11/12 max-w-5xl bg-base-100/70 dark:bg-neutral/70 backdrop-blur-md shadow-xl">
+        <form method="dialog">
+            <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+        </form>
+        <h3 class="font-bold text-lg mb-6">Edit Manual Ingress Rule</h3>
+        <form action="{{ url_for('web.ui_edit_manual_rule_route') }}" method="POST" class="space-y-6 protocol-aware-form" id="edit_manual_rule_form">
+            <input type="hidden" name="original_rule_key" id="edit_original_rule_key" />
+            <div>
+                <h4 class="text-md font-semibold mb-2">Public Hostname</h4>
+                <div class="grid grid-cols-1 md:grid-cols-7 gap-4 items-start">
+                    <div class="md:col-span-2">
+                        <label class="label" for="edit_manual_subdomain"><span class="label-text">Subdomain</span></label>
+                        <input type="text" id="edit_manual_subdomain" name="manual_subdomain" placeholder="(optional) subdomain" class="input input-bordered w-full" />
+                    </div>
+                    <div class="md:col-span-3">
+                        <label class="label" for="edit_manual_domain_name"><span class="label-text">Domain (Required)</span></label>
+                        <input type="text" id="edit_manual_domain_name" name="manual_domain_name" placeholder="example.com" class="input input-bordered w-full" required />
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="label" for="edit_manual_path_display"><span class="label-text">Path</span></label>
+                        <div class="join w-full">
+                            <span class="join-item btn btn-disabled normal-case pointer-events-none bg-base-200 border-base-300 !min-h-[3rem] !h-[3rem] px-3">/</span>
+                            <input type="text" id="edit_manual_path_display" placeholder="(optional) path" class="input input-bordered join-item w-full" />
+                        </div>
+                        <input type="hidden" id="edit_manual_path" name="manual_path" />
+                    </div>
+                </div>
+            </div>
+            <div>
+                <h4 class="text-md font-semibold mb-2">Service</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+                    <div>
+                        <label class="label" for="edit_manual_service_type"><span class="label-text">Type (Required)</span></label>
+                        <select name="manual_service_type" id="edit_manual_service_type" class="select select-bordered w-full" required>
+                            <option value="" disabled>Select...</option>
+                            <option value="http">HTTP</option>
+                            <option value="https">HTTPS</option>
+                            <option value="tcp">TCP</option>
+                            <option value="ssh">SSH</option>
+                            <option value="rdp">RDP</option>
+                            <option value="http_status">HTTP Status Code</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="label" for="edit_manual_service_address">
+                            <span class="label-text" id="edit_manual_service_address_label">URL or Status Code</span>
+                        </label>
+                        <input type="text" id="edit_manual_service_address" name="manual_service_address" placeholder="host:port or status code" class="input input-bordered w-full" />
+                    </div>
+                </div>
+            </div>
+            <div>
+                <h4 class="text-md font-semibold mb-2">Access Policy (Optional)</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+                    <div>
+                        <label class="label" for="edit_manual_access_policy_type"><span class="label-text">Policy Type</span></label>
+                        <select name="manual_access_policy_type" id="edit_manual_access_policy_type" class="select select-bordered w-full policy-type-select">
+                            <option value="none">None (Public - No App)</option>
+                            <option value="bypass">Bypass (Public App)</option>
+                            <option value="authenticate_email">Authenticate by Email</option>
+                            <option value="default_tld">Use Default *.tld Policy</option>
+                        </select>
+                    </div>
+                    <div class="auth-email-field hidden md:col-span-1">
+                        <label class="label" for="edit_manual_auth_email"><span class="label-text">Allowed Email(s) or Domain(s)</span></label>
+                        <input type="text" id="edit_manual_auth_email" name="manual_auth_email" placeholder="user@example.com, @domain.com" class="input input-bordered w-full" />
+                    </div>
+                </div>
+            </div>
+            <div class="space-y-4 pt-4 border-t border-base-300 mt-6">
+                <div class="form-control">
+                    <label class="label" for="edit_manual_zone_name_override"><span class="label-text">Cloudflare Zone Name (Override/Specific)</span></label>
+                    <input type="text" id="edit_manual_zone_name_override" name="manual_zone_name_override" placeholder="yourdomain.com (if different from Domain Name)" class="input input-bordered w-full" />
+                </div>
+                <div id="edit_manual_no_tls_verify_div" class="form-control">
+                  <label class="label cursor-pointer justify-start gap-2">
+                    <input type="checkbox" name="manual_no_tls_verify" id="edit_manual_no_tls_verify" class="checkbox checkbox-sm" />
+                    <span class="label-text">Disable TLS Verification</span>
+                  </label>
+                </div>
+                <div class="form-control" id="edit_manual_origin_server_name_div">
+                    <label class="label" for="edit_manual_origin_server_name"><span class="label-text">Origin Server Name (SNI)</span></label>
+                    <input type="text" id="edit_manual_origin_server_name" name="manual_origin_server_name" placeholder="e.g., internal.service.local" class="input input-bordered w-full" />
+                </div>
+            </div>
+            <div class="modal-action mt-8">
+              <button type="submit" class="btn btn-primary">Save Changes</button>
+            </div>
+        </form>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>
