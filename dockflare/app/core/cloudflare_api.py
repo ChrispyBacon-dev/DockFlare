@@ -236,7 +236,7 @@ def get_tunnel_token_via_api(tunnel_id):
         logging.info(f"API Request: GET {url} (for token, raw request)")
         response = requests.request("GET", url, headers={"Authorization": f"Bearer {config.CF_API_TOKEN}"}, timeout=30)
         response.raise_for_status()
-        token = response.json().get("result", {})
+        token = response.json().get("result", None)
         if not token or len(token) < 50:
             logging.error(f"Retrieved token for tunnel {tunnel_id} appears invalid (too short or empty).")
             raise ValueError("Invalid token format received from API")
