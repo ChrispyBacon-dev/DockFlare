@@ -232,16 +232,25 @@ def get_tunnel_token_via_api(tunnel_id):
     logging.info(f"Getting token for tunnel ID '{tunnel_id}' on account {config.CF_ACCOUNT_ID}")
     endpoint = f"/accounts/{config.CF_ACCOUNT_ID}/cfd_tunnel/{tunnel_id}/token"
     url = f"{config.CF_API_BASE_URL}{endpoint}"
+    token = None
     try:
         logging.info(f"API Request: GET {url} (for token, raw request)")
         response = requests.request("GET", url, headers={"Authorization": f"Bearer {config.CF_API_TOKEN}"}, timeout=30)
         response.raise_for_status()
-        token = response.text.strip()
+        try:
+            token = response.json().get("result")
+            logging.info("Successfully parsed tunnel token from JSON response.")
+        except json.JSONDecodeError:
+            # If JSON parsing fails, it's the legacy raw text response. Bugfix for Issue 83
+            logging.info("Could not parse response as JSON, falling back to raw text for token.")
+            token = response.text.strip()
         if not token or len(token) < 50:
-            logging.error(f"Retrieved token for tunnel {tunnel_id} appears invalid (too short or empty).")
-            raise ValueError("Invalid token format received from API")
-        logging.info(f"Successfully retrieved token for tunnel {tunnel_id}")
+            logging.error(f"Retrieved token for tunnel {tunnel_id} appears invalid (too short or empty). Value: '{token}'")
+            raise ValueError("Invalid token format or content received from API")
+        
+        logging.info(f"Successfully retrieved and validated token for tunnel {tunnel_id}")
         return token
+
     except requests.exceptions.RequestException as e:
         error_msg = f"API Error getting token for tunnel {tunnel_id}: {e}"
         if e.response is not None:
