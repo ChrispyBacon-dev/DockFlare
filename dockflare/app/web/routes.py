@@ -601,6 +601,7 @@ def ui_add_manual_rule_route():
         logging.info(f"{log_action} manual rule for Key: {key_for_managed_rules} (FQDN: {full_hostname}, Path: {processed_path or '(root)'}) with service {processed_service_for_cf}")
         
         managed_rules[key_for_managed_rules] = { 
+            "hostname": full_hostname,
             "service": processed_service_for_cf,
             "path": processed_path, 
             "hostname_for_dns": full_hostname, 
@@ -841,6 +842,7 @@ def ui_edit_manual_rule_route():
             del managed_rules[original_rule_key]
 
         managed_rules[new_rule_key] = { 
+            "hostname": full_hostname,
             "service": processed_service_for_cf, "path": processed_path, "hostname_for_dns": full_hostname, 
             "container_id": None, "status": "active", "delete_at": None, "zone_id": target_zone_id, 
             "no_tls_verify": no_tls_verify, "origin_server_name": origin_server_name_input or None,
