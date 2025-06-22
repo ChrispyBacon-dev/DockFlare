@@ -164,13 +164,8 @@ def perform_initial_setup_and_tasks():
         threading.Timer(15, reconcile_state_threaded).start() 
 
         if not config.USE_EXTERNAL_CLOUDFLARED and tunnel_state.get("id") and tunnel_state.get("token"):
-            logging.info("Checking managed cloudflared agent container status post-initialization...")
-            update_cloudflared_container_status()
-            if cloudflared_agent_state.get("container_status") != 'running':
-                logging.info("Managed agent container not running, attempting auto-start...")
-                start_cloudflared_container()
-            else:
-                logging.info(f"Managed agent container '{config.CLOUDFLARED_CONTAINER_NAME}' is already running.")
+            logging.info("Checking and reconciling managed cloudflared agent container...")
+            start_cloudflared_container()
     
     run_all_background_tasks()
 

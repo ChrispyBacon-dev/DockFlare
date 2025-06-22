@@ -306,7 +306,9 @@ def get_cloudflared_container():
         logging.debug("CLOUDFLARED_CONTAINER_NAME is not set.")
         return None
     try:
-        return docker_client.containers.get(config.CLOUDFLARED_CONTAINER_NAME)
+        container = docker_client.containers.get(config.CLOUDFLARED_CONTAINER_NAME)
+        container.reload()
+        return container
     except NotFound:
         logging.debug(f"Agent container '{config.CLOUDFLARED_CONTAINER_NAME}' not found.")
         return None
@@ -317,7 +319,6 @@ def get_cloudflared_container():
     except requests.exceptions.ConnectionError as e: 
         logging.error(f"Docker connection error getting agent container: {e}")
         cloudflared_agent_state["last_action_status"] = f"Error connect Docker: {e}"
-        
         return None
     except Exception as e:
         logging.error(f"Unexpected error getting agent container '{config.CLOUDFLARED_CONTAINER_NAME}': {e}", exc_info=True)
@@ -398,9 +399,9 @@ def ensure_docker_network_exists(network_name):
             logging.info(f"Successfully created Docker network '{network_name}'.")
             return True
         except APIError as e_create:
-            if "already exists" in str(e_create).lower(): # More robust check
+            if "already exists" in str(e_create).lower(): 
                 logging.warning(f"Network '{network_name}' creation reported conflict but NotFound was raised? Assuming it exists now.")
-                return True # Race condition likely
+                return True 
             logging.error(f"Failed to create Docker network '{network_name}': {e_create}", exc_info=True)
             cloudflared_agent_state["last_action_status"] = f"Error create net: {e_create}"
             return False
@@ -422,9 +423,8 @@ def ensure_docker_network_exists(network_name):
         return False
 
 def start_cloudflared_container():
-    logging.info(f"Attempting to start agent container '{config.CLOUDFLARED_CONTAINER_NAME}'...")
-    cloudflared_agent_state["last_action_status"] = "Starting..."
-    success_flag = False
+    logging.info(f"Attempting to start and reconcile agent container '{config.CLOUDFLARED_CONTAINER_NAME}'...")
+    cloudflared_agent_state["last_action_status"] = "Starting/Reconciling..."
     
     if not docker_client:
         msg = "Docker client not available."
@@ -438,7 +438,6 @@ def start_cloudflared_container():
         return False
     if not config.CLOUDFLARED_NETWORK_NAME or not ensure_docker_network_exists(config.CLOUDFLARED_NETWORK_NAME):
         logging.error(f"Failed network check/create for '{config.CLOUDFLARED_NETWORK_NAME}'. Cannot start agent.")
-        
         return False
 
     token = tunnel_state["token"]
@@ -446,52 +445,44 @@ def start_cloudflared_container():
     needs_recreate = False
 
     if container:
-        try:
-            container.reload()
-            logging.info(f"Found existing agent container '{container.name}' status: {container.status}")
-            if container.status == 'running':
-                msg = f"Agent container '{container.name}' is already running."
-                logging.info(msg)
-                cloudflared_agent_state["last_action_status"] = msg
-                success_flag = True
-                return True
-
-            current_networks = container.attrs.get('NetworkSettings', {}).get('Networks', {})
-            network_mode = container.attrs.get('HostConfig', {}).get('NetworkMode', 'default')
-            
-            
-            is_on_correct_network = config.CLOUDFLARED_NETWORK_NAME in current_networks
-            if network_mode != config.CLOUDFLARED_NETWORK_NAME and not is_on_correct_network :
-                logging.warning(f"Existing agent container '{container.name}' is in network mode '{network_mode}' / not on '{config.CLOUDFLARED_NETWORK_NAME}'. Networks: {list(current_networks.keys())}. Needs recreation.")
-                needs_recreate = True
-            
-            if needs_recreate:
-                logging.info(f"Removing misconfigured/stopped agent container '{container.name}'...")
-                try:
-                    container.remove(force=True)
-                    container = None 
-                except (APIError, requests.exceptions.ConnectionError) as rm_err:
-                    logging.error(f"Failed to remove misconfigured agent '{container.name}': {rm_err}. Cannot proceed.")
-                    cloudflared_agent_state["last_action_status"] = f"Error: Failed remove old agent: {rm_err}"
-                    return False
-            else: 
-                logging.info(f"Starting existing stopped agent container '{container.name}'...");
-                container.start()
-                msg = f"Started existing agent container '{container.name}'."
-                cloudflared_agent_state["last_action_status"] = msg
-                logging.info(msg)
-                success_flag = True
+        logging.info(f"Found existing agent container '{container.name}' with status: {container.status}. Checking configuration...")
         
-        except (NotFound, APIError) as e_check:
-            logging.warning(f"Error checking existing agent container '{config.CLOUDFLARED_CONTAINER_NAME}': {e_check}. Assuming creation is needed.")
-            container = None 
-        except requests.exceptions.ConnectionError as e_conn:
-            logging.error(f"Docker connection error checking existing agent container: {e_conn}")
-            cloudflared_agent_state["last_action_status"] = f"Error: Docker connect check agent."
-            return False
+        network_mode = container.attrs.get('HostConfig', {}).get('NetworkMode', 'default')
+        if network_mode != config.CLOUDFLARED_NETWORK_NAME:
+            logging.warning(f"Network mismatch for managed agent. Desired: '{config.CLOUDFLARED_NETWORK_NAME}', Actual: '{network_mode}'. Recreation required.")
+            needs_recreate = True
 
-    if not container and not success_flag: 
-        logging.info(f"Agent container '{config.CLOUDFLARED_CONTAINER_NAME}' not found or needs recreation. Creating...")
+        try:
+            current_image = container.image.tags[0] if container.image.tags else None
+            if current_image != config.CLOUDFLARED_IMAGE:
+                logging.warning(f"Image mismatch for managed agent. Desired: '{config.CLOUDFLARED_IMAGE}', Actual: '{current_image}'. Recreation required.")
+                needs_recreate = True
+        except Exception as img_err:
+             logging.warning(f"Could not reliably determine image for running agent container: {img_err}")
+
+        if needs_recreate:
+            logging.info(f"Removing misconfigured agent container '{container.name}' before recreation...")
+            try:
+                container.remove(force=True)
+                container = None  
+            except (APIError, requests.exceptions.ConnectionError) as rm_err:
+                logging.error(f"Failed to remove misconfigured agent '{container.name}': {rm_err}. Cannot proceed.")
+                cloudflared_agent_state["last_action_status"] = f"Error: Failed to remove old agent: {rm_err}"
+                return False
+
+    if container:
+        if container.status == 'running':
+            msg = f"Managed agent container '{container.name}' is already running and correctly configured."
+            logging.info(msg)
+            cloudflared_agent_state["last_action_status"] = msg
+        else:
+            logging.info(f"Starting correctly configured but stopped agent container '{container.name}'...");
+            container.start()
+            msg = f"Started existing agent container '{container.name}'."
+            cloudflared_agent_state["last_action_status"] = msg
+            logging.info(msg)
+    else:
+        logging.info(f"Agent container '{config.CLOUDFLARED_CONTAINER_NAME}' not found or was misconfigured. Creating new container...")
         try:
             logging.info(f"Pulling image {config.CLOUDFLARED_IMAGE}...");
             docker_client.images.pull(config.CLOUDFLARED_IMAGE)
@@ -518,26 +509,20 @@ def start_cloudflared_container():
             msg = f"Successfully created and started agent container '{new_container.name}' ({new_container.id[:12]})."
             cloudflared_agent_state["last_action_status"] = msg
             logging.info(msg)
-            success_flag = True
         except APIError as create_err:
-            if "is already in use" in str(create_err):
-                msg = f"Error: Agent container name '{config.CLOUDFLARED_CONTAINER_NAME}' conflict."
-            else:
-                msg = f"Docker API error creating agent container: {create_err}"
+            msg = f"Docker API error creating agent container: {create_err}"
             logging.error(msg, exc_info=True)
             cloudflared_agent_state["last_action_status"] = msg
-            success_flag = False
+            return False 
         except requests.exceptions.ConnectionError as e_conn_run:
             logging.error(f"Docker connection failed running agent container: {e_conn_run}")
             cloudflared_agent_state["last_action_status"] = f"Error: Docker connect run agent."
-            success_flag = False
+            return False 
             
-    if success_flag: 
-        time.sleep(2) 
-    
+    time.sleep(2) 
     update_cloudflared_container_status() 
-    logging.info(f"Exiting start_cloudflared_container (Success: {success_flag}).")
-    return success_flag
+    logging.info(f"Exiting start_cloudflared_container (Success: True).")
+    return True
 
 def stop_cloudflared_container():
     logging.info(f"Attempting to stop agent container '{config.CLOUDFLARED_CONTAINER_NAME}'...")
