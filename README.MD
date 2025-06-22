@@ -282,7 +282,6 @@ This creates an Access Application named "DockFlare-secure-app.example.com" requ
 | `GRACE_PERIOD_SECONDS`            | Time (sec) before removing rules after container stops.                                                   | `28800` (8 hours)                |
 | `CLEANUP_INTERVAL_SECONDS`        | Interval (sec) for checking expired rules.                                                                | `300` (5 minutes)                |
 | `AGENT_STATUS_UPDATE_INTERVAL_SECONDS` | Interval (sec) to update managed agent status.                                                       | `10`                             |
-| `LABEL_PREFIX`                    | **(Advanced)** Custom prefix for Docker labels. Overrides both `dockflare.` and `cloudflare.tunnel.`.      | `dockflare.`                     |
 | `USE_EXTERNAL_CLOUDFLARED`        | Set to `true` to use an existing `cloudflared` agent.                                                     | `false`                          |
 | `EXTERNAL_TUNNEL_ID`              | Tunnel ID for external `cloudflared` mode.                                                                | (Required if external is true)   |
 | `SCAN_ALL_NETWORKS`               | Scan containers across all Docker networks.                                                               | `false`                          |
