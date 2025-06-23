@@ -183,7 +183,10 @@ To help you get started immediately, a pre-built, detailed Grafana dashboard is 
 -   Active HA Connections
 -   HTTP Status Code Breakdowns
 -   And more...
-
+<details>
+<summary><b>Grafana Dashboard Example</b></summary>
+![Grafana Dashboard Example](images/grafana_dashboard_example.png)
+</details>
 <br>
 
 <details>
