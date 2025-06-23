@@ -1,8 +1,8 @@
 ![DockFlareBanner](images/bannertr.png)
-[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/ChrispyBacon-dev/baconflip)
+[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/ChrispyBacon-dev/DockFlare)
 [![OS](https://img.shields.io/badge/os-linux%20%7C%20windows%20%7C%20macos-brightgreen)]()
 [![CPU Architectures](https://img.shields.io/badge/CPU-x86_64%20%7C%20arm64-brightgreen)](https://en.wikipedia.org/wiki/Central_processing_unit)
-[![Generic badge](https://img.shields.io/badge/Release-1.8.5-blue.svg)](https://github.com/ChrispyBacon-dev/DockFlare/releases/tag/v1.8.5)
+[![Generic badge](https://img.shields.io/badge/Release-1.9.0-blue.svg)](https://github.com/ChrispyBacon-dev/DockFlare/releases/tag/v1.8.9)
 [![Docker Pulls](https://img.shields.io/docker/pulls/alplat/dockflare)](https://hub.docker.com/r/alplat/dockflare)
 [![made-with-python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/)
 [![GitHub issues](https://img.shields.io/github/issues/ChrispyBacon-dev/dockflare)](https://github.com/ChrispyBacon-dev/dockflare/issues)
@@ -22,16 +22,17 @@ DockFlare simplifies Cloudflare Tunnel and Zero Trust Access policy management b
 -   **Unified Cloudflare Tunnel Management**:
     -   Automates Tunnel creation/use & `cloudflared` agent lifecycle (optional internal deployment or external).
 -   **Dynamic Ingress via Docker Labels**:
-    -   Auto-configures Tunnel ingress & DNS from Docker labels (e.g., `hostname`, `service`, `path`).
+    -   Auto-configures Tunnel ingress & DNS from Docker labels using the new `dockflare.*` prefix (backward compatible with `cloudflare.tunnel.*`).
     -   Supports various service types (`http`, `https`, `tcp`, `ssh`, `rdp`, `http_status`).
     -   Controls `no_tls_verify` and `originServerName` (SNI) for origin connections.
+-   **Flexible Routing: Multi-Path, Multi-Hostname & Multi-Zone**:
+    -   **NEW:** Route multiple URL paths on the same hostname to a single service (e.g., `app.com/api` and `app.com/web`).
+    -   Supports multiple hostnames (unique targets, zones, policies) per Docker container using indexed labels.
 -   **Manual Ingress Rule Management**:
     -   Add & manage public hostnames for non-Docker services (e.g., router, NAS) via Web UI; DockFlare handles Tunnel rules & DNS.
 -   **Versatile Access Policy Control (Docker & Manual)**:
     -   Define Cloudflare Access Policies (e.g., `bypass`, `authenticate`, custom JSON) via Docker labels; auto-manages Access Applications.
     -   Web UI to manage/override policies for *any* rule; UI changes persist, override labels, with revert option & clear indicators.
--   **Multi-Hostname & Multi-Zone**:
-    -   Supports multiple hostnames (unique targets, zones, policies) per Docker container (indexed labels) or manual rule.
 -   **State Persistence & Graceful Deletion**:
     -   Configurable grace period for Docker rule cleanup; persists all managed rules, Access App IDs, & UI overrides in `state.json`.
 -   **Intelligent Reconciliation**:
@@ -98,10 +99,10 @@ DockFlare simplifies Cloudflare Tunnel and Zero Trust Access policy management b
           - cloudflare-net
         # Optional labels to expose DockFlare itself via DockFlare
         # labels:
-        #   - cloudflare.tunnel.enable=true
-        #   - cloudflare.tunnel.hostname=dockflare.yourdomain.tld
-        #   - cloudflare.tunnel.service=http://dockflare:5000
-        #   - cloudflare.tunnel.access.policy=authenticate # Example: require login
+        #   - "dockflare.enable=true"
+        #   - "dockflare.hostname=dockflare.yourdomain.tld"
+        #   - "dockflare.service=http://dockflare:5000"
+        #   - "dockflare.access.policy=authenticate" # Example: require login
     volumes:
       dockflare_data:
     networks:
@@ -120,7 +121,7 @@ DockFlare simplifies Cloudflare Tunnel and Zero Trust Access policy management b
     CF_ACCOUNT_ID=your_cloudflare_account_id_here
     
     # Default Cloudflare Zone ID (Recommended)
-    # If not set, cloudflare.tunnel.zonename label is REQUIRED for all services.
+    # If not set, the 'zonename' label is REQUIRED for all services.
     CF_ZONE_ID=your_default_cloudflare_zone_id_here
     
     # === TUNNEL CONFIGURATION ===
@@ -129,7 +130,7 @@ DockFlare simplifies Cloudflare Tunnel and Zero Trust Access policy management b
     TUNNEL_NAME=DockFlare-Tunnel
       
     # === DOCKFLARE BEHAVIOR & CUSTOMIZATION ===
-    LABEL_PREFIX=cloudflare.tunnel
+    # LABEL_PREFIX=dockflare. # The default is now 'dockflare.'. Uncomment to customize.
     GRACE_PERIOD_SECONDS=28800
     CLEANUP_INTERVAL_SECONDS=300
     AGENT_STATUS_UPDATE_INTERVAL_SECONDS=10
@@ -157,16 +158,18 @@ DockFlare simplifies Cloudflare Tunnel and Zero Trust Access policy management b
 ## 🏷️ How It Works & Labeling Containers
 
 DockFlare listens for Docker container events.
-- **Label-First for Initial Setup**: By labeling your containers, DockFlare initially configures Cloudflare Tunnel ingress rules, DNS records, and associated Cloudflare Zero Trust Access Applications.
+- **Label-First for Initial Setup**: By labeling your containers with the new `dockflare.` prefix, DockFlare initially configures Cloudflare Tunnel ingress rules, DNS records, and associated Cloudflare Zero Trust Access Applications.
 - **UI for Dynamic Overrides**: The Web UI allows you to dynamically change Access Policies for individual services. These UI changes take precedence over container labels and are persistent.
 - **Revert Option**: You can always revert a UI-managed Access Policy back to be controlled by the container's labels via the Web UI.
 
 <details>
 <summary>📝 Labeling Your Containers (Examples & Details)</summary>
 
+> **Note:** As of v1.8.9, the recommended label prefix is `dockflare.`. The old `cloudflare.tunnel.` prefix is still fully supported for backward compatibility.
+
 DockFlare supports two approaches for labeling containers:
 
-#### 1. Standard Labels (Single Domain per Service)
+#### 1. Standard Labels (Single Service per Container)
 
 To expose a service through DockFlare, add the following labels to your container:
 
@@ -176,57 +179,56 @@ services:
     image: nginx:latest
     labels:
       # Enable DockFlare management for this container
-      - "cloudflare.tunnel.enable=true" 
+      - "dockflare.enable=true" 
       
       # The public hostname to expose
-      - "cloudflare.tunnel.hostname=my-service.example.com"
+      - "dockflare.hostname=my-service.example.com"
       
       # The internal service address (protocol://container_name_or_ip:port)
       # Service type (http, https, tcp, ssh, rdp, http_status) is inferred from the prefix.
-      - "cloudflare.tunnel.service=http://my-service:80" 
+      - "dockflare.service=http://my-service:80" 
       
       # Optional: Specify a URL path. Only requests to hostname/path will match.
-      # - "cloudflare.tunnel.path=/app"
+      # - "dockflare.path=/app"
       
       # Optional: Specify a different Cloudflare Zone for this hostname
-      # - "cloudflare.tunnel.zonename=another.example.com"
+      # - "dockflare.zonename=another.example.com"
       
       # Optional: Disable TLS verification if your internal service uses HTTP or a self-signed cert
-      # - "cloudflare.tunnel.no_tls_verify=true"
+      # - "dockflare.no_tls_verify=true"
 
       # Optional: Specify Origin Server Name (SNI) for TLS connection to origin
-      # - "cloudflare.tunnel.originsrvname=internal.service.local" 
+      # - "dockflare.originsrvname=internal.service.local" 
     networks:
       - cloudflare-net 
 ```
 
-#### 2. Indexed Labels (Multiple Hostnames/Services from One Container)
+#### 2. Indexed Labels (Multiple Services from One Container)
 
-To expose multiple hostnames or services from a single container, use indexed labels:
+To expose multiple hostnames, paths, or services from a single container, use indexed labels:
 
 ```yaml
 services:
-  multi-host-app:
-    image: my-custom-app:latest
+  my-api-gateway:
+    image: nginx:alpine
     labels:
-      - "cloudflare.tunnel.enable=true"
+      - "dockflare.enable=true"
       
-      # First hostname configuration
-      - "cloudflare.tunnel.0.hostname=app1.example.com"
-      - "cloudflare.tunnel.0.service=http://multi-host-app:8080" # Points to port 8080
-      - "cloudflare.tunnel.0.path=/frontend" # Path for this specific hostname/service
-      # - "cloudflare.tunnel.0.originsrvname=app1-sni.internal" 
-      # - "cloudflare.tunnel.0.access.policy=authenticate" 
+      # --- Rule 0: Root path (/) for api.example.com ---
+      - "dockflare.0.hostname=api.example.com"
+      - "dockflare.0.service=http://my-api-gateway:80"
       
-      # Second hostname configuration
-      - "cloudflare.tunnel.1.hostname=api.example.com"
-      - "cloudflare.tunnel.1.service=tcp://multi-host-app:3000" # Example of TCP service
-      # - "cloudflare.tunnel.1.path=/rpc" # Path might be less common for TCP but possible
-      # - "cloudflare.tunnel.1.zonename=otherexample.com" 
-      # - "cloudflare.tunnel.1.no_tls_verify=true" # Not typical for TCP but shown as an option
-      # - "cloudflare.tunnel.1.originsrvname=api-sni.internal"
+      # --- Rule 1: /v1 path for api.example.com ---
+      - "dockflare.1.hostname=api.example.com"
+      - "dockflare.1.path=/v1"
+      - "dockflare.1.service=http://my-api-gateway:80"
       
-      # Note: Default service/path/originsrvname can also be set without index,
+      # --- Rule 2: A different hostname and service on the same container ---
+      - "dockflare.2.hostname=status.example.com"
+      - "dockflare.2.service=http://my-api-gateway:80" # Points to a different Nginx location block
+      - "dockflare.2.access.policy=authenticate"
+      
+      # Note: Default values (like for 'service') can be set without an index,
       # and indexed entries will fall back to them if not specified.
     networks:
       - cloudflare-net
@@ -238,27 +240,27 @@ services:
 <details>
 <summary>🛡️ Access Policy Labels (Zero Trust)</summary>
 
-These labels define the *initial* Cloudflare Access Policy for an exposed `hostname`. UI changes persist and override these labels unless "Reverted to Labels".
+These labels define the *initial* Cloudflare Access Policy for an exposed service. UI changes persist and override these labels unless "Reverted to Labels".
 
-| Label                                   | Description                                                                                                                                                                                             | Default                | Example                                                                                   |
-| :-------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :--------------------- | :---------------------------------------------------------------------------------------- |
-| `{prefix}.access.policy`                | Type: `bypass` (public app), `authenticate` (IdP login), `default_tld` (inherits from `*.domain.com` policy, no specific app created). If unset, service is public (no Access App).                  | (None/Public)          | `cloudflare.tunnel.access.policy="authenticate"`                                        |
-| `{prefix}.access.name`                  | Custom name for the Cloudflare Access Application.                                                                                                                                                      | `DockFlare-{hostname}` | `cloudflare.tunnel.access.name="My Web App Access"`                                      |
-| `{prefix}.access.session_duration`      | Session duration (e.g., `24h`, `30m`).                                                                                                                                                                | `24h`                  | `cloudflare.tunnel.access.session_duration="1h"`                                         |
-| `{prefix}.access.app_launcher_visible`  | If `"true"`, app is visible in Cloudflare App Launcher.                                                                                                                                                  | `false`                | `cloudflare.tunnel.access.app_launcher_visible="true"`                                   |
-| `{prefix}.access.allowed_idps`          | Comma-separated IdP UUIDs. If `authenticate` & unset, allows any account IdP.                                                                                                                             | (Account Default)      | `cloudflare.tunnel.access.allowed_idps="<IdP_UUID_1>,<IdP_UUID_2>"`                      |
-| `{prefix}.access.auto_redirect_to_identity` | If `"true"`, auto-redirects to IdP login.                                                                                                                                                             | `false`                | `cloudflare.tunnel.access.auto_redirect_to_identity="true"`                              |
-| `{prefix}.access.custom_rules`          | JSON string array of [Cloudflare Access Policy rules](https://developers.cloudflare.com/api/operations/access-policies-create-an-access-policy). Overrides basic `access.policy` decisions.         | (None)                 | `'...=[{"email":{"email":"user@example.com"},"action":"allow"},{"action":"block"}]'` |
+| Label                               | Description                                                                                                                                                                                             | Default                | Example                                                                                   |
+| :---------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :--------------------- | :---------------------------------------------------------------------------------------- |
+| `dockflare.access.policy`           | Type: `bypass` (public app), `authenticate` (IdP login), `default_tld` (inherits from `*.domain.com` policy, no specific app created). If unset, service is public (no Access App).                  | (None/Public)          | `dockflare.access.policy="authenticate"`                                        |
+| `dockflare.access.name`             | Custom name for the Cloudflare Access Application.                                                                                                                                                      | `DockFlare-{hostname}` | `dockflare.access.name="My Web App Access"`                                      |
+| `dockflare.access.session_duration` | Session duration (e.g., `24h`, `30m`).                                                                                                                                                                | `24h`                  | `dockflare.access.session_duration="1h"`                                         |
+| `dockflare.access.app_launcher_visible` | If `"true"`, app is visible in Cloudflare App Launcher.                                                                                                                                                  | `false`                | `dockflare.access.app_launcher_visible="true"`                                   |
+| `dockflare.access.allowed_idps`     | Comma-separated IdP UUIDs. If `authenticate` & unset, allows any account IdP.                                                                                                                             | (Account Default)      | `dockflare.access.allowed_idps="<IdP_UUID_1>,<IdP_UUID_2>"`                      |
+| `dockflare.access.auto_redirect_to_identity` | If `"true"`, auto-redirects to IdP login.                                                                                                                                                             | `false`                | `dockflare.access.auto_redirect_to_identity="true"`                              |
+| `dockflare.access.custom_rules`     | JSON string array of [Cloudflare Access Policy rules](https://developers.cloudflare.com/api/operations/access-policies-create-an-access-policy). Overrides basic `access.policy` decisions.         | (None)                 | `'...=[{"email":{"email":"user@example.com"},"action":"allow"},{"action":"block"}]'` |
 
 **Example of Access Policy Labels:**
 ```yaml
 labels:
-  - "cloudflare.tunnel.enable=true"
-  - "cloudflare.tunnel.hostname=secure-app.example.com"
-  - "cloudflare.tunnel.service=http://my-secure-app:8080"
-  - "cloudflare.tunnel.access.policy=authenticate"
-  - "cloudflare.tunnel.access.session_duration=8h"
-  # - "cloudflare.tunnel.access.allowed_idps=YOUR_GITHUB_IDP_UUID_HERE" 
+  - "dockflare.enable=true"
+  - "dockflare.hostname=secure-app.example.com"
+  - "dockflare.service=http://my-secure-app:8080"
+  - "dockflare.access.policy=authenticate"
+  - "dockflare.access.session_duration=8h"
+  # - "dockflare.access.allowed_idps=YOUR_GITHUB_IDP_UUID_HERE" 
 ```
 This creates an Access Application named "DockFlare-secure-app.example.com" requiring authentication with an 8-hour session.
 
@@ -280,7 +282,6 @@ This creates an Access Application named "DockFlare-secure-app.example.com" requ
 | `GRACE_PERIOD_SECONDS`            | Time (sec) before removing rules after container stops.                                                   | `28800` (8 hours)                |
 | `CLEANUP_INTERVAL_SECONDS`        | Interval (sec) for checking expired rules.                                                                | `300` (5 minutes)                |
 | `AGENT_STATUS_UPDATE_INTERVAL_SECONDS` | Interval (sec) to update managed agent status.                                                       | `10`                             |
-| `LABEL_PREFIX`                    | Prefix for Docker labels.                                                                                 | `cloudflare.tunnel`              |
 | `USE_EXTERNAL_CLOUDFLARED`        | Set to `true` to use an existing `cloudflared` agent.                                                     | `false`                          |
 | `EXTERNAL_TUNNEL_ID`              | Tunnel ID for external `cloudflared` mode.                                                                | (Required if external is true)   |
 | `SCAN_ALL_NETWORKS`               | Scan containers across all Docker networks.                                                               | `false`                          |
@@ -369,12 +370,12 @@ This requires careful steps to avoid conflicts.
 DockFlare handles services across multiple Cloudflare zones (domains).
 
 1.  **Container-Specific Zone (Label):**
-    Use `cloudflare.tunnel.zonename="yourdomain.com"` on a container (or indexed entry) to specify its zone. DockFlare resolves the Zone ID automatically.
+    Use `dockflare.zonename="yourdomain.com"` on a container (or indexed entry) to specify its zone. DockFlare resolves the Zone ID automatically.
     ```yaml
     labels:
-      - "cloudflare.tunnel.0.hostname=app.customdomain.com"
-      - "cloudflare.tunnel.0.service=http://my-service:80"
-      - "cloudflare.tunnel.0.zonename=customdomain.com" 
+      - "dockflare.0.hostname=app.customdomain.com"
+      - "dockflare.0.service=http://my-service:80"
+      - "dockflare.0.zonename=customdomain.com" 
     ```
 2.  **Default Zone (Environment Variable):**
     Set `CF_ZONE_ID` in your `.env` file. This is used if a `zonename` label isn't provided for a rule.

@@ -14,6 +14,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
+#
 # app/config.py
 import os
 import sys
@@ -44,9 +45,6 @@ else:
 
 USE_EXTERNAL_CLOUDFLARED = os.getenv('USE_EXTERNAL_CLOUDFLARED', 'false').lower() in ['true', '1', 't', 'yes']
 EXTERNAL_TUNNEL_ID = os.getenv('EXTERNAL_TUNNEL_ID')
-SCAN_ALL_NETWORKS = os.getenv('SCAN_ALL_NETWORKS', 'false').lower() in ['true', '1', 't', 'yes']
-TUNNEL_DNS_SCAN_ZONE_NAMES_STR = os.getenv('TUNNEL_DNS_SCAN_ZONE_NAMES', '')
-TUNNEL_DNS_SCAN_ZONE_NAMES = [name.strip() for name in TUNNEL_DNS_SCAN_ZONE_NAMES_STR.split(',') if name.strip()]
 TUNNEL_NAME = os.getenv("TUNNEL_NAME", "dockflared-tunnel")
 
 if not USE_EXTERNAL_CLOUDFLARED:
@@ -57,15 +55,25 @@ else:
     CLOUDFLARED_CONTAINER_NAME = None
 
 CLOUDFLARED_IMAGE = "cloudflare/cloudflared:latest"
-LABEL_PREFIX = os.getenv('LABEL_PREFIX', 'cloudflare.tunnel')
+
+PRIMARY_LABEL_PREFIX = 'dockflare.'
+LEGACY_LABEL_PREFIX = 'cloudflare.tunnel.'
+CUSTOM_LABEL_PREFIX = os.getenv('LABEL_PREFIX')
+
+# DEPRECATED: This will be removed in a future version.
+LABEL_PREFIX = CUSTOM_LABEL_PREFIX or PRIMARY_LABEL_PREFIX
+
 GRACE_PERIOD_SECONDS = int(os.getenv('GRACE_PERIOD_SECONDS', 28800))
-CLEANUP_INTERVAL_SECONDS = int(os.getenv('CLEANUP_INTERVAL_SECONDS', 300))
+CLEANUP_INTERVAL_SECONDS = int(os.getenv('CLEANUP_INTERVAL_SECONDS', 60))
 AGENT_STATUS_UPDATE_INTERVAL_SECONDS = int(os.getenv('AGENT_STATUS_UPDATE_INTERVAL_SECONDS', 10))
 STATE_FILE_PATH = os.getenv('STATE_FILE_PATH', '/app/data/state.json')
 MAX_LOG_QUEUE_SIZE = 200
 MAX_CONCURRENT_DNS_OPS = int(os.getenv('MAX_CONCURRENT_DNS_OPS', 3))
 RECONCILIATION_BATCH_SIZE = int(os.getenv('RECONCILIATION_BATCH_SIZE', 3))
 ACCOUNT_EMAIL_CACHE_TTL = 3600
+SCAN_ALL_NETWORKS = os.getenv('SCAN_ALL_NETWORKS', 'false').lower() in ['true', '1', 't', 'yes']
+TUNNEL_DNS_SCAN_ZONE_NAMES_STR = os.getenv('TUNNEL_DNS_SCAN_ZONE_NAMES', '')
+TUNNEL_DNS_SCAN_ZONE_NAMES = [name.strip() for name in TUNNEL_DNS_SCAN_ZONE_NAMES_STR.split(',') if name.strip()]
 
 REQUIRED_VARS_BASE = ["CF_API_TOKEN", "CF_ACCOUNT_ID"]
 missing_vars = []
@@ -88,4 +96,4 @@ if missing_vars:
 
 if not CF_ZONE_ID:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
-    logging.warning("CF_ZONE_ID not set. DNS management requires 'cloudflare.tunnel.zonename' label on containers or manual zone specification.")
+    logging.warning("CF_ZONE_ID not set. DNS management requires the 'zonename' label on containers or manual zone specification.")

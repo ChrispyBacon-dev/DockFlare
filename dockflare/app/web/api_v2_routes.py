@@ -50,6 +50,7 @@ from app.core.access_manager import (
 )
 from app.core.reconciler import reconcile_state_threaded
 from app.core.docker_handler import is_valid_hostname, is_valid_service
+from app.core.utils import get_rule_key
 
 api_v2_bp = Blueprint('api_v2', __name__, url_prefix='/api/v2')
 CORS(api_v2_bp, resources={r"/api/v2/*": {"origins": "*"}}) # Allow all origins for this blueprint for now
@@ -248,7 +249,7 @@ def add_manual_rule():
         if len(processed_path) > 1 and processed_path.endswith('/'):
             processed_path = processed_path.rstrip('/')
 
-    rule_key = f"{full_hostname}{'|' + processed_path if processed_path else ''}"
+    rule_key = get_rule_key(full_hostname, processed_path)
 
     processed_service_for_cf = "" 
     if service_type in ["http", "https"]:
@@ -329,16 +330,20 @@ def add_manual_rule():
             )
         else:
             logging.error(f"API: Failed to create/update Access App for manual rule {full_hostname}")
-            # Decide if this is a critical failure for the whole rule add operation
 
     with state_lock:
         if rule_key in managed_rules and managed_rules[rule_key].get("source", "docker") == "docker":
             return jsonify({"status": "error", "message": f"Rule for '{rule_key}' is Docker-managed and cannot be manually overridden this way."}), 409 
 
         managed_rules[rule_key] = {
-            "service": processed_service_for_cf, "path": processed_path,
-            "hostname_for_dns": full_hostname, "container_id": None, "status": "active",
-            "delete_at": None, "zone_id": target_zone_id, "no_tls_verify": no_tls_verify,
+            "hostname": full_hostname, 
+            "path": processed_path,
+            "service": processed_service_for_cf, 
+            "container_id": None, 
+            "status": "active",
+            "delete_at": None, 
+            "zone_id": target_zone_id, 
+            "no_tls_verify": no_tls_verify,
             "origin_server_name": origin_server_name if origin_server_name else None,
             "access_app_id": access_app_created_or_updated_id,
             "access_policy_type": access_policy_type if access_policy_type != "none" else None,
@@ -361,7 +366,6 @@ def add_manual_rule():
         if not dns_success: message += " DNS creation FAILED."
         return jsonify({"status": "success", "message": message, "rule_key": rule_key, "rule_data": serialize_rule(managed_rules.get(rule_key))}), 201
     else:
-        # Potentially revert state changes or mark rule as errored if critical
         return jsonify({"status": "error", "message": f"Failed to update Cloudflare tunnel config for manual rule {rule_key}."}), 500
 
 @api_v2_bp.route('/rules/manual/<path:rule_key>', methods=['DELETE'])
@@ -385,7 +389,7 @@ def delete_manual_rule(rule_key):
         
         zone_id_for_delete = rule_details.get("zone_id")
         access_app_id_for_delete = rule_details.get("access_app_id")
-        hostname_for_dns_operations = rule_details.get("hostname_for_dns")
+        hostname_for_dns_operations = rule_details.get("hostname")
         
         del managed_rules[rule_key]
         save_state()
@@ -398,7 +402,7 @@ def delete_manual_rule(rule_key):
     if hostname_for_dns_operations:
         with state_lock: 
             for other_rule in managed_rules.values():
-                if other_rule.get("hostname_for_dns") == hostname_for_dns_operations:
+                if other_rule.get("hostname") == hostname_for_dns_operations:
                     should_delete_dns = False
                     break
     else: should_delete_dns = False 
@@ -450,18 +454,17 @@ def force_delete_rule(rule_key):
         rule_details_copy = rule_details.copy() 
         zone_id_for_delete = rule_details_copy.get("zone_id")
         access_app_id_for_delete = rule_details_copy.get("access_app_id")
-        hostname_for_dns = rule_details_copy.get("hostname_for_dns")
+        hostname_for_dns = rule_details_copy.get("hostname")
         
         del managed_rules[rule_key]
         save_state()
 
     dns_deleted = True 
     if zone_id_for_delete and hostname_for_dns:
-        # Check if DNS is shared
         is_dns_shared = False
         with state_lock:
             for other_rule in managed_rules.values():
-                if other_rule.get("hostname_for_dns") == hostname_for_dns:
+                if other_rule.get("hostname") == hostname_for_dns:
                     is_dns_shared = True
                     break
         if not is_dns_shared:
@@ -501,7 +504,6 @@ def force_delete_rule(rule_key):
         "details": results
     }), status_code
 
-
 @api_v2_bp.route('/rules/<path:rule_key>/access-policy', methods=['PUT'])
 def update_rule_access_policy(rule_key):
     if not docker_client:
@@ -528,10 +530,11 @@ def update_rule_access_policy(rule_key):
         if not current_rule:
             return jsonify({"status": "error", "message": f"Rule '{rule_key}' not found."}), 404
         
-        hostname_for_access_app = current_rule.get("hostname_for_dns") 
+        hostname_for_access_app = current_rule.get("hostname") 
         if not hostname_for_access_app:
-             return jsonify({"status": "error", "message": f"Cannot determine hostname for Access App for rule '{rule_key}'."}), 400
-
+            hostname_for_access_app = rule_key.split('|')[0]
+            if not hostname_for_access_app:
+                return jsonify({"status": "error", "message": f"Cannot determine hostname for Access App for rule '{rule_key}'."}), 400
 
         current_access_app_id = current_rule.get("access_app_id")
         session_duration = data.get('session_duration', current_rule.get("access_session_duration", "24h"))
@@ -572,7 +575,7 @@ def update_rule_access_policy(rule_key):
                 else: action_status_message = f"Error: Failed to delete Access App for {rule_key} for TLD switch."
             else: 
                 if current_rule.get("access_policy_type") != "default_tld":
-                    current_rule["access_app_id"] = None
+                    current_rule["access_app_id"] = None 
                     current_rule["access_policy_type"] = "default_tld"
                     current_rule["access_app_config_hash"] = None
                     state_changed_locally = True
@@ -624,7 +627,6 @@ def update_rule_access_policy(rule_key):
                         current_rule["access_app_id"] = updated_app.get("id")
                         current_rule["access_policy_type"] = final_policy_type_for_state
                         current_rule["access_app_config_hash"] = new_config_hash
-                        # Update other access params in current_rule
                         current_rule["access_session_duration"] = session_duration
                         current_rule["access_app_launcher_visible"] = app_launcher_visible
                         current_rule["access_allowed_idps_str"] = allowed_idps_str
@@ -632,9 +634,9 @@ def update_rule_access_policy(rule_key):
                         current_rule["auth_email"] = auth_email if final_policy_type_for_state == "authenticate_email" else None
                         state_changed_locally = True; operation_successful = True
                     else: action_status_message = f"Error: Failed to update Access App for {rule_key}."
-                else: # No change needed
+                else: 
                     operation_successful = True; action_status_message = "No change in policy needed."
-            else: # Create new
+            else: 
                 created_app = create_cloudflare_access_application(
                     hostname_for_access_app, desired_app_name,
                     session_duration, app_launcher_visible, [hostname_for_access_app],

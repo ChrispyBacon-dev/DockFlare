@@ -22,6 +22,7 @@ import threading
 from datetime import datetime, timezone
 
 from app import config
+from app.core.utils import get_rule_key 
 
 managed_rules = {}
 state_lock = threading.RLock() 
@@ -64,25 +65,40 @@ def load_state():
             logging.info(f"LOAD_STATE: Reading from {config.STATE_FILE_PATH}.")
             with open(config.STATE_FILE_PATH, 'r') as f:
                 loaded_data = json.load(f)
-            
-            for hostname, rule_data in loaded_data.items():
+
+            migrated_count = 0
+            for key, rule_data in loaded_data.items():
                 rule_copy = rule_data.copy() 
+                
+                final_key = key
+                if '|' not in key:
+                    hostname_from_key = key
+                    path_from_data = rule_copy.get("path")
+                    if "hostname" not in rule_copy:
+                        rule_copy["hostname"] = hostname_from_key
+                    final_key = get_rule_key(hostname_from_key, path_from_data)
+                    migrated_count += 1
+                    logging.info(f"Migrating old rule key '{key}' to new key '{final_key}'")
+
                 delete_at_val = rule_copy.get("delete_at")
                 if isinstance(delete_at_val, str):
                     rule_copy["delete_at"] = _deserialize_datetime(delete_at_val)
                 elif not isinstance(delete_at_val, (datetime, type(None))):
                     rule_copy["delete_at"] = None
                 
-                if "zone_id" not in rule_copy:
-                    rule_copy["zone_id"] = None
-                
+                rule_copy.setdefault("zone_id", None)
                 rule_copy.setdefault("access_app_id", None)
                 rule_copy.setdefault("access_policy_type", None)
                 rule_copy.setdefault("access_app_config_hash", None)
                 rule_copy.setdefault("access_policy_ui_override", False)
                 rule_copy.setdefault("source", "docker")
                 rule_copy.setdefault("path", None)
-                managed_rules[hostname] = rule_copy 
+                
+                managed_rules[final_key] = rule_copy
+
+            if migrated_count > 0:
+                logging.info(f"LOAD_STATE: Migrated {migrated_count} rules to the new key format.")
+                save_state()
             
             logging.info(f"LOAD_STATE: Loaded {len(managed_rules)} rules. managed_rules ID after populating: {id(managed_rules)}")
         except (json.JSONDecodeError, IOError, OSError) as e:
@@ -105,26 +121,32 @@ def save_state():
     else:
         logging.info(f"SAVE_STATE: THREAD: {current_thread_name}. Serializing {len(rules_to_iterate_items)} rules.")
 
-    for hostname, rule in rules_to_iterate_items:
-        logging.debug(f"SAVE_STATE_LOOP: THREAD: {current_thread_name}. Preparing rule for hostname: {hostname}")
+    for rule_key, rule in rules_to_iterate_items:
+        logging.debug(f"SAVE_STATE_LOOP: THREAD: {current_thread_name}. Preparing rule for key: {rule_key}")
         try:
             data_to_serialize = {
-                "service": rule.get("service"), "container_id": rule.get("container_id"),
-                "status": rule.get("status"), "delete_at": None, 
-                "zone_id": rule.get("zone_id"), "no_tls_verify": rule.get("no_tls_verify", False),
-                "access_app_id": rule.get("access_app_id"), "access_policy_type": rule.get("access_policy_type"),
+                "hostname": rule.get("hostname"),
+                "path": rule.get("path"),
+                "service": rule.get("service"), 
+                "container_id": rule.get("container_id"),
+                "status": rule.get("status"), 
+                "delete_at": None, 
+                "zone_id": rule.get("zone_id"), 
+                "no_tls_verify": rule.get("no_tls_verify", False),
+                "origin_server_name": rule.get("origin_server_name"), 
+                "access_app_id": rule.get("access_app_id"), 
+                "access_policy_type": rule.get("access_policy_type"),
                 "access_app_config_hash": rule.get("access_app_config_hash"),
                 "access_policy_ui_override": rule.get("access_policy_ui_override", False),
                 "source": rule.get("source", "docker"),
-                "path": rule.get("path")
             }
             delete_at_val = rule.get("delete_at")
             if isinstance(delete_at_val, datetime): 
-                logging.debug(f"SAVE_STATE_LOOP: THREAD: {current_thread_name}. Serializing datetime for {hostname} (value: {delete_at_val}).")
+                logging.debug(f"SAVE_STATE_LOOP: THREAD: {current_thread_name}. Serializing datetime for {rule_key} (value: {delete_at_val}).")
                 data_to_serialize["delete_at"] = delete_at_val.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
-            serializable_state[hostname] = data_to_serialize
+            serializable_state[rule_key] = data_to_serialize
         except Exception as e_serialize_item:
-            logging.error(f"SAVE_STATE_LOOP_ERROR: THREAD: {current_thread_name}. Error preparing rule for serialization '{hostname}': {e_serialize_item}. Rule data: {rule}", exc_info=True)
+            logging.error(f"SAVE_STATE_LOOP_ERROR: THREAD: {current_thread_name}. Error preparing rule for serialization '{rule_key}': {e_serialize_item}. Rule data: {rule}", exc_info=True)
             continue
     
     logging.info(f"SAVE_STATE: THREAD: {current_thread_name}. Prepared serializable_state with {len(serializable_state)} items.")

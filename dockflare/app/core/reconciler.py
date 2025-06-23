@@ -36,6 +36,7 @@ from app.core.access_manager import (
     delete_cloudflare_access_application 
 )
 from app.core.tunnel_manager import update_cloudflare_config
+from app.core.utils import get_rule_key, get_label
 
 def _get_hostname_configs_from_container(container_obj):
     labels = container_obj.labels
@@ -44,20 +45,20 @@ def _get_hostname_configs_from_container(container_obj):
     
     hostnames_configs = []
 
-    default_path_label = labels.get(f"{config.LABEL_PREFIX}.path") 
-    default_originsrvname_label = labels.get(f"{config.LABEL_PREFIX}.originsrvname")
-    default_access_policy_type = labels.get(f"{config.LABEL_PREFIX}.access.policy")
-    default_access_app_name = labels.get(f"{config.LABEL_PREFIX}.access.name")
-    default_session_duration = labels.get(f"{config.LABEL_PREFIX}.access.session_duration", "24h")
-    default_app_launcher_visible = labels.get(f"{config.LABEL_PREFIX}.access.app_launcher_visible", "false").lower() in ["true", "1", "t", "yes"]
-    default_allowed_idps_str = labels.get(f"{config.LABEL_PREFIX}.access.allowed_idps")
-    default_auto_redirect = labels.get(f"{config.LABEL_PREFIX}.access.auto_redirect_to_identity", "false").lower() in ["true", "1", "t", "yes"]
-    default_custom_rules_str = labels.get(f"{config.LABEL_PREFIX}.access.custom_rules")
+    default_path_label = get_label(labels, "path")
+    default_originsrvname_label = get_label(labels, "originsrvname")
+    default_access_policy_type = get_label(labels, "access.policy")
+    default_access_app_name = get_label(labels, "access.name")
+    default_session_duration = get_label(labels, "access.session_duration", "24h")
+    default_app_launcher_visible = get_label(labels, "access.app_launcher_visible", "false").lower() in ["true", "1", "t", "yes"]
+    default_allowed_idps_str = get_label(labels, "access.allowed_idps")
+    default_auto_redirect = get_label(labels, "access.auto_redirect_to_identity", "false").lower() in ["true", "1", "t", "yes"]
+    default_custom_rules_str = get_label(labels, "access.custom_rules")
 
-    h_main = labels.get(f"{config.LABEL_PREFIX}.hostname")
-    s_main = labels.get(f"{config.LABEL_PREFIX}.service")
-    zn_main = labels.get(f"{config.LABEL_PREFIX}.zonename")
-    ntv_main_str = labels.get(f"{config.LABEL_PREFIX}.no_tls_verify", "false")
+    h_main = get_label(labels, "hostname")
+    s_main = get_label(labels, "service")
+    zn_main = get_label(labels, "zonename")
+    ntv_main_str = get_label(labels, "no_tls_verify", "false")
     ntv_main = ntv_main_str.lower() in ["true", "1", "t", "yes"]
 
     if h_main and s_main: 
@@ -78,29 +79,28 @@ def _get_hostname_configs_from_container(container_obj):
 
     idx = 0
     while True: 
-        pfx = f"{config.LABEL_PREFIX}.{idx}"
-        h_idx = labels.get(f"{pfx}.hostname")
+        h_idx = get_label(labels, f"{idx}.hostname")
         if not h_idx: break
         
-        s_idx = labels.get(f"{pfx}.service", s_main)
+        s_idx = get_label(labels, f"{idx}.service", s_main)
         if not s_idx: 
             idx += 1; continue
             
-        path_idx = labels.get(f"{pfx}.path", default_path_label) 
-        zn_idx = labels.get(f"{pfx}.zonename", zn_main)
-        ntv_idx_str = labels.get(f"{pfx}.no_tls_verify", ntv_main_str) 
+        path_idx = get_label(labels, f"{idx}.path", default_path_label) 
+        zn_idx = get_label(labels, f"{idx}.zonename", zn_main)
+        ntv_idx_str = get_label(labels, f"{idx}.no_tls_verify", ntv_main_str) 
         ntv_idx = ntv_idx_str.lower() in ["true", "1", "t", "yes"]
-        osn_idx_val = labels.get(f"{pfx}.originsrvname", default_originsrvname_label)
+        osn_idx_val = get_label(labels, f"{idx}.originsrvname", default_originsrvname_label)
 
-        acc_pol_idx = labels.get(f"{pfx}.access.policy", default_access_policy_type)
-        acc_name_idx = labels.get(f"{pfx}.access.name", default_access_app_name)
-        acc_sess_idx = labels.get(f"{pfx}.access.session_duration", default_session_duration)
-        acc_vis_idx_str = labels.get(f"{pfx}.access.app_launcher_visible", str(default_app_launcher_visible).lower())
+        acc_pol_idx = get_label(labels, f"{idx}.access.policy", default_access_policy_type)
+        acc_name_idx = get_label(labels, f"{idx}.access.name", default_access_app_name)
+        acc_sess_idx = get_label(labels, f"{idx}.access.session_duration", default_session_duration)
+        acc_vis_idx_str = get_label(labels, f"{idx}.access.app_launcher_visible", str(default_app_launcher_visible).lower())
         acc_vis_idx = acc_vis_idx_str.lower() in ["true", "1", "t", "yes"]
-        acc_idps_idx = labels.get(f"{pfx}.access.allowed_idps", default_allowed_idps_str)
-        acc_redir_idx_str = labels.get(f"{pfx}.access.auto_redirect_to_identity", str(default_auto_redirect).lower())
+        acc_idps_idx = get_label(labels, f"{idx}.access.allowed_idps", default_allowed_idps_str)
+        acc_redir_idx_str = get_label(labels, f"{idx}.access.auto_redirect_to_identity", str(default_auto_redirect).lower())
         acc_redir_idx = acc_redir_idx_str.lower() in ["true", "1", "t", "yes"]
-        acc_custom_idx = labels.get(f"{pfx}.access.custom_rules", default_custom_rules_str)
+        acc_custom_idx = get_label(labels, f"{idx}.access.custom_rules", default_custom_rules_str)
         
         hostnames_configs.append({
             "hostname": h_idx, "service": s_idx, "zone_name": zn_idx, 
@@ -132,7 +132,7 @@ def _run_reconciliation_logic():
             "status": "Initializing reconciliation..."
         }
         
-        running_labeled_hostnames_details = {}
+        running_labeled_rules_details = {}
         try:
             current_app.reconciliation_info["status"] = "Scanning containers for services and access policies..."
             containers = docker_client.containers.list(sparse=False, all=config.SCAN_ALL_NETWORKS)
@@ -150,64 +150,67 @@ def _run_reconciliation_logic():
                 batch = containers[i:i+batch_size]
                 processed_container_count += len(batch)
                 current_app.reconciliation_info["progress"] = min(100, int((processed_container_count / container_count) * 100)) if container_count > 0 else 0
-                current_app.reconciliation_info["processed_items"] = processed_container_count
                 current_app.reconciliation_info["status"] = f"Scanning containers: batch {i//batch_size + 1}/{(container_count+batch_size-1)//batch_size}"
                 
                 for c_obj in batch:
                     try:
                         c_obj.reload() 
-                        if c_obj.labels.get(f"{config.LABEL_PREFIX}.enable", "false").lower() in ["true", "1", "t", "yes"]:
+                        if get_label(c_obj.labels, "enable", "false").lower() in ["true", "1", "t", "yes"]:
                             configs = _get_hostname_configs_from_container(c_obj)
-                            for conf_item in configs: 
-                                if conf_item["hostname"] in running_labeled_hostnames_details:
-                                    logging.warning(f"[Reconcile] Duplicate hostname '{conf_item['hostname']}' found. Using from: {conf_item['container_name']}.")
-                                running_labeled_hostnames_details[conf_item["hostname"]] = conf_item
+                            for conf_item in configs:
+                                rule_key = get_rule_key(conf_item["hostname"], conf_item.get("path"))
+                                if rule_key in running_labeled_rules_details:
+                                    logging.warning(f"[Reconcile] Duplicate rule '{rule_key}' found. Using from: {conf_item['container_name']}.")
+                                running_labeled_rules_details[rule_key] = conf_item
                     except Exception as e_cont_scan:
                         logging.error(f"[Reconcile] Error processing container {c_obj.id[:12] if c_obj and c_obj.id else 'N/A'}: {e_cont_scan}")
-            logging.info(f"[Reconcile] Found {len(running_labeled_hostnames_details)} running hostnames with DockFlare labels.")
+            logging.info(f"[Reconcile] Found {len(running_labeled_rules_details)} running rules with DockFlare labels.")
         except Exception as e_phase1:
             logging.error(f"[Reconcile] Error in container scanning phase: {e_phase1}", exc_info=True)
             current_app.reconciliation_info["status"] = f"Container scan error: {str(e_phase1)}"
             
         current_app.reconciliation_info["status"] = "Comparing state and reconciling cloud resources..."
-        current_app.reconciliation_info["total_items"] = len(running_labeled_hostnames_details) + len(managed_rules) 
+        current_app.reconciliation_info["total_items"] = len(running_labeled_rules_details) + len(managed_rules) 
         current_app.reconciliation_info["processed_items"] = 0 
         processed_reconcile_items = 0
-        hostnames_requiring_dns_setup = []
+        hostnames_requiring_dns_setup = set()
 
         with state_lock:
             now_utc = datetime.now(timezone.utc)
-            current_managed_hostnames_in_state = set(managed_rules.keys())
+            current_managed_rule_keys_in_state = set(managed_rules.keys())
                             
-            for hostname, desired_details in running_labeled_hostnames_details.items():
+            for rule_key, desired_details in running_labeled_rules_details.items():
                 processed_reconcile_items +=1
                 current_app.reconciliation_info["processed_items"] = processed_reconcile_items
                 current_app.reconciliation_info["progress"] = min(100, int((processed_reconcile_items / current_app.reconciliation_info["total_items"]) * 100)) if current_app.reconciliation_info["total_items"] > 0 else 0
-                current_app.reconciliation_info["status"] = f"Reconciling (active): {hostname}"
+                current_app.reconciliation_info["status"] = f"Reconciling (active): {rule_key}"
 
                 if time.time() - reconciliation_start_time > max_total_time - 30: break
 
-                existing_rule = managed_rules.get(hostname)
+                existing_rule = managed_rules.get(rule_key)
                 if existing_rule and existing_rule.get("source") == "manual":
                     continue
 
                 target_zone_id = get_zone_id_from_name(desired_details["zone_name"]) if desired_details["zone_name"] else config.CF_ZONE_ID
                 if not target_zone_id:
-                    logging.error(f"[Reconcile] No zone ID for {hostname}, skipping its reconciliation.")
+                    logging.error(f"[Reconcile] No zone ID for {rule_key}, skipping its reconciliation.")
                     continue
 
                 if not existing_rule:
-                    managed_rules[hostname] = {
-                        "service": desired_details["service"], "container_id": desired_details["container_id"],
+                    managed_rules[rule_key] = {
+                        "hostname": desired_details["hostname"],
+                        "path": desired_details.get("path"),
+                        "service": desired_details["service"], 
+                        "container_id": desired_details["container_id"],
                         "status": "active", "delete_at": None, "zone_id": target_zone_id,
                         "no_tls_verify": desired_details["no_tls_verify"],
+                        "origin_server_name": desired_details.get("origin_server_name"),
                         "access_app_id": None, "access_policy_type": None, "access_app_config_hash": None,
                         "access_policy_ui_override": False, "source": "docker"
                     }
-                    existing_rule = managed_rules[hostname]
+                    existing_rule = managed_rules[rule_key]
                     state_changed_locally = True
                     needs_tunnel_config_update = True
-                    hostnames_requiring_dns_setup.append((hostname, target_zone_id))
                 else:
                     changed_in_reconcile = False
                     if existing_rule.get("status") == "pending_deletion":
@@ -222,33 +225,37 @@ def _run_reconciliation_logic():
                         existing_rule["zone_id"] = target_zone_id; changed_in_reconcile = True; needs_tunnel_config_update = True 
                     if existing_rule.get("container_id") != desired_details["container_id"]:
                         existing_rule["container_id"] = desired_details["container_id"]; changed_in_reconcile = True
-                    
+                    if existing_rule.get("path") != desired_details.get("path"):
+                        existing_rule["path"] = desired_details.get("path"); changed_in_reconcile = True; needs_tunnel_config_update = True
+                    if existing_rule.get("origin_server_name") != desired_details.get("origin_server_name"):
+                        existing_rule["origin_server_name"] = desired_details.get("origin_server_name"); changed_in_reconcile = True; needs_tunnel_config_update = True
+
                     existing_rule["source"] = "docker" 
                     if changed_in_reconcile: state_changed_locally = True
-                    hostnames_requiring_dns_setup.append((hostname, target_zone_id)) 
+                
+                hostnames_requiring_dns_setup.add((desired_details["hostname"], target_zone_id))
                 
                 if existing_rule.get("access_policy_ui_override", False):
                     pass 
                 else:
-                    if handle_access_policy_from_labels(desired_details, existing_rule, None):
+                    if handle_access_policy_from_labels(desired_details, existing_rule, desired_details["hostname"]):
                         state_changed_locally = True
             
-            hostnames_in_state_but_not_running = list(current_managed_hostnames_in_state - set(running_labeled_hostnames_details.keys()))
-            for hostname_to_check in hostnames_in_state_but_not_running:
-                # ... (rest of this loop using current_app.reconciliation_info)
+            rule_keys_in_state_but_not_running = list(current_managed_rule_keys_in_state - set(running_labeled_rules_details.keys()))
+            for rule_key_to_check in rule_keys_in_state_but_not_running:
                 processed_reconcile_items +=1 
                 current_app.reconciliation_info["processed_items"] = processed_reconcile_items
                             
                 if time.time() - reconciliation_start_time > max_total_time - 20: break
                 
-                rule = managed_rules.get(hostname_to_check)
+                rule = managed_rules.get(rule_key_to_check)
                 if rule and rule.get("status") == "active" and rule.get("source", "docker") == "docker":
-                    logging.info(f"[Reconcile] Docker-managed rule {hostname_to_check} active but container/labels gone. Marking for deletion.")
+                    logging.info(f"[Reconcile] Docker-managed rule {rule_key_to_check} active but container/labels gone. Marking for deletion.")
                     rule["status"] = "pending_deletion"
                     rule["delete_at"] = now_utc + timedelta(seconds=config.GRACE_PERIOD_SECONDS)
                     state_changed_locally = True
-                elif rule and rule.get("source") == "manual" and rule.get("zone_id"):
-                     hostnames_requiring_dns_setup.append((hostname_to_check, rule.get("zone_id")))
+                elif rule and rule.get("source") == "manual" and rule.get("zone_id") and rule.get("hostname"):
+                     hostnames_requiring_dns_setup.add((rule.get("hostname"), rule.get("zone_id")))
 
             if state_changed_locally:
                 current_app.reconciliation_info["status"] = "Saving reconciled state..."
@@ -272,17 +279,17 @@ def _run_reconciliation_logic():
                 current_app.reconciliation_info["status"] = "Tunnel config update skipped (external mode)."
         
         if hostnames_requiring_dns_setup:
-            dns_total = len(hostnames_requiring_dns_setup)
+            unique_dns_setups = list(hostnames_requiring_dns_setup)
+            dns_total = len(unique_dns_setups)
             current_app.reconciliation_info["status"] = f"Setting up DNS for {dns_total} hostnames..."
             dns_processed_count = 0
             effective_tunnel_id_for_dns = tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
             
             if effective_tunnel_id_for_dns:
-                unique_dns_setups = list(set(hostnames_requiring_dns_setup)) 
                 logging.info(f"[Reconcile] Unique hostnames for DNS setup/check: {len(unique_dns_setups)}")
                 for hostname_dns, zone_id_dns in unique_dns_setups:
                     dns_processed_count +=1 
-                    current_app.reconciliation_info["status"] = f"DNS for {hostname_dns} ({dns_processed_count}/{len(unique_dns_setups)})"
+                    current_app.reconciliation_info["status"] = f"DNS for {hostname_dns} ({dns_processed_count}/{dns_total})"
                     if time.time() - reconciliation_start_time > max_total_time - 5: break
                     create_cloudflare_dns_record(zone_id_dns, hostname_dns, effective_tunnel_id_for_dns)
                     if config.USE_EXTERNAL_CLOUDFLARED: time.sleep(0.1) 
@@ -335,85 +342,94 @@ def cleanup_expired_rules(stop_event_param):
         next_check_time = time.time() + config.CLEANUP_INTERVAL_SECONDS
         try:
             logging.debug("Running cleanup check for expired rules...")
-            rules_to_process_for_deletion = {}
+            rules_to_delete_keys = []
             now_utc = datetime.now(timezone.utc)
             state_changed_in_cleanup = False
 
             with state_lock:
-                for hostname, details in list(managed_rules.items()): 
+                for rule_key, details in managed_rules.items():
                     if details.get("status") == "pending_deletion" and details.get("source", "docker") == "docker":
                         delete_at = details.get("delete_at")
-                        is_expired = False
                         if isinstance(delete_at, datetime):
                             delete_at_utc = delete_at.astimezone(timezone.utc) if delete_at.tzinfo else delete_at.replace(tzinfo=timezone.utc)
                             if delete_at_utc <= now_utc:
-                                is_expired = True
-                        else: 
-                            logging.warning(f"Rule {hostname} pending delete but has invalid/missing delete_at: {delete_at}. Marking for immediate deletion.")
-                            is_expired = True
-                        
-                        if is_expired:
-                            rules_to_process_for_deletion[hostname] = {
-                                "zone_id": details.get("zone_id", config.CF_ZONE_ID), 
-                                "access_app_id": details.get("access_app_id")
-                            }
-                    elif details.get("source") == "manual" and details.get("status") == "pending_deletion":
-                        logging.warning(f"Manual rule {hostname} found 'pending_deletion'. Resetting to 'active'.")
-                        details["status"] = "active"; details["delete_at"] = None
+                                rules_to_delete_keys.append(rule_key)
+                        else:
+                            logging.warning(f"Rule {rule_key} pending delete but has invalid/missing delete_at. Marking for immediate deletion.")
+                            rules_to_delete_keys.append(rule_key)
+                
+                for rule_key, details in managed_rules.items():
+                    if details.get("source") == "manual" and details.get("status") == "pending_deletion":
+                        logging.warning(f"Manual rule {rule_key} found 'pending_deletion'. Resetting to 'active'.")
+                        details["status"] = "active"
+                        details["delete_at"] = None
                         state_changed_in_cleanup = True
             
-            if state_changed_in_cleanup and not rules_to_process_for_deletion: 
+            if state_changed_in_cleanup and not rules_to_delete_keys:
                 save_state()
 
-            if rules_to_process_for_deletion:
-                hostnames_fully_cleaned = []
-                effective_tunnel_id_cleanup = tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
+            if rules_to_delete_keys:
+                logging.info(f"Found {len(rules_to_delete_keys)} expired rules to process: {rules_to_delete_keys}")
+                effective_tunnel_id = tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
 
-                for hostname, delete_info in rules_to_process_for_deletion.items():
-                    zone_id_del = delete_info["zone_id"]
-                    access_app_id_del = delete_info["access_app_id"]
+                rules_being_deleted = {}
+                with state_lock:
+                    for key in rules_to_delete_keys:
+                        if key in managed_rules:
+                            rules_being_deleted[key] = managed_rules[key]
+
+                for rule_key, delete_info in rules_being_deleted.items():
+                    hostname_del = delete_info.get("hostname")
+                    access_app_id_del = delete_info.get("access_app_id")
+
+                    is_hostname_still_used = any(
+                        k not in rules_to_delete_keys and r.get("hostname") == hostname_del
+                        for k, r in managed_rules.items()
+                    )
                     
-                    dns_deleted = False
-                    if zone_id_del and effective_tunnel_id_cleanup:
-                        if delete_cloudflare_dns_record(zone_id_del, hostname, effective_tunnel_id_cleanup):
-                            dns_deleted = True
-                        else: logging.error(f"Failed DNS delete for expired rule {hostname} in zone {zone_id_del}.")
-                    elif not zone_id_del: logging.warning(f"Skipping DNS delete for {hostname}: Zone ID unavailable.")
-                    elif not effective_tunnel_id_cleanup: logging.warning(f"Skipping DNS delete for {hostname}: Tunnel ID unavailable.")
+                    if hostname_del and not is_hostname_still_used:
+                        logging.info(f"Hostname '{hostname_del}' is no longer used. Deleting its DNS record.")
+                        delete_cloudflare_dns_record(delete_info.get("zone_id"), hostname_del, effective_tunnel_id)
+                    elif hostname_del:
+                        logging.info(f"Skipping DNS delete for '{hostname_del}' as it is still used by other rules.")
                     
-                    access_app_deleted = False
-                    if access_app_id_del:
-                        if delete_cloudflare_access_application(access_app_id_del):
-                            access_app_deleted = True
-                        else: logging.error(f"Failed Access App delete for {hostname}, App ID: {access_app_id_del}.")
-                    else: access_app_deleted = True 
+                    is_app_id_still_used = any(
+                        k not in rules_to_delete_keys and r.get("access_app_id") == access_app_id_del
+                        for k, r in managed_rules.items()
+                    )
+                    
+                    if access_app_id_del and not is_app_id_still_used:
+                        logging.info(f"Access App ID '{access_app_id_del}' is no longer used. Deleting it.")
+                        delete_cloudflare_access_application(access_app_id_del)
+                    elif access_app_id_del:
+                        logging.info(f"Skipping Access App delete for '{access_app_id_del}' as it is still used by other rules.")
 
-                    hostnames_fully_cleaned.append(hostname)
+                config_updated = False
+                if not config.USE_EXTERNAL_CLOUDFLARED:
+                    logging.info("Updating Cloudflare config to remove expired ingress rules...")
+                    if update_cloudflare_config():
+                        config_updated = True
+                    else:
+                        logging.error("Failed to update Cloudflare tunnel config during rule cleanup. Rules will remain in local state temporarily.")
+                else:
+                    config_updated = True
 
-                if hostnames_fully_cleaned:
-                    config_updated_after_delete = False
-                    if not config.USE_EXTERNAL_CLOUDFLARED:
-                        if update_cloudflare_config(): 
-                            config_updated_after_delete = True
-                        else:
-                            logging.error("Failed to update Cloudflare tunnel config during rule cleanup. Rules may remain in local state temporarily.")
-                    else: 
-                        config_updated_after_delete = True 
-
-                    if config_updated_after_delete:
-                        with state_lock:
-                            deleted_count = 0
-                            for hostname_rem in hostnames_fully_cleaned:
-                                if hostname_rem in managed_rules and managed_rules[hostname_rem].get("status") == "pending_deletion":
-                                    del managed_rules[hostname_rem]
-                                    deleted_count += 1
-                            if deleted_count > 0:
-                                logging.info(f"Removed {deleted_count} rules from local state after cleanup.")
-                                save_state()
+                if config_updated:
+                    with state_lock:
+                        deleted_count = 0
+                        for key in rules_to_delete_keys:
+                            if key in managed_rules:
+                                del managed_rules[key]
+                                deleted_count += 1
+                        if deleted_count > 0:
+                            logging.info(f"Removed {deleted_count} expired rules from local state.")
+                            save_state()
+                            
         except Exception as e_cleanup:
             logging.error(f"Error in cleanup task loop: {e_cleanup}", exc_info=True)
 
         wait_duration = max(0, next_check_time - time.time())
-        if not stop_event_param.is_set(): stop_event_param.wait(wait_duration)
+        if not stop_event_param.is_set():
+            stop_event_param.wait(wait_duration)
 
     logging.info("Cleanup task for expired rules stopped.")
