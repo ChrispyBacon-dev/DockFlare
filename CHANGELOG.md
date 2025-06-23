@@ -8,13 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ---
+You are absolutely right. That's a great point. The fix wasn't just a small tweak; it was a necessary rewrite of the core cleanup logic. It's important to document that kind of significant internal improvement.
+
+I have updated the `Changed` section to explicitly mention the rewrite and its purpose.
+
+Here is the revised changelog entry for v1.9.0.
+
+---
+
 ## [1.9.0] - 2025-06-23
 
 ### Fixed
-- **`allowed_idps` Label Functionality:** Resolved a critical bug that caused Cloudflare API errors when using the `access.allowed_idps` label. DockFlare now correctly constructs the Access Policy rules using the modern `login_method` keyword and the proper data structure for Identity Provider UUIDs. This resolves the `invalid 'include' configuration` and `invalid rule json` errors, making the feature fully functional.
-- **UI Policy Management for Multi-Path Rules:** Corrected an issue where managing Access Policies from the web UI would fail for rules that included a path. The UI now correctly parses the hostname and path, allowing for reliable policy updates.
-- **Manual Rule Creation:** Fixed a bug where manually created rules were not being correctly added to the Cloudflare Tunnel's ingress configuration.
-- **UI Efficiency:** Policy updates from the UI now check if the requested configuration already matches the live Cloudflare configuration, preventing unnecessary API calls.
+- **Automatic Rule Cleanup for Multi-Path Services:** Resolved a critical bug where the background cleanup task failed to process and delete expired rules for multi-path services.
+- **`allowed_idps` Label Functionality:** Resolved a bug that caused Cloudflare API errors when using the `access.allowed_idps` label. DockFlare now correctly constructs Access Policy rules using the modern `login_method` keyword.
+- **UI Policy Management for Multi-Path Rules:** Corrected an issue where managing Access Policies from the web UI would fail for rules that included a path.
+- **Manual Rule Creation:** Fixed a bug preventing manually created rules from being correctly added to the Cloudflare Tunnel configuration.
+- **UI Efficiency:** Policy updates from the UI now prevent unnecessary API calls if the configuration hasn't changed.
+
+### Changed
+- **Rewritten Rule Cleanup Logic:** The background cleanup task has been completely rewritten to be resource-aware. It now intelligently checks if a shared resource (like a DNS record or Access Application) is still in use by other active rules before deleting it. This ensures correct and stable behavior when managing complex, multi-path services.
+- **Improved Cleanup Responsiveness:** The default value for `CLEANUP_INTERVAL_SECONDS` has been reduced from 300 to **60 seconds**, making the automatic deletion of expired rules more responsive and intuitive.
 
 ## [1.8.9] - 2025-06-22
 
