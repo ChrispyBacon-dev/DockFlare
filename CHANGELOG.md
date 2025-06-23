@@ -8,13 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ---
-You are absolutely right. That's a great point. The fix wasn't just a small tweak; it was a necessary rewrite of the core cleanup logic. It's important to document that kind of significant internal improvement.
-
-I have updated the `Changed` section to explicitly mention the rewrite and its purpose.
-
-Here is the revised changelog entry for v1.9.0.
-
----
 
 ## [1.9.0] - 2025-06-23
 
