@@ -376,36 +376,47 @@ def cleanup_expired_rules(stop_event_param):
             if rules_to_process_for_deletion:
                 rule_keys_fully_cleaned = []
                 effective_tunnel_id_cleanup = tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
-                for rule_key, delete_info in rules_to_process_for_deletion.items():
-                    hostname_del = delete_info.get("hostname")
-                    zone_id_del = delete_info["zone_id"]
-                    access_app_id_del = delete_info["access_app_id"]
-                    
-                    dns_deleted = False
-                    if zone_id_del and effective_tunnel_id_cleanup and hostname_del:
-                        if delete_cloudflare_dns_record(zone_id_del, hostname_del, effective_tunnel_id_cleanup):
-                            dns_deleted = True
-                        else: logging.error(f"Failed DNS delete for expired rule {hostname_del} in zone {zone_id_del}.")
-                    elif not zone_id_del: logging.warning(f"Skipping DNS delete for {hostname_del or rule_key}: Zone ID unavailable.")
-                    elif not effective_tunnel_id_cleanup: logging.warning(f"Skipping DNS delete for {hostname_del or rule_key}: Tunnel ID unavailable.")
-                    elif not hostname_del: logging.warning(f"Skipping DNS delete for rule key {rule_key}: Simple hostname missing in state.")
+                
+                with state_lock: 
+                    for rule_key, delete_info in rules_to_process_for_deletion.items():
+                        hostname_del = delete_info.get("hostname")
+                        zone_id_del = delete_info["zone_id"]
+                        access_app_id_del = delete_info["access_app_id"]
+                        is_hostname_shared = any(
+                            k not in rules_to_process_for_deletion and r.get("hostname") == hostname_del
+                            for k, r in managed_rules.items()
+                        )
 
-                    access_app_deleted = False
-                    if access_app_id_del:
-                        if delete_cloudflare_access_application(access_app_id_del):
-                            access_app_deleted = True
-                        else: logging.error(f"Failed Access App delete for {hostname_del or rule_key}, App ID: {access_app_id_del}.")
-                    else: access_app_deleted = True 
+                        if not is_hostname_shared:
+                            if zone_id_del and effective_tunnel_id_cleanup and hostname_del:
+                                logging.info(f"Hostname '{hostname_del}' is no longer used by any active rules. Deleting DNS record.")
+                                if not delete_cloudflare_dns_record(zone_id_del, hostname_del, effective_tunnel_id_cleanup):
+                                    logging.error(f"Failed DNS delete for expired rule's hostname {hostname_del} in zone {zone_id_del}.")
+                            else:
+                                logging.warning(f"Skipping DNS delete for {hostname_del or rule_key}: missing required info.")
+                        else:
+                            logging.info(f"Skipping DNS delete for '{hostname_del}'; it is still in use by other rules.")
 
-                    rule_keys_fully_cleaned.append(rule_key)
+                        is_app_id_shared = any(
+                            k not in rules_to_process_for_deletion and r.get("access_app_id") == access_app_id_del
+                            for k, r in managed_rules.items()
+                        )
 
+                        if access_app_id_del and not is_app_id_shared:
+                            logging.info(f"Access App ID '{access_app_id_del}' is no longer used by any active rules. Deleting application.")
+                            if not delete_cloudflare_access_application(access_app_id_del):
+                                logging.error(f"Failed Access App delete for {hostname_del or rule_key}, App ID: {access_app_id_del}.")
+                        elif access_app_id_del:
+                             logging.info(f"Skipping Access App delete for ID '{access_app_id_del}'; it is still in use by other rules.")
+
+                        rule_keys_fully_cleaned.append(rule_key)
                 if rule_keys_fully_cleaned:
                     config_updated_after_delete = False
                     if not config.USE_EXTERNAL_CLOUDFLARED:
                         if update_cloudflare_config(): 
                             config_updated_after_delete = True
                         else:
-                            logging.error("Failed to update Cloudflare tunnel config during rule cleanup. Rules may remain in local state temporarily.")
+                            logging.error("Failed to update Cloudflare tunnel config during rule cleanup. Rules will remain in local state temporarily.")
                     else: 
                         config_updated_after_delete = True 
 

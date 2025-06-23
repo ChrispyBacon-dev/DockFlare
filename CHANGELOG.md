@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ---
+## [1.9.0] - 2025-06-23
+
+### Fixed
+- **`allowed_idps` Label Functionality:** Resolved a critical bug that caused Cloudflare API errors when using the `access.allowed_idps` label. DockFlare now correctly constructs the Access Policy rules using the modern `login_method` keyword and the proper data structure for Identity Provider UUIDs. This resolves the `invalid 'include' configuration` and `invalid rule json` errors, making the feature fully functional.
+- **UI Policy Management for Multi-Path Rules:** Corrected an issue where managing Access Policies from the web UI would fail for rules that included a path. The UI now correctly parses the hostname and path, allowing for reliable policy updates.
+- **Manual Rule Creation:** Fixed a bug where manually created rules were not being correctly added to the Cloudflare Tunnel's ingress configuration.
+- **UI Efficiency:** Policy updates from the UI now check if the requested configuration already matches the live Cloudflare configuration, preventing unnecessary API calls.
+
 ## [1.8.9] - 2025-06-22
 
 ### Added

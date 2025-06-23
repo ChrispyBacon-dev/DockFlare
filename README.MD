@@ -2,7 +2,7 @@
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/ChrispyBacon-dev/DockFlare)
 [![OS](https://img.shields.io/badge/os-linux%20%7C%20windows%20%7C%20macos-brightgreen)]()
 [![CPU Architectures](https://img.shields.io/badge/CPU-x86_64%20%7C%20arm64-brightgreen)](https://en.wikipedia.org/wiki/Central_processing_unit)
-[![Generic badge](https://img.shields.io/badge/Release-1.8.9-blue.svg)](https://github.com/ChrispyBacon-dev/DockFlare/releases/tag/v1.8.9)
+[![Generic badge](https://img.shields.io/badge/Release-1.9.0-blue.svg)](https://github.com/ChrispyBacon-dev/DockFlare/releases/tag/v1.8.9)
 [![Docker Pulls](https://img.shields.io/docker/pulls/alplat/dockflare)](https://hub.docker.com/r/alplat/dockflare)
 [![made-with-python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/)
 [![GitHub issues](https://img.shields.io/github/issues/ChrispyBacon-dev/dockflare)](https://github.com/ChrispyBacon-dev/dockflare/issues)
