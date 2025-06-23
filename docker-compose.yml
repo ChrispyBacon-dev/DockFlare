@@ -1,70 +1,28 @@
-# docker-compose.yml
 version: '3.8'
-
 services:
-  dockflare-backend:
-    build:
-      context: ./dockflare # Path to your Flask app's Dockerfile context
-      dockerfile: Dockerfile
-    container_name: dockflare-backend
+  dockflare:
+    image: alplat/dockflare:stable  # alplat/dockflare:unstable docker tag for beta versions
+    # build: .  # Uncomment to build from source instead
+    container_name: dockflare
     restart: unless-stopped
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env  # Load environment variables from .env file
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro  # Required to monitor Docker events
       - dockflare_data:/app/data  # Persistent storage for state
     networks:
       - cloudflare-net  # Network for communication with other containers
-    ports:
-      - "5000:5000" #for development and testing to access from IP
-    env_file:
-      - .env  # Load environment variables from .env file  
     environment:
       - STATE_FILE_PATH=/app/data/state.json
       - TZ=Europe/Zurich  # Set your timezone here
-      - PYTHONUNBUFFERED=1
-# ports: # Not directly exposed if Nginx is handling it
-    #   - "5000:5000" 
-
-  dockflare-nextui:
-    build:
-      context: ./dockflare-next-ui # Path to your Next.js app's Dockerfile context
-      dockerfile: Dockerfile
-    container_name: dockflare-nextui
-    restart: unless-stopped
-    environment:
-      - NODE_ENV=production
-      # NEXT_PUBLIC_API_BASE_URL: http://dockflare-backend:5000/api/v2 # For client-side if needed, but Nginx proxy makes it same origin
-      # NEXT_PUBLIC_SSE_URL: http://dockflare-backend:5000/stream-logs
-    # ports: # Not directly exposed if Nginx is handling it
-    #  - "3000:3000"
-    networks:
-      - cloudflare-net
-    depends_on:
-      - dockflare-backend # Optional, ensures backend starts first
-
-  nginx-proxy:
-    image: nginx:alpine
-    container_name: dockflare-nginx
-    restart: unless-stopped
-    ports:
-      - "8088:80" # Or your desired host port, e.g., "8080:80"
-      # - "443:443" # If you set up SSL within Nginx
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro # Mount your Nginx config
-      # - ./certs:/etc/nginx/certs:ro # If using self-signed or other certs
-    networks:
-      - cloudflare-net
-    depends_on:
-      - dockflare-backend
-      - dockflare-nextui
-    labels:
-      # -- Cloudflare Tunnel Configuration (via DockFlare) --
-      - cloudflare.tunnel.enable=true
-      - cloudflare.tunnel.hostname=dockflare-green.dataverse.icu
-      - cloudflare.tunnel.service=http://dockflare-nginx:80
+    #labels: # Optional
+    #- dockflare.enable=true
+    #- dockflare.hostname=dockflare.yourdomain.tld
+    #- dockflare.service=http://dockflare:5000  
 volumes:
   dockflare_data:
-
 networks:
   cloudflare-net:
    name: cloudflare-net
-   external: true
