@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **HTTP Host Header Support:** Implemented support for the new `dockflare.httpHostHeader` Docker label, allowing users to override the `Host` header sent to their origin service. This feature is also fully supported for manual ingress rules via the web UI (Add/Edit modals and display in the Managed Rules table). Applies only to HTTP/HTTPS services.
 
+### Fixed
+- **Service Validation for Docker Names:** Corrected the `is_valid_service` regex to properly allow underscores (`_`) in service hostnames (e.g., `http://my_app:80`), accommodating common Docker service naming conventions.
+
+### Changed
+- **Optional Ports for HTTP/HTTPS Services:** Modified `is_valid_service` to make the port optional for `http://` and `https://` service targets (e.g., `http://my-service` is now valid). Default ports (80 for HTTP, 443 for HTTPS) will be implicitly used by Cloudflare Tunnel if no port is specified.
+
 ## [1.9.1] - 2025-06-23
 
 ### Added
