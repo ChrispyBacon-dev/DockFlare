@@ -588,7 +588,7 @@ def ui_add_manual_rule_route():
                 allowed_idps_list, 
                 desired_auto_redirect
             )
-            if created_app created_app.get("id"):
+            if created_app and created_app.get("id"):
                 access_app_created_or_updated_id = created_app.get("id")
                 access_app_final_config_hash = generate_access_app_config_hash(
                     manual_access_policy_type, desired_session_duration, desired_app_launcher_visible,
@@ -889,7 +889,7 @@ def ui_edit_manual_rule_route():
         cloudflared_agent_state["last_action_status"] = f"Error: Failed to update Cloudflare tunnel config for manual rule {full_hostname}."
 
     return redirect(url_for('web.status_page'))
-
+    
 @bp.route('/cloudflare-ping')
 def cloudflare_ping_route(): 
     try:
