@@ -141,7 +141,7 @@ function initializeEditManualRuleModal() {
                 modal.querySelector('#edit_manual_zone_name_override').value = '';
                 modal.querySelector('#edit_manual_no_tls_verify').checked = details.no_tls_verify || false;
                 modal.querySelector('#edit_manual_origin_server_name').value = details.origin_server_name || '';
-
+                modal.querySelector('#edit_manual_http_host_header').value = details.http_host_header || '';
                 modal.showModal();
             } catch (e) {
                 console.error("Error populating edit modal:", e);

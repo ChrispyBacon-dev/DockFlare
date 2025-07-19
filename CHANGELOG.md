@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.9.4] - 2025-07-19
+
+### Fixed
+- **Critical UI Fix for Access Policies:** Resolved a critical bug causing an 'Internal Server Error' when creating or editing manual rules, or updating a Docker-managed rule's policy, to use the 'Authenticate by Email' method via the web UI. This was a regression caused by recent updates to the Cloudflare Access API handling in `access_manager.py` which were not reflected in the UI routes. The routes in `app/web/routes.py` have been updated to correctly construct the Access Policy payload, resolving the `TypeError` and API validation errors.
+- **Service Validation for Docker Names:** Corrected the `is_valid_service` validation regex to properly allow underscores (`_`) in service hostnames (e.g., `http://my_app:80`), accommodating common Docker service naming conventions.
+- **Auto-Redirect for Identity Providers:** Resolved a regression from v1.9.0 where using the `access.auto_redirect_to_identity=true` label along with `access.allowed_idps` would result in a Cloudflare API error. The `access_manager.py` module has been corrected to include the required top-level `allowed_idps` field in the API payload, restoring the auto-redirect functionality for label-based rules.
+
+### Changed
+- **Optional Ports for HTTP/HTTPS Services:** Modified the `is_valid_service` validation to make the port optional for `http://` and `https://` service targets (e.g., `http://my-service` is now valid). Cloudflare Tunnel will implicitly use the default ports (80 for HTTP, 443 for HTTPS) if none are specified.
+
+## [1.9.2] - 2025-06-25
+
+### Added
+- **HTTP Host Header Support:** Implemented support for the new `dockflare.httpHostHeader` Docker label, allowing users to override the `Host` header sent to their origin service. This feature is also fully supported for manual ingress rules via the web UI (Add/Edit modals and display in the Managed Rules table). Applies only to HTTP/HTTPS services.
+
+### Fixed
+- **Service Validation for Docker Names:** Corrected the `is_valid_service` regex to properly allow underscores (`_`) in service hostnames (e.g., `http://my_app:80`), accommodating common Docker service naming conventions.
+
+### Changed
+- **Optional Ports for HTTP/HTTPS Services:** Modified `is_valid_service` to make the port optional for `http://` and `https://` service targets (e.g., `http://my-service` is now valid). Default ports (80 for HTTP, 443 for HTTPS) will be implicitly used by Cloudflare Tunnel if no port is specified.
+
+## [1.9.1] - 2025-06-23
+
+### Added
+- **Prometheus Metrics Endpoint:** Added support for enabling the Prometheus metrics endpoint on the managed `cloudflared` agent via the new `CLOUDFLARED_METRICS_PORT` environment variable. The agent container will be automatically reconciled if this setting is added, changed, or removed.
+
 ## [1.9.0] - 2025-06-23
 
 ### Fixed

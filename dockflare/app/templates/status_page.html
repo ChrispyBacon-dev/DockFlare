@@ -21,7 +21,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <title>DockFlare v1.9.0 - Cloudflare Tunnel ingress Manager</title>
+    <title>DockFlare v1.9.4 - Cloudflare Tunnel ingress Manager</title>
  
     <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
     <link rel="preconnect" href="https://rsms.me" crossorigin>
@@ -43,7 +43,7 @@
 <body class="min_h-screen flex flex-col font-sans transition-colors duration-300">
     <div class="fixed bottom-6 right-[-38px] sm:bottom-7 sm:right-[-35px] z-50 transform -rotate-45 bg-indigo-600 text-white text-xs font-semibold tracking-wider text-center py-1 w-36 shadow-md"
          style="pointer-events: none;">
-        version 1.9.0
+        version 1.9.4
     </div>
 
    <header class="sticky top-0 z-40 w-full backdrop-blur-sm shadow-sm bg-base-100/90">
@@ -240,6 +240,9 @@
                                                {% if details.origin_server_name %}
                                                    <span class="badge badge-info badge-xs ml-1" title="Origin Server Name (SNI): {{ details.origin_server_name }}">SNI: {{ details.origin_server_name | truncate(20, True) }}</span>
                                                {% endif %}
+                                               {% if details.http_host_header %}
+                                                   <span class="badge badge-info badge-xs ml-1" title="HTTP Host Header: {{ details.http_host_header }}">Host: {{ details.http_host_header | truncate(20, True) }}</span>
+                                               {% endif %}    
                                            </div>
                                    </td>
                                        <td class="p-3 whitespace-nowrap">
@@ -446,7 +449,7 @@
             <p class="mb-1"><a href="https://github.com/ChrispyBacon-dev/DockFlare/wiki" target="_blank" rel="noopener noreferrer" class="link link-hover link-primary">DockFlare Documentation</a></p>
             <p class="mb-1">Enjoying DockFlare? Consider supporting the project!</p>
             <p><a href="https://github.com/sponsors/ChrispyBacon-dev" target="_blank" rel="noopener noreferrer" class="inline-flex items-center link link-hover"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-pink-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" /></svg>Sponsor ChrispyBacon-dev on GitHub</a></p>
-            <p class="mt-2 text-xs opacity-60">DockFlare v1.9.0</p>
+            <p class="mt-2 text-xs opacity-60">DockFlare v1.9.4</p>
         </div>
     </footer>
 <dialog id="add_manual_rule_modal" class="modal">
@@ -553,6 +556,17 @@
                         <span class="label-text-alt">Specify the hostname Cloudflare should use for TLS SNI when connecting to your origin. Leave blank if not needed. (Only applies to HTTP/HTTPS services).</span>
                     </label>
                 </div>
+                    <div class="form-control">
+                    <label class="label" for="manual_http_host_header">
+                        <span class="label-text">HTTP Host Header (Optional)</span>
+                    </label>
+                    <input type="text" id="manual_http_host_header" name="manual_http_host_header"
+                           placeholder="e.g., api.example.com"
+                           class="input input-bordered w-full" />
+                    <label class="label">
+                        <span class="label-text-alt">Overrides the <code>Host</code> header sent to your origin server. Useful for origins expecting a different hostname than the public one. (Only applies to HTTP/HTTPS services).</span>
+                    </label>
+                </div>
             <div class="modal-action mt-8">
               <button type="submit" class="btn btn-primary">Add Rule</button>
             </div>
@@ -644,6 +658,17 @@
                 <div class="form-control" id="edit_manual_origin_server_name_div">
                     <label class="label" for="edit_manual_origin_server_name"><span class="label-text">Origin Server Name (SNI)</span></label>
                     <input type="text" id="edit_manual_origin_server_name" name="manual_origin_server_name" placeholder="e.g., internal.service.local" class="input input-bordered w-full" />
+                </div>
+                        <div class="form-control">
+                    <label class="label" for="edit_manual_http_host_header">
+                        <span class="label-text">HTTP Host Header (Optional)</span>
+                    </label>
+                    <input type="text" id="edit_manual_http_host_header" name="manual_http_host_header"
+                           placeholder="e.g., api.example.com"
+                           class="input input-bordered w-full" />
+                    <label class="label">
+                        <span class="label-text-alt">Overrides the <code>Host</code> header sent to your origin server. Useful for origins expecting a different hostname than the public one. (Only applies to HTTP/HTTPS services).</span>
+                    </label>
                 </div>
             </div>
             <div class="modal-action mt-8">

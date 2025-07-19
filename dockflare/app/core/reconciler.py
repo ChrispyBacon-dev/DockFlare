@@ -47,6 +47,8 @@ def _get_hostname_configs_from_container(container_obj):
 
     default_path_label = get_label(labels, "path")
     default_originsrvname_label = get_label(labels, "originsrvname")
+    default_http_host_header_label = get_label(labels, "httpHostHeader")
+
     default_access_policy_type = get_label(labels, "access.policy")
     default_access_app_name = get_label(labels, "access.name")
     default_session_duration = get_label(labels, "access.session_duration", "24h")
@@ -67,6 +69,7 @@ def _get_hostname_configs_from_container(container_obj):
             "path": default_path_label, 
             "no_tls_verify": ntv_main,
             "origin_server_name": default_originsrvname_label.strip() if default_originsrvname_label else None,
+            "http_host_header": default_http_host_header_label.strip() if default_http_host_header_label else None,
             "container_id": container_id_val, "container_name": container_name_val,
             "access_policy_type": default_access_policy_type,
             "access_app_name": default_access_app_name,
@@ -91,6 +94,7 @@ def _get_hostname_configs_from_container(container_obj):
         ntv_idx_str = get_label(labels, f"{idx}.no_tls_verify", ntv_main_str) 
         ntv_idx = ntv_idx_str.lower() in ["true", "1", "t", "yes"]
         osn_idx_val = get_label(labels, f"{idx}.originsrvname", default_originsrvname_label)
+        h_h_h_idx_val = get_label(labels, f"{idx}.httpHostHeader", default_http_host_header_label)
 
         acc_pol_idx = get_label(labels, f"{idx}.access.policy", default_access_policy_type)
         acc_name_idx = get_label(labels, f"{idx}.access.name", default_access_app_name)
@@ -107,6 +111,7 @@ def _get_hostname_configs_from_container(container_obj):
             "path": path_idx, 
             "no_tls_verify": ntv_idx,
             "origin_server_name": osn_idx_val.strip() if osn_idx_val else None,
+            "http_host_header": h_h_h_idx_val.strip() if h_h_h_idx_val else None,
             "container_id": container_id_val, "container_name": container_name_val,
             "access_policy_type": acc_pol_idx, "access_app_name": acc_name_idx,
             "access_session_duration": acc_sess_idx, "access_app_launcher_visible": acc_vis_idx,
@@ -205,6 +210,7 @@ def _run_reconciliation_logic():
                         "status": "active", "delete_at": None, "zone_id": target_zone_id,
                         "no_tls_verify": desired_details["no_tls_verify"],
                         "origin_server_name": desired_details.get("origin_server_name"),
+                        "http_host_header": desired_details.get("http_host_header"),
                         "access_app_id": None, "access_policy_type": None, "access_app_config_hash": None,
                         "access_policy_ui_override": False, "source": "docker"
                     }
@@ -229,6 +235,8 @@ def _run_reconciliation_logic():
                         existing_rule["path"] = desired_details.get("path"); changed_in_reconcile = True; needs_tunnel_config_update = True
                     if existing_rule.get("origin_server_name") != desired_details.get("origin_server_name"):
                         existing_rule["origin_server_name"] = desired_details.get("origin_server_name"); changed_in_reconcile = True; needs_tunnel_config_update = True
+                    if existing_rule.get("http_host_header") != desired_details.get("http_host_header"):
+                        existing_rule["http_host_header"] = desired_details.get("http_host_header"); changed_in_reconcile = True; needs_tunnel_config_update = True
 
                     existing_rule["source"] = "docker" 
                     if changed_in_reconcile: state_changed_locally = True

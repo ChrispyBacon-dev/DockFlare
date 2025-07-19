@@ -1,0 +1,727 @@
+{
+  "__inputs": [],
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "version": "10.4.2"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 100,
+      "panels": [],
+      "title": "Overall Health KPIs",
+      "type": "row"
+    },
+    {
+      "description": "Total number of requests processed by the tunnel over the selected time period.",
+      "gridPos": {
+        "h": 7,
+        "w": 5,
+        "x": 0,
+        "y": 1
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "unit": "short"
+      },
+      "pluginVersion": "10.4.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": null
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(cloudflared_tunnel_total_requests{job=\"$job\"}[$__range]))",
+          "legendFormat": "Total Requests",
+          "range": true
+        }
+      ],
+      "title": "Total Requests",
+      "type": "stat"
+    },
+    {
+      "description": "Percentage of requests that resulted in an error.",
+      "gridPos": {
+        "h": 7,
+        "w": 5,
+        "x": 5,
+        "y": 1
+      },
+      "id": 18,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {
+              "color": "green",
+              "value": null
+            },
+            {
+              "color": "orange",
+              "value": 1
+            },
+            {
+              "color": "red",
+              "value": 5
+            }
+          ]
+        },
+        "unit": "percent"
+      },
+      "pluginVersion": "10.4.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": null
+          },
+          "editorMode": "code",
+          "expr": "(sum(rate(cloudflared_tunnel_request_errors{job=\"$job\"}[5m])) / sum(rate(cloudflared_tunnel_total_requests{job=\"$job\"}[5m]))) * 100",
+          "legendFormat": "__auto",
+          "range": true
+        }
+      ],
+      "title": "Error Rate",
+      "type": "stat"
+    },
+    {
+      "description": "99th percentile request latency. 99% of requests are faster than this value.",
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 10,
+        "y": 1
+      },
+      "id": 101,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "unit": "s"
+      },
+      "pluginVersion": "10.4.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": null
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum(rate(cloudflared_tunnel_request_duration_seconds_bucket{job=\"$job\"}[5m])) by (le))",
+          "legendFormat": "P99 Latency",
+          "range": true
+        }
+      ],
+      "title": "P99 Latency",
+      "type": "stat"
+    },
+    {
+      "description": "Number of concurrent requests being processed right now.",
+      "gridPos": {
+        "h": 7,
+        "w": 5,
+        "x": 14,
+        "y": 1
+      },
+      "id": 16,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.4.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": null
+          },
+          "editorMode": "code",
+          "expr": "sum(cloudflared_tunnel_concurrent_requests{job=\"$job\"})",
+          "legendFormat": "Active Connections",
+          "range": true
+        }
+      ],
+      "title": "Concurrent Connections",
+      "type": "stat"
+    },
+    {
+      "description": "Number of active connections from this tunnel to the Cloudflare Edge. Should ideally be >= 2 for high availability.",
+      "gridPos": {
+        "h": 7,
+        "w": 5,
+        "x": 19,
+        "y": 1
+      },
+      "id": 17,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto",
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {
+              "color": "red",
+              "value": null
+            },
+            {
+              "color": "red",
+              "value": 0
+            },
+            {
+              "color": "orange",
+              "value": 1
+            },
+            {
+              "color": "green",
+              "value": 2
+            }
+          ]
+        }
+      },
+      "pluginVersion": "10.4.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": null
+          },
+          "editorMode": "code",
+          "expr": "sum(cloudflared_tunnel_ha_connections{job=\"$job\"})",
+          "legendFormat": "__auto",
+          "range": true
+        }
+      ],
+      "title": "HA Connections",
+      "type": "gauge"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "id": 102,
+      "panels": [],
+      "title": "Request & Error Analysis",
+      "type": "row"
+    },
+    {
+      "description": "Rate of total requests vs error requests per second.",
+      "gridPos": {
+        "h": 9,
+        "w": 14,
+        "x": 0,
+        "y": 9
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "unit": "reqps"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": null
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(cloudflared_tunnel_total_requests{job=\"$job\"}[5m]))",
+          "legendFormat": "Total Requests",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": null
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(cloudflared_tunnel_request_errors{job=\"$job\"}[5m]))",
+          "legendFormat": "Errors",
+          "range": true
+        }
+      ],
+      "title": "Requests vs. Errors Rate",
+      "type": "timeseries"
+    },
+    {
+      "description": "Breakdown of HTTP response codes over the selected time period. Helps distinguish between client-side (4xx) and server-side (5xx) errors.",
+      "gridPos": {
+        "h": 9,
+        "w": 10,
+        "x": 14,
+        "y": 9
+      },
+      "id": 103,
+      "options": {
+        "displayMode": "lcd",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "minVizHeight": 10,
+        "minVizWidth": 10,
+        "orientation": "auto",
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showLabel": true,
+        "unit": "short"
+      },
+      "pluginVersion": "10.4.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": null
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(cloudflared_tunnel_response_by_code{job=\"$job\"}[$__range])) by (http_status)",
+          "legendFormat": "{{http_status}}",
+          "range": true
+        }
+      ],
+      "title": "HTTP Status Codes",
+      "type": "piechart"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "id": 104,
+      "panels": [],
+      "title": "Performance & Latency",
+      "type": "row"
+    },
+    {
+      "description": "P99: 99% of requests are faster than this value.\nP95: 95% of requests are faster than this value.\nP50: The median request latency.",
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "unit": "s"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": null
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum(rate(cloudflared_tunnel_request_duration_seconds_bucket{job=\"$job\"}[5m])) by (le))",
+          "legendFormat": "P99 Latency",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": null
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum(rate(cloudflared_tunnel_request_duration_seconds_bucket{job=\"$job\"}[5m])) by (le))",
+          "legendFormat": "P95 Latency",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": null
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum(rate(cloudflared_tunnel_request_duration_seconds_bucket{job=\"$job\"}[5m])) by (le))",
+          "legendFormat": "P50 Latency (Median)",
+          "range": true
+        }
+      ],
+      "title": "Request Latency Percentiles",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
+      "id": 105,
+      "panels": [],
+      "title": "Connection & Protocol Details",
+      "type": "row"
+    },
+    {
+      "description": "Breakdown of traffic by protocol.",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 29
+      },
+      "id": 106,
+      "options": {
+        "displayMode": "lcd",
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true
+        },
+        "minVizHeight": 10,
+        "minVizWidth": 10,
+        "orientation": "auto",
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showLabel": true,
+        "unit": "short"
+      },
+      "pluginVersion": "10.4.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": null
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(cloudflared_tunnel_requests_per_protocol{job=\"$job\"}[$__range])) by (protocol)",
+          "legendFormat": "{{protocol}}",
+          "range": true
+        }
+      ],
+      "title": "Traffic by Protocol",
+      "type": "piechart"
+    },
+    {
+      "description": "Number of active tunnel connections per Cloudflare datacenter.",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 29
+      },
+      "id": 107,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": null
+          },
+          "editorMode": "code",
+          "expr": "sum(cloudflared_tunnel_ha_connections{job=\"$job\"}) by (colo)",
+          "legendFormat": "{{colo}}",
+          "range": true
+        }
+      ],
+      "title": "HA Connections by Datacenter",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 38
+      },
+      "id": 108,
+      "panels": [],
+      "title": "Internal Process Health (Advanced)",
+      "type": "row"
+    },
+    {
+      "description": "CPU usage by the cloudflared process.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 39
+      },
+      "id": 109,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "hidden",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "unit": "short"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": null
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(process_cpu_seconds_total{job=\"$job\"}[5m]))",
+          "legendFormat": "CPU Usage",
+          "range": true
+        }
+      ],
+      "title": "CPU Usage",
+      "type": "timeseries"
+    },
+    {
+      "description": "Memory allocated by the cloudflared Go runtime.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 39
+      },
+      "id": 110,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "hidden",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "unit": "bytes"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": null
+          },
+          "editorMode": "code",
+          "expr": "go_memstats_alloc_bytes{job=\"$job\"}",
+          "legendFormat": "Memory",
+          "range": true
+        }
+      ],
+      "title": "Memory Usage",
+      "type": "timeseries"
+    },
+    {
+      "description": "Number of open file descriptors used by the process.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 39
+      },
+      "id": 111,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "last"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.4.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": null
+          },
+          "editorMode": "code",
+          "expr": "process_open_fds{job=\"$job\"}",
+          "legendFormat": "__auto",
+          "range": true
+        }
+      ],
+      "title": "Open File Descriptors",
+      "type": "gauge"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": [
+    "dockflare",
+    "cloudflare"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": true,
+          "text": "cloudflared",
+          "value": "cloudflared"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": null
+        },
+        "definition": "label_values(cloudflared_tunnel_total_requests, job)",
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "name": "job",
+        "options": [],
+        "query": {
+          "query": "label_values(cloudflared_tunnel_total_requests, job)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      }
+    ]
+  },
+  "timezone": "browser",
+  "title": "DockFlare - Cloudflare Tunnel Detailed",
+  "uid": "dockflare-tunnel-detailed",
+  "version": 2,
+  "weekStart": ""
+}

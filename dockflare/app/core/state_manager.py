@@ -93,6 +93,7 @@ def load_state():
                 rule_copy.setdefault("access_policy_ui_override", False)
                 rule_copy.setdefault("source", "docker")
                 rule_copy.setdefault("path", None)
+                rule_copy.setdefault("http_host_header", None)
                 
                 managed_rules[final_key] = rule_copy
 
@@ -134,6 +135,7 @@ def save_state():
                 "zone_id": rule.get("zone_id"), 
                 "no_tls_verify": rule.get("no_tls_verify", False),
                 "origin_server_name": rule.get("origin_server_name"), 
+                "http_host_header": rule.get("http_host_header"),
                 "access_app_id": rule.get("access_app_id"), 
                 "access_policy_type": rule.get("access_policy_type"),
                 "access_app_config_hash": rule.get("access_app_config_hash"),

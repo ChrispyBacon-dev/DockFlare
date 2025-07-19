@@ -78,6 +78,19 @@ TUNNEL_DNS_SCAN_ZONE_NAMES = [name.strip() for name in TUNNEL_DNS_SCAN_ZONE_NAME
 REQUIRED_VARS_BASE = ["CF_API_TOKEN", "CF_ACCOUNT_ID"]
 missing_vars = []
 
+# If set, enables the Prometheus metrics endpoint on the specified port.
+# The IP is hardcoded to 0.0.0.0 to be accessible within Docker networks.
+CLOUDFLARED_METRICS_PORT = os.getenv('CLOUDFLARED_METRICS_PORT')
+if CLOUDFLARED_METRICS_PORT:
+    try:
+        port = int(CLOUDFLARED_METRICS_PORT)
+        if not (1 <= port <= 65535):
+            logging.warning(f"Metrics port {port} is outside the valid range (1-65535). Disabling.")
+            CLOUDFLARED_METRICS_PORT = None
+    except ValueError:
+        logging.warning(f"Invalid value for CLOUDFLARED_METRICS_PORT: '{CLOUDFLARED_METRICS_PORT}'. Must be a number. Disabling.")
+        CLOUDFLARED_METRICS_PORT = None
+
 if not USE_EXTERNAL_CLOUDFLARED:
     if not TUNNEL_NAME:
         REQUIRED_VARS_BASE.append("TUNNEL_NAME")

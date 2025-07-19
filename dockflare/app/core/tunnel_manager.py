@@ -108,6 +108,8 @@ def update_cloudflare_config():
                 if service_str and actual_hostname_for_cf: 
                     no_tls_verify_flag = rule_details.get("no_tls_verify", False) 
                     origin_server_name_val = rule_details.get("origin_server_name")
+                    http_host_header_val = rule_details.get("http_host_header")
+
                     rule_config = {"hostname": actual_hostname_for_cf, "service": service_str} 
                     
                     if actual_path_for_cf and actual_path_for_cf.strip(): 
@@ -130,7 +132,11 @@ def update_cloudflare_config():
                         origin_request_settings["originServerName"] = origin_server_name_val
                     elif origin_server_name_val:
                         logging.debug(f"Rule for {rule_key} has origin_server_name='{origin_server_name_val}', but service '{service_str}' is not HTTP/HTTPS. 'originServerName' might be ignored by Cloudflare for this service type or cause issues.")
-
+                    if http_host_header_val and isinstance(service_str, str) and \
+                       (service_str.lower().startswith("http://") or service_str.lower().startswith("https://")):
+                        origin_request_settings["httpHostHeader"] = http_host_header_val
+                    elif http_host_header_val:
+                        logging.debug(f"Rule for {rule_key} has http_host_header='{http_host_header_val}', but service '{service_str}' is not HTTP/HTTPS. 'httpHostHeader' might be ignored by Cloudflare for this service type or cause issues.")
                     if origin_request_settings:
                         rule_config["originRequest"] = origin_request_settings
                     
@@ -232,6 +238,9 @@ def update_cloudflare_config():
                     comp_dict["noTLSVerify"] = True 
                 if origin_request.get("originServerName"):
                     comp_dict["originServerName"] = origin_request.get("originServerName")
+                if origin_request.get("httpHostHeader"):
+                    comp_dict["httpHostHeader"] = origin_request.get("httpHostHeader")
+
             return comp_dict
 
         current_api_comparable_set = {json.dumps(rule_to_comparable_dict(r), sort_keys=True) for r in current_api_ingress_rules}
@@ -427,17 +436,10 @@ def start_cloudflared_container():
     cloudflared_agent_state["last_action_status"] = "Starting/Reconciling..."
     
     if not docker_client:
-        msg = "Docker client not available."
-        logging.error(msg)
-        cloudflared_agent_state["last_action_status"] = f"Error: {msg}"
         return False
     if not tunnel_state.get("token"):
-        msg = "Tunnel token not available."
-        logging.error(msg)
-        cloudflared_agent_state["last_action_status"] = f"Error: {msg}"
         return False
     if not config.CLOUDFLARED_NETWORK_NAME or not ensure_docker_network_exists(config.CLOUDFLARED_NETWORK_NAME):
-        logging.error(f"Failed network check/create for '{config.CLOUDFLARED_NETWORK_NAME}'. Cannot start agent.")
         return False
 
     token = tunnel_state["token"]
@@ -451,7 +453,6 @@ def start_cloudflared_container():
         if network_mode != config.CLOUDFLARED_NETWORK_NAME:
             logging.warning(f"Network mismatch for managed agent. Desired: '{config.CLOUDFLARED_NETWORK_NAME}', Actual: '{network_mode}'. Recreation required.")
             needs_recreate = True
-
         try:
             current_image = container.image.tags[0] if container.image.tags else None
             if current_image != config.CLOUDFLARED_IMAGE:
@@ -459,12 +460,29 @@ def start_cloudflared_container():
                 needs_recreate = True
         except Exception as img_err:
              logging.warning(f"Could not reliably determine image for running agent container: {img_err}")
+        
+        desired_metrics_port = config.CLOUDFLARED_METRICS_PORT
+        port_bindings = container.attrs.get('HostConfig', {}).get('PortBindings', {})
+        
+        actual_metrics_port = None
+        if port_bindings:
+            for port_key in port_bindings:
+                if port_key.endswith('/tcp'):
+                    actual_metrics_port = port_key[:-4] 
+                    break 
+        
+        if desired_metrics_port and actual_metrics_port != desired_metrics_port:
+            logging.warning(f"Metrics port mismatch. Desired: '{desired_metrics_port}', Actual: '{actual_metrics_port}'. Recreation required.")
+            needs_recreate = True
+        elif not desired_metrics_port and actual_metrics_port:
+            logging.warning(f"Metrics port should be disabled, but found port '{actual_metrics_port}' exposed. Recreation required.")
+            needs_recreate = True
 
         if needs_recreate:
             logging.info(f"Removing misconfigured agent container '{container.name}' before recreation...")
             try:
                 container.remove(force=True)
-                container = None  
+                container = None
             except (APIError, requests.exceptions.ConnectionError) as rm_err:
                 logging.error(f"Failed to remove misconfigured agent '{container.name}': {rm_err}. Cannot proceed.")
                 cloudflared_agent_state["last_action_status"] = f"Error: Failed to remove old agent: {rm_err}"
@@ -487,37 +505,38 @@ def start_cloudflared_container():
             logging.info(f"Pulling image {config.CLOUDFLARED_IMAGE}...");
             docker_client.images.pull(config.CLOUDFLARED_IMAGE)
             logging.info("Image pull complete.")
-        except APIError as img_err:
+        except Exception as img_err:
             logging.warning(f"Could not pull image {config.CLOUDFLARED_IMAGE}: {img_err}. Will attempt using local if available.")
-        except requests.exceptions.ConnectionError as e_conn_pull:
-            logging.error(f"Docker connection failed during image pull: {e_conn_pull}")
-            cloudflared_agent_state["last_action_status"] = f"Error: Docker connect pull image."
-            return False
-        
+
+        command_parts = ["tunnel"]
+        ports_mapping = {}
+        if config.CLOUDFLARED_METRICS_PORT:
+            metrics_address = f"0.0.0.0:{config.CLOUDFLARED_METRICS_PORT}"
+            command_parts.extend(["--metrics", metrics_address])
+            ports_mapping[f"{config.CLOUDFLARED_METRICS_PORT}/tcp"] = int(config.CLOUDFLARED_METRICS_PORT)
+            logging.info(f"Metrics endpoint will be enabled on {metrics_address}")
+
+        command_parts.extend(["--no-autoupdate", "run", "--token", token])
         try:
             container_params = {
                 "image": config.CLOUDFLARED_IMAGE,
-                "command": f"tunnel --no-autoupdate run --token {token}",
+                "command": command_parts, 
                 "name": config.CLOUDFLARED_CONTAINER_NAME,
                 "network": config.CLOUDFLARED_NETWORK_NAME,
                 "restart_policy": {"Name": "unless-stopped"},
                 "detach": True,
                 "remove": False, 
-                "labels": {"managed-by": "dockflare"}
+                "labels": {"managed-by": "dockflare"},
+                "ports": ports_mapping 
             }
             new_container = docker_client.containers.run(**container_params)
             msg = f"Successfully created and started agent container '{new_container.name}' ({new_container.id[:12]})."
             cloudflared_agent_state["last_action_status"] = msg
             logging.info(msg)
         except APIError as create_err:
-            msg = f"Docker API error creating agent container: {create_err}"
-            logging.error(msg, exc_info=True)
-            cloudflared_agent_state["last_action_status"] = msg
-            return False 
+            return False
         except requests.exceptions.ConnectionError as e_conn_run:
-            logging.error(f"Docker connection failed running agent container: {e_conn_run}")
-            cloudflared_agent_state["last_action_status"] = f"Error: Docker connect run agent."
-            return False 
+            return False
             
     time.sleep(2) 
     update_cloudflared_container_status() 

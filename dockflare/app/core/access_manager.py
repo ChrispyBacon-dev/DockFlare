@@ -28,7 +28,7 @@ _ACCOUNT_EMAIL_CACHE_TTL = 3600
 _cached_account_email = None
 _cached_account_email_timestamp = 0
 
-def _build_access_app_payload(hostname, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies, auto_redirect_to_identity=False):
+def _build_access_app_payload(hostname, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies, allowed_idps=None, auto_redirect_to_identity=False):
     payload = {
         "name": name,
         "domain": hostname,
@@ -40,6 +40,8 @@ def _build_access_app_payload(hostname, name, session_duration, app_launcher_vis
     }
     if access_policies is not None: 
         payload["policies"] = access_policies
+    if allowed_idps is not None:
+        payload["allowed_idps"] = allowed_idps
     
     return payload
 
@@ -102,7 +104,7 @@ def find_cloudflare_access_application_by_hostname(hostname):
         apps_direct = response_data_direct.get("result", [])
         if apps_direct and isinstance(apps_direct, list):
             for app in apps_direct:
-                if app.get("domain") == hostname: # Exact domain match
+                if app.get("domain") == hostname:
                     logging.info(f"Found Access Application ID '{app.get('id')}' for hostname '{hostname}' via direct domain query.")
                     return app
         
@@ -128,10 +130,10 @@ def find_cloudflare_access_application_by_hostname(hostname):
         logging.error(f"Unexpected error finding Cloudflare Access Application for '{hostname}': {e}", exc_info=True)
         return None
 
-def create_cloudflare_access_application(hostname, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies, auto_redirect_to_identity=False):
+def create_cloudflare_access_application(hostname, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies, allowed_idps=None, auto_redirect_to_identity=False):
     logging.info(f"Creating Cloudflare Access Application for hostname '{hostname}' on account {config.CF_ACCOUNT_ID}")
     endpoint = f"/accounts/{config.CF_ACCOUNT_ID}/access/apps"
-    payload = _build_access_app_payload(hostname, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies, auto_redirect_to_identity)
+    payload = _build_access_app_payload(hostname, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies, allowed_idps, auto_redirect_to_identity)
     try:
         response_data = cloudflare_api.cf_api_request("POST", endpoint, json_data=payload)
         app_data = response_data.get("result")
@@ -173,10 +175,10 @@ def get_cloudflare_access_application(app_uuid):
         logging.error(f"Unexpected error getting Access Application '{app_uuid}': {e}", exc_info=True)
         return None
 
-def update_cloudflare_access_application(app_uuid, hostname, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies, auto_redirect_to_identity=False):
+def update_cloudflare_access_application(app_uuid, hostname, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies, allowed_idps=None, auto_redirect_to_identity=False):
     logging.info(f"Updating Cloudflare Access Application ID '{app_uuid}' for hostname '{hostname}' on account {config.CF_ACCOUNT_ID}")
     endpoint = f"/accounts/{config.CF_ACCOUNT_ID}/access/apps/{app_uuid}"
-    payload = _build_access_app_payload(hostname, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies, auto_redirect_to_identity)
+    payload = _build_access_app_payload(hostname, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies, allowed_idps, auto_redirect_to_identity)
     try:
         response_data = cloudflare_api.cf_api_request("PUT", endpoint, json_data=payload)
         app_data = response_data.get("result")
@@ -313,6 +315,7 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
                 logging.info(f"No Access App ID for {hostname} in local state. API action required (find or create).")
 
             if needs_api_action:
+                idp_ids = [idp.strip() for idp in desired_allowed_idps_str_from_label.split(',') if idp.strip()] if desired_allowed_idps_str_from_label else None
                 effective_app_id_for_operation = current_access_app_id_from_state 
                 
                 if not effective_app_id_for_operation: 
@@ -331,7 +334,7 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
                     updated_app = update_cloudflare_access_application(
                         effective_app_id_for_operation, hostname, desired_access_app_name_from_label,
                         desired_session_duration_from_label, desired_app_launcher_visible_from_label,
-                        [hostname], cf_access_policies, desired_auto_redirect_from_label
+                        [hostname], cf_access_policies, idp_ids, desired_auto_redirect_from_label
                     )
                     if updated_app:
                         current_rule_in_state["access_app_id"] = updated_app.get("id") 
@@ -346,7 +349,7 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
                     created_app = create_cloudflare_access_application(
                         hostname, desired_access_app_name_from_label,
                         desired_session_duration_from_label, desired_app_launcher_visible_from_label,
-                        [hostname], cf_access_policies, desired_auto_redirect_from_label
+                        [hostname], cf_access_policies, idp_ids, desired_auto_redirect_from_label
                     )
                     if created_app and created_app.get("id"):
                         current_rule_in_state["access_app_id"] = created_app.get("id")
