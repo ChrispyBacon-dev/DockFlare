@@ -174,7 +174,7 @@ def main_application_entrypoint():
 
     logging.info("-" * 52)
     logging.info("--- DockFlare Starting ---")
-    logging.info(f"--- Version: 1.9.2 ---") 
+    logging.info(f"--- Version: 1.9.3 ---") 
     logging.info("-" * 52)
 
     load_state() 

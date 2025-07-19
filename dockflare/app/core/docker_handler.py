@@ -56,12 +56,13 @@ def is_valid_service(service_str):
     service_str = service_str.strip()
     # Regex patterns for different service types
 
-    # Hostname/IP part: Allows domain names, IPv4, and bracketed IPv6
-    host_ip_pattern = r"([a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*\.?|[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|\[[0-9a-fA-F:]+\])"
+    # Hostname/IP for service targets: Allows domain names (includes '_' for Docker service names, per #132), IPv4, and bracketed IPv6. (Note: '_' is not valid for public DNS hostnames).
+    host_ip_pattern = r"([a-zA-Z0-9_](?:[a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9_])?(?:\.[a-zA-Z0-9_](?:[a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9_])?)*\.?|[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|\[[0-9a-fA-F:]+\])"
     port_pattern = r"[0-9]{1,5}" # Ports 0-65535
 
-    # HTTP/HTTPS: http(s)://host:port
-    http_https_pattern = rf"^(?:https?)://{host_ip_pattern}:{port_pattern}$"
+    # HTTP/HTTPS: http(s)://host(:port)? - port is now optional raised by issue 132
+    # The (?:...) makes the group non-capturing, and ? makes the entire group (colon + port) optional.
+    http_https_pattern = rf"^(?:https?)://{host_ip_pattern}(?::{port_pattern})?$"
     
     # TCP: tcp://host:port
     tcp_pattern = rf"^(?:tcp)://{host_ip_pattern}:{port_pattern}$"
