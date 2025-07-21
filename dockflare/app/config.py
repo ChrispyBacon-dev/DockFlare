@@ -56,6 +56,11 @@ else:
 
 CLOUDFLARED_IMAGE = "cloudflare/cloudflared:latest"
 
+# Docker connection configuration for TCP socket proxy support
+DOCKER_HOST = os.getenv('DOCKER_HOST')  # Support for remote Docker socket (e.g., tcp://host:2376)
+DOCKER_TLS_VERIFY = os.getenv('DOCKER_TLS_VERIFY', 'false').lower() in ['true', '1', 't', 'yes']
+DOCKER_CERT_PATH = os.getenv('DOCKER_CERT_PATH')  # Path to Docker TLS certificates
+
 PRIMARY_LABEL_PREFIX = 'dockflare.'
 LEGACY_LABEL_PREFIX = 'cloudflare.tunnel.'
 CUSTOM_LABEL_PREFIX = os.getenv('LABEL_PREFIX')

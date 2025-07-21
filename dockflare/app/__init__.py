@@ -65,9 +65,31 @@ root_logger.addHandler(queue_handler)
 
 docker_client = None
 try:
-    docker_client = docker.from_env(timeout=10)
+    if config.DOCKER_HOST:
+        # Use specified Docker host (TCP or Unix socket)
+        client_kwargs = {'base_url': config.DOCKER_HOST, 'timeout': 10}
+        
+        if config.DOCKER_TLS_VERIFY and config.DOCKER_CERT_PATH:
+            # Enable TLS verification for secure connections
+            tls_config = docker.tls.TLSConfig(
+                client_cert=(
+                    os.path.join(config.DOCKER_CERT_PATH, 'cert.pem'),
+                    os.path.join(config.DOCKER_CERT_PATH, 'key.pem')
+                ),
+                ca_cert=os.path.join(config.DOCKER_CERT_PATH, 'ca.pem'),
+                verify=True
+            )
+            client_kwargs['tls'] = tls_config
+        
+        docker_client = docker.DockerClient(**client_kwargs)
+        logging.info(f"Using Docker host: {config.DOCKER_HOST} (TLS: {config.DOCKER_TLS_VERIFY})")
+    else:
+        # Use default environment-based connection (current behavior)
+        docker_client = docker.from_env(timeout=10)
+        logging.info("Using default Docker socket connection")
+    
     docker_client.ping()
-    logging.info("Successfully connected to Docker daemon.")
+    logging.info(f"Successfully connected to Docker daemon at {config.DOCKER_HOST or 'default socket'}.")
 except APIError as e:
     logging.error(f"FATAL: Docker API error during initial connection: {e}")
     docker_client = None # Ensure it's None on APIError too

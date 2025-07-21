@@ -12,11 +12,16 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro  # Required to monitor Docker events
       - dockflare_data:/app/data  # Persistent storage for state
+      # For remote Docker connections via TCP socket proxy:
+      # 1. Remove the docker.sock volume mount above
+      # 2. Set DOCKER_HOST in your .env file (e.g., DOCKER_HOST=tcp://remote-host:2376)
+
     networks:
       - cloudflare-net  # Network for communication with other containers
     environment:
       - STATE_FILE_PATH=/app/data/state.json
       - TZ=Europe/Zurich  # Set your timezone here
+      # - DOCKER_HOST=tcp://remote-docker-host:2376 # Optional
     #labels: # Optional
     #- dockflare.enable=true
     #- dockflare.hostname=dockflare.yourdomain.tld
