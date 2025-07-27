@@ -5,9 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
 ---
+
+## [1.9.5] - 2025-07-27
+
+### Fixed
+- **Agent Container Startup Resilience:** Resolved a critical issue where the managed `cloudflared` agent container would fail to start if its associated Docker network was removed and recreated. The startup logic in `tunnel_manager.py` now intelligently detects this "stale network" error, automatically removes the broken agent container, and creates a new one, significantly improving reliability in dynamic Docker environments.
 
 ## [1.9.4] - 2025-07-19
 

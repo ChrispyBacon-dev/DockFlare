@@ -436,10 +436,16 @@ def start_cloudflared_container():
     cloudflared_agent_state["last_action_status"] = "Starting/Reconciling..."
     
     if not docker_client:
+        cloudflared_agent_state["last_action_status"] = "Error: Docker client unavailable."
+        logging.error("Docker client unavailable, cannot start agent container.")
         return False
     if not tunnel_state.get("token"):
+        cloudflared_agent_state["last_action_status"] = "Error: Tunnel token not available."
+        logging.error("Tunnel token not available, cannot start agent container.")
         return False
     if not config.CLOUDFLARED_NETWORK_NAME or not ensure_docker_network_exists(config.CLOUDFLARED_NETWORK_NAME):
+        cloudflared_agent_state["last_action_status"] = "Error: Docker network setup failed."
+        logging.error("Docker network setup failed, cannot start agent container.")
         return False
 
     token = tunnel_state["token"]
@@ -495,12 +501,33 @@ def start_cloudflared_container():
             cloudflared_agent_state["last_action_status"] = msg
         else:
             logging.info(f"Starting correctly configured but stopped agent container '{container.name}'...");
-            container.start()
-            msg = f"Started existing agent container '{container.name}'."
-            cloudflared_agent_state["last_action_status"] = msg
-            logging.info(msg)
-    else:
-        logging.info(f"Agent container '{config.CLOUDFLARED_CONTAINER_NAME}' not found or was misconfigured. Creating new container...")
+            try:
+                container.start()
+                msg = f"Started existing agent container '{container.name}'."
+                cloudflared_agent_state["last_action_status"] = msg
+                logging.info(msg)
+            except NotFound as e:
+                if 'network' in str(e).lower() and 'not found' in str(e).lower():
+                    logging.warning(f"Agent container '{container.name}' is attached to a stale or missing network. Forcing recreation.")
+                    cloudflared_agent_state["last_action_status"] = "Stale network detected, recreating agent..."
+                    try:
+                        container.remove(force=True)
+                        container = None
+                    except (APIError, requests.exceptions.ConnectionError) as rm_err:
+                        logging.error(f"Failed to remove broken agent '{container.name}': {rm_err}. Cannot proceed.")
+                        cloudflared_agent_state["last_action_status"] = f"Error: Failed to remove broken agent: {rm_err}"
+                        return False
+                else:
+                    logging.error(f"Failed to start container '{container.name}' due to an unexpected 'NotFound' error: {e}", exc_info=True)
+                    cloudflared_agent_state["last_action_status"] = f"Error starting agent: {e}"
+                    raise
+            except (APIError, requests.exceptions.ConnectionError) as e:
+                logging.error(f"Failed to start container '{container.name}': {e}", exc_info=True)
+                cloudflared_agent_state["last_action_status"] = f"Error starting agent: {e}"
+                return False
+
+    if not container:
+        logging.info(f"Agent container '{config.CLOUDFLARED_CONTAINER_NAME}' not found or was broken. Creating new container...")
         try:
             logging.info(f"Pulling image {config.CLOUDFLARED_IMAGE}...");
             docker_client.images.pull(config.CLOUDFLARED_IMAGE)
@@ -534,8 +561,12 @@ def start_cloudflared_container():
             cloudflared_agent_state["last_action_status"] = msg
             logging.info(msg)
         except APIError as create_err:
+            logging.error(f"Failed to create new agent container: {create_err}")
+            cloudflared_agent_state["last_action_status"] = f"Error creating agent: {create_err}"
             return False
         except requests.exceptions.ConnectionError as e_conn_run:
+            logging.error(f"Docker connection error while creating agent: {e_conn_run}")
+            cloudflared_agent_state["last_action_status"] = "Error: Docker connection lost."
             return False
             
     time.sleep(2) 
