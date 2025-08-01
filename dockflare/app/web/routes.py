@@ -57,6 +57,7 @@ from app.core.access_manager import (
 )
 from app.core.reconciler import reconcile_state_threaded 
 from app.core.docker_handler import is_valid_hostname, is_valid_service 
+from app.core.utils import get_rule_key
 
 bp = Blueprint('web', __name__)
 
