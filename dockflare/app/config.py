@@ -24,6 +24,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# --- DockFlare Version ---
+APP_VERSION = "v2.0.0"
+# --- web: https://dockflare.app ---
+# --- github: https://github.com/ChrispyBacon-dev/DockFlare ---
+
 MAX_CF_UPDATE_RETRIES = 3
 CF_UPDATE_RETRY_DELAY = 2
 CF_UPDATE_BACKOFF_FACTOR = 2

@@ -49,6 +49,7 @@ def _get_hostname_configs_from_container(container_obj):
     default_originsrvname_label = get_label(labels, "originsrvname")
     default_http_host_header_label = get_label(labels, "httpHostHeader")
 
+    default_access_group = get_label(labels, "access.group")
     default_access_policy_type = get_label(labels, "access.policy")
     default_access_app_name = get_label(labels, "access.name")
     default_session_duration = get_label(labels, "access.session_duration", "24h")
@@ -71,6 +72,7 @@ def _get_hostname_configs_from_container(container_obj):
             "origin_server_name": default_originsrvname_label.strip() if default_originsrvname_label else None,
             "http_host_header": default_http_host_header_label.strip() if default_http_host_header_label else None,
             "container_id": container_id_val, "container_name": container_name_val,
+            "access_group": default_access_group,
             "access_policy_type": default_access_policy_type,
             "access_app_name": default_access_app_name,
             "access_session_duration": default_session_duration,
@@ -96,6 +98,7 @@ def _get_hostname_configs_from_container(container_obj):
         osn_idx_val = get_label(labels, f"{idx}.originsrvname", default_originsrvname_label)
         h_h_h_idx_val = get_label(labels, f"{idx}.httpHostHeader", default_http_host_header_label)
 
+        acc_group_idx = get_label(labels, f"{idx}.access.group", default_access_group)
         acc_pol_idx = get_label(labels, f"{idx}.access.policy", default_access_policy_type)
         acc_name_idx = get_label(labels, f"{idx}.access.name", default_access_app_name)
         acc_sess_idx = get_label(labels, f"{idx}.access.session_duration", default_session_duration)
@@ -113,6 +116,7 @@ def _get_hostname_configs_from_container(container_obj):
             "origin_server_name": osn_idx_val.strip() if osn_idx_val else None,
             "http_host_header": h_h_h_idx_val.strip() if h_h_h_idx_val else None,
             "container_id": container_id_val, "container_name": container_name_val,
+            "access_group": acc_group_idx,
             "access_policy_type": acc_pol_idx, "access_app_name": acc_name_idx,
             "access_session_duration": acc_sess_idx, "access_app_launcher_visible": acc_vis_idx,
             "access_allowed_idps_str": acc_idps_idx, "access_auto_redirect": acc_redir_idx,
@@ -200,7 +204,7 @@ def _run_reconciliation_logic():
                 if not target_zone_id:
                     logging.error(f"[Reconcile] No zone ID for {rule_key}, skipping its reconciliation.")
                     continue
-
+                
                 if not existing_rule:
                     managed_rules[rule_key] = {
                         "hostname": desired_details["hostname"],
@@ -212,7 +216,8 @@ def _run_reconciliation_logic():
                         "origin_server_name": desired_details.get("origin_server_name"),
                         "http_host_header": desired_details.get("http_host_header"),
                         "access_app_id": None, "access_policy_type": None, "access_app_config_hash": None,
-                        "access_policy_ui_override": False, "source": "docker"
+                        "access_policy_ui_override": False, "source": "docker",
+                        "access_group_id": None
                     }
                     existing_rule = managed_rules[rule_key]
                     state_changed_locally = True

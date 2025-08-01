@@ -1,0 +1,62 @@
+<dialog id="access_group_modal" class="modal">
+    <div class="modal-box w-11/12 max-w-3xl bg-base-100/70 dark:bg-neutral/70 backdrop-blur-md shadow-xl">
+        <form method="dialog">
+            <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+        </form>
+        <h3 id="access_group_modal_title" class="font-bold text-lg mb-6">Create New Access Group</h3>
+        
+        <form id="access_group_form" method="POST" class="space-y-6 protocol-aware-form">
+            <input type="hidden" name="original_group_id" id="original_group_id">
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="form-control">
+                    <label class="label" for="group_display_name"><span class="label-text">Display Name (Required)</span></label>
+                    <input type="text" id="group_display_name" name="display_name" placeholder="e.g., NAS Family Access" class="input input-bordered w-full" required />
+                    <div class="label"><span class="label-text-alt">A friendly name shown in the UI.</span></div>
+                </div>
+                <div class="form-control">
+                    <label class="label" for="group_id"><span class="label-text">Group ID (Required)</span></label>
+                    <input type="text" id="group_id" name="group_id" placeholder="e.g., nas-family" class="input input-bordered w-full" required pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$" />
+                    <div class="label"><span class="label-text-alt">Used in Docker labels. Lowercase, numbers, and hyphens only.</span></div>
+                </div>
+            </div>
+
+            <div>
+                <h4 class="text-md font-semibold mb-2">Policy Rules</h4>
+                <div class="form-control">
+                    <label class="label" for="group_emails"><span class="label-text">Allowed Emails or Domains</span></label>
+                    <textarea id="group_emails" name="emails" class="textarea textarea-bordered h-24" placeholder="me@example.com, myfriend@example.com, @mycompany.com"></textarea>
+                    <div class="label"><span class="label-text-alt">Comma-separated. To allow anyone from a domain, use <code class="text-xs">@domain.com</code>.</span></div>
+                </div>
+            </div>
+
+            <div>
+                <h4 class="text-md font-semibold mb-2">Application Settings (Optional)</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label" for="group_session_duration"><span class="label-text">Session Duration</span></label>
+                        <input type="text" id="group_session_duration" name="session_duration" value="24h" class="input input-bordered w-full" />
+                         <div class="label"><span class="label-text-alt">e.g., 24h, 30m, 720h.</span></div>
+                    </div>
+                    <div class="form-control pt-8">
+                      <label class="label cursor-pointer justify-start gap-2">
+                        <input type="checkbox" name="auto_redirect" id="group_auto_redirect" class="checkbox checkbox-sm" />
+                        <span class="label-text">Auto Redirect to Identity</span>
+                      </label>
+                    </div>
+                    <div class="form-control pt-8">
+                      <label class="label cursor-pointer justify-start gap-2">
+                        <input type="checkbox" name="app_launcher_visible" id="group_app_launcher_visible" class="checkbox checkbox-sm" />
+                        <span class="label-text">Visible in App Launcher</span>
+                      </label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="modal-action mt-8">
+              <button type="submit" class="btn btn-primary">Save Group</button>
+            </div>
+        </form>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>

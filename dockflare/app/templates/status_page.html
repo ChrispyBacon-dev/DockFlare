@@ -1,683 +1,496 @@
-<!--
- DockFlare: Automates Cloudflare Tunnel ingress from Docker labels.
- Copyright (C) 2025 ChrispyBacon-Dev <https://github.com/ChrispyBacon-dev/DockFlare>
+{% extends "base.html" %}
 
- This program is free software: you can redistribute it and/or modify
- it under the terms of the GNU General Public License as published by
- the Free Software Foundation, either version 3 of the License, or
- (at your option) any later version.
+{% block title %}Dashboard{% endblock %}
 
- This program is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- GNU General Public License for more details.
-
- You should have received a copy of the GNU General Public License
- along with this program. If not, see <https://www.gnu.org/licenses/>.
--->
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <title>DockFlare v1.9.5 - Cloudflare Tunnel ingress Manager</title>
- 
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
-    <link rel="preconnect" href="https://rsms.me" crossorigin>
-    <link rel="stylesheet" href="https://rsms.me/inter/inter.css" crossorigin="anonymous">
-    
-    <style>
-        body { font-family: system-ui, -apple-system, sans-serif; }
-        .container { width: 100%; max-width: 1200px; margin: 0 auto; padding: 0 1rem; }
-        pre { font-family: monospace; }
-        #log-output::-webkit-scrollbar { width: 8px; }
-        #log-output::-webkit-scrollbar-track { background: transparent; }
-        #log-output::-webkit-scrollbar-thumb { background-color: rgba(156, 163, 175, 0.5); border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
-        #log-output::-webkit-scrollbar-thumb:hover { background-color: rgba(156, 163, 175, 0.7); }
-        html[data-theme="dark"] #log-output::-webkit-scrollbar-thumb { background-color: rgba(107, 114, 128, 0.5); }
-        html[data-theme="dark"] #log-output::-webkit-scrollbar-thumb:hover { background-color: rgba(107, 114, 128, 0.7); }
-    </style>
-</head>
-
-<body class="min_h-screen flex flex-col font-sans transition-colors duration-300">
-    <div class="fixed bottom-6 right-[-38px] sm:bottom-7 sm:right-[-35px] z-50 transform -rotate-45 bg-indigo-600 text-white text-xs font-semibold tracking-wider text-center py-1 w-36 shadow-md"
-         style="pointer-events: none;">
-        version 1.9.5
+{% block content %}
+    {% if initialization and initialization.in_progress %}
+    <div role="alert" class="alert alert-info shadow-md text-sm mb-8">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6 animate-spin"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6l4 2M21.56 10.5A10.001 10.001 0 0012 2a10 10 0 100 20 9.974 9.974 0 005.201-1.71l-.001-.001z"></path></svg>
+        <div>
+            <h3 class="font-bold">Initialization in Progress...</h3>
+            <div class="text-xs">You can view logs below. The UI will update when ready.</div>
+        </div>
     </div>
+    {% endif %}
 
-   <header class="sticky top-0 z-40 w-full backdrop-blur-sm shadow-sm bg-base-100/90">
-    <div class="mx-auto px-4 sm:px-6 lg:px-8 max-w-screen-2xl"> 
-        <div class="py-4 relative flex items-center justify-end h-20 sm:h-24"> 
-           
-            <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-                <a href="/" aria-label="DockFlare Home" class="inline-block">
-                    <img src="{{ url_for('static', filename='images/bannertr.png') }}" alt="Dockflare Logo Banner" class="h-12 sm:h-16 block align-middle">
-                </a>
-            </div>
+    <div id="reconciliation-status" class="mb-8"></div>
+    <div id="reconciliation-status-message" class="text-sm opacity-75 mb-1"></div>
 
-            <div class="dropdown dropdown-end"> 
-                <button tabindex="0" role="button" id="theme-selector-btn" aria-label="Select Theme" class="btn btn-ghost">
-                    <span class="mr-2 hidden sm:inline">Themes</span>
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42" />
+    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+         <div class="card-body">
+            <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
+                Managed Ingress Rules
+                <button class="btn btn-sm btn-primary ml-auto" onclick="document.getElementById('add_manual_rule_modal').showModal()">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                    Add Manual Rule
+                </button>
+            </h2>
+
+            {% if agent_state.last_action_status %}
+                {% set is_error = 'Error:' in agent_state.last_action_status %}
+                {% set is_warning = 'Warning:' in agent_state.last_action_status and not is_error %}
+                {% set alert_type = 'alert-error' if is_error else ('alert-warning' if is_warning else 'alert-success') %}
+                <div role="alert" class="alert {{ alert_type }} shadow-sm text-sm mb-6">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24">
+                        {% if is_error %}<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        {% elif is_warning %}<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        {% else %}<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />{% endif %}
                     </svg>
-                    </button>
-                    <ul tabindex="0" id="theme-menu" class="dropdown-content z-[50] menu p-2 shadow bg-base-200 rounded-box w-52 max-h-96 overflow-y-auto mt-4 flex-nowrap min-h-0">
-                    </ul>
-                </div>
-            </div>
-        </div>
-    </header>
-
-    <main class="mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 flex-grow w-full max-w-screen-2xl">
-
-        {% if initialization and initialization.in_progress %}
-        <div role="alert" class="alert alert-info shadow-md text-sm mb-8">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6 animate-spin"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6l4 2M21.56 10.5A10.001 10.001 0 0012 2a10 10 0 100 20 9.974 9.974 0 005.201-1.71l-.001-.001z"></path></svg>
-            <div>
-                <h3 class="font-bold">Initialization in Progress...</h3>
-                <div class="text-xs">You can view logs below. The UI will update when ready.</div>
-            </div>
-        </div>
-        {% endif %}
-
-        <div id="reconciliation-status" class="mb-8"></div>
-        <div id="reconciliation-status-message" class="text-sm opacity-75 mb-1"></div>
-
-        <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
-            <div class="card-body">
-                <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
-                    Tunnel & Agent Status
-                </h2>
-
-                {% if agent_state.last_action_status or tunnel_state.get('error') %}
-                    {% set alert_message = agent_state.last_action_status or tunnel_state.status_message %}
-                    {% set is_error = 'Error:' in alert_message or tunnel_state.get('error') %}
-                    {% set is_warning = 'Warning:' in alert_message and not is_error %}
-                    {% set is_success = 'Success:' in alert_message and not is_error and not is_warning %}
-                    {% set alert_type = 'alert-error' if is_error else ('alert-warning' if is_warning else ('alert-success' if is_success else 'alert-info')) %}
-                    <div role="alert" class="alert {{ alert_type }} shadow-sm text-sm mb-6">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24">
-                            {% if is_error %}<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            {% elif is_warning %}<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                            {% elif is_success %}<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            {% else %}<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>{% endif %}
-                        </svg>
-                        <div class="flex-1">
-                            <h3 class="font-bold text-xs uppercase opacity-80">
-                                {% if agent_state.last_action_status %}Last Action{% else %}API Status{% endif %}
-                            </h3>
-                            <div class="text-xs">{{ alert_message }}</div>
-                            {% if tunnel_state.get('error') and (not agent_state.last_action_status or 'Error:' not in agent_state.last_action_status) %}
-                            <div class="text-xs mt-1 opacity-70"><strong>Error Details:</strong> {{ tunnel_state.error }}</div>
-                            {% endif %}
-                        </div>
-                    </div>
-                {% elif not (initialization and initialization.in_progress) %}
-                     <div role="alert" class="alert alert-success shadow-sm text-sm mb-6">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        <div>
-                            <h3 class="font-bold">API Status</h3>
-                            <div class="text-xs">{{ tunnel_state.status_message }}</div>
-                        </div>
-                    </div>
-                {% endif %}
-
-                <div class="mb-6">
-                    <h4 class="text-md font-semibold mb-3 opacity-80">Tunnel Details</h4>
-                     <div class="space-y-2 text-sm">
-                        <p><strong class="inline-block w-36 opacity-70">Desired Name:</strong> <code class="badge badge-ghost">{{ tunnel_state.name }}</code></p>
-                        <p><strong class="inline-block w-36 opacity-70">Tunnel ID:</strong> <code class="badge badge-ghost">{{ tunnel_state.id if tunnel_state.id else 'N/A' }}</code></p>
-                        {% if not external_cloudflared %}
-                        <p><strong class="inline-block w-36 opacity-70">Tunnel Token:</strong> <code class="badge badge-ghost">{{ display_token }}</code></p>
-                        {% endif %}
+                    <div class="flex-1">
+                        <h3 class="font-bold text-xs uppercase opacity-80">Last Action</h3>
+                        <div class="text-xs">{{ agent_state.last_action_status }}</div>
                     </div>
                 </div>
-                <div>
-                    <h3 class="text-lg font-semibold mb-3 opacity-80">Agent Control</h3>
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-6 mt-2 p-4 bg-base-200/50 rounded-md">
-                        {% if external_cloudflared %}
-                            <div class="flex-grow space-y-1.5">
-                                <div class="flex items-center space-x-3">
-                                    <strong class="text-sm font-medium flex-shrink-0 w-28 opacity-70">External Mode:</strong>
-                                    <span class="badge badge-info badge-sm animate-pulse">Active</span>
-                                </div>
-                                <div class="flex items-center text-sm">
-                                    <strong class="font-medium opacity-70 flex-shrink-0 w-28">External ID:</strong>
-                                    <code class="ml-3 badge badge-ghost" title="{{ external_tunnel_id }}">{{ external_tunnel_id }}</code>
-                                </div>
-                                <div class="text-xs opacity-60 mt-2">
-                                    <p class="italic">External cloudflared enabled. DockFlare manages DNS, not the agent.</p>
-                                </div>
-                            </div>
-                        {% else %}
-                         <div class="flex-grow space-y-1.5">
-                            <div class="flex items-center space-x-3">
-                                <strong class="text-sm font-medium flex-shrink-0 w-28 opacity-70">Agent Status:</strong>
-                                {% set indicator_color = 'bg-gray-400' %}
-                                {% if agent_state.container_status == 'running' %} {% set indicator_color = 'badge-success' %}
-                                {% elif agent_state.container_status in ['exited', 'dead', 'not_found', 'docker_unavailable'] %} {% set indicator_color = 'badge-error' %}
-                                {% elif agent_state.container_status in ['created', 'paused', 'restarting', 'initializing'] %} {% set indicator_color = 'badge-warning' %}
-                                {% endif %}
-                                <span class="badge {{ indicator_color }} badge-sm {% if agent_state.container_status == 'running' %}animate-pulse{% endif %}">{{ agent_state.container_status.replace('_',' ') if agent_state.container_status else 'Unknown' }}</span>
-                            </div>
-                            <div class="flex items-center text-sm">
-                                <strong class="font-medium opacity-70 flex-shrink-0 w-28">Agent Name:</strong>
-                                <code class="ml-3 badge badge-ghost" title="{{ cloudflared_container_name }}">{{ cloudflared_container_name }}</code>
-                            </div>
-                         </div>
-                         <div class="w-full sm:w-auto flex-shrink-0">
-                             {% set is_startable = tunnel_state.get('id') and tunnel_state.get('token') and docker_available %}
-                             {% set is_stoppable = docker_available %}
-                             {% if agent_state.container_status=='running' %}
-                                 <form action="{{ url_for('web.stop_tunnel_route') }}" method="post" class="inline-block w-full sm:w-auto protocol-aware-form">
-                                     <button type="submit" class="btn btn-sm btn-error w-full sm:w-auto" {{ 'disabled' if not is_stoppable else '' }}>Stop Agent</button>
-                                 </form>
-                             {% else %}
-                                 <form action="{{ url_for('web.start_tunnel_route') }}" method="post" class="inline-block w-full sm:w-auto protocol-aware-form">
-                                     <button type="submit" class="btn btn-sm btn-success w-full sm:w-auto" {{ 'disabled' if not is_startable else '' }}>Start Agent</button>
-                                 </form>
-                             {% endif %}
-                         </div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-        </section>
-        <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
-             <div class="card-body">
-                <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
-                    Managed Ingress Rules
-                    <button class="btn btn-sm btn-primary ml-auto" onclick="document.getElementById('add_manual_rule_modal').showModal()">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                        Add Manual Rule
-                    </button>
-                </h2>
+            {% endif %}
 
-                {% if rules and rules.items() %}
-                    <div class="overflow-x-auto -mx-6 sm:-mx-8 pb-24">
-                        <table class="table table-zebra table-sm w-full">
-                            <thead>
-                                <tr>
-                                    <th class="p-3 w-auto">Status</th>
-                                    <th class="p-3 w-1/4">Hostname</th> 
-                                    <th class="p-3 w-1/6">Path</th>
-                                    <th class="p-3 w-1/5">Service Target</th>
-                                    <th class="p-3 w-auto">Identifier</th>
-                                    <th class="p-3 w-1/5">Access Policy</th>
-                                    <th class="p-3 w-1/4">Manage Policy</th>
-                                    <th class="p-3 w-auto">Expires At</th>
-                                    <th class="p-3 w-auto">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for hostname, details in rules.items()|sort %}
-                                    <tr> 
-                                        <td class="p-3 whitespace-nowrap">
-                                            {% if details.source == 'manual' %}
-                                                <span class="badge badge-info badge-sm">Manual</span>                                               
-                                            {% else %}
-                                                {% set status_badge_color = 'badge-warning' if 'pending' in details.status else 'badge-success' %}
-                                                <span class="badge {{ status_badge_color }} badge-sm"> 
-                                                    {{ details.status.replace('_',' ') }}
-                                                </span>
-                                            {% endif %}
-                                        </td>
-                                        <td class="p-3 whitespace-nowrap">
-                                        {% set display_hostname = details.hostname_for_dns if details.hostname_for_dns else hostname.split('|')[0] %}
-                                        {% set display_path = details.path if details.path else (hostname.split('|')[1] if '|' in hostname else None) %}
-                                        <a href="https://{{ display_hostname }}{% if display_path %}{{ display_path }}{% endif %}" target="_blank" rel="noopener noreferrer" title="Open {{ protocol }}://{{ display_hostname }}{% if display_path %}{{ display_path }}{% endif %}" class="link link-hover link-primary text-sm">
-                                           {{ display_hostname }}
-                                       </a>
-                                       {% if display_hostname and display_hostname.startswith('*.') %}
-                                       <span class="badge badge-info badge-xs ml-2">wildcard</span>
-                                       {% endif %}
-                                       <div class="text-xs mt-1">
-                                               {% if details.no_tls_verify %}
-                                                   <span class="badge badge-warning badge-xs" title="TLS verification disabled for origin">No TLS Verify</span>
-                                               {% endif %}
-                                               {% if details.origin_server_name %}
-                                                   <span class="badge badge-info badge-xs ml-1" title="Origin Server Name (SNI): {{ details.origin_server_name }}">SNI: {{ details.origin_server_name | truncate(20, True) }}</span>
-                                               {% endif %}
-                                               {% if details.http_host_header %}
-                                                   <span class="badge badge-info badge-xs ml-1" title="HTTP Host Header: {{ details.http_host_header }}">Host: {{ details.http_host_header | truncate(20, True) }}</span>
-                                               {% endif %}    
-                                           </div>
-                                   </td>
-                                       <td class="p-3 whitespace-nowrap">
-                                        {% if display_path and display_path.strip() %}
-                                            <code class="text-xs opacity-70">{{ display_path }}</code>
+            {% if rules and rules.items() %}
+                <div class="overflow-x-auto -mx-6 sm:-mx-8 pb-24">
+                    <table class="table table-zebra table-sm w-full">
+                        <thead>
+                            <tr>
+                                <th class="p-3 w-auto">Status</th>
+                                <th class="p-3 w-1/4">Hostname</th> 
+                                <th class="p-3 w-1/6">Path</th>
+                                <th class="p-3 w-1/5">Service Target</th>
+                                <th class="p-3 w-auto">Identifier</th>
+                                <th class="p-3 w-1/5">Access Policy</th>
+                                <th class="p-3 w-1/4">Manage Policy</th>
+                                <th class="p-3 w-auto">Expires At</th>
+                                <th class="p-3 w-auto">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for hostname, details in rules.items()|sort %}
+                                <tr> 
+                                    <td class="p-3 whitespace-nowrap">
+                                        {% if details.source == 'manual' %}
+                                            <span class="badge badge-info badge-sm">Manual</span>                                               
                                         {% else %}
-                                            <span class="text-xs opacity-50 italic">(root)</span>
+                                            {% set status_badge_color = 'badge-warning' if 'pending' in details.status else 'badge-success' %}
+                                            <span class="badge {{ status_badge_color }} badge-sm"> 
+                                                {{ details.status.replace('_',' ') }}
+                                            </span>
                                         {% endif %}
                                     </td>
-                                        <td class="p-3 whitespace-nowrap"><code class="text-xs opacity-80">{{ details.service }}</code></td>
-                                        <td class="p-3 whitespace-nowrap">
+                                    <td class="p-3 whitespace-nowrap">
+                                    {% set display_hostname = details.hostname if details.hostname else hostname.split('|')[0] %}
+                                    {% set display_path = details.path if details.path else (hostname.split('|')[1] if '|' in hostname else None) %}
+                                    <a href="https://{{ display_hostname }}{% if display_path %}{{ display_path }}{% endif %}" target="_blank" rel="noopener noreferrer" title="Open https://{{ display_hostname }}{% if display_path %}{{ display_path }}{% endif %}" class="link link-hover link-primary text-sm">
+                                       {{ display_hostname }}
+                                   </a>
+                                   {% if display_hostname and display_hostname.startswith('*.') %}
+                                   <span class="badge badge-info badge-xs ml-2">wildcard</span>
+                                   {% endif %}
+                                   <div class="text-xs mt-1">
+                                           {% if details.no_tls_verify %}
+                                               <span class="badge badge-warning badge-xs" title="TLS verification disabled for origin">No TLS Verify</span>
+                                           {% endif %}
+                                           {% if details.origin_server_name %}
+                                               <span class="badge badge-info badge-xs ml-1" title="Origin Server Name (SNI): {{ details.origin_server_name }}">SNI: {{ details.origin_server_name | truncate(20, True) }}</span>
+                                           {% endif %}
+                                           {% if details.http_host_header %}
+                                               <span class="badge badge-info badge-xs ml-1" title="HTTP Host Header: {{ details.http_host_header }}">Host: {{ details.http_host_header | truncate(20, True) }}</span>
+                                           {% endif %}    
+                                       </div>
+                                   </td>
+                                   <td class="p-3 whitespace-nowrap">
+                                    {% if display_path and display_path.strip() %}
+                                        <code class="text-xs opacity-70">{{ display_path }}</code>
+                                    {% else %}
+                                        <span class="text-xs opacity-50 italic">(root)</span>
+                                    {% endif %}
+                                    </td>
+                                    <td class="p-3 whitespace-nowrap"><code class="text-xs opacity-80">{{ details.service }}</code></td>
+                                    <td class="p-3 whitespace-nowrap">
+                                        {% if details.source == 'manual' %}
+                                            <em class="text-xs opacity-70 italic">Manual Rule</em>
+                                        {% elif details.container_id %}
+                                            <code class="text-xs opacity-80" title="{{ details.container_id }}">{{ details.container_id[:12] }}</code>
+                                        {% else %}
+                                            <span class="text-xs opacity-50">N/A</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="p-3 whitespace-nowrap text-sm opacity-80" id="access-policy-display-{{ details.source if details.source else 'docker' }}-{{ hostname | replace('.', '-') }}">
+                                        {% if details.access_policy_type == 'group' %}
+                                            <span class="badge badge-primary badge-outline badge-sm">Group: {{ details.access_group_id }}</span>
+                                        {% elif details.access_policy_type %}
+                                            <span class="capitalize">
+                                                {{ details.access_policy_type.replace('_', ' ') }}
+                                            </span>
+                                        {% elif details.get('status') == 'active' %} 
+                                            <span class="opacity-60 italic">None (Public)</span>
+                                        {% else %}
+                                            <span class="text-xs opacity-50">N/A</span>
+                                        {% endif %}
+
+                                        {% if details.access_app_id and CF_ACCOUNT_ID_CONFIGURED and ACCOUNT_ID_FOR_DISPLAY != "Not Configured" %}
+                                             <a href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/access/apps/self-hosted/{{ details.access_app_id }}/edit?tab=basic-info" target="_blank" rel="noopener noreferrer" title="Edit Access App in Cloudflare" class="link link-hover text-info ml-1 inline-block align-middle">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                            </a>
+                                        {% endif %}
+
+                                        {% if details.access_policy_ui_override %}
+                                            <span class="badge badge-warning badge-xs ml-2 animate-pulse" title="This policy is managed by the UI{% if details.source != 'manual' %} and overrides container labels{% endif %}.">UI Override</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="p-3 whitespace-nowrap text-sm policy-actions-cell" style="min-width: 180px;">
+                                        <div class="flex items-center space-x-1 sm:space-x-2">
+                                            <div class="dropdown dropdown-end dropdown-hover"> 
+                                                <button tabindex="0" role="button" class="btn btn-xs btn-info btn-outline" data-hostname="{{ hostname }}">Edit Policy</button> 
+                                                <div tabindex="0" class="dropdown-content z-[50] menu p-3 shadow-xl bg-base-100 dark:bg-base-200 rounded-box w-64 sm:w-72"> 
+                                                    <form action="{{ url_for('web.ui_update_access_policy', hostname=hostname) }}" method="POST" class="protocol-aware-form space-y-3">
+                                                        <div>
+                                                            <label class="block text-xs font-medium opacity-80 mb-1">Policy Type:</label>
+                                                            <select name="access_policy_type" class="policy-type-select select select-bordered select-xs w-full" data-hostname="{{ hostname }}">
+                                                                <option value="none" {% if not details.access_policy_type %}selected{% endif %}>None (Public)</option>
+                                                                <option value="bypass" {% if details.access_policy_type == 'bypass' %}selected{% endif %}>Bypass (Public App)</option>
+                                                                <option value="authenticate_email" {% if details.access_policy_type == 'authenticate_email' %}selected{% endif %}>Authenticate by Email</option>
+                                                                <option value="default_tld" {% if details.access_policy_type == 'default_tld' %}selected{% endif %}>Use *.tld Policy</option>
+                                                            </select>
+                                                        </div>
+                                                        <div class="auth-email-field hidden mt-2">
+                                                            <label class="block text-xs font-medium opacity-80 mb-1">Allowed Email:</label>
+                                                            <input type="email" name="auth_email" placeholder="user@example.com" value="{{ details.auth_email or '' }}" class="input input-bordered input-xs w-full">
+                                                        </div>
+                                                        <div class="flex items-center justify-end space-x-2 mt-3">
+                                                            <button type="submit" class="save-policy-btn btn btn-xs btn-primary">Save</button>
+                                                        </div>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                            {% if details.access_policy_ui_override %}
+                                            <form action="{{ url_for('web.revert_access_policy_to_labels', hostname=hostname) }}" method="POST" onsubmit="return confirm('Revert policy for {{ display_hostname }} to be managed by labels/defaults?');" class="protocol-aware-form inline-block">
+                                                <button type="submit" class="btn btn-xs btn-warning btn-outline" title="Revert to Label/Default Policy">Revert</button>
+                                            </form>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td class="p-3 whitespace-nowrap text-sm opacity-70">
+                                        {% if details.status=='pending_deletion' and details.delete_at %}
+                                            <div data-delete-at="{{ details.delete_at.isoformat() }}">
+                                                <span class="absolute-time-display"></span> 
+                                                <span class="countdown-timer block text-xs opacity-80"></span>
+                                            </div>
+                                        {% else %} 
+                                            N/A 
+                                        {% endif %}
+                                    </td>
+                                    <td class="p-3 whitespace-nowrap text-sm" style="min-width: 120px;">
+                                        <div class="flex items-center gap-2">
                                             {% if details.source == 'manual' %}
-                                                <em class="text-xs opacity-70 italic">Manual Rule</em>
-                                            {% elif details.container_id %}
-                                                <code class="text-xs opacity-80" title="{{ details.container_id }}">{{ details.container_id[:12] }}</code>
-                                            {% else %}
-                                                <span class="text-xs opacity-50">N/A</span>
-                                            {% endif %}
-                                        </td>
-                                        <td class="p-3 whitespace-nowrap text-sm opacity-80" id="access-policy-display-{{ details.source if details.source else 'docker' }}-{{ hostname | replace('.', '-') }}">
-                                            {% if details.access_policy_type %}
-                                                <span class="capitalize">
-                                                    {{ details.access_policy_type.replace('_', ' ') if details.access_policy_type != 'pending_label_sync' else 'Pending Label Sync...' }}
-                                                </span>
-                                                {% if details.access_policy_type == 'pending_label_sync' %}
-                                                    <span class="loading loading-spinner loading-xs text-info ml-1 align-middle"></span>
-                                                {% elif details.access_app_id and CF_ACCOUNT_ID_CONFIGURED and ACCOUNT_ID_FOR_DISPLAY != "Not Configured" %}
-                                                    <a href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/access/apps/self-hosted/{{ details.access_app_id }}/edit?tab=basic-info" target="_blank" rel="noopener noreferrer" title="Edit Access App in Cloudflare" class="link link-hover text-info ml-1 inline-block align-middle">
-                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                                                    </a>
-                                                {% elif details.access_policy_type and details.access_policy_type != 'default_tld' and details.access_policy_type != 'None' %}
-                                                    <span class="badge badge-ghost badge-xs ml-1">(Managed)</span>
-                                                {% endif %}
-                                                {% if details.access_policy_ui_override %}
-                                                <span class="badge badge-warning badge-xs ml-2 animate-pulse" title="This policy is managed by the UI{% if details.source != 'manual' %} and overrides container labels{% endif %}.">UI Override</span>
-                                                {% endif %}
-                                            {% elif details.get('status') == 'active' %} 
-                                                <span class="opacity-60 italic">None (Public)</span>
-                                            {% else %}
-                                                <span class="text-xs opacity-50">N/A</span>
-                                            {% endif %}
-                                        </td>
-                                        <td class="p-3 whitespace-nowrap text-sm policy-actions-cell" id="policy-actions-{{ details.source if details.source else 'docker' }}-{{ hostname | replace('.', '-') }}" style="min-width: 180px;">
-                                            <div class="flex items-center space-x-1 sm:space-x-2">
-                                                <div class="dropdown dropdown-end dropdown-hover"> 
-                                                    <button tabindex="0" role="button" class="btn btn-xs btn-info btn-outline" data-hostname="{{ hostname }}">Edit Policy</button> 
-                                                    <div tabindex="0" class="dropdown-content z-[50] menu p-3 shadow-xl bg-base-100 dark:bg-base-200 rounded-box w-64 sm:w-72"> 
-                                                        <form action="{{ url_for('web.ui_update_access_policy', hostname=hostname) }}" method="POST" class="protocol-aware-form space-y-3">
-                                                            <div>
-                                                                <label for="access_policy_type-{{ details.source if details.source else 'docker' }}-{{ hostname | replace('.', '-') }}" class="block text-xs font-medium opacity-80 mb-1">Policy Type:</label>
-                                                                <select name="access_policy_type" id="access_policy_type-{{ details.source if details.source else 'docker' }}-{{ hostname | replace('.', '-') }}" class="policy-type-select select select-bordered select-xs w-full" data-hostname="{{ hostname }}">
-                                                                    <option value="none" {% if not details.access_policy_type %}selected{% endif %}>None (Public - No App)</option>
-                                                                    <option value="bypass" {% if details.access_policy_type == 'bypass' %}selected{% endif %}>Bypass (Public App)</option>
-                                                                    <option value="authenticate_email" {% if details.access_policy_type == 'authenticate_email' or (details.source != 'manual' and details.access_policy_type == 'authenticate' and not details.access_custom_rules_str and not details.access_allowed_idps_str) %}selected{% endif %}>Authenticate by Email</option>
-                                                                    <option value="default_tld" {% if details.access_policy_type == 'default_tld' %}selected{% endif %}>Use Default *.tld Policy</option>
-                                                                </select>
-                                                            </div>
-                                                            <div class="auth-email-field hidden mt-2" id="auth-email-field-{{ details.source if details.source else 'docker' }}-{{ hostname | replace('.', '-') }}">
-                                                                <label for="auth_email-{{ details.source if details.source else 'docker' }}-{{ hostname | replace('.', '-') }}" class="block text-xs font-medium opacity-80 mb-1">Allowed Email:</label>
-                                                                {% set prefill_email_val = '' %}
-                                                                {#  #}
-                                                                <input type="email" name="auth_email" id="auth_email-{{ details.source if details.source else 'docker' }}-{{ hostname | replace('.', '-') }}" placeholder="user@example.com" value="{{ prefill_email_val }}" class="input input-bordered input-xs w-full">
-                                                            </div>
-                                                            <div class="flex items-center justify-end space-x-2 mt-3">
-                                                                <button type="submit" class="save-policy-btn btn btn-xs btn-primary">Save</button>
-                                                            </div>
-                                                        </form>
-                                                    </div>
-                                                </div>
-                                                {% if details.access_policy_ui_override %}
-                                                <form action="{{ url_for('web.revert_access_policy_to_labels', hostname=hostname) }}" method="POST" 
-                                                      onsubmit="return confirm('Are you sure you want to revert the Access Policy for {{ details.hostname_for_dns }}{% if details.path %}{{ details.path }}{% endif %}? {% if details.source == "manual" %}The current UI-set policy will be removed, and it will become public or use a TLD policy if one exists.{% else %}The current UI-set policy will be removed, and it will be managed by its container labels.{% endif %}');" 
-                                                      class="protocol-aware-form inline-block">
-                                                    <button type="submit" class="btn btn-xs btn-warning btn-outline" title="Revert to Label/Default Policy">Revert</button>
-                                                </form>
-                                                {% endif %}
-                                            </div>
-                                        </td>
-                                        <td class="p-3 whitespace-nowrap text-sm opacity-70">
-                                            {% if details.source == 'manual' or (details.source != 'manual' and details.status == 'active') %}
-                                                N/A
-                                            {% elif details.source != 'manual' and details.status=='pending_deletion' and details.delete_at %}
-                                                <div data-delete-at="{{ details.delete_at.isoformat() }}">
-                                                    <span class="absolute-time-display"></span> 
-                                                    <span class="countdown-timer block text-xs opacity-80"></span>
-                                                </div>
-                                            {% else %} 
-                                                N/A 
-                                            {% endif %}
-                                        </td>
-                                        <td class="p-3 whitespace-nowrap text-sm" style="min-width: 120px;">
-                                            <div class="flex items-center gap-2">
-                                                {% if details.source == 'manual' %}
-                                                    <button class="btn btn-xs btn-info btn-outline edit-manual-rule-btn" 
-                                                            data-rule-key="{{ hostname }}" 
-                                                            data-rule-details="{{ details|tojson|forceescape }}">
-                                                        Edit
-                                                    </button>
-                                                    <form action="{{ url_for('web.ui_delete_manual_rule_route', rule_key_from_url=hostname) }}" method="post" onsubmit="return confirm('Are you sure you want to delete the manual rule for {{ details.hostname_for_dns }}{% if details.path %}{{ details.path }}{% endif %}?');" class="protocol-aware-form">
-                                                        <button type="submit" class="btn btn-xs btn-error btn-outline">Delete</button>
-                                                    </form>
-                                                {% else %}
-                                                    <form action="{{ url_for('web.force_delete_rule_route', hostname=hostname) }}" method="post" onsubmit="return confirm('Are you sure you want to force delete the rule and DNS record for {{ details.hostname_for_dns }}{% if details.path %}{{ details.path }}{% endif %} immediately? This bypasses the grace period.');" class="protocol-aware-form">
-                                                        <button type="submit" class="btn btn-xs btn-error btn-outline" {{ 'disabled' if not docker_available else '' }}>Delete</button>
-                                                    </form>
-                                                {% endif %}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                {% else %}
-                    <p class="text-center opacity-70 py-8">No ingress rules are currently being managed.</p>
-                {% endif %}
-            </div>
-        </section>
-        <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
-            <div class="card-body">
-                <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">All Cloudflare Tunnels on Account</h2>
-                {% if CF_ACCOUNT_ID_CONFIGURED %}
-                    <p class="mb-4 text-sm opacity-70">
-                        Displaying tunnels for Account ID: <code class="badge badge-ghost">{{ ACCOUNT_ID_FOR_DISPLAY | e }}</code>.
-                        <br>
-                        <em class="text-xs opacity-60">This list shows all tunnels found on the account, not just the one managed by this DockFlare instance. Click the '+' icon next to a tunnel to view its associated DNS records.</em>
-                    </p>
-                    {% if all_account_tunnels is defined and all_account_tunnels %}
-                        <div class="overflow-x-auto -mx-6 sm:-mx-8">
-                            <table class="table table-sm w-full">
-                                <thead>
-                                    <tr>
-                                        <th class="w-12">+/-</th>
-                                        <th>Tunnel Name</th>
-                                        <th>Tunnel ID</th>
-                                        <th>Status</th>
-                                        <th>Created At</th>
-                                        <th>Connections</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for tunnel in all_account_tunnels %}
-                                        <tr>
-                                            <td class="text-center">
-                                                <button type="button" class="btn btn-xs btn-ghost btn-circle tunnel-dns-toggle"
-                                                        data-tunnel-id="{{ tunnel.id | e }}" aria-expanded="false" aria-controls="dns-records-{{ tunnel.id | e }}" title="Toggle DNS records">
-                                                    <svg class="w-4 h-4 expand-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-                                                    <svg class="w-4 h-4 collapse-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6"></path></svg>
+                                                <button class="btn btn-xs btn-info btn-outline edit-manual-rule-btn" 
+                                                        data-rule-key="{{ hostname }}" 
+                                                        data-rule-details="{{ details|tojson|forceescape }}">
+                                                    Edit
                                                 </button>
-                                            </td>
-                                            <td class="text-sm font-medium">{{ tunnel.name | e }}</td>
-                                            <td><code class="text-xs opacity-80">{{ tunnel.id | e }}</code></td>
-                                            <td>
-                                                {% set status_color = 'badge-success' if tunnel.status | lower == 'healthy' else ('badge-warning' if tunnel.status | lower == 'degraded' else ('badge-error' if tunnel.status | lower == 'down' else 'badge-ghost')) %}
-                                                <span class="badge {{ status_color }} badge-sm">{{ tunnel.status | capitalize | e }}</span>
-                                            </td>
-                                            <td class="text-xs opacity-70">{% if tunnel.created_at %}{{ tunnel.created_at.split('T')[0] | e }}{% else %}N/A{% endif %}</td>
-                                            <td class="text-xs opacity-70">
-                                                {% if tunnel.connections and tunnel.connections is iterable and not tunnel.connections is string %}
-                                                    {% for conn in tunnel.connections %}<span class="badge badge-outline badge-xs mr-1 mb-1">{{ conn.colo_name | e }}</span>{% endfor %}
-                                                    {% if tunnel.connections | length > 0 %}({{ tunnel.connections | length }} total){% else %}(0 total){% endif %}
-                                                {% elif tunnel.connections %}{{ tunnel.connections | e }}{% else %}None{% endif %}
-                                            </td>
-                                        </tr>
-                                        <tr class="dns-records-row hidden bg-base-200/30">
-                                            <td colspan="6">
-                                                <div id="dns-records-{{ tunnel.id | e }}" class="p-4 text-sm space-y-2">
-                                                    <p class="opacity-60 italic">Click the '+' button to load DNS records for this tunnel.</p>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    {% elif all_account_tunnels is defined %}
-                        <p class="text-center opacity-70 py-8">No Cloudflare Tunnels found for Account ID: <code class="badge badge-ghost">{{ ACCOUNT_ID_FOR_DISPLAY | e }}</code>.</p>
-                        <p class="text-center text-xs opacity-60"><em>This could also mean an error occurred fetching them (check DockFlare logs). Ensure your CF_API_TOKEN has 'Account:Cloudflare Tunnel:Read' permission for the account level.</em></p>
-                    {% else %}
-                        <p class="alert alert-warning text-center py-8">Could not retrieve tunnel information.</p>
-                    {% endif %}
-                {% else %}
-                     <div role="alert" class="alert alert-warning">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                        <span>The <code>CF_ACCOUNT_ID</code> environment variable is not configured. This section cannot be displayed.</span>
-                    </div>
-                {% endif %}
-            </div>
-        </section>
-        <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
-             <div class="card-body">
-                 <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-4">
-                    Real-time Activity Logs
-                 </h2>
-                <div class="mockup-code text-xs max-h-96 overflow-y-hidden">
-                    <pre id="log-output" aria-live="polite" class="h-full overflow-y-scroll p-4">Connecting to log stream...</pre>
+                                                <form action="{{ url_for('web.ui_delete_manual_rule_route', rule_key_from_url=hostname) }}" method="post" onsubmit="return confirm('Delete manual rule for {{ display_hostname }}?');" class="protocol-aware-form">
+                                                    <button type="submit" class="btn btn-xs btn-error btn-outline">Delete</button>
+                                                </form>
+                                            {% else %}
+                                                <form action="{{ url_for('web.force_delete_rule_route', hostname=hostname) }}" method="post" onsubmit="return confirm('Force delete rule and DNS for {{ display_hostname }} immediately?');" class="protocol-aware-form">
+                                                    <button type="submit" class="btn btn-xs btn-error btn-outline">Delete</button>
+                                                </form>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
-            </div>
-        </section>
-    </main>
-    <footer class="text-center py-6 mt-auto text-sm opacity-70 border-t border-base-300">
-        <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-            <p class="mb-1"><a href="https://github.com/ChrispyBacon-dev/DockFlare" target="_blank" rel="noopener noreferrer" class="link link-hover link-primary">DockFlare on GitHub</a></p>
-            <p class="mb-1"><a href="https://github.com/ChrispyBacon-dev/DockFlare/wiki" target="_blank" rel="noopener noreferrer" class="link link-hover link-primary">DockFlare Documentation</a></p>
-            <p class="mb-1">Enjoying DockFlare? Consider supporting the project!</p>
-            <p><a href="https://github.com/sponsors/ChrispyBacon-dev" target="_blank" rel="noopener noreferrer" class="inline-flex items-center link link-hover"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-pink-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" /></svg>Sponsor ChrispyBacon-dev on GitHub</a></p>
-            <p class="mt-2 text-xs opacity-60">DockFlare v1.9.5</p>
+            {% else %}
+                <p class="text-center opacity-70 py-8">No ingress rules are currently being managed.</p>
+            {% endif %}
         </div>
-    </footer>
-<dialog id="add_manual_rule_modal" class="modal">
-    <div class="modal-box w-11/12 max-w-5xl bg-base-100/70 dark:bg-neutral/70 backdrop-blur-md shadow-xl">
-        <form method="dialog">
-            <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-        </form>
-        <h3 class="font-bold text-lg mb-6">Add New Manual Ingress Rule</h3>
-        <form action="{{ url_for('web.ui_add_manual_rule_route') }}" method="POST" class="space-y-6 protocol-aware-form">
-            <div>
-                <h4 class="text-md font-semibold mb-2">Public Hostname</h4>
-                <div class="grid grid-cols-1 md:grid-cols-7 gap-4 items-start">
-                    <div class="md:col-span-2">
-                        <label class="label" for="manual_subdomain"><span class="label-text">Subdomain</span></label>
-                        <input type="text" id="manual_subdomain" name="manual_subdomain" placeholder="(optional) subdomain" class="input input-bordered w-full" />
-                    </div>
-                    <div class="md:col-span-3">
-                        <label class="label" for="manual_domain_name"><span class="label-text">Domain (Required)</span></label>
-                        <input type="text" id="manual_domain_name" name="manual_domain_name" placeholder="example.com" class="input input-bordered w-full" required />
-                        <div class="text-xs opacity-60 mt-1">This will be combined with the subdomain to form the full hostname.</div>
-                    </div>
-                    <div class="md:col-span-2">
-                        <label class="label" for="manual_path_display"><span class="label-text">Path</span></label>
-                        <div class="join w-full">
-                            <span class="join-item btn btn-disabled normal-case pointer-events-none bg-base-200 border-base-300 !min-h-[3rem] !h-[3rem] px-3">/</span>
-                            <input type="text" id="manual_path_display" placeholder="(optional) path" class="input input-bordered join-item w-full" />
+    </section>
+
+    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+         <div class="card-body">
+             <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-4">
+                Real-time Activity Logs
+             </h2>
+            <div class="mockup-code text-xs max-h-96 overflow-y-hidden">
+                <pre id="log-output" aria-live="polite" class="h-full overflow-y-scroll p-4">Connecting to log stream...</pre>
+            </div>
+        </div>
+    </section>
+
+    <dialog id="add_manual_rule_modal" class="modal">
+        <div class="modal-box w-11/12 max-w-5xl bg-base-100/70 dark:bg-neutral/70 backdrop-blur-md shadow-xl flex flex-col">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-6">Add New Manual Ingress Rule</h3>
+            <form action="{{ url_for('web.ui_add_manual_rule_route') }}" method="POST" class="protocol-aware-form flex flex-col flex-grow min-h-0">
+                <div class="flex-grow overflow-y-auto space-y-6 p-1">
+                    <div>
+                        <h4 class="text-md font-semibold mb-2">Public Hostname</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-7 gap-4 items-start">
+                            <div class="md:col-span-2">
+                                <label class="label" for="manual_subdomain"><span class="label-text">Subdomain</span></label>
+                                <input type="text" id="manual_subdomain" name="manual_subdomain" placeholder="(optional) subdomain" class="input input-bordered w-full" />
+                            </div>
+                            <div class="md:col-span-3">
+                                <label class="label" for="manual_domain_name"><span class="label-text">Domain (Required)</span></label>
+                                <input type="text" id="manual_domain_name" name="manual_domain_name" placeholder="example.com" class="input input-bordered w-full" required />
+                                <div class="text-xs opacity-60 mt-1">This will be combined with the subdomain to form the full hostname.</div>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="label" for="manual_path_display"><span class="label-text">Path</span></label>
+                                <div class="join w-full">
+                                    <span class="join-item btn btn-disabled normal-case pointer-events-none bg-base-200 border-base-300 !min-h-[3rem] !h-[3rem] px-3">/</span>
+                                    <input type="text" id="manual_path_display" placeholder="(optional) path" class="input input-bordered join-item w-full" />
+                                </div>
+                                <input type="hidden" id="manual_path" name="manual_path" />
+                                 <div class="text-xs opacity-60 mt-1">If blank, rule applies to the root. User types "app", submitted as "/app".</div>
+                            </div>
                         </div>
-                        <input type="hidden" id="manual_path" name="manual_path" />
-                         <div class="text-xs opacity-60 mt-1">If blank, rule applies to the root. User types "app", submitted as "/app".</div>
-                    </div>
-                </div>
-            </div>
-            <div>
-                <h4 class="text-md font-semibold mb-2">Service</h4>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-                    <div>
-                        <label class="label" for="manual_service_type"><span class="label-text">Type (Required)</span></label>
-                        <select name="manual_service_type" id="manual_service_type" class="select select-bordered w-full" required>
-                            <option value="" disabled selected>Select...</option>
-                            <option value="http">HTTP</option>
-                            <option value="https">HTTPS</option>
-                            <option value="tcp">TCP</option>
-                            <option value="ssh">SSH</option>
-                            <option value="rdp">RDP</option>
-                            <option value="http_status">HTTP Status Code</option>
-                        </select>
                     </div>
                     <div>
-                        <label class="label" for="manual_service_address">
-                            <span class="label-text" id="manual_service_address_label">URL (Required for most types)</span>
-                        </label>
-                        <div class="join w-full">
-                            <span id="manual_service_prefix_span" class="join-item btn btn-disabled normal-case pointer-events-none hidden bg-base-200 border-base-300 !min-h-[3rem] !h-[3rem] px-3">://</span>
-                            <input type="text" id="manual_service_address" name="manual_service_address" placeholder="host:port or status code" class="input input-bordered join-item w-full" />
+                        <h4 class="text-md font-semibold mb-2">Service</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+                            <div>
+                                <label class="label" for="manual_service_type"><span class="label-text">Type (Required)</span></label>
+                                <select name="manual_service_type" id="manual_service_type" class="select select-bordered w-full" required>
+                                    <option value="" disabled selected>Select...</option>
+                                    <option value="http">HTTP</option>
+                                    <option value="https">HTTPS</option>
+                                    <option value="tcp">TCP</option>
+                                    <option value="ssh">SSH</option>
+                                    <option value="rdp">RDP</option>
+                                    <option value="http_status">HTTP Status Code</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="label" for="manual_service_address">
+                                    <span class="label-text" id="manual_service_address_label">URL (Required for most types)</span>
+                                </label>
+                                <div class="join w-full">
+                                    <span id="manual_service_prefix_span" class="join-item btn btn-disabled normal-case pointer-events-none hidden bg-base-200 border-base-300 !min-h-[3rem] !h-[3rem] px-3">://</span>
+                                    <input type="text" id="manual_service_address" name="manual_service_address" placeholder="host:port or status code" class="input input-bordered join-item w-full" />
+                                </div>
+                                <div id="manual_service_help" class="text-xs opacity-60 mt-1">e.g., 192.168.1.10:8000 or my-service.local:3000 for HTTP/S/TCP etc.</div>
+                            </div>
                         </div>
-                        <div id="manual_service_help" class="text-xs opacity-60 mt-1">e.g., 192.168.1.10:8000 or my-service.local:3000 for HTTP/S/TCP etc.</div>
-                    </div>
-                </div>
-            </div>
-            <div>
-                <h4 class="text-md font-semibold mb-2">Access Policy (Optional)</h4>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+                    </div>                                
                     <div>
-                        <label class="label" for="manual_access_policy_type"><span class="label-text">Policy Type</span></label>
-                        <select name="manual_access_policy_type" id="manual_access_policy_type" class="select select-bordered w-full policy-type-select">
-                            <option value="none" selected>None (Public - No App)</option>
-                            <option value="bypass">Bypass (Public App)</option>
-                            <option value="authenticate_email">Authenticate by Email</option>
-                            <option value="default_tld">Use Default *.tld Policy</option>
-                        </select>
-                    </div>
-                    <div class="auth-email-field hidden md:col-span-1">
-                        <label class="label" for="manual_auth_email"><span class="label-text">Allowed Email(s) or Domain(s)</span></label>
-                        <input type="text" id="manual_auth_email" name="manual_auth_email" placeholder="user@example.com, @domain.com" class="input input-bordered w-full" />
-                        <div class="text-xs opacity-60 mt-1">Comma-separated. e.g., test@example.com, @another.org</div>
-                    </div>
-                </div>
-            </div>
-            <div class="space-y-4 pt-4 border-t border-base-300 mt-6">
-                 <div>
-                    <label class="label" for="manual_zone_name_override"><span class="label-text">Cloudflare Zone Name (Override/Specific)</span></label>
-                    <input type="text" id="manual_zone_name_override" name="manual_zone_name_override" placeholder="yourdomain.com (if different from Domain Name or CF_ZONE_ID)" class="input input-bordered w-full" />
-                    {% if CF_ZONE_ID_CONFIGURED and CF_ZONE_ID %}
-                    <div class="text-xs opacity-60 mt-1">If blank, DockFlare will use "Domain Name" or default CF_ZONE_ID ({{ CF_ZONE_ID[:12] }}...). Target a different Zone if needed.</div>
-                    {% else %}
-                    <div class="text-xs opacity-60 mt-1">If blank, DockFlare will use "Domain Name". Target a specific Zone if "Domain Name" is ambiguous or CF_ZONE_ID is not set.</div>
-                    {% endif %}
-                </div>
-                <div id="manual_no_tls_verify_div" class="form-control">
-                  <label class="label cursor-pointer justify-start gap-2">
-                    <input type="checkbox" name="manual_no_tls_verify" id="manual_no_tls_verify" class="checkbox checkbox-sm" />
-                    <span class="label-text">Disable TLS Verification (No TLS Verify)</span>
-                  </label>
-                  <div class="text-xs opacity-60 ml-8">Check if the origin service uses self-signed SSL or is HTTP. (Only applies to HTTP/HTTPS services).</div>
-                </div>
-                <div class="form-control" id="manual_origin_server_name_div"> 
-                    <label class="label" for="manual_origin_server_name">
-                        <span class="label-text">Origin Server Name (SNI for TLS)</span>
-                    </label>
-                    <input type="text" id="manual_origin_server_name" name="manual_origin_server_name"
-                           placeholder="e.g., internal.service.local (optional)"
-                           class="input input-bordered w-full" />
-                    <label class="label">
-                        <span class="label-text-alt">Specify the hostname Cloudflare should use for TLS SNI when connecting to your origin. Leave blank if not needed. (Only applies to HTTP/HTTPS services).</span>
-                    </label>
-                </div>
-                    <div class="form-control">
-                    <label class="label" for="manual_http_host_header">
-                        <span class="label-text">HTTP Host Header (Optional)</span>
-                    </label>
-                    <input type="text" id="manual_http_host_header" name="manual_http_host_header"
-                           placeholder="e.g., api.example.com"
-                           class="input input-bordered w-full" />
-                    <label class="label">
-                        <span class="label-text-alt">Overrides the <code>Host</code> header sent to your origin server. Useful for origins expecting a different hostname than the public one. (Only applies to HTTP/HTTPS services).</span>
-                    </label>
-                </div>
-            <div class="modal-action mt-8">
-              <button type="submit" class="btn btn-primary">Add Rule</button>
-            </div>
-        </form>
-    </div>
-    <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
-<dialog id="edit_manual_rule_modal" class="modal">
-    <div class="modal-box w-11/12 max-w-5xl bg-base-100/70 dark:bg-neutral/70 backdrop-blur-md shadow-xl">
-        <form method="dialog">
-            <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
-        </form>
-        <h3 class="font-bold text-lg mb-6">Edit Manual Ingress Rule</h3>
-        <form action="{{ url_for('web.ui_edit_manual_rule_route') }}" method="POST" class="space-y-6 protocol-aware-form" id="edit_manual_rule_form">
-            <input type="hidden" name="original_rule_key" id="edit_original_rule_key" />
-            <div>
-                <h4 class="text-md font-semibold mb-2">Public Hostname</h4>
-                <div class="grid grid-cols-1 md:grid-cols-7 gap-4 items-start">
-                    <div class="md:col-span-2">
-                        <label class="label" for="edit_manual_subdomain"><span class="label-text">Subdomain</span></label>
-                        <input type="text" id="edit_manual_subdomain" name="manual_subdomain" placeholder="(optional) subdomain" class="input input-bordered w-full" />
-                    </div>
-                    <div class="md:col-span-3">
-                        <label class="label" for="edit_manual_domain_name"><span class="label-text">Domain (Required)</span></label>
-                        <input type="text" id="edit_manual_domain_name" name="manual_domain_name" placeholder="example.com" class="input input-bordered w-full" required />
-                    </div>
-                    <div class="md:col-span-2">
-                        <label class="label" for="edit_manual_path_display"><span class="label-text">Path</span></label>
-                        <div class="join w-full">
-                            <span class="join-item btn btn-disabled normal-case pointer-events-none bg-base-200 border-base-300 !min-h-[3rem] !h-[3rem] px-3">/</span>
-                            <input type="text" id="edit_manual_path_display" placeholder="(optional) path" class="input input-bordered join-item w-full" />
+                        <h4 class="text-md font-semibold mb-2">Access Policy (Optional)</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 items-start p-4 rounded-md bg-base-200/50">
+                            
+                            <div class="form-control md:col-span-2">
+                                <label class="label" for="manual_access_group">
+                                    <span class="label-text font-medium">1. Assign an Access Group (Recommended)</span>
+                                </label>
+                                <select name="manual_access_group" id="manual_access_group" class="select select-bordered w-full">
+                                    <option value="" selected>-- None (Configure Manually Below) --</option>
+                                    {% if access_groups %}
+                                        {% for group_id, details in access_groups.items()|sort %}
+                                            <option value="{{ group_id }}">{{ details.display_name }} (ID: {{ group_id }})</option>
+                                        {% endfor %}
+                                    {% endif %}
+                                </select>
+                                <div class="label"><span class="label-text-alt">Using a group overrides the manual policy options below.</span></div>
+                            </div>
+        
+                            <div class="divider md:col-span-2 text-xs opacity-80 my-0">OR</div>
+        
+                            <div id="manual_policy_options_wrapper" class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
+                                <div class="form-control">
+                                    <label class="label" for="manual_access_policy_type">
+                                        <span class="label-text font-medium">2. Configure Manually</span>
+                                    </label>
+                                    <select name="manual_access_policy_type" id="manual_access_policy_type" class="select select-bordered w-full policy-type-select">
+                                        <option value="none" selected>None (Public - No App)</option>
+                                        <option value="bypass">Bypass (Public App)</option>
+                                        <option value="authenticate_email">Authenticate by Email</option>
+                                        <option value="default_tld">Use Default *.tld Policy</option>
+                                    </select>
+                                </div>
+                                <div class="auth-email-field hidden">
+                                    <label class="label" for="manual_auth_email"><span class="label-text">Allowed Email(s) or Domain(s)</span></label>
+                                    <input type="text" id="manual_auth_email" name="manual_auth_email" placeholder="user@example.com, @domain.com" class="input input-bordered w-full" />
+                                    <div class="label"><span class="label-text-alt">Comma-separated. e.g., test@example.com, @another.org</div>
+                                </div>
+                            </div>
                         </div>
-                        <input type="hidden" id="edit_manual_path" name="manual_path" />
                     </div>
-                </div>
-            </div>
-            <div>
-                <h4 class="text-md font-semibold mb-2">Service</h4>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-                    <div>
-                        <label class="label" for="edit_manual_service_type"><span class="label-text">Type (Required)</span></label>
-                        <select name="manual_service_type" id="edit_manual_service_type" class="select select-bordered w-full" required>
-                            <option value="" disabled>Select...</option>
-                            <option value="http">HTTP</option>
-                            <option value="https">HTTPS</option>
-                            <option value="tcp">TCP</option>
-                            <option value="ssh">SSH</option>
-                            <option value="rdp">RDP</option>
-                            <option value="http_status">HTTP Status Code</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="label" for="edit_manual_service_address">
-                            <span class="label-text" id="edit_manual_service_address_label">URL or Status Code</span>
-                        </label>
-                        <input type="text" id="edit_manual_service_address" name="manual_service_address" placeholder="host:port or status code" class="input input-bordered w-full" />
-                    </div>
-                </div>
-            </div>
-            <div>
-                <h4 class="text-md font-semibold mb-2">Access Policy (Optional)</h4>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-                    <div>
-                        <label class="label" for="edit_manual_access_policy_type"><span class="label-text">Policy Type</span></label>
-                        <select name="manual_access_policy_type" id="edit_manual_access_policy_type" class="select select-bordered w-full policy-type-select">
-                            <option value="none">None (Public - No App)</option>
-                            <option value="bypass">Bypass (Public App)</option>
-                            <option value="authenticate_email">Authenticate by Email</option>
-                            <option value="default_tld">Use Default *.tld Policy</option>
-                        </select>
-                    </div>
-                    <div class="auth-email-field hidden md:col-span-1">
-                        <label class="label" for="edit_manual_auth_email"><span class="label-text">Allowed Email(s) or Domain(s)</span></label>
-                        <input type="text" id="edit_manual_auth_email" name="manual_auth_email" placeholder="user@example.com, @domain.com" class="input input-bordered w-full" />
-                    </div>
-                </div>
-            </div>
-            <div class="space-y-4 pt-4 border-t border-base-300 mt-6">
-                <div class="form-control">
-                    <label class="label" for="edit_manual_zone_name_override"><span class="label-text">Cloudflare Zone Name (Override/Specific)</span></label>
-                    <input type="text" id="edit_manual_zone_name_override" name="manual_zone_name_override" placeholder="yourdomain.com (if different from Domain Name)" class="input input-bordered w-full" />
-                </div>
-                <div id="edit_manual_no_tls_verify_div" class="form-control">
-                  <label class="label cursor-pointer justify-start gap-2">
-                    <input type="checkbox" name="manual_no_tls_verify" id="edit_manual_no_tls_verify" class="checkbox checkbox-sm" />
-                    <span class="label-text">Disable TLS Verification</span>
-                  </label>
-                </div>
-                <div class="form-control" id="edit_manual_origin_server_name_div">
-                    <label class="label" for="edit_manual_origin_server_name"><span class="label-text">Origin Server Name (SNI)</span></label>
-                    <input type="text" id="edit_manual_origin_server_name" name="manual_origin_server_name" placeholder="e.g., internal.service.local" class="input input-bordered w-full" />
-                </div>
+                
+                    <div class="space-y-4 pt-4 border-t border-base-300 mt-6">
+                        <div>
+                            <label class="label" for="manual_zone_name_override"><span class="label-text">Cloudflare Zone Name (Override/Specific)</span></label>
+                            <input type="text" id="manual_zone_name_override" name="manual_zone_name_override" placeholder="yourdomain.com (if different from Domain Name or CF_ZONE_ID)" class="input input-bordered w-full" />
+                            {% if CF_ZONE_ID_CONFIGURED and CF_ZONE_ID %}
+                            <div class="text-xs opacity-60 mt-1">If blank, DockFlare will use "Domain Name" or default CF_ZONE_ID ({{ CF_ZONE_ID[:12] }}...). Target a different Zone if needed.</div>
+                            {% else %}
+                            <div class="text-xs opacity-60 mt-1">If blank, DockFlare will use "Domain Name". Target a specific Zone if "Domain Name" is ambiguous or CF_ZONE_ID is not set.</div>
+                            {% endif %}
+                        </div>
+                        <div id="manual_no_tls_verify_div" class="form-control">
+                          <label class="label cursor-pointer justify-start gap-2">
+                            <input type="checkbox" name="manual_no_tls_verify" id="manual_no_tls_verify" class="checkbox checkbox-sm" />
+                            <span class="label-text">Disable TLS Verification (No TLS Verify)</span>
+                          </label>
+                          <div class="text-xs opacity-60 ml-8">Check if the origin service uses self-signed SSL or is HTTP. (Only applies to HTTP/HTTPS services).</div>
+                        </div>
+                        <div class="form-control" id="manual_origin_server_name_div"> 
+                            <label class="label" for="manual_origin_server_name">
+                                <span class="label-text">Origin Server Name (SNI for TLS)</span>
+                            </label>
+                            <input type="text" id="manual_origin_server_name" name="manual_origin_server_name"
+                                   placeholder="e.g., internal.service.local (optional)"
+                                   class="input input-bordered w-full" />
+                            <label class="label">
+                                <span class="label-text-alt">Specify the hostname Cloudflare should use for TLS SNI when connecting to your origin. Leave blank if not needed. (Only applies to HTTP/HTTPS services).</span>
+                            </label>
+                        </div>
                         <div class="form-control">
-                    <label class="label" for="edit_manual_http_host_header">
-                        <span class="label-text">HTTP Host Header (Optional)</span>
-                    </label>
-                    <input type="text" id="edit_manual_http_host_header" name="manual_http_host_header"
-                           placeholder="e.g., api.example.com"
-                           class="input input-bordered w-full" />
-                    <label class="label">
-                        <span class="label-text-alt">Overrides the <code>Host</code> header sent to your origin server. Useful for origins expecting a different hostname than the public one. (Only applies to HTTP/HTTPS services).</span>
-                    </label>
+                            <label class="label" for="manual_http_host_header">
+                                <span class="label-text">HTTP Host Header (Optional)</span>
+                            </label>
+                            <input type="text" id="manual_http_host_header" name="manual_http_host_header"
+                                   placeholder="e.g., api.example.com"
+                                   class="input input-bordered w-full" />
+                            <label class="label">
+                                <span class="label-text-alt">Overrides the <code>Host</code> header sent to your origin server. Useful for origins expecting a different hostname than the public one. (Only applies to HTTP/HTTPS services).</span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            <div class="modal-action mt-8">
-              <button type="submit" class="btn btn-primary">Save Changes</button>
-            </div>
-        </form>
-    </div>
-    <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
-<script src="{{ url_for('static', filename='js/main.js') }}"></script>
-</body>
-</html>
+                <div class="modal-action mt-8 pt-4 border-t border-base-300">
+                  <button type="submit" class="btn btn-primary">Add Rule</button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+    
+    <dialog id="edit_manual_rule_modal" class="modal">
+        <div class="modal-box w-11/12 max-w-5xl bg-base-100/70 dark:bg-neutral/70 backdrop-blur-md shadow-xl flex flex-col">
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
+            </form>
+            <h3 class="font-bold text-lg mb-6">Edit Manual Ingress Rule</h3>
+            <form action="{{ url_for('web.ui_edit_manual_rule_route') }}" method="POST" class="protocol-aware-form flex flex-col flex-grow min-h-0" id="edit_manual_rule_form">
+                <div class="flex-grow overflow-y-auto space-y-6 p-1">
+                    <input type="hidden" name="original_rule_key" id="edit_original_rule_key" />
+                    <div>
+                        <h4 class="text-md font-semibold mb-2">Public Hostname</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-7 gap-4 items-start">
+                            <div class="md:col-span-2">
+                                <label class="label" for="edit_manual_subdomain"><span class="label-text">Subdomain</span></label>
+                                <input type="text" id="edit_manual_subdomain" name="manual_subdomain" placeholder="(optional) subdomain" class="input input-bordered w-full" />
+                            </div>
+                            <div class="md:col-span-3">
+                                <label class="label" for="edit_manual_domain_name"><span class="label-text">Domain (Required)</span></label>
+                                <input type="text" id="edit_manual_domain_name" name="manual_domain_name" placeholder="example.com" class="input input-bordered w-full" required />
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="label" for="edit_manual_path_display"><span class="label-text">Path</span></label>
+                                <div class="join w-full">
+                                    <span class="join-item btn btn-disabled normal-case pointer-events-none bg-base-200 border-base-300 !min-h-[3rem] !h-[3rem] px-3">/</span>
+                                    <input type="text" id="edit_manual_path_display" placeholder="(optional) path" class="input input-bordered join-item w-full" />
+                                </div>
+                                <input type="hidden" id="edit_manual_path" name="manual_path" />
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 class="text-md font-semibold mb-2">Service</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+                            <div>
+                                <label class="label" for="edit_manual_service_type"><span class="label-text">Type (Required)</span></label>
+                                <select name="manual_service_type" id="edit_manual_service_type" class="select select-bordered w-full" required>
+                                    <option value="" disabled>Select...</option>
+                                    <option value="http">HTTP</option>
+                                    <option value="https">HTTPS</option>
+                                    <option value="tcp">TCP</option>
+                                    <option value="ssh">SSH</option>
+                                    <option value="rdp">RDP</option>
+                                    <option value="http_status">HTTP Status Code</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="label" for="edit_manual_service_address">
+                                    <span class="label-text" id="edit_manual_service_address_label">URL or Status Code</span>
+                                </label>
+                                <input type="text" id="edit_manual_service_address" name="manual_service_address" placeholder="host:port or status code" class="input input-bordered w-full" />
+                            </div>
+                        </div>
+                    </div>
+                                   
+                    <div>
+                        <h4 class="text-md font-semibold mb-2">Access Policy (Optional)</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 items-start p-4 rounded-md bg-base-200/50">
+                            <div class="form-control md:col-span-2">
+                                <label class="label" for="edit_manual_access_group">
+                                    <span class="label-text font-medium">1. Assign an Access Group (Recommended)</span>
+                                </label>
+                                <select name="manual_access_group" id="edit_manual_access_group" class="select select-bordered w-full">
+                                    <option value="">-- None (Configure Manually Below) --</option>
+                                    {% if access_groups %}
+                                        {% for group_id, details in access_groups.items()|sort %}
+                                            <option value="{{ group_id }}">{{ details.display_name }} (ID: {{ group_id }})</option>
+                                        {% endfor %}
+                                    {% endif %}
+                                </select>
+                                <div class="label"><span class="label-text-alt">Using a group overrides the manual policy options below.</span></div>
+                            </div>
+        
+                            <div class="divider md:col-span-2 text-xs opacity-80 my-0">OR</div>
+        
+                            <div id="edit_manual_policy_options_wrapper" class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
+                                <div class="form-control">
+                                    <label class="label" for="edit_manual_access_policy_type">
+                                        <span class="label-text font-medium">2. Configure Manually</span>
+                                    </label>
+                                    <select name="manual_access_policy_type" id="edit_manual_access_policy_type" class="select select-bordered w-full policy-type-select">
+                                        <option value="none">None (Public - No App)</option>
+                                        <option value="bypass">Bypass (Public App)</option>
+                                        <option value="authenticate_email">Authenticate by Email</option>
+                                        <option value="default_tld">Use Default *.tld Policy</option>
+                                    </select>
+                                </div>
+                                <div class="auth-email-field hidden">
+                                    <label class="label" for="edit_manual_auth_email"><span class="label-text">Allowed Email(s) or Domain(s)</span></label>
+                                    <input type="text" id="edit_manual_auth_email" name="manual_auth_email" placeholder="user@example.com, @domain.com" class="input input-bordered w-full" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                                    
+                    <div class="space-y-4 pt-4 border-t border-base-300 mt-6">
+                        <div class="form-control">
+                            <label class="label" for="edit_manual_zone_name_override"><span class="label-text">Cloudflare Zone Name (Override/Specific)</span></label>
+                            <input type="text" id="edit_manual_zone_name_override" name="manual_zone_name_override" placeholder="yourdomain.com (if different from Domain Name)" class="input input-bordered w-full" />
+                        </div>
+                        <div id="edit_manual_no_tls_verify_div" class="form-control">
+                          <label class="label cursor-pointer justify-start gap-2">
+                            <input type="checkbox" name="manual_no_tls_verify" id="edit_manual_no_tls_verify" class="checkbox checkbox-sm" />
+                            <span class="label-text">Disable TLS Verification</span>
+                          </label>
+                        </div>
+                        <div class="form-control" id="edit_manual_origin_server_name_div">
+                            <label class="label" for="edit_manual_origin_server_name"><span class="label-text">Origin Server Name (SNI)</span></label>
+                            <input type="text" id="edit_manual_origin_server_name" name="manual_origin_server_name" placeholder="e.g., internal.service.local" class="input input-bordered w-full" />
+                        </div>
+                        <div class="form-control">
+                            <label class="label" for="edit_manual_http_host_header">
+                                <span class="label-text">HTTP Host Header (Optional)</span>
+                            </label>
+                            <input type="text" id="edit_manual_http_host_header" name="manual_http_host_header"
+                                   placeholder="e.g., api.example.com"
+                                   class="input input-bordered w-full" />
+                            <label class="label">
+                                <span class="label-text-alt">Overrides the <code>Host</code> header sent to your origin server. Useful for origins expecting a different hostname than the public one. (Only applies to HTTP/HTTPS services).</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-action mt-8 pt-4 border-t border-base-300">
+                  <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+        <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    </dialog>
+{% endblock %}

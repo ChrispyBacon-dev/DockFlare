@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+    
+    <!-- 1. Access Groups Section -->
+    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+        <div class="card-body">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-base-300 pb-3 mb-6">
+                <div>
+                    <h2 class="card-title text-2xl sm:text-3xl">
+                        Access Groups
+                    </h2>
+                    <p class="text-sm opacity-70 mt-1">Create reusable access policies to apply with a single label.</p>
+                </div>
+                <button class="btn btn-sm btn-primary mt-4 sm:mt-0" onclick="openCreateAccessGroupModal()">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                    Create New Group
+                </button>
+            </div>
+    
+            {% if access_groups and access_groups.items() %}
+                <div class="overflow-x-auto -mx-6 sm:-mx-8">
+                    <table class="table table-zebra table-sm w-full">
+                        <thead>
+                            <tr>
+                                <th class="p-3">Display Name</th>
+                                <th class="p-3">Group ID (for label)</th>
+                                <th class="p-3">Policy Summary</th>
+                                <th class="p-3">Session</th>
+                                <th class="p-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for group_id, details in access_groups.items()|sort %}
+                                <tr>
+                                    <td class="p-3 font-medium">{{ details.display_name }}</td>
+                                    <td class="p-3"><code class="badge badge-ghost">{{ group_id }}</code></td>
+                                    <td class="p-3 text-xs opacity-80">
+                                        {% if details.policies %}
+                                            {{ details.policies | length }} rule(s) defined
+                                        {% else %}
+                                            <span class="italic opacity-60">No rules</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="p-3 text-xs opacity-70">{{ details.session_duration | default('24h', true) }}</td>
+                                    <td class="p-3">
+                                        <div class="flex items-center gap-2">
+                                            <button class="btn btn-xs btn-info btn-outline edit-access-group-btn"
+                                                    data-group-id="{{ group_id }}"
+                                                    data-group-details="{{ details|tojson|forceescape }}">
+                                                Edit
+                                            </button>
+                                            <form action="{{ url_for('web.delete_access_group', group_id=group_id) }}" method="post" onsubmit="return confirm('Are you sure you want to delete the Access Group \'{{ details.display_name }}\'? This cannot be undone.');" class="protocol-aware-form">
+                                                <button type="submit" class="btn btn-xs btn-error btn-outline" {{ 'disabled' if group_id in used_group_ids else '' }} title="{{ 'Cannot delete: group is in use' if group_id in used_group_ids else 'Delete Group' }}">
+                                                    Delete
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center opacity-70 py-8">
+                    <p>No Access Groups have been created yet.</p>
+                    <p class="mt-2 text-sm">Click "Create New Group" to get started.</p>
+                </div>
+            {% endif %}
+        </div>
+    </section>
+
+    <!-- 2. All Cloudflare Tunnels on Account Section -->
+    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+        <div class="card-body">
+            <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">All Cloudflare Tunnels on Account</h2>
+            {% if CF_ACCOUNT_ID_CONFIGURED %}
+                <p class="mb-4 text-sm opacity-70">
+                    Displaying tunnels for Account ID: <code class="badge badge-ghost">{{ ACCOUNT_ID_FOR_DISPLAY | e }}</code>.
+                    <br>
+                    <em class="text-xs opacity-60">This list shows all tunnels on the account, not just the one managed by DockFlare. Click '+' to view associated DNS records.</em>
+                </p>
+                {% if all_account_tunnels is defined and all_account_tunnels %}
+                    <div class="overflow-x-auto -mx-6 sm:-mx-8">
+                        <table class="table table-sm w-full">
+                            <thead>
+                                <tr>
+                                    <th class="w-12">+/-</th>
+                                    <th>Tunnel Name</th>
+                                    <th>Tunnel ID</th>
+                                    <th>Status</th>
+                                    <th>Created At</th>
+                                    <th>Connections</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for tunnel in all_account_tunnels %}
+                                    <tr>
+                                        <td class="text-center">
+                                            <button type="button" class="btn btn-xs btn-ghost btn-circle tunnel-dns-toggle"
+                                                    data-tunnel-id="{{ tunnel.id | e }}" aria-expanded="false" aria-controls="dns-records-{{ tunnel.id | e }}" title="Toggle DNS records">
+                                                <svg class="w-4 h-4 expand-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                                <svg class="w-4 h-4 collapse-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6"></path></svg>
+                                            </button>
+                                        </td>
+                                        <td class="text-sm font-medium">{{ tunnel.name | e }}</td>
+                                        <td><code class="text-xs opacity-80">{{ tunnel.id | e }}</code></td>
+                                        <td>
+                                            {% set status_color = 'badge-success' if tunnel.status | lower == 'healthy' else ('badge-warning' if tunnel.status | lower == 'degraded' else ('badge-error' if tunnel.status | lower == 'down' else 'badge-ghost')) %}
+                                            <span class="badge {{ status_color }} badge-sm">{{ tunnel.status | capitalize | e }}</span>
+                                        </td>
+                                        <td class="text-xs opacity-70">{% if tunnel.created_at %}{{ tunnel.created_at.split('T')[0] | e }}{% else %}N/A{% endif %}</td>
+                                        <td class="text-xs opacity-70">
+                                            {% if tunnel.connections and tunnel.connections is iterable and not tunnel.connections is string %}
+                                                {% for conn in tunnel.connections %}<span class="badge badge-outline badge-xs mr-1 mb-1">{{ conn.colo_name | e }}</span>{% endfor %}
+                                                {% if tunnel.connections | length > 0 %}({{ tunnel.connections | length }} total){% else %}(0 total){% endif %}
+                                            {% elif tunnel.connections %}{{ tunnel.connections | e }}{% else %}None{% endif %}
+                                        </td>
+                                    </tr>
+                                    <tr class="dns-records-row hidden bg-base-200/30">
+                                        <td colspan="6">
+                                            <div id="dns-records-{{ tunnel.id | e }}" class="p-4 text-sm space-y-2">
+                                                <p class="opacity-60 italic">Click the '+' button to load DNS records for this tunnel.</p>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% elif all_account_tunnels is defined %}
+                    <p class="text-center opacity-70 py-8">No Cloudflare Tunnels found for Account ID: <code class="badge badge-ghost">{{ ACCOUNT_ID_FOR_DISPLAY | e }}</code>.</p>
+                    <p class="text-center text-xs opacity-60"><em>This could also mean an error occurred. Ensure your API Token has 'Account:Cloudflare Tunnel:Read' permission.</em></p>
+                {% else %}
+                    <p class="alert alert-warning text-center py-8">Could not retrieve tunnel information.</p>
+                {% endif %}
+            {% else %}
+                 <div role="alert" class="alert alert-warning">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                    <span>The <code>CF_ACCOUNT_ID</code> environment variable is not configured. This section cannot be displayed.</span>
+                </div>
+            {% endif %}
+        </div>
+    </section>
+
+    <!-- 3. Tunnel & Agent Status Section -->
+    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+        <div class="card-body">
+            <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
+                Tunnel & Agent Status
+            </h2>
+
+            {% if agent_state.last_action_status or tunnel_state.get('error') %}
+                {% set alert_message = agent_state.last_action_status or tunnel_state.status_message %}
+                {% set is_error = 'Error:' in alert_message or tunnel_state.get('error') %}
+                {% set alert_type = 'alert-error' if is_error else 'alert-info' %}
+                <div role="alert" class="alert {{ alert_type }} shadow-sm text-sm mb-6">
+                    <!-- ... (alert content) ... -->
+                </div>
+            {% endif %}
+
+            <div class="mb-6">
+                <h4 class="text-md font-semibold mb-3 opacity-80">Tunnel Details</h4>
+                 <div class="space-y-2 text-sm">
+                    <p><strong class="inline-block w-36 opacity-70">Desired Name:</strong> <code class="badge badge-ghost">{{ tunnel_state.name }}</code></p>
+                    <p><strong class="inline-block w-36 opacity-70">Tunnel ID:</strong> <code class="badge badge-ghost">{{ tunnel_state.id if tunnel_state.id else 'N/A' }}</code></p>
+                    {% if not external_cloudflared %}
+                    <p><strong class="inline-block w-36 opacity-70">Tunnel Token:</strong> <code class="badge badge-ghost">{{ display_token }}</code></p>
+                    {% endif %}
+                </div>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold mb-3 opacity-80">Agent Control</h3>
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-6 mt-2 p-4 bg-base-200/50 rounded-md">
+                    {% if external_cloudflared %}
+                        <div class="flex-grow space-y-1.5">
+                            <strong class="text-sm font-medium">External Mode:</strong> <span class="badge badge-info badge-sm animate-pulse">Active</span>
+                        </div>
+                    {% else %}
+                     <div class="flex-grow space-y-1.5">
+                        <strong class="text-sm font-medium">Agent Status:</strong>
+                        {% set indicator_color = 'bg-gray-400' %}
+                        {% if agent_state.container_status == 'running' %} {% set indicator_color = 'badge-success' %}
+                        {% elif agent_state.container_status in ['exited', 'dead', 'not_found'] %} {% set indicator_color = 'badge-error' %}
+                        {% else %} {% set indicator_color = 'badge-warning' %} {% endif %}
+                        <span class="badge {{ indicator_color }} badge-sm">{{ agent_state.container_status | replace('_',' ') }}</span>
+                     </div>
+                     <div class="w-full sm:w-auto flex-shrink-0">
+                         {% if agent_state.container_status=='running' %}
+                             <form action="{{ url_for('web.stop_tunnel_route') }}" method="post" class="protocol-aware-form">
+                                 <button type="submit" class="btn btn-sm btn-error w-full sm:w-auto">Stop Agent</button>
+                             </form>
+                         {% else %}
+                             <form action="{{ url_for('web.start_tunnel_route') }}" method="post" class="protocol-aware-form">
+                                 <button type="submit" class="btn btn-sm btn-success w-full sm:w-auto">Start Agent</button>
+                             </form>
+                         {% endif %}
+                     </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </section>
+
+{% endblock %}
+
+{% block modals %}
+    {{ super() }}
+    {% include 'modals/_access_group_modal.html' %}
+{% endblock %}

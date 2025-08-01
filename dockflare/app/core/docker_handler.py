@@ -25,7 +25,7 @@ from docker.errors import NotFound, APIError
 
 from app import config, docker_client, cloudflared_agent_state, tunnel_state 
 
-from app.core.state_manager import managed_rules, state_lock, save_state
+from app.core.state_manager import managed_rules, access_groups, state_lock, save_state
 from app.core.tunnel_manager import update_cloudflare_config
 from app.core.cloudflare_api import create_cloudflare_dns_record, get_zone_id_from_name
 from app.core.access_manager import handle_access_policy_from_labels
@@ -54,27 +54,14 @@ def is_valid_service(service_str):
         return False
 
     service_str = service_str.strip()
-    # Regex patterns for different service types
-
-    # Hostname/IP for service targets: Allows domain names (includes '_' for Docker service names, per #132), IPv4, and bracketed IPv6. (Note: '_' is not valid for public DNS hostnames).
     host_ip_pattern = r"([a-zA-Z0-9_](?:[a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9_])?(?:\.[a-zA-Z0-9_](?:[a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9_])?)*\.?|[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|\[[0-9a-fA-F:]+\])"
-    port_pattern = r"[0-9]{1,5}" # Ports 0-65535
+    port_pattern = r"[0-9]{1,5}"
 
-    # HTTP/HTTPS: http(s)://host(:port)? - port is now optional raised by issue 132
-    # The (?:...) makes the group non-capturing, and ? makes the entire group (colon + port) optional.
     http_https_pattern = rf"^(?:https?)://{host_ip_pattern}(?::{port_pattern})?$"
-    
-    # TCP: tcp://host:port
     tcp_pattern = rf"^(?:tcp)://{host_ip_pattern}:{port_pattern}$"
-    
-    # SSH: ssh://host:port
     ssh_pattern = rf"^(?:ssh)://{host_ip_pattern}:{port_pattern}$"
-    
-    # RDP: rdp://host:port
     rdp_pattern = rf"^(?:rdp)://{host_ip_pattern}:{port_pattern}$"
-
-    # HTTP Status: http_status:CODE
-    http_status_pattern = r"^http_status:([1-5][0-9]{2})$" # Matches 100-599
+    http_status_pattern = r"^http_status:([1-5][0-9]{2})$"
 
     if re.fullmatch(http_https_pattern, service_str):
         return True
@@ -112,6 +99,9 @@ def process_container_start(container_obj):
         default_path_label = get_label(labels, "path") 
         default_originsrvname_label = get_label(labels, "originsrvname")
         default_http_host_header_label = get_label(labels, "httpHostHeader")
+        
+        default_access_group = get_label(labels, "access.group")
+        
         default_access_policy_type_label = get_label(labels, "access.policy")
         default_access_app_name_label = get_label(labels, "access.name")
         default_access_session_duration_label = get_label(labels, "access.session_duration", "24h")
@@ -119,6 +109,7 @@ def process_container_start(container_obj):
         default_access_allowed_idps_label_str = get_label(labels, "access.allowed_idps")
         default_access_auto_redirect_label = get_label(labels, "access.auto_redirect_to_identity", "false").lower() in ["true", "1", "t", "yes"]
         default_access_custom_rules_label_str = get_label(labels, "access.custom_rules")
+        
         hostname_label = get_label(labels, "hostname")
         service_label = get_label(labels, "service")
         zone_name_label = get_label(labels, "zonename")
@@ -132,6 +123,7 @@ def process_container_start(container_obj):
                     "no_tls_verify": no_tls_verify_label,
                     "origin_server_name": default_originsrvname_label.strip() if default_originsrvname_label else None,
                     "http_host_header": default_http_host_header_label.strip() if default_http_host_header_label else None,
+                    "access_group": default_access_group,
                     "access_policy_type": default_access_policy_type_label, 
                     "access_app_name": default_access_app_name_label,
                     "access_session_duration": default_access_session_duration_label, 
@@ -157,6 +149,9 @@ def process_container_start(container_obj):
             no_tls_verify_indexed = no_tls_verify_indexed_val.lower() in ["true", "1", "t", "yes"]
             originsrvname_indexed_val = get_label(labels, f"{index}.originsrvname", default_originsrvname_label)
             http_host_header_indexed_val = get_label(labels, f"{index}.httpHostHeader", default_http_host_header_label)
+
+            access_group_indexed = get_label(labels, f"{index}.access.group", default_access_group)
+
             access_policy_type_indexed = get_label(labels, f"{index}.access.policy", default_access_policy_type_label)
             access_app_name_indexed = get_label(labels, f"{index}.access.name", default_access_app_name_label)
             access_session_duration_indexed = get_label(labels, f"{index}.access.session_duration", default_access_session_duration_label)
@@ -174,6 +169,7 @@ def process_container_start(container_obj):
                     "no_tls_verify": no_tls_verify_indexed,
                     "origin_server_name": originsrvname_indexed_val.strip() if originsrvname_indexed_val else None,
                     "http_host_header": http_host_header_indexed_val.strip() if http_host_header_indexed_val else None,
+                    "access_group": access_group_indexed,
                     "access_policy_type": access_policy_type_indexed, 
                     "access_app_name": access_app_name_indexed,
                     "access_session_duration": access_session_duration_indexed, 
@@ -268,7 +264,8 @@ def process_container_start(container_obj):
                         "access_policy_type": None, 
                         "access_app_config_hash": None, 
                         "access_policy_ui_override": False,
-                        "source": "docker"
+                        "source": "docker",
+                        "access_group_id": None
                     }
                     existing_rule = managed_rules[rule_key] 
                     state_changed_locally_for_this_container = True
@@ -279,7 +276,7 @@ def process_container_start(container_obj):
                     if existing_rule.get("access_policy_ui_override", False):
                         logging.info(f"DOCKER_HANDLER: Access policy for {rule_key} is UI-managed. Skipping.")
                     else:
-                        if handle_access_policy_from_labels(config_item, existing_rule, hostname):
+                        if handle_access_policy_from_labels(config_item, existing_rule, save_state):
                             state_changed_locally_for_this_container = True 
                             logging.debug(f"DOCKER_HANDLER_ACCESS_MOD: Access policy for {rule_key} changed. state_changed: {state_changed_locally_for_this_container}.")
             
