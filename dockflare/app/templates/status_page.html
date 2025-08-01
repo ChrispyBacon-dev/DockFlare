@@ -432,12 +432,33 @@
                             <div id="manual_service_help" class="text-xs opacity-60 mt-1">e.g., 192.168.1.10:8000 or my-service.local:3000 for HTTP/S/TCP etc.</div>
                         </div>
                     </div>
-                </div>
+                </div>                                
                 <div>
-                    <h4 class="text-md font-semibold mb-2">Access Policy (Optional)</h4>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-                        <div>
-                            <label class="label" for="manual_access_policy_type"><span class="label-text">Policy Type</span></label>
+                <h4 class="text-md font-semibold mb-2">Access Policy (Optional)</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 items-start p-4 rounded-md bg-base-200/50">
+                    
+                    <!-- NEW: Access Group Dropdown -->
+                    <div class="form-control md:col-span-2">
+                        <label class="label" for="manual_access_group">
+                            <span class="label-text font-medium">1. Assign an Access Group (Recommended)</span>
+                        </label>
+                        <select name="manual_access_group" id="manual_access_group" class="select select-bordered w-full">
+                            <option value="" selected>-- None (Configure Manually Below) --</option>
+                            {% if access_groups %}
+                                {% for group_id, details in access_groups.items()|sort %}
+                                    <option value="{{ group_id }}">{{ details.display_name }} (ID: {{ group_id }})</option>
+                                {% endfor %}
+                            {% endif %}
+                        </select>
+                        <div class="label"><span class="label-text-alt">Using a group overrides the manual policy options below.</span></div>
+                    </div>
+
+                    <div class="divider md:col-span-2 text-xs opacity-80 my-0">OR</div>
+                    <div id="manual_policy_options_wrapper" class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
+                        <div class="form-control">
+                            <label class="label" for="manual_access_policy_type">
+                                <span class="label-text font-medium">2. Configure Manually</span>
+                            </label>
                             <select name="manual_access_policy_type" id="manual_access_policy_type" class="select select-bordered w-full policy-type-select">
                                 <option value="none" selected>None (Public - No App)</option>
                                 <option value="bypass">Bypass (Public App)</option>
@@ -445,57 +466,14 @@
                                 <option value="default_tld">Use Default *.tld Policy</option>
                             </select>
                         </div>
-                        <div class="auth-email-field hidden md:col-span-1">
+                        <div class="auth-email-field hidden">
                             <label class="label" for="manual_auth_email"><span class="label-text">Allowed Email(s) or Domain(s)</span></label>
                             <input type="text" id="manual_auth_email" name="manual_auth_email" placeholder="user@example.com, @domain.com" class="input input-bordered w-full" />
-                            <div class="text-xs opacity-60 mt-1">Comma-separated. e.g., test@example.com, @another.org</div>
+                            <div class="label"><span class="label-text-alt">Comma-separated. e.g., test@example.com, @another.org</div>
                         </div>
                     </div>
                 </div>
-                <div class="space-y-4 pt-4 border-t border-base-300 mt-6">
-                     <div>
-                        <label class="label" for="manual_zone_name_override"><span class="label-text">Cloudflare Zone Name (Override/Specific)</span></label>
-                        <input type="text" id="manual_zone_name_override" name="manual_zone_name_override" placeholder="yourdomain.com (if different from Domain Name or CF_ZONE_ID)" class="input input-bordered w-full" />
-                        {% if CF_ZONE_ID_CONFIGURED and CF_ZONE_ID %}
-                        <div class="text-xs opacity-60 mt-1">If blank, DockFlare will use "Domain Name" or default CF_ZONE_ID ({{ CF_ZONE_ID[:12] }}...). Target a different Zone if needed.</div>
-                        {% else %}
-                        <div class="text-xs opacity-60 mt-1">If blank, DockFlare will use "Domain Name". Target a specific Zone if "Domain Name" is ambiguous or CF_ZONE_ID is not set.</div>
-                        {% endif %}
-                    </div>
-                    <div id="manual_no_tls_verify_div" class="form-control">
-                      <label class="label cursor-pointer justify-start gap-2">
-                        <input type="checkbox" name="manual_no_tls_verify" id="manual_no_tls_verify" class="checkbox checkbox-sm" />
-                        <span class="label-text">Disable TLS Verification (No TLS Verify)</span>
-                      </label>
-                      <div class="text-xs opacity-60 ml-8">Check if the origin service uses self-signed SSL or is HTTP. (Only applies to HTTP/HTTPS services).</div>
-                    </div>
-                    <div class="form-control" id="manual_origin_server_name_div"> 
-                        <label class="label" for="manual_origin_server_name">
-                            <span class="label-text">Origin Server Name (SNI for TLS)</span>
-                        </label>
-                        <input type="text" id="manual_origin_server_name" name="manual_origin_server_name"
-                               placeholder="e.g., internal.service.local (optional)"
-                               class="input input-bordered w-full" />
-                        <label class="label">
-                            <span class="label-text-alt">Specify the hostname Cloudflare should use for TLS SNI when connecting to your origin. Leave blank if not needed. (Only applies to HTTP/HTTPS services).</span>
-                        </label>
-                    </div>
-                        <div class="form-control">
-                        <label class="label" for="manual_http_host_header">
-                            <span class="label-text">HTTP Host Header (Optional)</span>
-                        </label>
-                        <input type="text" id="manual_http_host_header" name="manual_http_host_header"
-                               placeholder="e.g., api.example.com"
-                               class="input input-bordered w-full" />
-                        <label class="label">
-                            <span class="label-text-alt">Overrides the <code>Host</code> header sent to your origin server. Useful for origins expecting a different hostname than the public one. (Only applies to HTTP/HTTPS services).</span>
-                        </label>
-                    </div>
-                <div class="modal-action mt-8">
-                  <button type="submit" class="btn btn-primary">Add Rule</button>
-                </div>
-            </form>
-        </div>
+            </div>
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
     
@@ -551,11 +529,35 @@
                         </div>
                     </div>
                 </div>
-                <div>
-                    <h4 class="text-md font-semibold mb-2">Access Policy (Optional)</h4>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-                        <div>
-                            <label class="label" for="edit_manual_access_policy_type"><span class="label-text">Policy Type</span></label>
+                
+                           <div>
+                <h4 class="text-md font-semibold mb-2">Access Policy (Optional)</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 items-start p-4 rounded-md bg-base-200/50">
+                   
+
+                    <div class="form-control md:col-span-2">
+                        <label class="label" for="edit_manual_access_group">
+                            <span class="label-text font-medium">1. Assign an Access Group (Recommended)</span>
+                        </label>
+                        <select name="manual_access_group" id="edit_manual_access_group" class="select select-bordered w-full">
+                            <option value="">-- None (Configure Manually Below) --</option>
+                            {% if access_groups %}
+                                {% for group_id, details in access_groups.items()|sort %}
+                                    <option value="{{ group_id }}">{{ details.display_name }} (ID: {{ group_id }})</option>
+                                {% endfor %}
+                            {% endif %}
+                        </select>
+                        <div class="label"><span class="label-text-alt">Using a group overrides the manual policy options below.</span></div>
+                    </div>
+
+                    <div class="divider md:col-span-2 text-xs opacity-80 my-0">OR</div>
+
+
+                    <div id="edit_manual_policy_options_wrapper" class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
+                        <div class="form-control">
+                            <label class="label" for="edit_manual_access_policy_type">
+                                <span class="label-text font-medium">2. Configure Manually</span>
+                            </label>
                             <select name="manual_access_policy_type" id="edit_manual_access_policy_type" class="select select-bordered w-full policy-type-select">
                                 <option value="none">None (Public - No App)</option>
                                 <option value="bypass">Bypass (Public App)</option>
@@ -563,12 +565,14 @@
                                 <option value="default_tld">Use Default *.tld Policy</option>
                             </select>
                         </div>
-                        <div class="auth-email-field hidden md:col-span-1">
+                        <div class="auth-email-field hidden">
                             <label class="label" for="edit_manual_auth_email"><span class="label-text">Allowed Email(s) or Domain(s)</span></label>
                             <input type="text" id="edit_manual_auth_email" name="manual_auth_email" placeholder="user@example.com, @domain.com" class="input input-bordered w-full" />
                         </div>
                     </div>
                 </div>
+            </div>
+                                
                 <div class="space-y-4 pt-4 border-t border-base-300 mt-6">
                     <div class="form-control">
                         <label class="label" for="edit_manual_zone_name_override"><span class="label-text">Cloudflare Zone Name (Override/Specific)</span></label>

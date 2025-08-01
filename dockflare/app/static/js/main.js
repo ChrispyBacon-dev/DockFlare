@@ -1,4 +1,4 @@
-// app/static/js/main.js
+// app/static/js/main.js - painful .. javascript
 const maxLogLines = 250;
 let initialConnectMessageCleared = false;
 let activeLogSource = null;
@@ -101,7 +101,7 @@ function initializeEditManualRuleModal() {
 
                 modal.querySelector('#edit_original_rule_key').value = ruleKey;
 
-                const hostname = details.hostname_for_dns || '';
+                const hostname = details.hostname || '';
                 const parts = hostname.split('.');
                 if (parts.length > 2 && !hostname.startsWith('*.')) {
                     modal.querySelector('#edit_manual_subdomain').value = parts.slice(0, -2).join('.');
@@ -110,38 +110,39 @@ function initializeEditManualRuleModal() {
                     modal.querySelector('#edit_manual_subdomain').value = '';
                     modal.querySelector('#edit_manual_domain_name').value = hostname;
                 }
-
                 const path = details.path || '';
-                const pathDisplayInput = modal.querySelector('#edit_manual_path_display');
-                pathDisplayInput.value = path.startsWith('/') ? path.substring(1) : path;
+                modal.querySelector('#edit_manual_path_display').value = path.startsWith('/') ? path.substring(1) : path;
                 modal.querySelector('#edit_manual_path').value = path;
-
                 const service = details.service || '';
                 const serviceParts = service.split('://');
-                let serviceType = '';
-                let serviceAddress = '';
-
                 if (serviceParts.length === 2) {
-                    serviceType = serviceParts[0];
-                    serviceAddress = serviceParts[1];
+                    modal.querySelector('#edit_manual_service_type').value = serviceParts[0];
+                    modal.querySelector('#edit_manual_service_address').value = serviceParts[1];
                 } else if (service.startsWith('http_status:')) {
-                    serviceType = 'http_status';
-                    serviceAddress = service.split(':')[1];
+                    modal.querySelector('#edit_manual_service_type').value = 'http_status';
+                    modal.querySelector('#edit_manual_service_address').value = service.split(':')[1];
                 }
-                modal.querySelector('#edit_manual_service_type').value = serviceType;
-                modal.querySelector('#edit_manual_service_address').value = serviceAddress;
 
-                const policyType = details.access_policy_type || 'none';
-                const policySelect = modal.querySelector('#edit_manual_access_policy_type');
-                policySelect.value = policyType;
+                const accessGroupSelect = modal.querySelector('#edit_manual_access_group');
+                const manualPolicySelect = modal.querySelector('#edit_manual_access_policy_type');
+
+                if (details.access_group_id) {
+                    accessGroupSelect.value = details.access_group_id;
+                } else {
+                    accessGroupSelect.value = '';
+                }
                 
-                policySelect.dispatchEvent(new Event('change'));
+                manualPolicySelect.value = details.access_policy_type || 'none';
+                
+                accessGroupSelect.dispatchEvent(new Event('change'));
+                manualPolicySelect.dispatchEvent(new Event('change'));
 
                 modal.querySelector('#edit_manual_auth_email').value = details.auth_email || '';
                 modal.querySelector('#edit_manual_zone_name_override').value = '';
                 modal.querySelector('#edit_manual_no_tls_verify').checked = details.no_tls_verify || false;
                 modal.querySelector('#edit_manual_origin_server_name').value = details.origin_server_name || '';
                 modal.querySelector('#edit_manual_http_host_header').value = details.http_host_header || '';
+
                 modal.showModal();
             } catch (e) {
                 console.error("Error populating edit modal:", e);
@@ -445,6 +446,8 @@ function openEditAccessGroupModal(groupId, details) {
                 policy.include.forEach(rule => {
                     if (rule.email && rule.email.email) {
                         emails.push(rule.email.email);
+                    } else if (rule.email_domain && rule.email_domain.domain) {
+                        emails.push(`@${rule.email_domain.domain}`);
                     }
                 });
             }
@@ -520,6 +523,33 @@ document.addEventListener('DOMContentLoaded', function() {
         setupPathInput(document.getElementById('edit_manual_path_display'), document.getElementById('edit_manual_path'));
         initializeEditManualRuleModal();
     }
+
+    // Logic for new Access Group dropdown in ADD Manual Rule Modal
+    const manualAccessGroupSelect = document.getElementById('manual_access_group');
+    const manualPolicyOptionsWrapper = document.getElementById('manual_policy_options_wrapper');
+    if (manualAccessGroupSelect && manualPolicyOptionsWrapper) {
+        manualAccessGroupSelect.addEventListener('change', function() {
+            const isDisabled = !!this.value;
+            manualPolicyOptionsWrapper.style.opacity = isDisabled ? '0.5' : '1';
+            manualPolicyOptionsWrapper.querySelectorAll('select, input').forEach(el => {
+                el.disabled = isDisabled;
+            });
+        });
+        manualAccessGroupSelect.dispatchEvent(new Event('change'));
+    }
+
+    // Logic for new Access Group dropdown in EDIT Manual Rule Modal
+    const editManualAccessGroupSelect = document.getElementById('edit_manual_access_group');
+    const editManualPolicyOptionsWrapper = document.getElementById('edit_manual_policy_options_wrapper');
+    if (editManualAccessGroupSelect && editManualPolicyOptionsWrapper) {
+        editManualAccessGroupSelect.addEventListener('change', function() {
+            const isDisabled = !!this.value;
+            editManualPolicyOptionsWrapper.style.opacity = isDisabled ? '0.5' : '1';
+            editManualPolicyOptionsWrapper.querySelectorAll('select, input').forEach(el => {
+                el.disabled = isDisabled;
+            });
+        });
+    }    
 
     // Setup for Access Group Modal (only if on Access Groups Page)
     document.querySelectorAll('.edit-access-group-btn').forEach(button => {
