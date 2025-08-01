@@ -174,7 +174,8 @@ def main_application_entrypoint():
 
     logging.info("-" * 52)
     logging.info("--- DockFlare Starting ---")
-    logging.info(f"--- Version: 1.9.5 ---") 
+    logging.info(f"--- Version: {config.APP_VERSION} ---")
+    logging.info("--- web: http://dockflare.app ---") 
     logging.info("-" * 52)
 
     load_state() 
