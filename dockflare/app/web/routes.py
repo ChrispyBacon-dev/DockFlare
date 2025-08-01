@@ -104,7 +104,7 @@ def inject_protocol_bp():
         'is_https': preferred_scheme == 'https',
         'base_url': base_url,
         'host': request.host,
-        'request_scheme': request.scheme
+        'request_scheme': request.scheme,
         'app_version': config.APP_VERSION 
     }
 
