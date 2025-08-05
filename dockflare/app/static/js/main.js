@@ -499,9 +499,15 @@ function updateManualRuleServiceFields() {
     } else if (selectedType === 'http_status') {
         if (manualServiceAddressInput) manualServiceAddressInput.placeholder = 'e.g., 404';
         if (manualServiceAddressLabel) manualServiceAddressLabel.textContent = 'HTTP Status Code (e.g., 200, 404, 503)';
-        if (manualServiceHelpText) manualServiceHelpText.textContent = 'Enter a valid HTTP status code (100-599).';
+        if (manualServiceHelpText) manualServiceHelpText.textContent = 'Enter a valid HTTP status code (100-599).';    
+    } else if (selectedType === 'bastion') {
+        if (manualServiceAddressInput) manualServiceAddressInput.style.display = 'none';
+        if (manualServicePrefixSpan) manualServicePrefixSpan.classList.add('hidden');
+        if (manualServiceAddressLabel) manualServiceAddressLabel.textContent = 'Origin URL (Not Required)';
+        if (manualServiceHelpText) manualServiceHelpText.textContent = 'Bastion mode routes based on the public hostname directly.';
+        showNoTlsVerify = false;
+        showOriginServerName = false;
     }
-
     if (noTlsVerifyDiv) {
         noTlsVerifyDiv.style.display = showNoTlsVerify ? '' : 'none';
     }

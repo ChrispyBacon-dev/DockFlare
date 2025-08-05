@@ -507,7 +507,9 @@ def ui_add_manual_rule_route():
         processed_service_for_cf = f"{service_type_input}://{service_address_input}"
     elif service_type_input == "http_status":
         processed_service_for_cf = f"http_status:{service_address_input}"
-    
+    elif service_type_input == "bastion":
+        processed_service_for_cf = "bastion"
+
     if not is_valid_service(processed_service_for_cf):
         cloudflared_agent_state["last_action_status"] = f"Error: Constructed service string '{processed_service_for_cf}' is invalid."
         return redirect(url_for('web.status_page'))
@@ -772,7 +774,9 @@ def ui_edit_manual_rule_route():
         processed_service_for_cf = f"{service_type_input}://{service_address_input}"
     elif service_type_input == "http_status":
         processed_service_for_cf = f"http_status:{service_address_input}"
-    
+    elif service_type_input == "bastion":
+        processed_service_for_cf = "bastion"
+
     if not is_valid_service(processed_service_for_cf):
         cloudflared_agent_state["last_action_status"] = f"Error: Constructed service string '{processed_service_for_cf}' is invalid."
         return redirect(url_for('web.status_page'))
