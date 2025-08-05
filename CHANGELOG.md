@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.0] - 2025-08-01
+
+### Added
+
+-   **Access Groups:** Introduced a major new feature for centralized policy management. You can now create reusable policy templates (Access Groups) in the UI and apply them to any container or manual rule with a single `dockflare.access.group` label.
+-   **New "Settings" Page:** Added a dedicated page in the UI to house configuration and infrastructure details, including the new Access Groups manager, the list of all Cloudflare Tunnels, and the agent status.
+-   **Official Project Website:** Launched the official website at [https://dockflare.app](https://dockflare.app), which now serves as the central hub for documentation, guides, and project information.
+
+### Changed
+
+-   **UI Overhaul:** The user interface has been significantly reorganized for a better workflow.
+    -   The main page is now a focused **Dashboard** displaying only Managed Ingress Rules and Real-time Logs.
+    -   A new top navigation bar has been added for easy switching between the Dashboard and Settings.
+    -   "Add" and "Edit Manual Rule" modals now integrate seamlessly with Access Groups, allowing you to assign a group from a dropdown menu.
+-   **Backend Policy Management:** The entire backend logic for handling labels and access policies has been refactored to support the new Access Groups system.
+-   **UI Polish:**
+    -   The logo in the header has been moved to the left, mirroring the layout of the new project website.
+    -   Modals with a large amount of content will now scroll correctly.
+
+### Fixed
+
+-   **Centralized Versioning:** The project version number is now managed from a single source to prevent inconsistencies across the UI.
+
 ## [1.9.5] - 2025-07-27
 
 ### Fixed
