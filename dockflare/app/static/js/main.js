@@ -551,6 +551,70 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }    
 
+document.querySelectorAll('.tunnel-dns-toggle').forEach(button => {
+        button.addEventListener('click', async function() {
+            const tunnelId = this.dataset.tunnelId;
+            const dnsRecordsDisplayRow = this.closest('tr').nextElementSibling;
+            const targetDiv = document.getElementById(this.getAttribute('aria-controls'));
+            const isExpanded = this.getAttribute('aria-expanded') === 'true';
+            const expandIcon = this.querySelector('.expand-icon');
+            const collapseIcon = this.querySelector('.collapse-icon');
+
+            if (!dnsRecordsDisplayRow || !targetDiv) return;
+
+            if (isExpanded) {
+                dnsRecordsDisplayRow.classList.add('hidden');
+                this.setAttribute('aria-expanded', 'false');
+                if (expandIcon) expandIcon.classList.remove('hidden');
+                if (collapseIcon) collapseIcon.classList.add('hidden');
+            } else {
+                this.setAttribute('aria-expanded', 'true');
+                if (expandIcon) expandIcon.classList.add('hidden');
+                if (collapseIcon) collapseIcon.classList.remove('hidden');
+
+                if (targetDiv.dataset.loaded !== 'true' || targetDiv.dataset.loaded === 'error') {
+                    targetDiv.innerHTML = '<p class="opacity-60 italic animate-pulse p-2">Loading DNS records...</p>';
+                    dnsRecordsDisplayRow.classList.remove('hidden');
+
+                    try {
+                        const fetchUrl = `${document.baseURI}tunnel-dns-records/${encodeURIComponent(tunnelId)}?t=${Date.now()}`;
+                        const response = await fetch(fetchUrl);
+                        if (!response.ok) {
+                            let errorDetail = `HTTP error ${response.status}`;
+                            try { const errorData = await response.json(); errorDetail = errorData.error || errorData.message || errorDetail; } catch (e) {}
+                            throw new Error(errorDetail);
+                        }
+                        const data = await response.json();
+                        const currentTargetDiv = document.getElementById(`dns-records-${tunnelId}`);
+                        if (!currentTargetDiv) return;
+
+                        if (data.dns_records && data.dns_records.length > 0) {
+                            let dnsHtml = '<ul class="list-none pl-4 space-y-1.5">';
+                            data.dns_records.forEach(record => {
+                                const recordUrl = `https://${record.name}`;
+                                const zoneDisplay = record.zone_name ? record.zone_name : record.zone_id;
+                                dnsHtml += `<li class="opacity-90 text-xs"><svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 inline-block mr-1 text-info" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg> <a href="${recordUrl}" target="_blank" rel="noopener noreferrer" class="link link-hover">${record.name}</a> <span class="ml-2 opacity-60">(Zone: ${zoneDisplay})</span></li>`;
+                            });
+                            dnsHtml += '</ul>';
+                            currentTargetDiv.innerHTML = dnsHtml;
+                            currentTargetDiv.dataset.loaded = 'true';
+                        } else {
+                            currentTargetDiv.innerHTML = `<p class="opacity-60 italic p-2">${data.message || 'No CNAME records found.'}</p>`;
+                            currentTargetDiv.dataset.loaded = 'true';
+                        }
+                    } catch (error) {
+                        const errorTargetDiv = document.getElementById(`dns-records-${tunnelId}`);
+                        if (errorTargetDiv) {
+                            errorTargetDiv.innerHTML = `<p class="text-error p-2">Error loading DNS records: ${error.message}</p>`;
+                            errorTargetDiv.dataset.loaded = 'error';
+                        }
+                    }
+                }
+                dnsRecordsDisplayRow.classList.remove('hidden');
+            }
+        });
+    });
+
     // Setup for Access Group Modal (only if on Access Groups Page)
     document.querySelectorAll('.edit-access-group-btn').forEach(button => {
         button.addEventListener('click', function() {
