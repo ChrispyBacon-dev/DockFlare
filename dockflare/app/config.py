@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- DockFlare Version ---
-APP_VERSION = "v2.0.0"
+APP_VERSION = "v2.0.1"
 # --- web: https://dockflare.app ---
 # --- github: https://github.com/ChrispyBacon-dev/DockFlare ---
 

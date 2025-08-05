@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+## [v2.0.1] - 2025-08-05
+
+This is a follow-up release to address several minor bugs found after the major v2.0 update. It also restores support for Bastion mode and introduces a new backup and restore feature.
+
+### New
+
+-   **Backup & Restore via UI:** A new "Backup & Restore" card has been added to the Settings page.
+    -   You can now download a timestamped `state.json` backup directly from the UI.
+    -   You can upload a `state.json` backup file to completely restore your DockFlare configuration. After a restore, DockFlare automatically reloads the state and triggers a reconciliation to bring your Cloudflare setup in sync.
+
+### Added
+
+-   **Bastion Mode for Browser SSH/VNC:** Re-introduced and fixed support for **Bastion Mode** (`bastion`) as a service type in the manual rule creation UI. This service type is used for Cloudflare's browser-rendered SSH and VNC. Unlike other service types, it does not require an internal service address to be specified in DockFlare; it enables a secure gateway at the public hostname, which you then connect to using the `cloudflared` client on your local machine.
+
+### Fixed
+
+-   **UI:** Fixed an issue where the DNS record toggle button (`+`) for tunnels on the Settings page was not functional after the UI reorganization.
+-   **State Management:** Corrected a bug where the `access_group_id` for a rule was not being saved to or loaded from the `state.json` file. This caused the "Group:" display in the UI to be empty for Docker-managed rules after a restart.
+-   **UI:** The "UI Override" badge and "Revert" button will no longer be displayed for manual rules, as they have no Docker labels to override or revert to.
+-   **Validation:** Fixed a validation error that incorrectly rejected `bastion` as a valid service type, which prevented browser-based SSH/VNC rules from being created.
 
 ## [2.0.0] - 2025-08-01
 
