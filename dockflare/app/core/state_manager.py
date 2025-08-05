@@ -110,6 +110,7 @@ def load_state():
                 rule_copy.setdefault("source", "docker")
                 rule_copy.setdefault("path", None)
                 rule_copy.setdefault("http_host_header", None)
+                rule_copy.setdefault("access_group_id", None)
                 
                 managed_rules[final_key] = rule_copy
 
@@ -158,6 +159,7 @@ def save_state():
                 "access_app_config_hash": rule.get("access_app_config_hash"),
                 "access_policy_ui_override": rule.get("access_policy_ui_override", False),
                 "source": rule.get("source", "docker"),
+                "access_group_id": rule.get("access_group_id")
             }
             delete_at_val = rule.get("delete_at")
             if isinstance(delete_at_val, datetime):

@@ -129,8 +129,8 @@
                                             </a>
                                         {% endif %}
 
-                                        {% if details.access_policy_ui_override %}
-                                            <span class="badge badge-warning badge-xs ml-2 animate-pulse" title="This policy is managed by the UI{% if details.source != 'manual' %} and overrides container labels{% endif %}.">UI Override</span>
+                                        {% if details.access_policy_ui_override and details.source != 'manual' %}
+                                            <span class="badge badge-warning badge-xs ml-2 animate-pulse" title="This policy is managed by the UI and overrides container labels.">UI Override</span>
                                         {% endif %}
                                     </td>
                                     <td class="p-3 whitespace-nowrap text-sm policy-actions-cell" style="min-width: 180px;">
@@ -158,7 +158,7 @@
                                                     </form>
                                                 </div>
                                             </div>
-                                            {% if details.access_policy_ui_override %}
+                                            {% if details.access_policy_ui_override and details.source != 'manual' %}
                                             <form action="{{ url_for('web.revert_access_policy_to_labels', hostname=hostname) }}" method="POST" onsubmit="return confirm('Revert policy for {{ display_hostname }} to be managed by labels/defaults?');" class="protocol-aware-form inline-block">
                                                 <button type="submit" class="btn btn-xs btn-warning btn-outline" title="Revert to Label/Default Policy">Revert</button>
                                             </form>
@@ -256,7 +256,8 @@
                                     <option value="http">HTTP</option>
                                     <option value="https">HTTPS</option>
                                     <option value="tcp">TCP</option>
-                                    <option value="ssh">SSH</option>
+                                    <option value="ssh">SSH (Native Client)</option>
+                                    <option value="bastion">Bastion (Browser SSH/VNC)</option>
                                     <option value="rdp">RDP</option>
                                     <option value="http_status">HTTP Status Code</option>
                                 </select>
@@ -404,7 +405,8 @@
                                     <option value="http">HTTP</option>
                                     <option value="https">HTTPS</option>
                                     <option value="tcp">TCP</option>
-                                    <option value="ssh">SSH</option>
+                                    <option value="ssh">SSH (Native Client)</option>
+                                    <option value="bastion">Bastion (Browser SSH/VNC)</option>
                                     <option value="rdp">RDP</option>
                                     <option value="http_status">HTTP Status Code</option>
                                 </select>

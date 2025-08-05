@@ -54,6 +54,10 @@ def is_valid_service(service_str):
         return False
 
     service_str = service_str.strip()
+    
+    if service_str == "bastion":
+        return True
+
     host_ip_pattern = r"([a-zA-Z0-9_](?:[a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9_])?(?:\.[a-zA-Z0-9_](?:[a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9_])?)*\.?|[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|\[[0-9a-fA-F:]+\])"
     port_pattern = r"[0-9]{1,5}"
 
@@ -73,7 +77,8 @@ def is_valid_service(service_str):
         return True
     if re.fullmatch(http_status_pattern, service_str):
         return True
-    logging.warning(f"Invalid service string format: '{service_str}' does not match supported patterns (HTTP, HTTPS, TCP, SSH, RDP, HTTP_STATUS).")
+        
+    logging.warning(f"Invalid service string format: '{service_str}' does not match supported patterns (HTTP, HTTPS, TCP, SSH, RDP, HTTP_STATUS, Bastion).")
     return False
 
 def process_container_start(container_obj):
