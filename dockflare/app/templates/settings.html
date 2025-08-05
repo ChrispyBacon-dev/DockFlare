@@ -146,7 +146,52 @@
         </div>
     </section>
 
-    <!-- 3. Tunnel & Agent Status Section -->
+    <!-- 3. Backup & Restore Section -->
+    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl border-2 border-warning">
+        <div class="card-body">
+            <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
+                Backup & Restore
+            </h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+                
+                <!-- Backup Column -->
+                <div>
+                    <h3 class="font-semibold text-lg mb-2">Create Backup</h3>
+                    <p class="text-sm opacity-80 mb-4">
+                        Download the current `state.json` file. This file contains all your manual rules, access groups, and the state of your Docker-managed services. Store it in a safe place.
+                    </p>
+                    <a href="{{ url_for('web.download_state_backup') }}" class="btn btn-primary">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Download State File
+                    </a>
+                </div>
+
+                <!-- Restore Column -->
+                <div>
+                    <h3 class="font-semibold text-lg mb-2">Restore from Backup</h3>
+                    <div role="alert" class="alert alert-warning text-sm mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                        <span><strong>Warning:</strong> This will completely overwrite your current settings, rules, and groups with the content of the backup file. This action cannot be undone.</span>
+                    </div>
+
+                    <form action="{{ url_for('web.restore_state_backup') }}" method="POST" enctype="multipart/form-data" class="protocol-aware-form space-y-3">
+                        <input type="file" name="backup_file" class="file-input file-input-bordered w-full" accept=".json" required />
+                        <button type="submit" class="btn btn-error w-full" onclick="return confirm('Are you sure you want to overwrite your current state with this backup? This cannot be undone.')">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                            </svg>
+                            Upload and Restore State
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 4. Tunnel & Agent Status Section -->
     <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
         <div class="card-body">
             <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">

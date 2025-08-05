@@ -1011,7 +1011,6 @@ def delete_access_group(group_id):
     cloudflared_agent_state["last_action_status"] = f"Success: Access Group '{display_name}' has been deleted."
     return redirect(url_for('web.settings_page'))
 
-
 @bp.route('/cloudflare-ping')
 def cloudflare_ping_route(): 
     try:
@@ -1026,3 +1025,63 @@ def cloudflare_ping_route():
         })
     except Exception as e_cfping:
         return jsonify({ "error": str(e_cfping), "status": "error", "timestamp": int(time.time()) }), 500
+
+@bp.route('/backup/download')
+def download_state_backup():
+    try:
+        with state_lock:
+            if not os.path.exists(config.STATE_FILE_PATH):
+                return "State file not found.", 404
+
+            with open(config.STATE_FILE_PATH, 'rb') as f:
+                buffer = io.BytesIO(f.read())
+        
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        filename = f"dockflare_backup_{timestamp}.json"
+        
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/json'
+        )
+    except Exception as e:
+        logging.error(f"Error generating state backup: {e}", exc_info=True)
+        return "Failed to generate backup.", 500
+
+@bp.route('/backup/restore', methods=['POST'])
+def restore_state_backup():
+    if 'backup_file' not in request.files:
+        cloudflared_agent_state["last_action_status"] = "Error: No backup file provided."
+        return redirect(url_for('web.settings_page'))
+    
+    file = request.files['backup_file']
+    if file.filename == '':
+        cloudflared_agent_state["last_action_status"] = "Error: No file selected for restore."
+        return redirect(url_for('web.settings_page'))
+
+    if file and file.filename.endswith('.json'):
+        try:
+            
+            content = file.stream.read().decode("utf-8")
+            backup_data = json.loads(content)
+
+            if not isinstance(backup_data, dict) or "managed_rules" not in backup_data:
+                raise ValueError("Invalid JSON structure for a state file.")
+
+            with state_lock:
+                with open(config.STATE_FILE_PATH, 'w') as f:
+                    json.dump(backup_data, f, indent=2)
+                
+                load_state()
+            
+            cloudflared_agent_state["last_action_status"] = "Success: State restored from backup. Triggering reconciliation..."
+            reconcile_state_threaded()
+            
+        except Exception as e:
+            logging.error(f"Error restoring state from backup: {e}", exc_info=True)
+            cloudflared_agent_state["last_action_status"] = f"Error: Restore failed. The file may be corrupt or invalid. Check logs."
+    else:
+        cloudflared_agent_state["last_action_status"] = "Error: Invalid file type. Please upload a .json file."
+
+    return redirect(url_for('web.settings_page'))
