@@ -10,7 +10,7 @@
   <em>Go from container to publicly-secured URL in seconds. No manual Cloudflare dashboard configuration required.</em>
 </p>
 <p align="center">
-  <a href="https://github.com/user-attachments/assets/6731a86a-e277-4649-be6c-a2fc593031d3" target="_blank" rel="noopener noreferrer">
+  <a href="https://dockflare.app/podcast.mp4" target="_blank" rel="noopener noreferrer">
     <img src="https://img.shields.io/badge/Listen_to_the-Podcast-20a6e2?style=for-the-badge&logo=soundcloud" alt="Listen to the Podcast">
   </a>
 </p>
