@@ -29,7 +29,7 @@ from app.core import access_manager
 from urllib.parse import urlparse, urlunparse 
 from flask import (
     Blueprint, render_template, jsonify, redirect, url_for, request, Response,
-    stream_with_context, current_app, flash
+    stream_with_context, current_app, flash, session
 )
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import check_password_hash
@@ -73,8 +73,8 @@ def login():
         return redirect(url_for('web.status_page'))
 
     form = LoginForm()
-    if form.validate_on_submit():
-        password = form.password.data
+    if request.method == 'POST':
+        password = request.form.get('password')
         if check_password_hash(config.DOCKFLARE_PASSWORD, password):
             user = User.get('dockflare_user')
             login_user(user)
@@ -92,13 +92,18 @@ def logout():
     logout_user()
     return redirect(url_for('web.login'))
 
+@bp.route('/dismiss-security-warning', methods=['POST'])
+def dismiss_security_warning():
+    session['security_warning_dismissed'] = True
+    return redirect(request.referrer or url_for('web.status_page'))
+
 def get_display_token_ui(token_value): 
     if not token_value: return "Not available"
     return f"{token_value[:5]}...{token_value[-5:]}" if len(token_value) > 10 else "Token (short)"
 
 @bp.before_app_request
 def before_request():
-    if config.DOCKFLARE_PASSWORD:
+    if config.DOCKFLARE_PASSWORD and config.SECRET_KEY:
         if not current_user.is_authenticated and request.endpoint and 'static' not in request.endpoint and request.endpoint != 'web.login':
             return redirect(url_for('web.login'))
 

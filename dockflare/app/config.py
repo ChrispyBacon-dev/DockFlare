@@ -110,9 +110,6 @@ for var_name in REQUIRED_VARS_BASE:
     if not globals().get(var_name):
         missing_vars.append(var_name)
 
-if DOCKFLARE_PASSWORD and not SECRET_KEY:
-    missing_vars.append("SECRET_KEY (required when DOCKFLARE_PASSWORD is set)")
-
 if missing_vars:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
     logging.error(f"FATAL: Missing required environment variables ({', '.join(missing_vars)})")

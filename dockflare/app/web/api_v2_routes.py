@@ -57,7 +57,7 @@ api_v2_bp = Blueprint('api_v2', __name__, url_prefix='/api/v2')
 
 @api_v2_bp.before_request
 def before_request_api():
-    if config.DOCKFLARE_PASSWORD:
+    if config.DOCKFLARE_PASSWORD and config.SECRET_KEY:
         if not current_user.is_authenticated:
             return jsonify({"status": "error", "message": "Unauthorized"}), 401
 
