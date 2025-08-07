@@ -70,14 +70,14 @@
     </header>
 
     <main class="mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 flex-grow w-full max-w-screen-2xl">
-        {% if not config.DOCKFLARE_PASSWORD or not config.SECRET_KEY %}
+        {% if not (config.DOCKFLARE_PASSWORD and config.SECRET_KEY) %}
             {% if not session.get('security_warning_dismissed') %}
             <div id="security-warning" class="alert alert-error shadow-lg mb-8">
                 <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                 <div>
                     <h3 class="font-bold">Security Warning!</h3>
                     <div class="text-xs">Your DockFlare instance is not password protected. Please set the `DOCKFLARE_PASSWORD` and `SECRET_KEY` environment variables to secure your instance.</div>
-                    <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases" target="_blank" rel="noopener noreferrer" class="link link-hover text-info">Please view latest Release Notes for instructions.</a>
+                    <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases" target="_blank" rel="noopener noreferrer" class="link link-hover text-info">View Release Notes for instructions.</a>
                 </div>
                 <form action="{{ url_for('web.dismiss_security_warning') }}" method="POST">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>

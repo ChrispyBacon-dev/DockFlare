@@ -152,7 +152,8 @@ def inject_protocol_bp():
         'base_url': base_url,
         'host': request.host,
         'request_scheme': request.scheme,
-        'app_version': config.APP_VERSION
+        'app_version': config.APP_VERSION,
+        'config': config
     }
 
 @bp.route('/')
