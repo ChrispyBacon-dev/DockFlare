@@ -12,8 +12,8 @@
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
-# 
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+#
 # app/__init__.py
 import logging
 import queue
@@ -29,6 +29,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 from . import config
 
+# --- Authentication Setup ---
 if config.DOCKFLARE_PASSWORD and not config.DOCKFLARE_PASSWORD.startswith('pbkdf2:sha256:'):
     logging.warning("DOCKFLARE_PASSWORD is not hashed. Hashing now. Please update your environment variable to the new hashed password.")
     config.DOCKFLARE_PASSWORD = generate_password_hash(config.DOCKFLARE_PASSWORD)
@@ -110,8 +111,7 @@ def create_app():
     if config.DOCKFLARE_PASSWORD:
         login_manager.init_app(app_instance)
         login_manager.login_view = 'web.login'
-
-    csrf.init_app(app_instance)
+        csrf.init_app(app_instance)
 
     app_instance.reconciliation_info = {
         "in_progress": False,

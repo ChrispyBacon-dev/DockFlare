@@ -80,7 +80,7 @@
                     <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases" target="_blank" rel="noopener noreferrer" class="link link-hover text-info">View Release Notes for instructions.</a>
                 </div>
                 <form action="{{ url_for('web.dismiss_security_warning') }}" method="POST">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    {% if config.DOCKFLARE_PASSWORD and config.SECRET_KEY %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>{% endif %}
                     <button type="submit" class="btn btn-sm">Okay</button>
                 </form>
             </div>

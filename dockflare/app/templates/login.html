@@ -20,7 +20,7 @@
                 {% endif %}
             {% endwith %}
             <form method="POST" action="{{ url_for('web.login') }}">
-                {{ form.hidden_tag() }}
+                {% if config.DOCKFLARE_PASSWORD and config.SECRET_KEY %}{{ form.hidden_tag() }}{% endif %}
                 <div class="form-control">
                     {{ form.password.label(class="label") }}
                     {{ form.password(class="input input-bordered", placeholder="password") }}
