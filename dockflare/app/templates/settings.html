@@ -53,6 +53,7 @@
                                                 Edit
                                             </button>
                                             <form action="{{ url_for('web.delete_access_group', group_id=group_id) }}" method="post" onsubmit="return confirm('Are you sure you want to delete the Access Group \'{{ details.display_name }}\'? This cannot be undone.');" class="protocol-aware-form">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                                 <button type="submit" class="btn btn-xs btn-error btn-outline" {{ 'disabled' if group_id in used_group_ids else '' }} title="{{ 'Cannot delete: group is in use' if group_id in used_group_ids else 'Delete Group' }}">
                                                     Delete
                                                 </button>
@@ -178,6 +179,7 @@
                     </div>
 
                     <form action="{{ url_for('web.restore_state_backup') }}" method="POST" enctype="multipart/form-data" class="protocol-aware-form space-y-3">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="file" name="backup_file" class="file-input file-input-bordered w-full" accept=".json" required />
                         <button type="submit" class="btn btn-error w-full" onclick="return confirm('Are you sure you want to overwrite your current state with this backup? This cannot be undone.')">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -236,10 +238,12 @@
                      <div class="w-full sm:w-auto flex-shrink-0">
                          {% if agent_state.container_status=='running' %}
                              <form action="{{ url_for('web.stop_tunnel_route') }}" method="post" class="protocol-aware-form">
+                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                  <button type="submit" class="btn btn-sm btn-error w-full sm:w-auto">Stop Agent</button>
                              </form>
                          {% else %}
                              <form action="{{ url_for('web.start_tunnel_route') }}" method="post" class="protocol-aware-form">
+                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                  <button type="submit" class="btn btn-sm btn-success w-full sm:w-auto">Start Agent</button>
                              </form>
                          {% endif %}

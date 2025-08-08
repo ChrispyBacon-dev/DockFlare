@@ -6,6 +6,7 @@
         <h3 id="access_group_modal_title" class="font-bold text-lg mb-6">Create New Access Group</h3>
         
         <form id="access_group_form" method="POST" class="space-y-6 protocol-aware-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="original_group_id" id="original_group_id">
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

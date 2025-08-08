@@ -137,8 +137,9 @@
                                         <div class="flex items-center space-x-1 sm:space-x-2">
                                             <div class="dropdown dropdown-end dropdown-hover"> 
                                                 <button tabindex="0" role="button" class="btn btn-xs btn-info btn-outline" data-hostname="{{ hostname }}">Edit Policy</button> 
-                                                <div tabindex="0" class="dropdown-content z-[50] menu p-3 shadow-xl bg-base-100 dark:bg-base-200 rounded-box w-64 sm:w-72"> 
+                                                <div tabindex="0" class="dropdown-content z-[50] menu p-3 shadow-xl bg-base-100 dark:bg-base-200 rounded-box w-64 sm:w-72">
                                                     <form action="{{ url_for('web.ui_update_access_policy', hostname=hostname) }}" method="POST" class="protocol-aware-form space-y-3">
+                                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                                         <div>
                                                             <label class="block text-xs font-medium opacity-80 mb-1">Policy Type:</label>
                                                             <select name="access_policy_type" class="policy-type-select select select-bordered select-xs w-full" data-hostname="{{ hostname }}">
@@ -160,6 +161,7 @@
                                             </div>
                                             {% if details.access_policy_ui_override and details.source != 'manual' %}
                                             <form action="{{ url_for('web.revert_access_policy_to_labels', hostname=hostname) }}" method="POST" onsubmit="return confirm('Revert policy for {{ display_hostname }} to be managed by labels/defaults?');" class="protocol-aware-form inline-block">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                                 <button type="submit" class="btn btn-xs btn-warning btn-outline" title="Revert to Label/Default Policy">Revert</button>
                                             </form>
                                             {% endif %}
@@ -184,10 +186,12 @@
                                                     Edit
                                                 </button>
                                                 <form action="{{ url_for('web.ui_delete_manual_rule_route', rule_key_from_url=hostname) }}" method="post" onsubmit="return confirm('Delete manual rule for {{ display_hostname }}?');" class="protocol-aware-form">
+                                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                                     <button type="submit" class="btn btn-xs btn-error btn-outline">Delete</button>
                                                 </form>
                                             {% else %}
                                                 <form action="{{ url_for('web.force_delete_rule_route', hostname=hostname) }}" method="post" onsubmit="return confirm('Force delete rule and DNS for {{ display_hostname }} immediately?');" class="protocol-aware-form">
+                                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                                     <button type="submit" class="btn btn-xs btn-error btn-outline">Delete</button>
                                                 </form>
                                             {% endif %}
@@ -222,6 +226,7 @@
             </form>
             <h3 class="font-bold text-lg mb-6">Add New Manual Ingress Rule</h3>
             <form action="{{ url_for('web.ui_add_manual_rule_route') }}" method="POST" class="protocol-aware-form flex flex-col flex-grow min-h-0">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="flex-grow overflow-y-auto space-y-6 p-1">
                     <div>
                         <h4 class="text-md font-semibold mb-2">Public Hostname</h4>
@@ -372,6 +377,7 @@
             </form>
             <h3 class="font-bold text-lg mb-6">Edit Manual Ingress Rule</h3>
             <form action="{{ url_for('web.ui_edit_manual_rule_route') }}" method="POST" class="protocol-aware-form flex flex-col flex-grow min-h-0" id="edit_manual_rule_form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="flex-grow overflow-y-auto space-y-6 p-1">
                     <input type="hidden" name="original_rule_key" id="edit_original_rule_key" />
                     <div>

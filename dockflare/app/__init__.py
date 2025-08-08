@@ -21,10 +21,11 @@ import sys
 import os
 
 from flask import Flask
+from flask_wtf.csrf import CSRFProtect
 import docker
-from docker.errors import APIError 
+from docker.errors import APIError
 
-from . import config 
+from . import config
 
 tunnel_state = { "name": config.TUNNEL_NAME, "id": None, "token": None, "status_message": "Initializing...", "error": None }
 cloudflared_agent_state = { "container_status": "unknown", "last_action_status": None }
@@ -76,10 +77,13 @@ except Exception as e:
     docker_client = None 
 
 def create_app():
+    app_instance = Flask(__name__)
+    app_instance.secret_key = os.urandom(24)
+    app_instance.config['PREFERRED_URL_SCHEME'] = 'http'
 
-    app_instance = Flask(__name__) 
-    app_instance.secret_key = os.urandom(24) 
-    app_instance.config['PREFERRED_URL_SCHEME'] = 'http' 
+    # Initialize CSRF Protection
+    csrf = CSRFProtect(app_instance)
+
     app_instance.reconciliation_info = {
         "in_progress": False,
         "progress": 0,
@@ -89,13 +93,17 @@ def create_app():
         "status": "Not started"
     }
 
-    with app_instance.app_context(): 
-        from .web import routes as web_routes 
+    with app_instance.app_context():
+        from .web import routes as web_routes
         app_instance.register_blueprint(web_routes.bp)
         logging.info("Web blueprint registered.")
-        from .web.api_v2_routes import api_v2_bp 
-        app_instance.register_blueprint(api_v2_bp) 
+
+        from .web.api_v2_routes import api_v2_bp
+        # Exclude the API blueprint from CSRF protection
+        csrf.exempt(api_v2_bp)
+        app_instance.register_blueprint(api_v2_bp)
         logging.info("API v2 blueprint registered.")
+
     return app_instance
 
 app = create_app()

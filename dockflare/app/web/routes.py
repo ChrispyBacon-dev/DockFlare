@@ -80,13 +80,20 @@ def add_security_headers_bp(response):
         
     is_https = current_app.config.get('PREFERRED_URL_SCHEME') == 'https'
     
-    csp = ("default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; "
-           "script-src * 'unsafe-inline' 'unsafe-eval'; "
-           "style-src * 'unsafe-inline'; "
-           "img-src * data: blob:; font-src * data:; "
-           "connect-src *; frame-src *; ")
-    if is_https: csp += "upgrade-insecure-requests; "
-    response.headers['Content-Security-Policy'] = csp
+    csp = {
+        "default-src": ["'self'"],
+        "script-src": ["'self'", "'unsafe-inline'"],
+        "style-src": ["'self'", "'unsafe-inline'", "https://rsms.me"],
+        "img-src": ["'self'", "data:"],
+        "font-src": ["'self'", "https://rsms.me"],
+        "connect-src": ["'self'"],
+        "frame-src": ["'none'"]
+    }
+    if is_https:
+        csp["upgrade-insecure-requests"] = []
+
+    csp_string = "; ".join([f"{key} {' '.join(value)}" for key, value in csp.items()])
+    response.headers['Content-Security-Policy'] = csp_string
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     if is_https: response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
         
