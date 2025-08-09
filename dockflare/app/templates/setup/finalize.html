@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Setup - Finalize</title>
+  <link href="{{ url_for('static', filename='css/output.css') }}" rel="stylesheet" />
+  <link rel="preconnect" href="https://rsms.me" crossorigin>
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" crossorigin="anonymous">
+</head>
+<body class="bg-base-200 min-h-screen flex items-center justify-center">
+  <div class="card w-full max-w-2xl bg-base-100 shadow-xl">
+    <div class="card-body">
+      <h2 class="card-title">Finalize Setup</h2>
+      <div class="mt-4 space-y-2">
+        <div><strong>Cloudflare Account ID:</strong> {{ summary.cf_account_id or 'Not set' }}</div>
+        <div><strong>API Token:</strong> {{ summary.cf_api_token or 'Not set' }}</div>
+        <div><strong>Tunnel Name:</strong> {{ summary.tunnel_name or 'Not set' }}</div>
+        <div><strong>Default Zone ID:</strong> {{ summary.cf_zone_id or 'Not set' }}</div>
+        <div><strong>Scan Zones:</strong> {{ summary.tunnel_dns_scan_zone_names or 'None' }}</div>
+        <div><strong>Grace Period (s):</strong> {{ summary.grace_period_seconds or 28800 }}</div>
+        <div><strong>Admin Username:</strong> {{ summary.admin_username or 'Not set' }}</div>
+      </div>
+      <form method="POST" class="mt-6">
+        <button class="btn btn-primary" type="submit">Complete Setup</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
+
+

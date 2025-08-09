@@ -33,6 +33,7 @@ from flask import (
 )
 
 from app import config, docker_client, tunnel_state, cloudflared_agent_state, log_queue 
+from flask_login import login_required
 from app.core.state_manager import managed_rules, access_groups, state_lock, save_state, load_state
 from app.core.tunnel_manager import (
     start_cloudflared_container,
@@ -117,6 +118,7 @@ def inject_protocol_bp():
     }
 
 @bp.route('/')
+@login_required
 def status_page():
     rules_for_template = {}
     template_tunnel_state = {}
@@ -170,6 +172,7 @@ def status_page():
                         )
 
 @bp.route('/settings')
+@login_required
 def settings_page():
     groups_for_template = {}
     used_group_ids = set()

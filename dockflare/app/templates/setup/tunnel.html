@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Setup - Tunnel & Zone</title>
+  <link href="{{ url_for('static', filename='css/output.css') }}" rel="stylesheet" />
+  <link rel="preconnect" href="https://rsms.me" crossorigin>
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" crossorigin="anonymous">
+</head>
+<body class="bg-base-200 min-h-screen flex items-center justify-center">
+  <div class="card w-full max-w-xl bg-base-100 shadow-xl">
+    <div class="card-body">
+      <h2 class="card-title">Pre-Flight Setup: Tunnel & Zone</h2>
+      <form method="POST">
+        {{ form.hidden_tag() }}
+        <div class="form-control mt-2">
+          {{ form.tunnel_name.label(class="label") }}
+          {{ form.tunnel_name(class="input input-bordered", placeholder="dockflared-tunnel") }}
+        </div>
+        <div class="form-control mt-4">
+          {{ form.cf_zone_id.label(class="label") }}
+          {{ form.cf_zone_id(class="input input-bordered", placeholder="Optional default Zone ID") }}
+        </div>
+        <div class="form-control mt-4">
+          {{ form.tunnel_dns_scan_zone_names.label(class="label") }}
+          {{ form.tunnel_dns_scan_zone_names(class="input input-bordered", placeholder="comma,separated,zones (optional)") }}
+        </div>
+        <div class="form-control mt-4">
+          {{ form.grace_period_seconds.label(class="label") }}
+          {{ form.grace_period_seconds(class="input input-bordered", placeholder="28800") }}
+        </div>
+        <div class="form-control mt-6">
+          {{ form.submit(class="btn btn-primary") }}
+        </div>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
+
+

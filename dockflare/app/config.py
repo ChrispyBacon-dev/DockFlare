@@ -106,11 +106,11 @@ else:
 for var_name in REQUIRED_VARS_BASE:
     if not globals().get(var_name):
         missing_vars.append(var_name)
-
+        
+# Do not exit if variables are missing. Application may run in Pre-Flight mode
 if missing_vars:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
-    logging.error(f"FATAL: Missing required environment variables ({', '.join(missing_vars)})")
-    sys.exit(1)
+    logging.warning(f"Missing configuration values detected: {', '.join(missing_vars)}. Running in Pre-Flight mode until setup completes.")
 
 if not CF_ZONE_ID:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
