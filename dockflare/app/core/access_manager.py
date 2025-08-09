@@ -4,6 +4,7 @@ import json
 import hashlib
 import requests 
 import time
+from flask import current_app
 from app import config
 from app.core import cloudflare_api
 from app.core.state_manager import access_groups
@@ -81,8 +82,9 @@ def get_cloudflare_account_email():
         return None
 
 def find_cloudflare_access_application_by_hostname(hostname):
-    logging.info(f"Finding Cloudflare Access Application for hostname '{hostname}' on account {config.CF_ACCOUNT_ID}")
-    endpoint = f"/accounts/{config.CF_ACCOUNT_ID}/access/apps"
+    account_id = current_app.config.get('CF_ACCOUNT_ID')
+    logging.info(f"Finding Cloudflare Access Application for hostname '{hostname}' on account {account_id}")
+    endpoint = f"/accounts/{account_id}/access/apps"
     try:
         response_data_direct = cloudflare_api.cf_api_request("GET", endpoint, params={"domain": hostname})
         apps_direct = response_data_direct.get("result", [])
@@ -115,8 +117,9 @@ def find_cloudflare_access_application_by_hostname(hostname):
         return None
 
 def create_cloudflare_access_application(hostname, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies, allowed_idps=None, auto_redirect_to_identity=False):
-    logging.info(f"Creating Cloudflare Access Application for hostname '{hostname}' on account {config.CF_ACCOUNT_ID}")
-    endpoint = f"/accounts/{config.CF_ACCOUNT_ID}/access/apps"
+    account_id = current_app.config.get('CF_ACCOUNT_ID')
+    logging.info(f"Creating Cloudflare Access Application for hostname '{hostname}' on account {account_id}")
+    endpoint = f"/accounts/{account_id}/access/apps"
     payload = _build_access_app_payload(hostname, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies, allowed_idps, auto_redirect_to_identity)
     try:
         response_data = cloudflare_api.cf_api_request("POST", endpoint, json_data=payload)
@@ -135,8 +138,9 @@ def create_cloudflare_access_application(hostname, name, session_duration, app_l
         return None
 
 def get_cloudflare_access_application(app_uuid):
-    logging.info(f"Getting Cloudflare Access Application details for ID '{app_uuid}' on account {config.CF_ACCOUNT_ID}")
-    endpoint = f"/accounts/{config.CF_ACCOUNT_ID}/access/apps/{app_uuid}"
+    account_id = current_app.config.get('CF_ACCOUNT_ID')
+    logging.info(f"Getting Cloudflare Access Application details for ID '{app_uuid}' on account {account_id}")
+    endpoint = f"/accounts/{account_id}/access/apps/{app_uuid}"
     try:
         response_data = cloudflare_api.cf_api_request("GET", endpoint)
         app_data = response_data.get("result")
@@ -160,8 +164,9 @@ def get_cloudflare_access_application(app_uuid):
         return None
 
 def update_cloudflare_access_application(app_uuid, hostname, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies, allowed_idps=None, auto_redirect_to_identity=False):
-    logging.info(f"Updating Cloudflare Access Application ID '{app_uuid}' for hostname '{hostname}' on account {config.CF_ACCOUNT_ID}")
-    endpoint = f"/accounts/{config.CF_ACCOUNT_ID}/access/apps/{app_uuid}"
+    account_id = current_app.config.get('CF_ACCOUNT_ID')
+    logging.info(f"Updating Cloudflare Access Application ID '{app_uuid}' for hostname '{hostname}' on account {account_id}")
+    endpoint = f"/accounts/{account_id}/access/apps/{app_uuid}"
     payload = _build_access_app_payload(hostname, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies, allowed_idps, auto_redirect_to_identity)
     try:
         response_data = cloudflare_api.cf_api_request("PUT", endpoint, json_data=payload)
@@ -180,8 +185,9 @@ def update_cloudflare_access_application(app_uuid, hostname, name, session_durat
         return None
 
 def delete_cloudflare_access_application(app_uuid):
-    logging.info(f"Deleting Cloudflare Access Application ID '{app_uuid}' on account {config.CF_ACCOUNT_ID}")
-    endpoint = f"/accounts/{config.CF_ACCOUNT_ID}/access/apps/{app_uuid}"
+    account_id = current_app.config.get('CF_ACCOUNT_ID')
+    logging.info(f"Deleting Cloudflare Access Application ID '{app_uuid}' on account {account_id}")
+    endpoint = f"/accounts/{account_id}/access/apps/{app_uuid}"
     try:
         response_data = cloudflare_api.cf_api_request("DELETE", endpoint)
         if response_data and response_data.get("success"):
