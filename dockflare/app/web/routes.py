@@ -31,6 +31,7 @@ from flask import (
     Blueprint, render_template, jsonify, redirect, url_for, request, Response,
     stream_with_context, current_app
 )
+from flask_login import current_user, login_required
 
 from app import config, docker_client, tunnel_state, cloudflared_agent_state, log_queue 
 from app.core.state_manager import managed_rules, access_groups, state_lock, save_state, load_state
@@ -65,6 +66,41 @@ bp = Blueprint('web', __name__)
 def get_display_token_ui(token_value): 
     if not token_value: return "Not available"
     return f"{token_value[:5]}...{token_value[-5:]}" if len(token_value) > 10 else "Token (short)"
+
+@bp.before_app_request
+def gating_logic():
+    """
+    This function is executed before each request. It's responsible for gating access
+    to the application based on its configuration state and user authentication.
+    """
+    # Use getattr for safe access to the app.is_configured flag
+    is_configured = getattr(current_app, 'is_configured', False)
+
+    # If the application is not configured, redirect to the setup wizard
+    if not is_configured:
+        # Allow access to the setup blueprint and static assets
+        if request.endpoint and not request.endpoint.startswith('setup.') and request.endpoint != 'static':
+            # This will raise an error until the setup blueprint is registered
+            try:
+                return redirect(url_for('setup.step1_api_credentials'))
+            except:
+                # Silently fail for now, as the blueprint doesn't exist yet.
+                # This will be functional once the setup routes are created.
+                pass
+        return
+
+    # If the application is configured, check for user authentication
+    # This part relies on Flask-Login being initialized
+    if hasattr(current_app, 'login_manager'):
+        if not current_user.is_authenticated:
+            # Allow access to the auth blueprint and static assets
+            if request.endpoint and not request.endpoint.startswith('auth.') and request.endpoint != 'static':
+                # This will raise an error until the auth blueprint is registered
+                try:
+                    return redirect(url_for('auth.login'))
+                except:
+                    # Silently fail for now, as the blueprint doesn't exist yet.
+                    pass
 
 @bp.before_app_request 
 def detect_protocol_bp():
@@ -117,6 +153,7 @@ def inject_protocol_bp():
     }
 
 @bp.route('/')
+@login_required
 def status_page():
     rules_for_template = {}
     template_tunnel_state = {}
@@ -143,9 +180,10 @@ def status_page():
                            template_tunnel_state.get("status_message", "").lower().startswith("init")
         }
         
-        if config.CF_ZONE_ID and docker_client:
+        cf_zone_id = current_app.config.get('CF_ZONE_ID')
+        if cf_zone_id and docker_client:
             
-            zone_details = get_zone_details_by_id(config.CF_ZONE_ID)
+            zone_details = get_zone_details_by_id(cf_zone_id)
             if zone_details and zone_details.get("name"):
                 relevant_zone_name_for_tld_policy_val = zone_details.get("name")
             
@@ -157,19 +195,21 @@ def status_page():
                 logging.info("Relevant zone name for TLD policy check (from CF_ZONE_ID) could not be determined.")
 
     display_token_val = get_display_token_ui(template_tunnel_state.get("token"))
+    cf_account_id = current_app.config.get('CF_ACCOUNT_ID')
 
     return render_template('status_page.html',
                         tunnel_state=template_tunnel_state,
                         agent_state=template_agent_state,
                         initialization=initialization_status,
                         rules=rules_for_template,
-                        CF_ACCOUNT_ID_CONFIGURED=bool(config.CF_ACCOUNT_ID), 
-                        ACCOUNT_ID_FOR_DISPLAY=config.CF_ACCOUNT_ID if config.CF_ACCOUNT_ID else "Not Configured",
+                        CF_ACCOUNT_ID_CONFIGURED=bool(cf_account_id),
+                        ACCOUNT_ID_FOR_DISPLAY=cf_account_id if cf_account_id else "Not Configured",
                         access_groups=template_access_groups,
-                        CF_ZONE_ID_CONFIGURED=bool(config.CF_ZONE_ID)
+                        CF_ZONE_ID_CONFIGURED=bool(current_app.config.get('CF_ZONE_ID'))
                         )
 
 @bp.route('/settings')
+@login_required
 def settings_page():
     groups_for_template = {}
     used_group_ids = set()
@@ -188,6 +228,7 @@ def settings_page():
     display_token_val = get_display_token_ui(template_tunnel_state.get("token"))
     all_account_tunnels_list = get_all_account_cloudflare_tunnels()
 
+    cf_account_id = current_app.config.get('CF_ACCOUNT_ID')
     return render_template(
         'settings.html',
         access_groups=groups_for_template,
@@ -196,12 +237,12 @@ def settings_page():
         tunnel_state=template_tunnel_state,
         agent_state=template_agent_state,
         display_token=display_token_val,
-        cloudflared_container_name=config.CLOUDFLARED_CONTAINER_NAME,
+        cloudflared_container_name=current_app.config.get('CLOUDFLARED_CONTAINER_NAME'),
         docker_available=docker_client is not None,
         external_cloudflared=config.USE_EXTERNAL_CLOUDFLARED,
         external_tunnel_id=config.EXTERNAL_TUNNEL_ID,
-        CF_ACCOUNT_ID_CONFIGURED=bool(config.CF_ACCOUNT_ID),
-        ACCOUNT_ID_FOR_DISPLAY=config.CF_ACCOUNT_ID if config.CF_ACCOUNT_ID else "Not Configured"
+        CF_ACCOUNT_ID_CONFIGURED=bool(cf_account_id),
+        ACCOUNT_ID_FOR_DISPLAY=cf_account_id if cf_account_id else "Not Configured"
     )
 
 @bp.route('/ui_update_access_policy/<path:hostname>', methods=['POST'])
@@ -357,8 +398,11 @@ def tunnel_dns_records(tunnel_id):
     if not tunnel_id: return jsonify({"error": "Tunnel ID is required"}), 400
     all_found_dns_records = []
     zone_ids_to_scan = set()
-    if config.CF_ZONE_ID: zone_ids_to_scan.add(config.CF_ZONE_ID)
-    for zone_name in config.TUNNEL_DNS_SCAN_ZONE_NAMES:
+    cf_zone_id = current_app.config.get('CF_ZONE_ID')
+    if cf_zone_id: zone_ids_to_scan.add(cf_zone_id)
+
+    scan_zone_names = current_app.config.get('TUNNEL_DNS_SCAN_ZONE_NAMES', [])
+    for zone_name in scan_zone_names:
         resolved_zone_id = get_zone_id_from_name(zone_name) 
         if resolved_zone_id: zone_ids_to_scan.add(resolved_zone_id)
     
@@ -524,7 +568,7 @@ def ui_add_manual_rule_route():
         return redirect(url_for('web.status_page'))
     
     zone_name_to_lookup = zone_name_override_input or '.'.join(domain_name_input.split('.')[-2:])
-    target_zone_id = get_zone_id_from_name(zone_name_to_lookup) or config.CF_ZONE_ID
+    target_zone_id = get_zone_id_from_name(zone_name_to_lookup) or current_app.config.get('CF_ZONE_ID')
     if not target_zone_id:
         cloudflared_agent_state["last_action_status"] = f"Error: Could not determine Zone ID."
         return redirect(url_for('web.status_page'))
@@ -791,7 +835,7 @@ def ui_edit_manual_rule_route():
         return redirect(url_for('web.status_page'))
 
     zone_name_to_lookup = zone_name_override_input or '.'.join(domain_name_input.split('.')[-2:])
-    target_zone_id = get_zone_id_from_name(zone_name_to_lookup) or config.CF_ZONE_ID
+    target_zone_id = get_zone_id_from_name(zone_name_to_lookup) or current_app.config.get('CF_ZONE_ID')
     if not target_zone_id:
         cloudflared_agent_state["last_action_status"] = f"Error: Could not determine Zone ID."
         return redirect(url_for('web.status_page'))
