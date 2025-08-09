@@ -93,8 +93,9 @@ def get_overview_data():
                             api_tunnel_state.get("status_message", "").lower().startswith("init")
         }
 
-        if config.CF_ZONE_ID and docker_client:
-            zone_details = get_zone_details_by_id(config.CF_ZONE_ID)
+        cf_zone_id = current_app.config.get('CF_ZONE_ID')
+        if cf_zone_id and docker_client:
+            zone_details = get_zone_details_by_id(cf_zone_id)
             if zone_details and zone_details.get("name"):
                 relevant_zone_name_for_tld_policy_api = zone_details.get("name")
             
@@ -111,21 +112,22 @@ def get_overview_data():
     except RuntimeError as e:
         logging.error(f"RuntimeError generating url_for for 'web.stream_logs_route': {e}. Falling back to static path.")
 
+    cf_account_id = current_app.config.get('CF_ACCOUNT_ID')
     return jsonify({
         "tunnel_state": api_tunnel_state,
         "agent_state": api_agent_state,
         "initialization": initialization_status_api,
         "display_token": tunnel_state.get("token"), 
-        "cloudflared_container_name": config.CLOUDFLARED_CONTAINER_NAME,
+        "cloudflared_container_name": current_app.config.get('CLOUDFLARED_CONTAINER_NAME'),
         "docker_available": docker_client is not None,
         "external_cloudflared": config.USE_EXTERNAL_CLOUDFLARED,
         "external_tunnel_id": config.EXTERNAL_TUNNEL_ID,
         "rules": rules_for_api,
         "all_account_tunnels": all_account_tunnels_list_api,
         "config_status": {
-            "cf_account_id_configured": bool(config.CF_ACCOUNT_ID),
-            "account_id_for_display": config.CF_ACCOUNT_ID if config.CF_ACCOUNT_ID else "Not Configured",
-            "cf_zone_id_configured": bool(config.CF_ZONE_ID),
+            "cf_account_id_configured": bool(cf_account_id),
+            "account_id_for_display": cf_account_id if cf_account_id else "Not Configured",
+            "cf_zone_id_configured": bool(cf_zone_id),
             "relevant_zone_name_for_tld_policy": relevant_zone_name_for_tld_policy_api,
             "tld_policy_exists": tld_policy_exists_val_api,
             "account_email_for_tld": account_email_for_tld_api,
@@ -257,8 +259,9 @@ def add_manual_rule():
     if zone_name_to_lookup:
         target_zone_id = get_zone_id_from_name(zone_name_to_lookup)
     if not target_zone_id:
-        if config.CF_ZONE_ID:
-            target_zone_id = config.CF_ZONE_ID
+        cf_zone_id = current_app.config.get('CF_ZONE_ID')
+        if cf_zone_id:
+            target_zone_id = cf_zone_id
         else:
             return jsonify({"status": "error", "message": f"Could not determine Zone ID for '{zone_name_to_lookup or domain_name}' and no default CF_ZONE_ID."}), 400
 
@@ -716,10 +719,11 @@ def get_tunnel_dns_records_api(tunnel_id):
     
     all_found_dns_records = []
     zone_ids_to_scan = set()
-    if config.CF_ZONE_ID:
-        zone_ids_to_scan.add(config.CF_ZONE_ID)
+    cf_zone_id = current_app.config.get('CF_ZONE_ID')
+    if cf_zone_id:
+        zone_ids_to_scan.add(cf_zone_id)
     
-    scan_zone_names_list = getattr(config, 'TUNNEL_DNS_SCAN_ZONE_NAMES', [])
+    scan_zone_names_list = current_app.config.get('TUNNEL_DNS_SCAN_ZONE_NAMES', [])
     if isinstance(scan_zone_names_list, str) and scan_zone_names_list: 
         scan_zone_names_list = [z.strip() for z in scan_zone_names_list.split(',')]
 
