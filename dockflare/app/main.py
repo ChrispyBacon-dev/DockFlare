@@ -94,6 +94,14 @@ def perform_initial_setup_and_tasks():
     global background_threads_list 
 
     logging.info("Main initialization process started in background thread.")
+    # Skip all initialization if application is not configured (Pre-Flight mode)
+    try:
+        from app import app as flask_app_inst
+        if not getattr(flask_app_inst, 'is_configured', False):
+            logging.info("Pre-Flight mode detected. Skipping tunnel initialization and background tasks until setup completes.")
+            return
+    except Exception:
+        pass
     if not docker_client:
         logging.error("Docker client unavailable during initialization process. Critical functionalities will be affected.")
         return
@@ -187,13 +195,17 @@ def main_application_entrypoint():
         if tunnel_state: tunnel_state["error"] = "Failed to connect to Docker daemon."
         if cloudflared_agent_state: cloudflared_agent_state["container_status"] = "docker_unavailable"
     else:
-        logging.info("Docker client connected. Proceeding with full initialization in background.")
-        main_initialization_thread = threading.Thread(
-            target=perform_initial_setup_and_tasks,
-            name="MainInitializationThread",
-            daemon=True
-        )
-        main_initialization_thread.start()
+        # Only proceed with full initialization when configured
+        if getattr(app, 'is_configured', False):
+            logging.info("Docker client connected. Proceeding with full initialization in background.")
+            main_initialization_thread = threading.Thread(
+                target=perform_initial_setup_and_tasks,
+                name="MainInitializationThread",
+                daemon=True
+            )
+            main_initialization_thread.start()
+        else:
+            logging.info("Pre-Flight mode detected. Web UI available for setup; core initialization deferred.")
 
     logging.info("Starting Flask web server...")
     flask_server_thread = None
