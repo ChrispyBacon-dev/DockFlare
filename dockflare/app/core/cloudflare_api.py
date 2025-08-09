@@ -21,6 +21,7 @@ import requests
 import json
 import time
 import threading
+from flask import current_app
 from app import config
 
 zone_id_cache = {}  
@@ -133,7 +134,7 @@ def get_zone_id_from_name(zone_name):
     
     logging.info(f"Zone ID for '{zone_name}' not in cache or expired. Querying Cloudflare API...")
     endpoint = "/zones"
-    params = {"name": zone_name, "status": "active", "account.id": config.CF_ACCOUNT_ID}
+    params = {"name": zone_name, "status": "active", "account.id": current_app.config.get('CF_ACCOUNT_ID')}
     try:
         response_data = cf_api_request("GET", endpoint, params=params)
         results = response_data.get("result", [])
@@ -150,10 +151,10 @@ def get_zone_id_from_name(zone_name):
                 logging.error(f"API returned unexpected result or name mismatch for zone '{zone_name}': {results[0]}")
                 return None
         elif results and len(results) > 1:
-            logging.error(f"API returned multiple ({len(results)}) active zones matching name '{zone_name}' for account {config.CF_ACCOUNT_ID}. Cannot determine correct zone.")
+            logging.error(f"API returned multiple ({len(results)}) active zones matching name '{zone_name}' for account {current_app.config.get('CF_ACCOUNT_ID')}. Cannot determine correct zone.")
             return None
         else:
-            logging.warning(f"No active zone found matching name '{zone_name}' for account {config.CF_ACCOUNT_ID} via API.")
+            logging.warning(f"No active zone found matching name '{zone_name}' for account {current_app.config.get('CF_ACCOUNT_ID')} via API.")
             return None
     except requests.exceptions.RequestException as e:
         logging.error(f"API error looking up zone '{zone_name}': {e}")
@@ -199,8 +200,9 @@ def get_zone_details_by_id(zone_id_to_check):
         return None
 
 def find_tunnel_via_api(name):
-    logging.info(f"Finding tunnel '{name}' via API on account {config.CF_ACCOUNT_ID}")
-    endpoint = f"/accounts/{config.CF_ACCOUNT_ID}/cfd_tunnel"
+    account_id = current_app.config.get('CF_ACCOUNT_ID')
+    logging.info(f"Finding tunnel '{name}' via API on account {account_id}")
+    endpoint = f"/accounts/{account_id}/cfd_tunnel"
     params = {"name": name, "is_deleted": "false"}
     try:
         response_data = cf_api_request("GET", endpoint, params=params)
@@ -229,13 +231,15 @@ def find_tunnel_via_api(name):
         raise
 
 def get_tunnel_token_via_api(tunnel_id):
-    logging.info(f"Getting token for tunnel ID '{tunnel_id}' on account {config.CF_ACCOUNT_ID}")
-    endpoint = f"/accounts/{config.CF_ACCOUNT_ID}/cfd_tunnel/{tunnel_id}/token"
+    account_id = current_app.config.get('CF_ACCOUNT_ID')
+    api_token = current_app.config.get('CF_API_TOKEN')
+    logging.info(f"Getting token for tunnel ID '{tunnel_id}' on account {account_id}")
+    endpoint = f"/accounts/{account_id}/cfd_tunnel/{tunnel_id}/token"
     url = f"{config.CF_API_BASE_URL}{endpoint}"
     token = None
     try:
         logging.info(f"API Request: GET {url} (for token, raw request)")
-        response = requests.request("GET", url, headers={"Authorization": f"Bearer {config.CF_API_TOKEN}"}, timeout=30)
+        response = requests.request("GET", url, headers={"Authorization": f"Bearer {api_token}"}, timeout=30)
         response.raise_for_status()
         try:
             token = response.json().get("result")
@@ -262,8 +266,9 @@ def get_tunnel_token_via_api(tunnel_id):
         raise
 
 def create_tunnel_via_api(name):
-    logging.info(f"Creating tunnel '{name}' via API on account {config.CF_ACCOUNT_ID}")
-    endpoint = f"/accounts/{config.CF_ACCOUNT_ID}/cfd_tunnel"
+    account_id = current_app.config.get('CF_ACCOUNT_ID')
+    logging.info(f"Creating tunnel '{name}' via API on account {account_id}")
+    endpoint = f"/accounts/{account_id}/cfd_tunnel"
     payload = {"name": name, "config_src": "cloudflare"}
     try:
         response_data = cf_api_request("POST", endpoint, json_data=payload)
@@ -500,7 +505,8 @@ def get_current_cf_config(tunnel_id_to_query):
         return None
 
     logging.debug(f"Fetching current CF tunnel configuration for tunnel ID {tunnel_id_to_query}.")
-    endpoint = f"/accounts/{config.CF_ACCOUNT_ID}/cfd_tunnel/{tunnel_id_to_query}/configurations"
+    account_id = current_app.config.get('CF_ACCOUNT_ID')
+    endpoint = f"/accounts/{account_id}/cfd_tunnel/{tunnel_id_to_query}/configurations"
     try:
         response_data = cf_api_request("GET", endpoint)
         if response_data and response_data.get("success"):
@@ -529,17 +535,20 @@ def get_current_cf_config(tunnel_id_to_query):
         raise
 
 def get_all_account_cloudflare_tunnels():
-    if not config.CF_ACCOUNT_ID:
+    account_id = current_app.config.get('CF_ACCOUNT_ID')
+    api_token = current_app.config.get('CF_API_TOKEN')
+
+    if not account_id:
         logging.warning("CF_ACCOUNT_ID is not configured. Cannot list all Cloudflare tunnels.")
         return []
-    if not config.CF_API_TOKEN: 
+    if not api_token:
         logging.error("Cloudflare API token not configured. Cannot list all account tunnels.")
         return []
 
-    endpoint = f"/accounts/{config.CF_ACCOUNT_ID}/cfd_tunnel"
+    endpoint = f"/accounts/{account_id}/cfd_tunnel"
     params = {"is_deleted": "false", "per_page": 100} 
     
-    logging.info(f"Attempting to list all Cloudflare tunnels for account ID {config.CF_ACCOUNT_ID}")
+    logging.info(f"Attempting to list all Cloudflare tunnels for account ID {account_id}")
     all_tunnels = []
     page = 1
     while True:
