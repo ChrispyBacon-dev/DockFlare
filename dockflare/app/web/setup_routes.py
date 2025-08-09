@@ -112,20 +112,21 @@ def step4_finalize():
     form = FinalizeForm()
     if form.validate_on_submit():
         # --- CRITICAL OPERATION: Save all configuration ---
-
+        
         # 1. Generate and save the encryption key
+        # This now correctly uses the imported `config` module for the static path.
+        data_path = os.path.dirname(config.STATE_FILE_PATH)
         key = Fernet.generate_key()
-        data_path = os.path.dirname(current_app.config['STATE_FILE_PATH'])
         key_file = os.path.join(data_path, 'dockflare.key')
         config_file = os.path.join(data_path, 'dockflare_config.dat')
         os.makedirs(data_path, exist_ok=True)
-
+        
         with open(key_file, 'wb') as f:
             f.write(key)
-
+        
         # 2. Hash the admin password
         hashed_password = generate_password_hash(session['password'])
-
+        
         # 3. Assemble the configuration payload
         config_payload = {
             'cf_api_token': session['cf_api_token'],
@@ -137,37 +138,40 @@ def step4_finalize():
             'username': session['username'],
             'password': hashed_password,
         }
-
+        
         # 4. Encrypt and save the payload
         fernet = Fernet(key)
         encrypted_payload = fernet.encrypt(json.dumps(config_payload).encode('utf-8'))
         with open(config_file, 'wb') as f:
             f.write(encrypted_payload)
-
+            
         # 5. Set the application to "configured" mode and update the running config
         current_app.is_configured = True
         from app import config as config_module
-        config = current_app.config
-
-        config['CF_API_TOKEN'] = config_payload['cf_api_token']
-        config_module.CF_API_TOKEN = config['CF_API_TOKEN']
-        config['CF_ACCOUNT_ID'] = config_payload['cf_account_id']
-        config_module.CF_ACCOUNT_ID = config['CF_ACCOUNT_ID']
-        config['TUNNEL_NAME'] = config_payload['tunnel_name']
-        config_module.TUNNEL_NAME = config['TUNNEL_NAME']
-        config['CF_ZONE_ID'] = config_payload['cf_zone_id']
-        config_module.CF_ZONE_ID = config['CF_ZONE_ID']
+        
+        # Renamed local variable to `app_config` to avoid name collision.
+        app_config = current_app.config
+        
+        app_config['CF_API_TOKEN'] = config_payload['cf_api_token']
+        config_module.CF_API_TOKEN = app_config['CF_API_TOKEN']
+        app_config['CF_ACCOUNT_ID'] = config_payload['cf_account_id']
+        config_module.CF_ACCOUNT_ID = app_config['CF_ACCOUNT_ID']
+        app_config['TUNNEL_NAME'] = config_payload['tunnel_name']
+        config_module.TUNNEL_NAME = app_config['TUNNEL_NAME']
+        app_config['CLOUDFLARED_CONTAINER_NAME'] = f"cloudflared-agent-{app_config['TUNNEL_NAME']}"
+        app_config['CF_ZONE_ID'] = config_payload['cf_zone_id']
+        config_module.CF_ZONE_ID = app_config['CF_ZONE_ID']
         tunnel_dns_scan_zone_names_str = config_payload.get('tunnel_dns_scan_zone_names', '')
-        config['TUNNEL_DNS_SCAN_ZONE_NAMES'] = [name.strip() for name in tunnel_dns_scan_zone_names_str.split(',') if name.strip()]
-        config_module.TUNNEL_DNS_SCAN_ZONE_NAMES = config['TUNNEL_DNS_SCAN_ZONE_NAMES']
-        config['GRACE_PERIOD_SECONDS'] = int(config_payload.get('grace_period_seconds', 28800))
-        config_module.GRACE_PERIOD_SECONDS = config['GRACE_PERIOD_SECONDS']
-        config['DOCKFLARE_USERNAME'] = config_payload['username']
-        config['DOCKFLARE_PASSWORD_HASH'] = config_payload['password']
+        app_config['TUNNEL_DNS_SCAN_ZONE_NAMES'] = [name.strip() for name in tunnel_dns_scan_zone_names_str.split(',') if name.strip()]
+        config_module.TUNNEL_DNS_SCAN_ZONE_NAMES = app_config['TUNNEL_DNS_SCAN_ZONE_NAMES']
+        app_config['GRACE_PERIOD_SECONDS'] = int(config_payload.get('grace_period_seconds', 28800))
+        config_module.GRACE_PERIOD_SECONDS = app_config['GRACE_PERIOD_SECONDS']
+        app_config['DOCKFLARE_USERNAME'] = config_payload['username']
+        app_config['DOCKFLARE_PASSWORD_HASH'] = config_payload['password']
         if config_module.CF_API_TOKEN:
             config_module.CF_HEADERS['Authorization'] = f"Bearer {config_module.CF_API_TOKEN}"
-
-        # 6. Start core services in the background
+        
+        # 6. Start core services in the background (import is local to prevent circular dependency)
         from app.main import start_core_services
         logging.info("Setup complete. Triggering core services to start in a background thread.")
         init_thread = threading.Thread(target=start_core_services, daemon=True)
@@ -177,12 +181,12 @@ def step4_finalize():
         session.clear()
         flash('Setup complete! Please log in to continue.', 'success')
         return redirect(url_for('auth.login'))
-
+        
     # For the GET request, display a summary of the configuration
     config_summary = {key: val for key, val in session.items() if key != 'csrf_token' and not key.startswith('_')}
     if 'cf_api_token' in config_summary:
         config_summary['cf_api_token'] = '********'
     if 'password' in config_summary:
         del config_summary['password'] # Do not show the password, even masked
-
+        
     return render_template('setup/step4.html', form=form, title="Setup: Finalize", summary=config_summary)
