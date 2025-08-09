@@ -31,6 +31,7 @@ from flask import (
     Blueprint, render_template, jsonify, redirect, url_for, request, Response,
     stream_with_context, current_app
 )
+from flask_login import current_user, login_required
 
 from app import config, docker_client, tunnel_state, cloudflared_agent_state, log_queue 
 from app.core.state_manager import managed_rules, access_groups, state_lock, save_state, load_state
@@ -65,6 +66,41 @@ bp = Blueprint('web', __name__)
 def get_display_token_ui(token_value): 
     if not token_value: return "Not available"
     return f"{token_value[:5]}...{token_value[-5:]}" if len(token_value) > 10 else "Token (short)"
+
+@bp.before_app_request
+def gating_logic():
+    """
+    This function is executed before each request. It's responsible for gating access
+    to the application based on its configuration state and user authentication.
+    """
+    # Use getattr for safe access to the app.is_configured flag
+    is_configured = getattr(current_app, 'is_configured', False)
+
+    # If the application is not configured, redirect to the setup wizard
+    if not is_configured:
+        # Allow access to the setup blueprint and static assets
+        if request.endpoint and not request.endpoint.startswith('setup.') and request.endpoint != 'static':
+            # This will raise an error until the setup blueprint is registered
+            try:
+                return redirect(url_for('setup.step1_api_credentials'))
+            except:
+                # Silently fail for now, as the blueprint doesn't exist yet.
+                # This will be functional once the setup routes are created.
+                pass
+        return
+
+    # If the application is configured, check for user authentication
+    # This part relies on Flask-Login being initialized
+    if hasattr(current_app, 'login_manager'):
+        if not current_user.is_authenticated:
+            # Allow access to the auth blueprint and static assets
+            if request.endpoint and not request.endpoint.startswith('auth.') and request.endpoint != 'static':
+                # This will raise an error until the auth blueprint is registered
+                try:
+                    return redirect(url_for('auth.login'))
+                except:
+                    # Silently fail for now, as the blueprint doesn't exist yet.
+                    pass
 
 @bp.before_app_request 
 def detect_protocol_bp():
@@ -117,6 +153,7 @@ def inject_protocol_bp():
     }
 
 @bp.route('/')
+@login_required
 def status_page():
     rules_for_template = {}
     template_tunnel_state = {}
@@ -170,6 +207,7 @@ def status_page():
                         )
 
 @bp.route('/settings')
+@login_required
 def settings_page():
     groups_for_template = {}
     used_group_ids = set()

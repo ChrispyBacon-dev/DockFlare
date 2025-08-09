@@ -19,6 +19,9 @@ import logging
 import threading
 import time
 import sys
+import os
+import json
+from cryptography.fernet import Fernet
 
 from app import app, docker_client, tunnel_state, cloudflared_agent_state, config, log_queue
 
@@ -175,10 +178,57 @@ def main_application_entrypoint():
     logging.info("-" * 52)
     logging.info("--- DockFlare Starting ---")
     logging.info(f"--- Version: {config.APP_VERSION} ---")
-    logging.info("--- web: http://dockflare.app ---") 
+    logging.info("--- web: http://dockflare.app ---")
     logging.info("-" * 52)
 
-    load_state() 
+    # === Pre-Flight Setup Check ===
+    data_path = os.path.dirname(config.STATE_FILE_PATH)
+    key_file = os.path.join(data_path, 'dockflare.key')
+    config_file = os.path.join(data_path, 'dockflare_config.dat')
+
+    app.is_configured = False
+    if os.path.exists(config_file) and os.path.exists(key_file):
+        logging.info("Configuration file found. Loading settings.")
+        try:
+            with open(key_file, 'rb') as f:
+                key = f.read()
+
+            fernet = Fernet(key)
+
+            with open(config_file, 'rb') as f:
+                encrypted_data = f.read()
+
+            decrypted_data = fernet.decrypt(encrypted_data)
+            config_data = json.loads(decrypted_data)
+
+            # Populate Flask app.config with the loaded values
+            app.config['CF_API_TOKEN'] = config_data.get('cf_api_token')
+            app.config['CF_ACCOUNT_ID'] = config_data.get('cf_account_id')
+            app.config['TUNNEL_NAME'] = config_data.get('tunnel_name')
+            app.config['CF_ZONE_ID'] = config_data.get('cf_zone_id')
+
+            tunnel_dns_scan_zone_names_str = config_data.get('tunnel_dns_scan_zone_names', '')
+            app.config['TUNNEL_DNS_SCAN_ZONE_NAMES'] = [name.strip() for name in tunnel_dns_scan_zone_names_str.split(',') if name.strip()]
+
+            app.config['GRACE_PERIOD_SECONDS'] = int(config_data.get('grace_period_seconds', 28800))
+            app.config['DOCKFLARE_USERNAME'] = config_data.get('username')
+            app.config['DOCKFLARE_PASSWORD_HASH'] = config_data.get('password')
+
+            # Also update the CF_HEADERS in the config module for immediate use
+            if app.config['CF_API_TOKEN']:
+                config.CF_HEADERS['Authorization'] = f"Bearer {app.config['CF_API_TOKEN']}"
+
+            app.is_configured = True
+            logging.info("Application is configured and in Operational Mode.")
+        except Exception as e:
+            logging.error(f"Failed to load or decrypt configuration: {e}. Starting in Pre-Flight mode.", exc_info=True)
+            app.is_configured = False
+    else:
+        logging.info("Configuration file not found. Starting in Pre-Flight Mode.")
+        app.is_configured = False
+    # === End Pre-Flight Setup Check ===
+
+    load_state()
     logging.info("Initial state loading from file complete.")
 
     if not docker_client:
