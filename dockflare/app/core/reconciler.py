@@ -200,7 +200,7 @@ def _run_reconciliation_logic():
                 if existing_rule and existing_rule.get("source") == "manual":
                     continue
 
-                target_zone_id = get_zone_id_from_name(desired_details["zone_name"]) if desired_details["zone_name"] else config.CF_ZONE_ID
+                target_zone_id = get_zone_id_from_name(desired_details["zone_name"]) if desired_details["zone_name"] else current_app.config.get('CF_ZONE_ID')
                 if not target_zone_id:
                     logging.error(f"[Reconcile] No zone ID for {rule_key}, skipping its reconciliation.")
                     continue
@@ -265,7 +265,8 @@ def _run_reconciliation_logic():
                 if rule and rule.get("status") == "active" and rule.get("source", "docker") == "docker":
                     logging.info(f"[Reconcile] Docker-managed rule {rule_key_to_check} active but container/labels gone. Marking for deletion.")
                     rule["status"] = "pending_deletion"
-                    rule["delete_at"] = now_utc + timedelta(seconds=config.GRACE_PERIOD_SECONDS)
+                    grace_period = current_app.config.get('GRACE_PERIOD_SECONDS', 28800)
+                    rule["delete_at"] = now_utc + timedelta(seconds=grace_period)
                     state_changed_locally = True
                 elif rule and rule.get("source") == "manual" and rule.get("zone_id") and rule.get("hostname"):
                      hostnames_requiring_dns_setup.add((rule.get("hostname"), rule.get("zone_id")))

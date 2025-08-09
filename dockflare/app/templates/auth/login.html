@@ -1,0 +1,35 @@
+{% extends "setup/base.html" %}
+
+{% block setup_content %}
+<form method="POST" action="{{ url_for('auth.login') }}{% if request.args.next %}?next={{ request.args.next }}{% endif %}" class="space-y-4">
+    {{ form.hidden_tag() }}
+
+    <div class="form-control">
+        <label class="label">
+            <span class="label-text">{{ form.username.label }}</span>
+        </label>
+        {{ form.username(class="input input-bordered w-full", placeholder="Your username") }}
+        {% for error in form.username.errors %}
+            <label class="label">
+                <span class="label-text-alt text-error">{{ error }}</span>
+            </label>
+        {% endfor %}
+    </div>
+
+    <div class="form-control">
+        <label class="label">
+            <span class="label-text">{{ form.password.label }}</span>
+        </label>
+        {{ form.password(class="input input-bordered w-full", placeholder="Your password") }}
+        {% for error in form.password.errors %}
+            <label class="label">
+                <span class="label-text-alt text-error">{{ error }}</span>
+            </label>
+        {% endfor %}
+    </div>
+
+    <div class="card-actions mt-6">
+        {{ form.submit(class="btn btn-primary w-full") }}
+    </div>
+</form>
+{% endblock %}
