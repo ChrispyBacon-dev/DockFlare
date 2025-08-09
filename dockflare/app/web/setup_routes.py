@@ -8,6 +8,7 @@ from wtforms.validators import DataRequired, EqualTo, Optional
 from cryptography.fernet import Fernet
 from werkzeug.security import generate_password_hash
 import threading
+import logging
 from app import config
 
 # Define the blueprint for the setup wizard
