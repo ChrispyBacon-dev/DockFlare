@@ -19,7 +19,8 @@ import copy
 import logging
 import json 
 import time 
-from app import config, docker_client 
+from flask import current_app
+from app import config, docker_client
 from app import tunnel_state, cloudflared_agent_state 
 from app.core import cloudflare_api
 from app.core.state_manager import managed_rules, state_lock 
@@ -28,68 +29,75 @@ from docker.errors import NotFound, APIError
 import requests 
 
 def initialize_tunnel():
-    logging.info("Initializing tunnel...")
-    logging.info(f"Using Cloudflare Account ID: {config.CF_ACCOUNT_ID}")
-    logging.info(f"API Token available: {'Yes' if config.CF_API_TOKEN else 'No'}")
-    logging.info(f"Zone ID available: {'Yes: ' + config.CF_ZONE_ID if config.CF_ZONE_ID else 'No'}")
-    logging.info(f"External mode: {config.USE_EXTERNAL_CLOUDFLARED}")
-    logging.info(f"External tunnel ID: {config.EXTERNAL_TUNNEL_ID}")
-    
-    tunnel_state["status_message"] = "Checking tunnel configuration..."
-    tunnel_state["error"] = None
-    
-    if config.USE_EXTERNAL_CLOUDFLARED:
-        logging.info("External cloudflared configuration detected.")
-        if config.EXTERNAL_TUNNEL_ID:
-            tunnel_id = config.EXTERNAL_TUNNEL_ID
-            logging.info(f"Using external tunnel ID: {tunnel_id}")
-            tunnel_state["id"] = tunnel_id
-            tunnel_state["token"] = None
-            tunnel_state["status_message"] = "Using external tunnel to manage DNS and inbound routes."
-            logging.info(f"External tunnel (ID: {tunnel_id}) initialized for DNS and routes.")
+    from app import app
+    with app.app_context():
+        logging.info("Initializing tunnel...")
+        cf_account_id = current_app.config.get('CF_ACCOUNT_ID')
+        cf_api_token = current_app.config.get('CF_API_TOKEN')
+        cf_zone_id = current_app.config.get('CF_ZONE_ID')
+        tunnel_name = current_app.config.get('TUNNEL_NAME')
+
+        logging.info(f"Using Cloudflare Account ID: {cf_account_id}")
+        logging.info(f"API Token available: {'Yes' if cf_api_token else 'No'}")
+        logging.info(f"Zone ID available: {'Yes: ' + cf_zone_id if cf_zone_id else 'No'}")
+        logging.info(f"External mode: {config.USE_EXTERNAL_CLOUDFLARED}")
+        logging.info(f"External tunnel ID: {config.EXTERNAL_TUNNEL_ID}")
+
+        tunnel_state["status_message"] = "Checking tunnel configuration..."
+        tunnel_state["error"] = None
+
+        if config.USE_EXTERNAL_CLOUDFLARED:
+            logging.info("External cloudflared configuration detected.")
+            if config.EXTERNAL_TUNNEL_ID:
+                tunnel_id = config.EXTERNAL_TUNNEL_ID
+                logging.info(f"Using external tunnel ID: {tunnel_id}")
+                tunnel_state["id"] = tunnel_id
+                tunnel_state["token"] = None
+                tunnel_state["status_message"] = "Using external tunnel to manage DNS and inbound routes."
+                logging.info(f"External tunnel (ID: {tunnel_id}) initialized for DNS and routes.")
+                return
+            else:
+                logging.warning("USE_EXTERNAL_CLOUDFLARED is true but EXTERNAL_TUNNEL_ID is not provided.")
+                tunnel_state["status_message"] = "Error: External tunnel config missing tunnel ID."
+                tunnel_state["error"] = "External cloudflared enabled but missing tunnel ID."
+                return
+
+        if not tunnel_name:
+            logging.error("TUNNEL_NAME not provided. Required when not using external cloudflared.")
+            tunnel_state["status_message"] = "Error: Missing required TUNNEL_NAME."
+            tunnel_state["error"] = "TUNNEL_NAME not provided."
             return
-        else:
-            logging.warning("USE_EXTERNAL_CLOUDFLARED is true but EXTERNAL_TUNNEL_ID is not provided.")
-            tunnel_state["status_message"] = "Error: External tunnel config missing tunnel ID."
-            tunnel_state["error"] = "External cloudflared enabled but missing tunnel ID."
-            return
-    
-    if not config.TUNNEL_NAME:
-        logging.error("TUNNEL_NAME not provided. Required when not using external cloudflared.")
-        tunnel_state["status_message"] = "Error: Missing required TUNNEL_NAME."
-        tunnel_state["error"] = "TUNNEL_NAME not provided."
-        return
 
-    try:
-        tunnel_id, token = cloudflare_api.find_tunnel_via_api(config.TUNNEL_NAME)
+        try:
+            tunnel_id, token = cloudflare_api.find_tunnel_via_api(tunnel_name)
 
-        if not tunnel_id and not tunnel_state.get("error"):
-            tunnel_state["status_message"] = f"Tunnel '{config.TUNNEL_NAME}' not found. Creating..."
-            tunnel_id, token = cloudflare_api.create_tunnel_via_api(config.TUNNEL_NAME)
+            if not tunnel_id and not tunnel_state.get("error"):
+                tunnel_state["status_message"] = f"Tunnel '{tunnel_name}' not found. Creating..."
+                tunnel_id, token = cloudflare_api.create_tunnel_via_api(tunnel_name)
 
-        if tunnel_id and token:
-            tunnel_state["id"] = tunnel_id
-            tunnel_state["token"] = token
-            tunnel_state["status_message"] = "Tunnel setup complete (using API)."
-            tunnel_state["error"] = None
-            logging.info(f"Tunnel '{config.TUNNEL_NAME}' initialized. ID: {tunnel_id}")
-        elif not tunnel_state.get("error"):
-            tunnel_state["status_message"] = "Tunnel initialization failed."
-            tunnel_state["error"] = "Failed to find/create tunnel or get token."
-            logging.error(f"Tunnel init failed for '{config.TUNNEL_NAME}'.")
-        else:
-            tunnel_state["status_message"] = "Tunnel initialization failed (see error details)."
-            
-    except requests.exceptions.RequestException as e:
-        logging.error(f"API exception during tunnel initialization for '{config.TUNNEL_NAME}': {e}")
-        if not tunnel_state.get("error"): 
-            tunnel_state["error"] = f"API error: {e}"
-        tunnel_state["status_message"] = "Tunnel initialization failed (API error)."
-    except Exception as e:
-        logging.error(f"Unhandled exception during tunnel initialization for '{config.TUNNEL_NAME}': {e}", exc_info=True)
-        if not tunnel_state.get("error"):
-            tunnel_state["error"] = f"Unexpected init error: {e}"
-        tunnel_state["status_message"] = "Tunnel initialization failed (unexpected error)."
+            if tunnel_id and token:
+                tunnel_state["id"] = tunnel_id
+                tunnel_state["token"] = token
+                tunnel_state["status_message"] = "Tunnel setup complete (using API)."
+                tunnel_state["error"] = None
+                logging.info(f"Tunnel '{tunnel_name}' initialized. ID: {tunnel_id}")
+            elif not tunnel_state.get("error"):
+                tunnel_state["status_message"] = "Tunnel initialization failed."
+                tunnel_state["error"] = "Failed to find/create tunnel or get token."
+                logging.error(f"Tunnel init failed for '{tunnel_name}'.")
+            else:
+                tunnel_state["status_message"] = "Tunnel initialization failed (see error details)."
+
+        except requests.exceptions.RequestException as e:
+            logging.error(f"API exception during tunnel initialization for '{tunnel_name}': {e}")
+            if not tunnel_state.get("error"):
+                tunnel_state["error"] = f"API error: {e}"
+            tunnel_state["status_message"] = "Tunnel initialization failed (API error)."
+        except Exception as e:
+            logging.error(f"Unhandled exception during tunnel initialization for '{tunnel_name}': {e}", exc_info=True)
+            if not tunnel_state.get("error"):
+                tunnel_state["error"] = f"Unexpected init error: {e}"
+            tunnel_state["status_message"] = "Tunnel initialization failed (unexpected error)."
 
 def update_cloudflare_config():
     if not tunnel_state.get("id"):
@@ -291,7 +299,8 @@ def update_cloudflare_config():
             logging.info(f"Sorted Rule {i}: {json.dumps(rule_to_log)}")
         
     if needs_api_update:
-        endpoint = f"/accounts/{config.CF_ACCOUNT_ID}/cfd_tunnel/{tunnel_state['id']}/configurations"
+        account_id = current_app.config.get('CF_ACCOUNT_ID')
+        endpoint = f"/accounts/{account_id}/cfd_tunnel/{tunnel_state['id']}/configurations"
         config_payload = {"config": {"ingress": final_sorted_rules_for_put}} 
         
         try:
@@ -306,89 +315,95 @@ def update_cloudflare_config():
     return True
 
 def get_cloudflared_container():
-    if not docker_client:
-        logging.debug("Docker client unavailable in get_cloudflared_container.")
-        return None
-    if config.USE_EXTERNAL_CLOUDFLARED:
-        return None
-    if not config.CLOUDFLARED_CONTAINER_NAME:
-        logging.debug("CLOUDFLARED_CONTAINER_NAME is not set.")
-        return None
-    try:
-        container = docker_client.containers.get(config.CLOUDFLARED_CONTAINER_NAME)
-        container.reload()
-        return container
-    except NotFound:
-        logging.debug(f"Agent container '{config.CLOUDFLARED_CONTAINER_NAME}' not found.")
-        return None
-    except APIError as e:
-        logging.error(f"Docker API error getting agent container '{config.CLOUDFLARED_CONTAINER_NAME}': {e}")
-        cloudflared_agent_state["last_action_status"] = f"Error get agent: {e}"
-        return None
-    except requests.exceptions.ConnectionError as e: 
-        logging.error(f"Docker connection error getting agent container: {e}")
-        cloudflared_agent_state["last_action_status"] = f"Error connect Docker: {e}"
-        return None
-    except Exception as e:
-        logging.error(f"Unexpected error getting agent container '{config.CLOUDFLARED_CONTAINER_NAME}': {e}", exc_info=True)
-        cloudflared_agent_state["last_action_status"] = f"Error unexpected get agent: {e}"
-        return None
+    from app import app
+    with app.app_context():
+        if not docker_client:
+            logging.debug("Docker client unavailable in get_cloudflared_container.")
+            return None
+        if config.USE_EXTERNAL_CLOUDFLARED:
+            return None
+
+        container_name = current_app.config.get('CLOUDFLARED_CONTAINER_NAME')
+        if not container_name:
+            logging.debug("CLOUDFLARED_CONTAINER_NAME is not set in config.")
+            return None
+        try:
+            container = docker_client.containers.get(container_name)
+            container.reload()
+            return container
+        except NotFound:
+            logging.debug(f"Agent container '{container_name}' not found.")
+            return None
+        except APIError as e:
+            logging.error(f"Docker API error getting agent container '{container_name}': {e}")
+            cloudflared_agent_state["last_action_status"] = f"Error get agent: {e}"
+            return None
+        except requests.exceptions.ConnectionError as e:
+            logging.error(f"Docker connection error getting agent container: {e}")
+            cloudflared_agent_state["last_action_status"] = f"Error connect Docker: {e}"
+            return None
+        except Exception as e:
+            logging.error(f"Unexpected error getting agent container '{container_name}': {e}", exc_info=True)
+            cloudflared_agent_state["last_action_status"] = f"Error unexpected get agent: {e}"
+            return None
 
 def update_cloudflared_container_status():
-    global docker_client 
-    current_status = cloudflared_agent_state.get("container_status")
+    from app import app
+    with app.app_context():
+        global docker_client
+        current_status = cloudflared_agent_state.get("container_status")
 
-    if not docker_client:
-        if current_status != "docker_unavailable":
-            logging.warning("Docker client unavailable in update_cloudflared_container_status, attempting reconnect...")
+        if not docker_client:
+            if current_status != "docker_unavailable":
+                logging.warning("Docker client unavailable in update_cloudflared_container_status, attempting reconnect...")
+                try:
+
+                    import docker as docker_lib
+                    docker_client = docker_lib.from_env(timeout=5)
+                    docker_client.ping()
+                    logging.info("Reconnected to Docker daemon during agent status update.")
+
+                except Exception as e_reconnect:
+                    logging.error(f"Failed to reconnect to Docker daemon: {e_reconnect}")
+                    if current_status != "docker_unavailable":
+                        logging.info(f"Agent status changing to docker_unavailable.")
+                        cloudflared_agent_state["container_status"] = "docker_unavailable"
+
+                    from app import docker_client as global_dc_ref
+                    if global_dc_ref is not None:
+                        logging.warning("Global docker_client was not None, but reconnect failed. This needs careful handling.")
+                    return
+            else:
+                 return
+
+        container = get_cloudflared_container()
+        new_status = "not_found"
+        if container:
             try:
-                
-                import docker as docker_lib 
-                docker_client = docker_lib.from_env(timeout=5)
-                docker_client.ping()
-                logging.info("Reconnected to Docker daemon during agent status update.")
-                
-            except Exception as e_reconnect:
-                logging.error(f"Failed to reconnect to Docker daemon: {e_reconnect}")
-                if current_status != "docker_unavailable": 
-                    logging.info(f"Agent status changing to docker_unavailable.")
-                    cloudflared_agent_state["container_status"] = "docker_unavailable"
+                container.reload()
+                new_status = container.status
+            except (NotFound, APIError) as e_reload:
+                new_status = "not_found"
+                logging.warning(f"Error reloading agent container status (now 'not_found'): {e_reload}")
+                if cloudflared_agent_state.get("container_status") != "running":
+                     cloudflared_agent_state["last_action_status"] = "Agent container disappeared or API error."
+            except requests.exceptions.ConnectionError as e_conn:
+                new_status = "docker_unavailable"
+                logging.error(f"Docker connection error during agent status reload: {e_conn}")
                 
                 from app import docker_client as global_dc_ref
-                if global_dc_ref is not None: 
-                    logging.warning("Global docker_client was not None, but reconnect failed. This needs careful handling.")
+            except Exception as e_unexpected:
+                logging.error(f"Unexpected error reloading agent status for {container.name}: {e_unexpected}", exc_info=True)
+                
                 return 
-        else: 
-             return
 
-    container = get_cloudflared_container() 
-    new_status = "not_found"
-    if container:
-        try:
-            container.reload()
-            new_status = container.status
-        except (NotFound, APIError) as e_reload:
-            new_status = "not_found"
-            logging.warning(f"Error reloading agent container status (now 'not_found'): {e_reload}")
-            if cloudflared_agent_state.get("container_status") != "running": 
-                 cloudflared_agent_state["last_action_status"] = "Agent container disappeared or API error."
-        except requests.exceptions.ConnectionError as e_conn:
-            new_status = "docker_unavailable"
-            logging.error(f"Docker connection error during agent status reload: {e_conn}")
-            
-            from app import docker_client as global_dc_ref 
-
-        except Exception as e_unexpected:
-            logging.error(f"Unexpected error reloading agent status for {container.name}: {e_unexpected}", exc_info=True)
-            
-            return 
-    
-    if current_status != new_status:
-        logging.info(f"Agent container '{config.CLOUDFLARED_CONTAINER_NAME}' status changed: {current_status} -> {new_status}")
-        cloudflared_agent_state["container_status"] = new_status
-        last_action = cloudflared_agent_state.get("last_action_status")
-        if new_status == 'running' and last_action and last_action.startswith("Error"):
-            cloudflared_agent_state["last_action_status"] = None
+        if current_status != new_status:
+            container_name = current_app.config.get('CLOUDFLARED_CONTAINER_NAME', 'cloudflared-agent')
+            logging.info(f"Agent container '{container_name}' status changed: {current_status} -> {new_status}")
+            cloudflared_agent_state["container_status"] = new_status
+            last_action = cloudflared_agent_state.get("last_action_status")
+            if new_status == 'running' and last_action and last_action.startswith("Error"):
+                cloudflared_agent_state["last_action_status"] = None
 
 def ensure_docker_network_exists(network_name):
     if not docker_client:
@@ -432,8 +447,11 @@ def ensure_docker_network_exists(network_name):
         return False
 
 def start_cloudflared_container():
-    logging.info(f"Attempting to start and reconcile agent container '{config.CLOUDFLARED_CONTAINER_NAME}'...")
-    cloudflared_agent_state["last_action_status"] = "Starting/Reconciling..."
+    from app import app
+    with app.app_context():
+        container_name = current_app.config.get('CLOUDFLARED_CONTAINER_NAME')
+        logging.info(f"Attempting to start and reconcile agent container '{container_name}'...")
+        cloudflared_agent_state["last_action_status"] = "Starting/Reconciling..."
     
     if not docker_client:
         cloudflared_agent_state["last_action_status"] = "Error: Docker client unavailable."
@@ -527,7 +545,8 @@ def start_cloudflared_container():
                 return False
 
     if not container:
-        logging.info(f"Agent container '{config.CLOUDFLARED_CONTAINER_NAME}' not found or was broken. Creating new container...")
+        container_name = current_app.config.get('CLOUDFLARED_CONTAINER_NAME')
+        logging.info(f"Agent container '{container_name}' not found or was broken. Creating new container...")
         try:
             logging.info(f"Pulling image {config.CLOUDFLARED_IMAGE}...");
             docker_client.images.pull(config.CLOUDFLARED_IMAGE)
@@ -548,7 +567,7 @@ def start_cloudflared_container():
             container_params = {
                 "image": config.CLOUDFLARED_IMAGE,
                 "command": command_parts, 
-                "name": config.CLOUDFLARED_CONTAINER_NAME,
+                "name": container_name,
                 "network": config.CLOUDFLARED_NETWORK_NAME,
                 "restart_policy": {"Name": "unless-stopped"},
                 "detach": True,
@@ -575,58 +594,61 @@ def start_cloudflared_container():
     return True
 
 def stop_cloudflared_container():
-    logging.info(f"Attempting to stop agent container '{config.CLOUDFLARED_CONTAINER_NAME}'...")
-    cloudflared_agent_state["last_action_status"] = "Stopping..."
-    success_flag = False
-    
-    if not docker_client:
-        msg = "Docker client unavailable."
-        logging.error(msg)
-        cloudflared_agent_state["last_action_status"] = f"Error: {msg}"
-        return False
+    from app import app
+    with app.app_context():
+        container_name = current_app.config.get('CLOUDFLARED_CONTAINER_NAME')
+        logging.info(f"Attempting to stop agent container '{container_name}'...")
+        cloudflared_agent_state["last_action_status"] = "Stopping..."
+        success_flag = False
 
-    container = get_cloudflared_container()
-    if not container:
-        msg = f"Agent container '{config.CLOUDFLARED_CONTAINER_NAME}' not found (already stopped/removed?)."
-        logging.warning(msg)
-        cloudflared_agent_state["last_action_status"] = msg
-        if cloudflared_agent_state["container_status"] != "not_found":
-            cloudflared_agent_state["container_status"] = "not_found"
-        success_flag = True
-        return True
+        if not docker_client:
+            msg = "Docker client unavailable."
+            logging.error(msg)
+            cloudflared_agent_state["last_action_status"] = f"Error: {msg}"
+            return False
 
-    try:
-        container.reload()
-        if container.status != 'running':
-            msg = f"Agent container '{container.name}' is not running (status: {container.status})."
-            logging.info(msg)
+        container = get_cloudflared_container()
+        if not container:
+            msg = f"Agent container '{container_name}' not found (already stopped/removed?)."
+            logging.warning(msg)
             cloudflared_agent_state["last_action_status"] = msg
-            if cloudflared_agent_state["container_status"] != container.status:
-                cloudflared_agent_state["container_status"] = container.status
+            if cloudflared_agent_state["container_status"] != "not_found":
+                cloudflared_agent_state["container_status"] = "not_found"
             success_flag = True
             return True
 
-        logging.info(f"Stopping running agent container '{container.name}'...");
-        container.stop(timeout=30) 
-        msg = f"Successfully stopped agent container '{container.name}'."
-        cloudflared_agent_state["last_action_status"] = msg
-        logging.info(msg)
-        success_flag = True
-    except (APIError, NotFound) as e_stop: 
-        msg = f"Docker API error stopping agent container '{config.CLOUDFLARED_CONTAINER_NAME}': {e_stop}"
-        logging.error(msg, exc_info=True)
-        cloudflared_agent_state["last_action_status"] = f"Error: {msg}"
-        success_flag = False
-    except requests.exceptions.ConnectionError as e_conn:
-        msg = f"Docker connection error stopping agent container: {e_conn}"
-        logging.error(msg)
-        cloudflared_agent_state["last_action_status"] = f"Error: {msg}"
-        success_flag = False
-    except Exception as e_unexp:
-        msg = f"Unexpected error stopping agent container '{config.CLOUDFLARED_CONTAINER_NAME}': {e_unexp}"
-        logging.error(msg, exc_info=True)
-        cloudflared_agent_state["last_action_status"] = f"Error: {msg}"
-        success_flag = False
+        try:
+            container.reload()
+            if container.status != 'running':
+                msg = f"Agent container '{container.name}' is not running (status: {container.status})."
+                logging.info(msg)
+                cloudflared_agent_state["last_action_status"] = msg
+                if cloudflared_agent_state["container_status"] != container.status:
+                    cloudflared_agent_state["container_status"] = container.status
+                success_flag = True
+                return True
+
+            logging.info(f"Stopping running agent container '{container.name}'...");
+            container.stop(timeout=30)
+            msg = f"Successfully stopped agent container '{container.name}'."
+            cloudflared_agent_state["last_action_status"] = msg
+            logging.info(msg)
+            success_flag = True
+        except (APIError, NotFound) as e_stop:
+            msg = f"Docker API error stopping agent container '{container_name}': {e_stop}"
+            logging.error(msg, exc_info=True)
+            cloudflared_agent_state["last_action_status"] = f"Error: {msg}"
+            success_flag = False
+        except requests.exceptions.ConnectionError as e_conn:
+            msg = f"Docker connection error stopping agent container: {e_conn}"
+            logging.error(msg)
+            cloudflared_agent_state["last_action_status"] = f"Error: {msg}"
+            success_flag = False
+        except Exception as e_unexp:
+            msg = f"Unexpected error stopping agent container '{container_name}': {e_unexp}"
+            logging.error(msg, exc_info=True)
+            cloudflared_agent_state["last_action_status"] = f"Error: {msg}"
+            success_flag = False
     
     if success_flag: 
         time.sleep(2)
