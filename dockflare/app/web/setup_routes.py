@@ -1,3 +1,19 @@
+# DockFlare: Automates Cloudflare Tunnel ingress from Docker labels.
+# Copyright (C) 2025 ChrispyBacon-Dev <https://github.com/ChrispyBacon-dev/DockFlare>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# app/web/setup_routes.py
 import os
 import json
 import requests
@@ -11,10 +27,7 @@ import threading
 import logging
 from app import config
 
-# Define the blueprint for the setup wizard
 setup_bp = Blueprint('setup', __name__, url_prefix='/setup', template_folder='../templates')
-
-# --- Forms for each step of the wizard ---
 
 class CredentialsForm(FlaskForm):
     """Form for Step 1: Cloudflare API Credentials."""
@@ -40,8 +53,6 @@ class AdminUserForm(FlaskForm):
 class FinalizeForm(FlaskForm):
     """Form for Step 4: Finalization."""
     submit = SubmitField('Complete Setup')
-
-# --- Routes for the setup wizard ---
 
 @setup_bp.route('/credentials', methods=['GET', 'POST'])
 def step1_api_credentials():
@@ -112,10 +123,9 @@ def step4_finalize():
 
     form = FinalizeForm()
     if form.validate_on_submit():
-        # --- CRITICAL OPERATION: Save all configuration ---
         
         # 1. Generate and save the encryption key
-        # This now correctly uses the imported `config` module for the static path.
+
         data_path = os.path.dirname(config.STATE_FILE_PATH)
         key = Fernet.generate_key()
         key_file = os.path.join(data_path, 'dockflare.key')
@@ -150,7 +160,6 @@ def step4_finalize():
         current_app.is_configured = True
         from app import config as config_module
         
-        # Renamed local variable to `app_config` to avoid name collision.
         app_config = current_app.config
         
         app_config['CF_API_TOKEN'] = config_payload['cf_api_token']
@@ -172,7 +181,7 @@ def step4_finalize():
         if config_module.CF_API_TOKEN:
             config_module.CF_HEADERS['Authorization'] = f"Bearer {config_module.CF_API_TOKEN}"
         
-        # 6. Start core services in the background (import is local to prevent circular dependency)
+        # 6. Start core services in the background
         from app.main import start_core_services
         logging.info("Setup complete. Triggering core services to start in a background thread.")
         init_thread = threading.Thread(target=start_core_services, daemon=True)
@@ -183,11 +192,10 @@ def step4_finalize():
         flash('Setup complete! Please log in to continue.', 'success')
         return redirect(url_for('auth.login'))
         
-    # For the GET request, display a summary of the configuration
-    config_summary = {key: val for key, val in session.items() if key != 'csrf_token' and not key.startswith('_')}
+        config_summary = {key: val for key, val in session.items() if key != 'csrf_token' and not key.startswith('_')}
     if 'cf_api_token' in config_summary:
         config_summary['cf_api_token'] = '********'
     if 'password' in config_summary:
-        del config_summary['password'] # Do not show the password, even masked
+        del config_summary['password']
         
     return render_template('setup/step4.html', form=form, title="Setup: Finalize", summary=config_summary)

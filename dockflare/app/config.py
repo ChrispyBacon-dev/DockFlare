@@ -42,8 +42,6 @@ TUNNEL_DNS_SCAN_ZONE_NAMES = []
 # --- Static & Environment-Based Configuration ---
 CF_API_BASE_URL = "https://api.cloudflare.com/client/v4"
 
-# CF_HEADERS is initialized with non-sensitive values.
-# The Authorization header is added dynamically in main.py after config load.
 CF_HEADERS = {
     "Content-Type": "application/json",
 }
@@ -53,7 +51,7 @@ EXTERNAL_TUNNEL_ID = os.getenv('EXTERNAL_TUNNEL_ID')
 
 if not USE_EXTERNAL_CLOUDFLARED:
     CLOUDFLARED_NETWORK_NAME = os.getenv('CLOUDFLARED_NETWORK_NAME', 'cloudflare-net')
-    # The container name will be based on the dynamic tunnel name, but we need a default.
+    
     CLOUDFLARED_CONTAINER_NAME = os.getenv('CLOUDFLARED_CONTAINER_NAME', f"cloudflared-agent-{TUNNEL_NAME}")
 else:
     CLOUDFLARED_NETWORK_NAME = None
@@ -65,7 +63,6 @@ PRIMARY_LABEL_PREFIX = 'dockflare.'
 LEGACY_LABEL_PREFIX = 'cloudflare.tunnel.'
 CUSTOM_LABEL_PREFIX = os.getenv('LABEL_PREFIX')
 
-# DEPRECATED: This will be removed in a future version.
 LABEL_PREFIX = CUSTOM_LABEL_PREFIX or PRIMARY_LABEL_PREFIX
 
 CLEANUP_INTERVAL_SECONDS = int(os.getenv('CLEANUP_INTERVAL_SECONDS', 60))
@@ -89,6 +86,3 @@ if CLOUDFLARED_METRICS_PORT:
     except ValueError:
         logging.warning(f"Invalid value for CLOUDFLARED_METRICS_PORT: '{CLOUDFLARED_METRICS_PORT}'. Must be a number. Disabling.")
         CLOUDFLARED_METRICS_PORT = None
-
-# The check for required environment variables is removed, as configuration
-# is now handled by the mandatory setup wizard.
