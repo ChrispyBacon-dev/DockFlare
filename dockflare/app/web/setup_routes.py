@@ -17,17 +17,20 @@
 import os
 import json
 import requests
+import logging
+import threading
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, current_app
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, IntegerField, SubmitField
 from wtforms.validators import DataRequired, EqualTo, Optional
 from cryptography.fernet import Fernet
 from werkzeug.security import generate_password_hash
-import threading
-import logging
 from app import config
 
+# Define the blueprint for the setup wizard
 setup_bp = Blueprint('setup', __name__, url_prefix='/setup', template_folder='../templates')
+
+# --- Forms for each step of the wizard ---
 
 class CredentialsForm(FlaskForm):
     """Form for Step 1: Cloudflare API Credentials."""
@@ -54,6 +57,8 @@ class FinalizeForm(FlaskForm):
     """Form for Step 4: Finalization."""
     submit = SubmitField('Complete Setup')
 
+# --- Routes for the setup wizard ---
+
 @setup_bp.route('/credentials', methods=['GET', 'POST'])
 def step1_api_credentials():
     """Handles the collection and validation of Cloudflare API credentials."""
@@ -62,7 +67,6 @@ def step1_api_credentials():
         token = form.cf_api_token.data
         account_id = form.cf_account_id.data
 
-        # Verify credentials with a simple, read-only API call to Cloudflare
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/cfd_tunnel?is_deleted=false"
         try:
@@ -75,14 +79,13 @@ def step1_api_credentials():
             else:
                 error_message = "Invalid credentials or permissions."
                 try:
-                    # Attempt to parse a more specific error from Cloudflare's response
                     error_message = response.json().get('errors', [{}])[0].get('message', error_message)
                 except:
-                    pass # Keep the generic error message if parsing fails
+                    pass
                 flash(f'Validation failed. Cloudflare API returned: {error_message}', 'danger')
         except requests.exceptions.RequestException as e:
             flash(f'Could not connect to the Cloudflare API: {e}', 'danger')
-
+        
     return render_template('setup/step1.html', form=form, title="Setup: API Credentials")
 
 @setup_bp.route('/tunnel', methods=['GET', 'POST'])
@@ -90,7 +93,7 @@ def step2_tunnel_config():
     """Handles the configuration of the Cloudflare Tunnel and DNS settings."""
     if 'cf_api_token' not in session:
         return redirect(url_for('setup.step1_api_credentials'))
-
+    
     form = TunnelForm()
     if form.validate_on_submit():
         session['tunnel_name'] = form.tunnel_name.data
@@ -98,7 +101,7 @@ def step2_tunnel_config():
         session['tunnel_dns_scan_zone_names'] = form.tunnel_dns_scan_zone_names.data
         session['grace_period_seconds'] = form.grace_period_seconds.data
         return redirect(url_for('setup.step3_admin_user'))
-
+        
     return render_template('setup/step2.html', form=form, title="Setup: Tunnel Configuration")
 
 @setup_bp.route('/admin', methods=['GET', 'POST'])
@@ -112,7 +115,7 @@ def step3_admin_user():
         session['username'] = form.username.data
         session['password'] = form.password.data
         return redirect(url_for('setup.step4_finalize'))
-
+        
     return render_template('setup/step3.html', form=form, title="Setup: Admin User")
 
 @setup_bp.route('/finalize', methods=['GET', 'POST'])
@@ -123,9 +126,8 @@ def step4_finalize():
 
     form = FinalizeForm()
     if form.validate_on_submit():
+        # --- CRITICAL OPERATION: Save all configuration ---
         
-        # 1. Generate and save the encryption key
-
         data_path = os.path.dirname(config.STATE_FILE_PATH)
         key = Fernet.generate_key()
         key_file = os.path.join(data_path, 'dockflare.key')
@@ -135,10 +137,8 @@ def step4_finalize():
         with open(key_file, 'wb') as f:
             f.write(key)
         
-        # 2. Hash the admin password
         hashed_password = generate_password_hash(session['password'])
         
-        # 3. Assemble the configuration payload
         config_payload = {
             'cf_api_token': session['cf_api_token'],
             'cf_account_id': session['cf_account_id'],
@@ -150,16 +150,13 @@ def step4_finalize():
             'password': hashed_password,
         }
         
-        # 4. Encrypt and save the payload
         fernet = Fernet(key)
         encrypted_payload = fernet.encrypt(json.dumps(config_payload).encode('utf-8'))
         with open(config_file, 'wb') as f:
             f.write(encrypted_payload)
             
-        # 5. Set the application to "configured" mode and update the running config
         current_app.is_configured = True
         from app import config as config_module
-        
         app_config = current_app.config
         
         app_config['CF_API_TOKEN'] = config_payload['cf_api_token']
@@ -181,18 +178,16 @@ def step4_finalize():
         if config_module.CF_API_TOKEN:
             config_module.CF_HEADERS['Authorization'] = f"Bearer {config_module.CF_API_TOKEN}"
         
-        # 6. Start core services in the background
         from app.main import start_core_services
         logging.info("Setup complete. Triggering core services to start in a background thread.")
         init_thread = threading.Thread(target=start_core_services, daemon=True)
         init_thread.start()
 
-        # 7. Clean up session and redirect to the login page
         session.clear()
         flash('Setup complete! Please log in to continue.', 'success')
         return redirect(url_for('auth.login'))
         
-        config_summary = {key: val for key, val in session.items() if key != 'csrf_token' and not key.startswith('_')}
+    config_summary = {key: val for key, val in session.items() if key != 'csrf_token' and not key.startswith('_')}
     if 'cf_api_token' in config_summary:
         config_summary['cf_api_token'] = '********'
     if 'password' in config_summary:
