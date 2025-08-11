@@ -198,6 +198,7 @@ def main_application_entrypoint():
     config_file = os.path.join(data_path, 'dockflare_config.dat')
 
     app.is_configured = False
+    app.import_from_env = False
     if os.path.exists(config_file) and os.path.exists(key_file):
         logging.info("Configuration file found. Loading settings.")
         try:
@@ -237,6 +238,9 @@ def main_application_entrypoint():
     else:
         logging.info("Configuration file not found. Starting in Pre-Flight Mode.")
         app.is_configured = False
+        if os.getenv('CF_API_TOKEN'):
+            logging.info("Found CF_API_TOKEN environment variable. Activating migration import flow.")
+            app.import_from_env = True
     # === End Pre-Flight Setup Check ===
 
     load_state()

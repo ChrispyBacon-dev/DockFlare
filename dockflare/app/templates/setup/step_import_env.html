@@ -1,0 +1,37 @@
+{% extends "setup/base.html" %}
+
+{% block setup_content %}
+<div class="text-center">
+    <h2 class="text-xl font-bold">Migration Assistant</h2>
+    <p class="py-4">DockFlare has detected settings from a previous version (.env file). We've imported them for you.</p>
+</div>
+
+<div class="card bg-base-200 shadow-xl">
+    <div class="card-body">
+        <h3 class="card-title">Imported Settings</h3>
+        <div class="overflow-x-auto">
+            <table class="table w-full">
+                <tbody>
+                    {% for key, value in summary.items() %}
+                    <tr>
+                        <td class="font-mono text-sm font-bold">{{ key }}</td>
+                        <td class="font-mono text-sm">{{ value }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<p class="text-center text-sm mt-4">
+    Please review the imported settings. If they are correct, proceed to the final step: creating your admin user account.
+</p>
+
+<form method="POST" action="{{ url_for('setup.step_import_env') }}" class="mt-6">
+    {{ form.hidden_tag() }}
+    <div class="card-actions">
+        {{ form.submit(class="btn btn-primary w-full") }}
+    </div>
+</form>
+{% endblock %}

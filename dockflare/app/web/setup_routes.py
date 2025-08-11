@@ -53,11 +53,50 @@ class AdminUserForm(FlaskForm):
     confirm_password = PasswordField('Confirm Password', validators=[DataRequired()])
     submit = SubmitField('Next')
 
+class ImportEnvForm(FlaskForm):
+    """Form for acknowledging the .env import."""
+    submit = SubmitField('Proceed to User Creation')
+
 class FinalizeForm(FlaskForm):
     """Form for Step 4: Finalization."""
     submit = SubmitField('Complete Setup')
 
 # --- Routes for the setup wizard ---
+
+@setup_bp.route('/import-env', methods=['GET', 'POST'])
+def step_import_env():
+    """Handles the import of settings from environment variables for migration."""
+    # This flow is triggered by a redirect that has already populated the session
+    if not session.get('is_env_import'):
+        return redirect(url_for('setup.step1_api_credentials'))
+
+    form = ImportEnvForm()
+
+    if form.validate_on_submit():
+        # The session should already be populated. Just validate and proceed.
+        if not session.get('cf_api_token') or not session.get('cf_account_id'):
+            flash('Critical information (API Token or Account ID) was missing from the import. Please configure manually.', 'danger')
+            session.clear()
+            return redirect(url_for('setup.step1_api_credentials'))
+
+        flash('Settings confirmed. Please create an admin user to continue.', 'info')
+        return redirect(url_for('setup.step3_admin_user'))
+
+    # For the GET request, prepare and display the imported data
+    imported_settings = {
+        'CF_API_TOKEN': '********' if session.get('cf_api_token') else 'Not Found',
+        'CF_ACCOUNT_ID': session.get('cf_account_id', 'Not Found'),
+        'TUNNEL_NAME': session.get('tunnel_name', 'Not Found'),
+        'CF_ZONE_ID': session.get('cf_zone_id') or 'Not Set',
+        'TUNNEL_DNS_SCAN_ZONE_NAMES': session.get('tunnel_dns_scan_zone_names') or 'Not Set',
+        'GRACE_PERIOD_SECONDS': session.get('grace_period_seconds') or 'Not Set',
+    }
+
+    # Check for required fields and flash a warning if they are missing on the display page
+    if not session.get('cf_api_token') or not session.get('cf_account_id'):
+        flash('Warning: Missing required fields (CF_API_TOKEN or CF_ACCOUNT_ID). You will not be able to proceed.', 'warning')
+
+    return render_template('setup/step_import_env.html', form=form, title="Setup: Import from .env", summary=imported_settings)
 
 @setup_bp.route('/credentials', methods=['GET', 'POST'])
 def step1_api_credentials():

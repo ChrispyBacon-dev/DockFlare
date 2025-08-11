@@ -29,7 +29,7 @@ from app.core import access_manager
 from urllib.parse import urlparse, urlunparse 
 from flask import (
     Blueprint, render_template, jsonify, redirect, url_for, request, Response,
-    stream_with_context, current_app
+    stream_with_context, current_app, session
 )
 from flask_login import current_user, login_required
 
@@ -73,33 +73,45 @@ def gating_logic():
     This function is executed before each request. It's responsible for gating access
     to the application based on its configuration state and user authentication.
     """
-    # Use getattr for safe access to the app.is_configured flag
     is_configured = getattr(current_app, 'is_configured', False)
 
-    # If the application is not configured, redirect to the setup wizard
     if not is_configured:
-        # Allow access to the setup blueprint and static assets
+        # Allow access to the setup blueprint and static assets, otherwise gate
         if request.endpoint and not request.endpoint.startswith('setup.') and request.endpoint != 'static':
-            # This will raise an error until the setup blueprint is registered
             try:
-                return redirect(url_for('setup.step1_api_credentials'))
-            except:
-                # Silently fail for now, as the blueprint doesn't exist yet.
-                # This will be functional once the setup routes are created.
-                pass
+                if getattr(current_app, 'import_from_env', False):
+                    # Populate session for the .env import migration flow
+                    session['is_env_import'] = True
+                    session['cf_api_token'] = os.getenv('CF_API_TOKEN')
+                    session['cf_account_id'] = os.getenv('CF_ACCOUNT_ID')
+                    session['tunnel_name'] = os.getenv('TUNNEL_NAME', 'dockflare-tunnel')
+                    session['cf_zone_id'] = os.getenv('CF_ZONE_ID')
+                    session['tunnel_dns_scan_zone_names'] = os.getenv('TUNNEL_DNS_SCAN_ZONE_NAMES', '')
+
+                    grace_period_str = os.getenv('GRACE_PERIOD_SECONDS', '28800')
+                    session['grace_period_seconds'] = int(grace_period_str) if grace_period_str.isdigit() else 28800
+
+                    # Redirect to the special import step
+                    return redirect(url_for('setup.step_import_env'))
+                else:
+                    # Redirect to the standard setup flow
+                    return redirect(url_for('setup.step1_api_credentials'))
+            except Exception as e:
+                logging.error(f"Error during setup redirection logic: {e}", exc_info=True)
+                # Provide a safe fallback response if redirection fails
+                return "Application is initializing setup. Please try again in a moment.", 503
         return
 
     # If the application is configured, check for user authentication
-    # This part relies on Flask-Login being initialized
     if hasattr(current_app, 'login_manager'):
         if not current_user.is_authenticated:
             # Allow access to the auth blueprint and static assets
             if request.endpoint and not request.endpoint.startswith('auth.') and request.endpoint != 'static':
-                # This will raise an error until the auth blueprint is registered
                 try:
                     return redirect(url_for('auth.login'))
                 except:
-                    # Silently fail for now, as the blueprint doesn't exist yet.
+                    # This path may be hit if the auth blueprint isn't ready,
+                    # but the gating logic will re-evaluate on the next request.
                     pass
 
 @bp.before_app_request 
