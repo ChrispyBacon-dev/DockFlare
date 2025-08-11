@@ -15,9 +15,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 # app/core/utils.py
-
 from app import config
-
 def get_rule_key(hostname, path):
     # ... (this function remains the same)
     path_str = str(path or "").strip()
@@ -38,21 +36,18 @@ def get_label(labels, key_suffix, default=None):
     Returns:
         The value of the found label or the default.
     """
-    # 1. Check for a user-defined custom prefix first.
+
     if config.CUSTOM_LABEL_PREFIX:
         custom_key = f"{config.CUSTOM_LABEL_PREFIX.rstrip('.')}.{key_suffix}"
         if custom_key in labels:
             return labels[custom_key]
 
-    # 2. Check for the new, primary prefix.
     primary_key = f"{config.PRIMARY_LABEL_PREFIX}{key_suffix}"
     if primary_key in labels:
         return labels[primary_key]
 
-    # 3. Fall back to the legacy prefix.
     legacy_key = f"{config.LEGACY_LABEL_PREFIX}{key_suffix}"
     if legacy_key in labels:
         return labels[legacy_key]
 
-    # 4. If nothing is found, return the default.
     return default

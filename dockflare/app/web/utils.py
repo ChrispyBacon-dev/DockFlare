@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-#
+# /app/web/utils.py
 from app import config
 
 def get_rule_key(hostname, path):

@@ -19,10 +19,6 @@
 import os
 import sys
 import logging 
-from dotenv import load_dotenv
-
-# Load .env file for potential migration of existing settings
-load_dotenv()
 
 # --- DockFlare Version ---
 APP_VERSION = "v2.0.4"
@@ -43,21 +39,9 @@ TUNNEL_NAME = "dockflare-tunnel"
 GRACE_PERIOD_SECONDS = 28800
 TUNNEL_DNS_SCAN_ZONE_NAMES = []
 
-# --- Legacy .env Migration ---
-# Load old environment variables to assist users in migrating from older versions.
-# These will be detected by the setup wizard.
-LEGACY_CF_API_TOKEN = os.getenv('CF_API_TOKEN')
-LEGACY_CF_ACCOUNT_ID = os.getenv('CF_ACCOUNT_ID')
-LEGACY_CF_ZONE_ID = os.getenv('CF_ZONE_ID')
-LEGACY_TUNNEL_NAME = os.getenv("TUNNEL_NAME")
-LEGACY_GRACE_PERIOD_SECONDS = os.getenv('GRACE_PERIOD_SECONDS')
-LEGACY_TUNNEL_DNS_SCAN_ZONE_NAMES = os.getenv('TUNNEL_DNS_SCAN_ZONE_NAMES', '')
-
 # --- Static & Environment-Based Configuration ---
 CF_API_BASE_URL = "https://api.cloudflare.com/client/v4"
 
-# CF_HEADERS is initialized with non-sensitive values.
-# The Authorization header is added dynamically in main.py after config load.
 CF_HEADERS = {
     "Content-Type": "application/json",
 }
@@ -67,7 +51,7 @@ EXTERNAL_TUNNEL_ID = os.getenv('EXTERNAL_TUNNEL_ID')
 
 if not USE_EXTERNAL_CLOUDFLARED:
     CLOUDFLARED_NETWORK_NAME = os.getenv('CLOUDFLARED_NETWORK_NAME', 'cloudflare-net')
-    # The container name will be based on the dynamic tunnel name, but we need a default.
+    
     CLOUDFLARED_CONTAINER_NAME = os.getenv('CLOUDFLARED_CONTAINER_NAME', f"cloudflared-agent-{TUNNEL_NAME}")
 else:
     CLOUDFLARED_NETWORK_NAME = None
@@ -79,7 +63,6 @@ PRIMARY_LABEL_PREFIX = 'dockflare.'
 LEGACY_LABEL_PREFIX = 'cloudflare.tunnel.'
 CUSTOM_LABEL_PREFIX = os.getenv('LABEL_PREFIX')
 
-# DEPRECATED: This will be removed in a future version.
 LABEL_PREFIX = CUSTOM_LABEL_PREFIX or PRIMARY_LABEL_PREFIX
 
 CLEANUP_INTERVAL_SECONDS = int(os.getenv('CLEANUP_INTERVAL_SECONDS', 60))
@@ -103,6 +86,3 @@ if CLOUDFLARED_METRICS_PORT:
     except ValueError:
         logging.warning(f"Invalid value for CLOUDFLARED_METRICS_PORT: '{CLOUDFLARED_METRICS_PORT}'. Must be a number. Disabling.")
         CLOUDFLARED_METRICS_PORT = None
-
-# The check for required environment variables is removed, as configuration
-# is now handled by the mandatory setup wizard.

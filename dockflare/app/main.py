@@ -94,10 +94,6 @@ def periodic_agent_status_updater():
     logging.info("Periodic agent status updater task stopped.")
 
 def start_core_services():
-    """
-    Initializes all core background services of the application.
-    This function is designed to be called once the application configuration is available.
-    """
     global background_threads_list 
 
     logging.info("Core services initialization process started.")
@@ -177,14 +173,10 @@ def start_core_services():
     run_all_background_tasks()
 
 def perform_initial_setup_and_tasks():
-    """
-    Wrapper function that checks if the app is configured before starting core services.
-    This is the target for the main initialization thread at startup.
-    """
     with app.app_context():
         if not app.is_configured:
             logging.info("Application is not configured. Skipping initial core service startup.")
-            # Start a minimal set of background tasks if needed, e.g., just the agent status updater
+
             run_all_background_tasks()
             return
 
@@ -233,8 +225,7 @@ def main_application_entrypoint():
             app.config['GRACE_PERIOD_SECONDS'] = int(config_data.get('grace_period_seconds', 28800))
             app.config['DOCKFLARE_USERNAME'] = config_data.get('username')
             app.config['DOCKFLARE_PASSWORD_HASH'] = config_data.get('password')
-
-            # Also update the CF_HEADERS in the config module for immediate use
+            
             if app.config['CF_API_TOKEN']:
                 config.CF_HEADERS['Authorization'] = f"Bearer {app.config['CF_API_TOKEN']}"
 

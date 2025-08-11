@@ -15,7 +15,6 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 # app/core/docker_handler.py
-
 import logging
 import time
 import requests

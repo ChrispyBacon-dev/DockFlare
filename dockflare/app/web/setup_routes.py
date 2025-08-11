@@ -1,13 +1,30 @@
+# DockFlare: Automates Cloudflare Tunnel ingress from Docker labels.
+# Copyright (C) 2025 ChrispyBacon-Dev <https://github.com/ChrispyBacon-dev/DockFlare>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# app/web/setup_routes.py
 import os
 import json
 import requests
+import logging
+import threading
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, current_app
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, IntegerField, SubmitField
 from wtforms.validators import DataRequired, EqualTo, Optional
 from cryptography.fernet import Fernet
 from werkzeug.security import generate_password_hash
-import threading
 from app import config
 
 # Define the blueprint for the setup wizard
@@ -45,30 +62,11 @@ class FinalizeForm(FlaskForm):
 @setup_bp.route('/credentials', methods=['GET', 'POST'])
 def step1_api_credentials():
     """Handles the collection and validation of Cloudflare API credentials."""
-    # Migration logic for users coming from .env files
-    if request.method == 'GET' and config.LEGACY_CF_API_TOKEN and config.LEGACY_CF_ACCOUNT_ID:
-        logging.info("Found legacy .env configuration. Attempting to migrate.")
-        # Pre-populate session with legacy data
-        session['cf_api_token'] = config.LEGACY_CF_API_TOKEN
-        session['cf_account_id'] = config.LEGACY_CF_ACCOUNT_ID
-        session['tunnel_name'] = config.LEGACY_TUNNEL_NAME or 'dockflare-tunnel'
-        session['cf_zone_id'] = config.LEGACY_CF_ZONE_ID
-        session['tunnel_dns_scan_zone_names'] = config.LEGACY_TUNNEL_DNS_SCAN_ZONE_NAMES
-        grace_period = config.LEGACY_GRACE_PERIOD_SECONDS
-        try:
-            session['grace_period_seconds'] = int(grace_period) if grace_period else 28800
-        except (ValueError, TypeError):
-            session['grace_period_seconds'] = 28800
-
-        flash("We've detected your existing .env configuration and imported it. Please create a new admin user to complete the migration.", "info")
-        return redirect(url_for('setup.step3_admin_user'))
-
     form = CredentialsForm()
     if form.validate_on_submit():
         token = form.cf_api_token.data
         account_id = form.cf_account_id.data
 
-        # Verify credentials with a simple, read-only API call to Cloudflare
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/cfd_tunnel?is_deleted=false"
         try:
@@ -81,14 +79,13 @@ def step1_api_credentials():
             else:
                 error_message = "Invalid credentials or permissions."
                 try:
-                    # Attempt to parse a more specific error from Cloudflare's response
                     error_message = response.json().get('errors', [{}])[0].get('message', error_message)
                 except:
-                    pass # Keep the generic error message if parsing fails
+                    pass
                 flash(f'Validation failed. Cloudflare API returned: {error_message}', 'danger')
         except requests.exceptions.RequestException as e:
             flash(f'Could not connect to the Cloudflare API: {e}', 'danger')
-
+        
     return render_template('setup/step1.html', form=form, title="Setup: API Credentials")
 
 @setup_bp.route('/tunnel', methods=['GET', 'POST'])
@@ -96,7 +93,7 @@ def step2_tunnel_config():
     """Handles the configuration of the Cloudflare Tunnel and DNS settings."""
     if 'cf_api_token' not in session:
         return redirect(url_for('setup.step1_api_credentials'))
-
+    
     form = TunnelForm()
     if form.validate_on_submit():
         session['tunnel_name'] = form.tunnel_name.data
@@ -104,7 +101,7 @@ def step2_tunnel_config():
         session['tunnel_dns_scan_zone_names'] = form.tunnel_dns_scan_zone_names.data
         session['grace_period_seconds'] = form.grace_period_seconds.data
         return redirect(url_for('setup.step3_admin_user'))
-
+        
     return render_template('setup/step2.html', form=form, title="Setup: Tunnel Configuration")
 
 @setup_bp.route('/admin', methods=['GET', 'POST'])
@@ -118,7 +115,7 @@ def step3_admin_user():
         session['username'] = form.username.data
         session['password'] = form.password.data
         return redirect(url_for('setup.step4_finalize'))
-
+        
     return render_template('setup/step3.html', form=form, title="Setup: Admin User")
 
 @setup_bp.route('/finalize', methods=['GET', 'POST'])
@@ -130,21 +127,18 @@ def step4_finalize():
     form = FinalizeForm()
     if form.validate_on_submit():
         # --- CRITICAL OPERATION: Save all configuration ---
-
-        # 1. Generate and save the encryption key
+        
+        data_path = os.path.dirname(config.STATE_FILE_PATH)
         key = Fernet.generate_key()
-        data_path = os.path.dirname(current_app.config['STATE_FILE_PATH'])
         key_file = os.path.join(data_path, 'dockflare.key')
         config_file = os.path.join(data_path, 'dockflare_config.dat')
         os.makedirs(data_path, exist_ok=True)
-
+        
         with open(key_file, 'wb') as f:
             f.write(key)
-
-        # 2. Hash the admin password
+        
         hashed_password = generate_password_hash(session['password'])
-
-        # 3. Assemble the configuration payload
+        
         config_payload = {
             'cf_api_token': session['cf_api_token'],
             'cf_account_id': session['cf_account_id'],
@@ -155,52 +149,48 @@ def step4_finalize():
             'username': session['username'],
             'password': hashed_password,
         }
-
-        # 4. Encrypt and save the payload
+        
         fernet = Fernet(key)
         encrypted_payload = fernet.encrypt(json.dumps(config_payload).encode('utf-8'))
         with open(config_file, 'wb') as f:
             f.write(encrypted_payload)
-
-        # 5. Set the application to "configured" mode and update the running config
+            
         current_app.is_configured = True
         from app import config as config_module
-        config = current_app.config
-
-        config['CF_API_TOKEN'] = config_payload['cf_api_token']
-        config_module.CF_API_TOKEN = config['CF_API_TOKEN']
-        config['CF_ACCOUNT_ID'] = config_payload['cf_account_id']
-        config_module.CF_ACCOUNT_ID = config['CF_ACCOUNT_ID']
-        config['TUNNEL_NAME'] = config_payload['tunnel_name']
-        config_module.TUNNEL_NAME = config['TUNNEL_NAME']
-        config['CF_ZONE_ID'] = config_payload['cf_zone_id']
-        config_module.CF_ZONE_ID = config['CF_ZONE_ID']
+        app_config = current_app.config
+        
+        app_config['CF_API_TOKEN'] = config_payload['cf_api_token']
+        config_module.CF_API_TOKEN = app_config['CF_API_TOKEN']
+        app_config['CF_ACCOUNT_ID'] = config_payload['cf_account_id']
+        config_module.CF_ACCOUNT_ID = app_config['CF_ACCOUNT_ID']
+        app_config['TUNNEL_NAME'] = config_payload['tunnel_name']
+        config_module.TUNNEL_NAME = app_config['TUNNEL_NAME']
+        app_config['CLOUDFLARED_CONTAINER_NAME'] = f"cloudflared-agent-{app_config['TUNNEL_NAME']}"
+        app_config['CF_ZONE_ID'] = config_payload['cf_zone_id']
+        config_module.CF_ZONE_ID = app_config['CF_ZONE_ID']
         tunnel_dns_scan_zone_names_str = config_payload.get('tunnel_dns_scan_zone_names', '')
-        config['TUNNEL_DNS_SCAN_ZONE_NAMES'] = [name.strip() for name in tunnel_dns_scan_zone_names_str.split(',') if name.strip()]
-        config_module.TUNNEL_DNS_SCAN_ZONE_NAMES = config['TUNNEL_DNS_SCAN_ZONE_NAMES']
-        config['GRACE_PERIOD_SECONDS'] = int(config_payload.get('grace_period_seconds', 28800))
-        config_module.GRACE_PERIOD_SECONDS = config['GRACE_PERIOD_SECONDS']
-        config['DOCKFLARE_USERNAME'] = config_payload['username']
-        config['DOCKFLARE_PASSWORD_HASH'] = config_payload['password']
+        app_config['TUNNEL_DNS_SCAN_ZONE_NAMES'] = [name.strip() for name in tunnel_dns_scan_zone_names_str.split(',') if name.strip()]
+        config_module.TUNNEL_DNS_SCAN_ZONE_NAMES = app_config['TUNNEL_DNS_SCAN_ZONE_NAMES']
+        app_config['GRACE_PERIOD_SECONDS'] = int(config_payload.get('grace_period_seconds', 28800))
+        config_module.GRACE_PERIOD_SECONDS = app_config['GRACE_PERIOD_SECONDS']
+        app_config['DOCKFLARE_USERNAME'] = config_payload['username']
+        app_config['DOCKFLARE_PASSWORD_HASH'] = config_payload['password']
         if config_module.CF_API_TOKEN:
             config_module.CF_HEADERS['Authorization'] = f"Bearer {config_module.CF_API_TOKEN}"
-
-        # 6. Start core services in the background
+        
         from app.main import start_core_services
         logging.info("Setup complete. Triggering core services to start in a background thread.")
         init_thread = threading.Thread(target=start_core_services, daemon=True)
         init_thread.start()
 
-        # 7. Clean up session and redirect to the login page
         session.clear()
         flash('Setup complete! Please log in to continue.', 'success')
         return redirect(url_for('auth.login'))
-
-    # For the GET request, display a summary of the configuration
+        
     config_summary = {key: val for key, val in session.items() if key != 'csrf_token' and not key.startswith('_')}
     if 'cf_api_token' in config_summary:
         config_summary['cf_api_token'] = '********'
     if 'password' in config_summary:
-        del config_summary['password'] # Do not show the password, even masked
-
+        del config_summary['password']
+        
     return render_template('setup/step4.html', form=form, title="Setup: Finalize", summary=config_summary)
