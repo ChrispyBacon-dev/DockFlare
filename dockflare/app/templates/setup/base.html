@@ -15,8 +15,7 @@
         <div class="card-body">
             <div class="text-center mb-6">
                 <img src="{{ url_for('static', filename='images/bannertr.png') }}" alt="DockFlare Logo" class="h-16 mx-auto">
-                <h1 class="text-2xl font-bold mt-2">DockFlare Initial Setup</h1>
-                <p class="text-base-content/70">{{ title }}</p>
+                <h1 class="text-2xl font-bold mt-4">{{ title }}</h1>
             </div>
 
             {% with messages = get_flashed_messages(with_categories=true) %}
