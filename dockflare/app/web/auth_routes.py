@@ -37,7 +37,7 @@ def login():
         else:
             flash('Invalid username or password.', 'danger')
 
-    return render_template('auth/login.html', form=form, title="Login")
+    return render_template('auth/login.html', form=form, title="Login", is_configured=current_app.is_configured)
 
 @auth_bp.route('/logout')
 def logout():

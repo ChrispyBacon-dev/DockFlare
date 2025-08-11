@@ -29,7 +29,7 @@ from app.core import access_manager
 from urllib.parse import urlparse, urlunparse 
 from flask import (
     Blueprint, render_template, jsonify, redirect, url_for, request, Response,
-    stream_with_context, current_app, session
+    stream_with_context, current_app, session, flash
 )
 from flask_login import current_user, login_required
 
@@ -220,6 +220,10 @@ def status_page():
                         CF_ZONE_ID_CONFIGURED=bool(current_app.config.get('CF_ZONE_ID'))
                         )
 
+from app.web.forms import ChangePasswordForm
+from werkzeug.security import check_password_hash, generate_password_hash
+from cryptography.fernet import Fernet
+
 @bp.route('/settings')
 @login_required
 def settings_page():
@@ -227,6 +231,7 @@ def settings_page():
     used_group_ids = set()
     template_tunnel_state = {}
     template_agent_state = {}
+    change_password_form = ChangePasswordForm()
 
     with state_lock:
         used_group_ids = {
@@ -254,8 +259,62 @@ def settings_page():
         external_cloudflared=config.USE_EXTERNAL_CLOUDFLARED,
         external_tunnel_id=config.EXTERNAL_TUNNEL_ID,
         CF_ACCOUNT_ID_CONFIGURED=bool(cf_account_id),
-        ACCOUNT_ID_FOR_DISPLAY=cf_account_id if cf_account_id else "Not Configured"
+        ACCOUNT_ID_FOR_DISPLAY=cf_account_id if cf_account_id else "Not Configured",
+        change_password_form=change_password_form
     )
+
+@bp.route('/change-password', methods=['POST'])
+@login_required
+def change_password():
+    """Handles the password change process."""
+    form = ChangePasswordForm()
+    if form.validate_on_submit():
+        current_password = form.current_password.data
+        new_password = form.new_password.data
+
+        stored_hash = current_app.config.get('DOCKFLARE_PASSWORD_HASH')
+
+        if stored_hash and check_password_hash(stored_hash, current_password):
+            # Passwords match, proceed with updating the config
+            data_path = os.path.dirname(config.STATE_FILE_PATH)
+            key_file = os.path.join(data_path, 'dockflare.key')
+            config_file = os.path.join(data_path, 'dockflare_config.dat')
+
+            try:
+                with open(key_file, 'rb') as f:
+                    key = f.read()
+
+                fernet = Fernet(key)
+
+                with open(config_file, 'rb') as f:
+                    encrypted_data = f.read()
+
+                decrypted_data = fernet.decrypt(encrypted_data)
+                config_data = json.loads(decrypted_data)
+
+                # Update the password and re-encrypt
+                config_data['password'] = generate_password_hash(new_password)
+                encrypted_payload = fernet.encrypt(json.dumps(config_data).encode('utf-8'))
+
+                with open(config_file, 'wb') as f:
+                    f.write(encrypted_payload)
+
+                # Update the running app config
+                current_app.config['DOCKFLARE_PASSWORD_HASH'] = config_data['password']
+                flash('Password changed successfully.', 'success')
+
+            except Exception as e:
+                logging.error(f"Failed to update password in config file: {e}", exc_info=True)
+                flash('An error occurred while changing the password.', 'danger')
+        else:
+            flash('Incorrect current password.', 'danger')
+    else:
+        # Flash form errors
+        for field, errors in form.errors.items():
+            for error in errors:
+                flash(f"{getattr(form, field).label.text}: {error}", 'danger')
+
+    return redirect(url_for('web.settings_page'))
 
 @bp.route('/ui_update_access_policy/<path:hostname>', methods=['POST'])
 def ui_update_access_policy(hostname):

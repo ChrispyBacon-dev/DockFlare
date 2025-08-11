@@ -15,7 +15,9 @@
         <div class="card-body">
             <div class="text-center mb-6">
                 <img src="{{ url_for('static', filename='images/bannertr.png') }}" alt="DockFlare Logo" class="h-16 mx-auto">
+                {% if not is_configured %}
                 <h1 class="text-2xl font-bold mt-2">DockFlare Initial Setup</h1>
+                {% endif %}
                 <p class="text-base-content/70">{{ title }}</p>
             </div>
 
