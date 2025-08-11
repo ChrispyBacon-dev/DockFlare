@@ -15,7 +15,7 @@
   </a>
 </p>
 <p align="center">
-  <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases/tag/v2.1.1"><img src="https://img.shields.io/badge/Release-v2.1.1-blue.svg?style=for-the-badge" alt="Release"></a>
+  <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases/tag/v2.1"><img src="https://img.shields.io/badge/Release-v2.1-blue.svg?style=for-the-badge" alt="Release"></a>
   <a href="https://hub.docker.com/r/alplat/dockflare"><img src="https://img.shields.io/docker/pulls/alplat/dockflare?style=for-the-badge" alt="Docker Pulls"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Made%20with-Python-1f425f.svg?style=for-the-badge" alt="Python"></a>
   <a href="https://github.com/ChrispyBacon-dev/DockFlare/blob/main/LICENSE.MD"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg?style=for-the-badge" alt="License"></a>
@@ -41,12 +41,15 @@ DockFlare is a powerful, self-hosted ingress controller that simplifies Cloudfla
 
 It enables secure, hassle-free public access to both Dockerized and non-Dockerized applications with minimal direct interaction with Cloudflare, making it the perfect tool for centralizing and streamlining your access management.
 
-**Key Features:**
-- **Centralized Policy Management** - **New in v2.0**, create reusable **Access Groups** in the UI and apply them to any service with a single Docker label.
-- **Dynamic Ingress via Docker Labels** - Automatically configure Tunnel ingress rules and DNS records from container labels.
-- **Full UI Control** - Manage non-Docker services, override any access policy, view all account tunnels, and monitor real-time logs from a clean web interface.
-- **State Persistence & Reconciliation** - Persists all rules and UI overrides in a state file and continuously syncs your desired state with Cloudflare.
-- **Prometheus Metrics** - Natively export `cloudflared` metrics for monitoring in Grafana (pre-built dashboard included).
+### ✨ What's New in DockFlare 2.1: The Usability & Security Update
+
+This release overhauls the user experience, focusing on security and ease of use.
+
+- **Browser-Based Setup**: Say goodbye to `.env` files! A new "Pre-Flight" wizard guides you through the initial setup in your browser.
+- **Enhanced Security**: The UI is now password-protected. All credentials are encrypted and stored in a secure `dockflare_config.dat` file.
+- **Seamless Migration**: Existing users are automatically guided through a simple migration process to adopt the new security model.
+- **Full UI Configuration**: Core settings can now be modified directly from the UI after setup.
+- **⚠️ Breaking Change**: `.env` files are no longer used for configuration after the initial setup/migration.
 
 ## Getting Started & Documentation
 
@@ -87,6 +90,7 @@ Before you begin, ensure you have the following:
           - "5000:5000"
         volumes:
           - /var/run/docker.sock:/var/run/docker.sock:ro
+          # This volume is crucial for persisting your encrypted configuration
           - ./dockflare_data:/app/data
         networks:
           - cloudflare-net
@@ -105,7 +109,9 @@ Before you begin, ensure you have the following:
     docker compose up -d
     ```
 
-3.  **Access the Web UI**: Open `http://your-server-ip:5000`.
+3.  **Complete the Pre-Flight Setup**: Open `http://your-server-ip:5000` in your browser. You will be guided through a one-time setup wizard to enter your Cloudflare credentials and create a password for the UI.
+
+4.  **For Existing Users**: If you are upgrading, DockFlare will detect your old `.env` file and automatically guide you through a quick migration process.
 
 </details>
 
@@ -115,10 +121,10 @@ DockFlare's power comes from its flexible, layered approach to configuration.
 
 - **Access Groups First (Recommended)**: The easiest and most maintainable way to secure services is to create an **Access Group** in the UI and apply it with a single label.
 - **Individual Labels for One-Offs**: For services that don't fit a group, you can still use individual `dockflare.access.*` labels for initial configuration.
-- **UI for Dynamic Overrides**: The Web UI can override the access policy for any service, whether it was configured by a group or by individual labels. UI changes are persistent.
+- **UI for Dynamic Overrides**: The Web UI can override the access policy for any service, whether it was configured by a group or by individual labels. UI changes are persistent and stored in the encrypted `dockflare_config.dat` file.
 
 <details>
-<summary>📝 Labeling Your Containers (v2.0 Examples)</summary>
+<summary>📝 Labeling Your Containers (Examples)</summary>
 
 #### 1. Recommended Method: Using an Access Group
 
@@ -129,10 +135,10 @@ services:
   picoshare:
     image: mtlynch/picoshare
     labels:
-      - "dockflare.enable=true" 
+      - "dockflare.enable=true"
       - "dockflare.hostname=files.example.com"
-      - "dockflare.service=http://picoshare:8080" 
-      
+      - "dockflare.service=http://picoshare:8080"
+
       # Apply the entire policy with one label:
       - "dockflare.access.group=nas-family"
 ```
@@ -146,10 +152,10 @@ services:
   my-service:
     image: nginx:latest
     labels:
-      - "dockflare.enable=true" 
+      - "dockflare.enable=true"
       - "dockflare.hostname=my-service.example.com"
-      - "dockflare.service=http://my-service:80" 
-      
+      - "dockflare.service=http://my-service:80"
+
       # Optional individual labels for a one-off policy
       - "dockflare.access.policy=authenticate"
       - "dockflare.access.allowed_idps=YOUR_IDP_UUID_HERE"
@@ -162,13 +168,13 @@ services:
 
 Use these labels only when **not** using `dockflare.access.group`.
 
-| Label                               | Description                                                                                                                                                                                             | Default                | Example                                                                                   |
-| :---------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :--------------------- | :---------------------------------------------------------------------------------------- |
-| `dockflare.access.policy`           | Type: `bypass` (public app), `authenticate` (IdP login), `default_tld` (inherits from `*.domain.com` policy). If unset, service is public (no Access App).                                              | (None/Public)          | `dockflare.access.policy="authenticate"`                                        |
-| `dockflare.access.name`             | Custom name for the Cloudflare Access Application.                                                                                                                                                      | `DockFlare-{hostname}` | `dockflare.access.name="My Web App Access"`                                      |
-| `dockflare.access.session_duration` | Session duration (e.g., `24h`, `30m`).                                                                                                                                                                | `24h`                  | `dockflare.access.session_duration="1h"`                                         |
-| `dockflare.access.custom_rules`     | JSON string array of [Cloudflare Access Policy rules](https://developers.cloudflare.com/api/operations/access-policies-create-an-access-policy). Overrides basic `access.policy` decisions.         | (None)                 | `'...=[{"email":{"email":"user@example.com"},"action":"allow"},{"action":"block"}]'` |
-| ...                                 | *Other `access.*` labels for launcher visibility, IdPs, etc. are also available.*                                                                                                                         |                        |                                                                                           |
+| Label | Description | Default | Example |
+| :--- | :--- | :--- | :--- |
+| `dockflare.access.policy` | Type: `bypass` (public app), `authenticate` (IdP login), `default_tld` (inherits from `*.domain.com` policy). If unset, service is public (no Access App). | (None/Public) | `dockflare.access.policy="authenticate"` |
+| `dockflare.access.name` | Custom name for the Cloudflare Access Application. | `DockFlare-{hostname}` | `dockflare.access.name="My Web App Access"` |
+| `dockflare.access.session_duration` | Session duration (e.g., `24h`, `30m`). | `24h` | `dockflare.access.session_duration="1h"` |
+| `dockflare.access.custom_rules` | JSON string array of [Cloudflare Access Policy rules](https://developers.cloudflare.com/api/operations/access-policies-create-an-access-policy). Overrides basic `access.policy` decisions. | (None) | `'...=[{"email":{"email":"user@example.com"},"action":"allow"},{"action":"block"}]'` |
+| ... | *Other `access.*` labels for launcher visibility, IdPs, etc. are also available.* | | |
 
 
 </details>

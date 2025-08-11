@@ -212,8 +212,7 @@ def main_application_entrypoint():
 
             decrypted_data = fernet.decrypt(encrypted_data)
             config_data = json.loads(decrypted_data)
-
-            # Populate Flask app.config with the loaded values
+            
             app.config['CF_API_TOKEN'] = config_data.get('cf_api_token')
             app.config['CF_ACCOUNT_ID'] = config_data.get('cf_account_id')
             app.config['TUNNEL_NAME'] = config_data.get('tunnel_name')

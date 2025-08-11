@@ -21,7 +21,7 @@ import sys
 import logging 
 
 # --- DockFlare Version ---
-APP_VERSION = "v2.1.1"
+APP_VERSION = "v2.1"
 # --- web: https://dockflare.app ---
 # --- github: https://github.com/ChrispyBacon-dev/DockFlare ---
 
@@ -36,7 +36,7 @@ CF_API_TOKEN = None
 CF_ACCOUNT_ID = None
 CF_ZONE_ID = None
 TUNNEL_NAME = "dockflare-tunnel"
-GRACE_PERIOD_SECONDS = 28800
+GRACE_PERIOD_SECONDS = 600
 TUNNEL_DNS_SCAN_ZONE_NAMES = []
 
 # --- Static & Environment-Based Configuration ---

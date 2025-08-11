@@ -96,7 +96,7 @@ def step_import_env():
 
 @setup_bp.route('/credentials', methods=['GET', 'POST'])
 def step1_api_credentials():
-    """Handles the collection and validation of Cloudflare API credentials."""
+    
     form = CredentialsForm()
     if form.validate_on_submit():
         token = form.cf_api_token.data
@@ -125,7 +125,7 @@ def step1_api_credentials():
 
 @setup_bp.route('/tunnel', methods=['GET', 'POST'])
 def step2_tunnel_config():
-    """Handles the configuration of the Cloudflare Tunnel and DNS settings."""
+    
     if 'cf_api_token' not in session:
         return redirect(url_for('setup.step1_api_credentials'))
     
@@ -141,7 +141,7 @@ def step2_tunnel_config():
 
 @setup_bp.route('/admin', methods=['GET', 'POST'])
 def step3_admin_user():
-    """Handles the creation of the administrative user for the DockFlare UI."""
+    
     if 'tunnel_name' not in session:
         return redirect(url_for('setup.step2_tunnel_config'))
 
@@ -155,14 +155,13 @@ def step3_admin_user():
 
 @setup_bp.route('/finalize', methods=['GET', 'POST'])
 def step4_finalize():
-    """Finalizes the setup, saving all configuration and securing the application."""
+    
     if 'username' not in session:
         return redirect(url_for('setup.step3_admin_user'))
 
     form = FinalizeForm()
     if form.validate_on_submit():
-        # --- CRITICAL OPERATION: Save all configuration ---
-        
+            
         data_path = os.path.dirname(config.STATE_FILE_PATH)
         key = Fernet.generate_key()
         key_file = os.path.join(data_path, 'dockflare.key')

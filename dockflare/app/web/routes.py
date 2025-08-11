@@ -70,18 +70,15 @@ def get_display_token_ui(token_value):
 
 @bp.before_app_request
 def gating_logic():
-    """
-    This function is executed before each request. It's responsible for gating access
-    to the application based on its configuration state and user authentication.
-    """
+    
     is_configured = getattr(current_app, 'is_configured', False)
 
     if not is_configured:
-        # Allow access to the setup blueprint and static assets, otherwise gate
+        
         if request.endpoint and not request.endpoint.startswith('setup.') and request.endpoint != 'static':
             try:
                 if getattr(current_app, 'import_from_env', False):
-                    # Populate session for the .env import migration flow
+    
                     session['is_env_import'] = True
                     session['cf_api_token'] = os.getenv('CF_API_TOKEN')
                     session['cf_account_id'] = os.getenv('CF_ACCOUNT_ID')
@@ -92,27 +89,26 @@ def gating_logic():
                     grace_period_str = os.getenv('GRACE_PERIOD_SECONDS', '28800')
                     session['grace_period_seconds'] = int(grace_period_str) if grace_period_str.isdigit() else 28800
 
-                    # Redirect to the special import step
+    
                     return redirect(url_for('setup.step_import_env'))
                 else:
-                    # Redirect to the standard setup flow
+    
                     return redirect(url_for('setup.step1_api_credentials'))
             except Exception as e:
                 logging.error(f"Error during setup redirection logic: {e}", exc_info=True)
-                # Provide a safe fallback response if redirection fails
+    
                 return "Application is initializing setup. Please try again in a moment.", 503
         return
 
-    # If the application is configured, check for user authentication
+    
     if hasattr(current_app, 'login_manager'):
         if not current_user.is_authenticated:
-            # Allow access to the auth blueprint and static assets
+    
             if request.endpoint and not request.endpoint.startswith('auth.') and request.endpoint != 'static':
                 try:
                     return redirect(url_for('auth.login'))
                 except:
-                    # This path may be hit if the auth blueprint isn't ready,
-                    # but the gating logic will re-evaluate on the next request.
+    
                     pass
 
 @bp.before_app_request 
@@ -231,8 +227,7 @@ def settings_page():
     """Renders and handles the main settings page."""
     settings_form = SettingsForm()
     change_password_form = ChangePasswordForm()
-
-    # Handle General Settings Form Submission
+    
     if settings_form.submit_settings.data and settings_form.validate_on_submit():
         data_path = os.path.dirname(config.STATE_FILE_PATH)
         key_file = os.path.join(data_path, 'dockflare.key')
@@ -247,23 +242,23 @@ def settings_page():
                 decrypted_data = fernet.decrypt(f.read())
             config_data = json.loads(decrypted_data)
 
-            # --- Check for tunnel name change ---
+
             original_tunnel_name = config_data.get('tunnel_name')
             new_tunnel_name = settings_form.tunnel_name.data
             tunnel_name_changed = original_tunnel_name != new_tunnel_name
 
-            # --- Update config data ---
+
             config_data['tunnel_name'] = new_tunnel_name
             config_data['cf_zone_id'] = settings_form.cf_zone_id.data
             config_data['tunnel_dns_scan_zone_names'] = settings_form.tunnel_dns_scan_zone_names.data
             config_data['grace_period_seconds'] = settings_form.grace_period_seconds.data
 
-            # Re-encrypt and save
+
             encrypted_payload = fernet.encrypt(json.dumps(config_data).encode('utf-8'))
             with open(config_file, 'wb') as f:
                 f.write(encrypted_payload)
 
-            # --- Update running app config ---
+
             from app import config as config_module
             current_app.config['TUNNEL_NAME'] = new_tunnel_name
             config_module.TUNNEL_NAME = new_tunnel_name
@@ -282,17 +277,17 @@ def settings_page():
 
             flash('General settings updated successfully.', 'success')
 
-            # --- Handle tunnel restart if name changed ---
+
             if tunnel_name_changed and not config.USE_EXTERNAL_CLOUDFLARED:
                 flash('Tunnel name changed. Restarting the agent to apply changes...', 'info')
                 logging.info(f"Tunnel name changed from '{original_tunnel_name}' to '{new_tunnel_name}'. Triggering agent restart.")
                 
-                # We need to run this in a thread to avoid blocking the request
+
                 def restart_agent_task():
                     stop_cloudflared_container()
-                    # Give it a moment to release resources
+
                     time.sleep(5)
-                    # Re-initialize tunnel to get a new token if the tunnel is new
+
                     initialize_tunnel()
                     start_cloudflared_container()
 
@@ -305,14 +300,14 @@ def settings_page():
             logging.error(f"Failed to update settings in config file: {e}", exc_info=True)
             flash('An error occurred while saving settings.', 'danger')
 
-    # Populate General Settings Form for GET request
+
     if request.method == 'GET':
         settings_form.tunnel_name.data = current_app.config.get('TUNNEL_NAME')
         settings_form.cf_zone_id.data = current_app.config.get('CF_ZONE_ID')
         settings_form.tunnel_dns_scan_zone_names.data = ','.join(current_app.config.get('TUNNEL_DNS_SCAN_ZONE_NAMES', []))
         settings_form.grace_period_seconds.data = current_app.config.get('GRACE_PERIOD_SECONDS')
 
-    # --- Standard Page Data Loading ---
+
     groups_for_template = {}
     used_group_ids = set()
     template_tunnel_state = {}
@@ -361,7 +356,7 @@ def change_password():
         stored_hash = current_app.config.get('DOCKFLARE_PASSWORD_HASH')
 
         if stored_hash and check_password_hash(stored_hash, current_password):
-            # Passwords match, proceed with updating the config
+
             data_path = os.path.dirname(config.STATE_FILE_PATH)
             key_file = os.path.join(data_path, 'dockflare.key')
             config_file = os.path.join(data_path, 'dockflare_config.dat')
@@ -378,14 +373,14 @@ def change_password():
                 decrypted_data = fernet.decrypt(encrypted_data)
                 config_data = json.loads(decrypted_data)
 
-                # Update the password and re-encrypt
+
                 config_data['password'] = generate_password_hash(new_password)
                 encrypted_payload = fernet.encrypt(json.dumps(config_data).encode('utf-8'))
 
                 with open(config_file, 'wb') as f:
                     f.write(encrypted_payload)
 
-                # Update the running app config
+
                 current_app.config['DOCKFLARE_PASSWORD_HASH'] = config_data['password']
                 flash('Password changed successfully.', 'success')
 
@@ -395,7 +390,7 @@ def change_password():
         else:
             flash('Incorrect current password.', 'danger')
     else:
-        # Flash form errors
+
         for field, errors in form.errors.items():
             for error in errors:
                 flash(f"{getattr(form, field).label.text}: {error}", 'danger')
@@ -1067,7 +1062,7 @@ def ui_edit_manual_rule_route():
                 access_app_id = app_result.get('id')
                 access_policy_type = manual_access_policy_type
         
-        else: # Case where policy is set to "None"
+        else: 
             if original_rule_details.get('access_app_id'):
                 app_to_delete = original_rule_details.get('access_app_id')
 
