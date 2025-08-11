@@ -3,7 +3,66 @@
 {% block title %}Settings{% endblock %}
 
 {% block content %}
-    
+    <!-- 0. General Settings -->
+    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+        <div class="card-body">
+            <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
+                General Settings
+            </h2>
+            <form method="POST" action="{{ url_for('web.settings_page') }}" class="space-y-4">
+                {{ settings_form.hidden_tag() }}
+
+                <div class="form-control w-full">
+                    <label class="label" for="tunnel_name">
+                        <span class="label-text">{{ settings_form.tunnel_name.label.text }}</span>
+                    </label>
+                    {{ settings_form.tunnel_name(class="input input-bordered w-full", **{'id': 'tunnel_name'}) }}
+                    {% for error in settings_form.tunnel_name.errors %}
+                        <label class="label">
+                            <span class="label-text-alt text-error">{{ error }}</span>
+                        </label>
+                    {% endfor %}
+                </div>
+
+                <div class="form-control w-full">
+                    <label class="label" for="cf_zone_id">
+                        <span class="label-text">{{ settings_form.cf_zone_id.label.text }}</span>
+                    </label>
+                    {{ settings_form.cf_zone_id(class="input input-bordered w-full", **{'id': 'cf_zone_id'}) }}
+                    <label class="label">
+                        <span class="label-text-alt">Optional. The default Zone ID for new DNS records.</span>
+                    </label>
+                </div>
+
+                <div class="form-control w-full">
+                    <label class="label" for="tunnel_dns_scan_zone_names">
+                        <span class="label-text">{{ settings_form.tunnel_dns_scan_zone_names.label.text }}</span>
+                    </label>
+                    {{ settings_form.tunnel_dns_scan_zone_names(class="input input-bordered w-full", **{'id': 'tunnel_dns_scan_zone_names'}) }}
+                    <label class="label">
+                        <span class="label-text-alt">{{ settings_form.tunnel_dns_scan_zone_names.description }}</span>
+                    </label>
+                </div>
+
+                <div class="form-control w-full">
+                    <label class="label" for="grace_period_seconds">
+                        <span class="label-text">{{ settings_form.grace_period_seconds.label.text }}</span>
+                    </label>
+                    {{ settings_form.grace_period_seconds(class="input input-bordered w-full", **{'id': 'grace_period_seconds', 'type': 'number'}) }}
+                    {% for error in settings_form.grace_period_seconds.errors %}
+                        <label class="label">
+                            <span class="label-text-alt text-error">{{ error }}</span>
+                        </label>
+                    {% endfor %}
+                </div>
+
+                <div class="card-actions pt-4">
+                    {{ settings_form.submit_settings(class="btn btn-primary") }}
+                </div>
+            </form>
+        </div>
+    </section>
+
     <!-- 1. Access Groups Section -->
     <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
         <div class="card-body">

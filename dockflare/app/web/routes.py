@@ -38,7 +38,8 @@ from app.core.state_manager import managed_rules, access_groups, state_lock, sav
 from app.core.tunnel_manager import (
     start_cloudflared_container,
     stop_cloudflared_container,
-    update_cloudflare_config 
+    update_cloudflare_config,
+    initialize_tunnel
 )
 from app.core.cloudflare_api import (
     get_all_account_cloudflare_tunnels,
@@ -220,18 +221,102 @@ def status_page():
                         CF_ZONE_ID_CONFIGURED=bool(current_app.config.get('CF_ZONE_ID'))
                         )
 
-from app.web.forms import ChangePasswordForm
+from app.web.forms import ChangePasswordForm, SettingsForm
 from werkzeug.security import check_password_hash, generate_password_hash
 from cryptography.fernet import Fernet
 
 @bp.route('/settings', methods=['GET', 'POST'])
 @login_required
 def settings_page():
+    """Renders and handles the main settings page."""
+    settings_form = SettingsForm()
+    change_password_form = ChangePasswordForm()
+
+    # Handle General Settings Form Submission
+    if settings_form.submit_settings.data and settings_form.validate_on_submit():
+        data_path = os.path.dirname(config.STATE_FILE_PATH)
+        key_file = os.path.join(data_path, 'dockflare.key')
+        config_file = os.path.join(data_path, 'dockflare_config.dat')
+
+        try:
+            with open(key_file, 'rb') as f:
+                key = f.read()
+            fernet = Fernet(key)
+
+            with open(config_file, 'rb') as f:
+                decrypted_data = fernet.decrypt(f.read())
+            config_data = json.loads(decrypted_data)
+
+            # --- Check for tunnel name change ---
+            original_tunnel_name = config_data.get('tunnel_name')
+            new_tunnel_name = settings_form.tunnel_name.data
+            tunnel_name_changed = original_tunnel_name != new_tunnel_name
+
+            # --- Update config data ---
+            config_data['tunnel_name'] = new_tunnel_name
+            config_data['cf_zone_id'] = settings_form.cf_zone_id.data
+            config_data['tunnel_dns_scan_zone_names'] = settings_form.tunnel_dns_scan_zone_names.data
+            config_data['grace_period_seconds'] = settings_form.grace_period_seconds.data
+
+            # Re-encrypt and save
+            encrypted_payload = fernet.encrypt(json.dumps(config_data).encode('utf-8'))
+            with open(config_file, 'wb') as f:
+                f.write(encrypted_payload)
+
+            # --- Update running app config ---
+            from app import config as config_module
+            current_app.config['TUNNEL_NAME'] = new_tunnel_name
+            config_module.TUNNEL_NAME = new_tunnel_name
+            current_app.config['CLOUDFLARED_CONTAINER_NAME'] = f"cloudflared-agent-{new_tunnel_name}"
+            config_module.CLOUDFLARED_CONTAINER_NAME = f"cloudflared-agent-{new_tunnel_name}"
+
+            current_app.config['CF_ZONE_ID'] = config_data['cf_zone_id']
+            config_module.CF_ZONE_ID = config_data['cf_zone_id']
+
+            scan_zones_str = config_data.get('tunnel_dns_scan_zone_names', '')
+            current_app.config['TUNNEL_DNS_SCAN_ZONE_NAMES'] = [name.strip() for name in scan_zones_str.split(',') if name.strip()]
+            config_module.TUNNEL_DNS_SCAN_ZONE_NAMES = current_app.config['TUNNEL_DNS_SCAN_ZONE_NAMES']
+
+            current_app.config['GRACE_PERIOD_SECONDS'] = int(config_data.get('grace_period_seconds', 28800))
+            config_module.GRACE_PERIOD_SECONDS = current_app.config['GRACE_PERIOD_SECONDS']
+
+            flash('General settings updated successfully.', 'success')
+
+            # --- Handle tunnel restart if name changed ---
+            if tunnel_name_changed and not config.USE_EXTERNAL_CLOUDFLARED:
+                flash('Tunnel name changed. Restarting the agent to apply changes...', 'info')
+                logging.info(f"Tunnel name changed from '{original_tunnel_name}' to '{new_tunnel_name}'. Triggering agent restart.")
+
+                # We need to run this in a thread to avoid blocking the request
+                def restart_agent_task():
+                    stop_cloudflared_container()
+                    # Give it a moment to release resources
+                    time.sleep(5)
+                    # Re-initialize tunnel to get a new token if the tunnel is new
+                    initialize_tunnel()
+                    start_cloudflared_container()
+
+                from threading import Thread
+                restart_thread = Thread(target=restart_agent_task)
+                restart_thread.start()
+
+            return redirect(url_for('web.settings_page'))
+        except Exception as e:
+            logging.error(f"Failed to update settings in config file: {e}", exc_info=True)
+            flash('An error occurred while saving settings.', 'danger')
+
+    # Populate General Settings Form for GET request
+    if request.method == 'GET':
+        settings_form.tunnel_name.data = current_app.config.get('TUNNEL_NAME')
+        settings_form.cf_zone_id.data = current_app.config.get('CF_ZONE_ID')
+        settings_form.tunnel_dns_scan_zone_names.data = ','.join(current_app.config.get('TUNNEL_DNS_SCAN_ZONE_NAMES', []))
+        settings_form.grace_period_seconds.data = current_app.config.get('GRACE_PERIOD_SECONDS')
+
+    # --- Standard Page Data Loading ---
     groups_for_template = {}
     used_group_ids = set()
     template_tunnel_state = {}
     template_agent_state = {}
-    change_password_form = ChangePasswordForm()
 
     with state_lock:
         used_group_ids = {
@@ -244,10 +329,12 @@ def settings_page():
 
     display_token_val = get_display_token_ui(template_tunnel_state.get("token"))
     all_account_tunnels_list = get_all_account_cloudflare_tunnels()
-
     cf_account_id = current_app.config.get('CF_ACCOUNT_ID')
+
     return render_template(
         'settings.html',
+        settings_form=settings_form,
+        change_password_form=change_password_form,
         access_groups=groups_for_template,
         used_group_ids=used_group_ids,
         all_account_tunnels=all_account_tunnels_list,
@@ -259,8 +346,7 @@ def settings_page():
         external_cloudflared=config.USE_EXTERNAL_CLOUDFLARED,
         external_tunnel_id=config.EXTERNAL_TUNNEL_ID,
         CF_ACCOUNT_ID_CONFIGURED=bool(cf_account_id),
-        ACCOUNT_ID_FOR_DISPLAY=cf_account_id if cf_account_id else "Not Configured",
-        change_password_form=change_password_form
+        ACCOUNT_ID_FOR_DISPLAY=cf_account_id if cf_account_id else "Not Configured"
     )
 
 @bp.route('/change-password', methods=['POST'])

@@ -15,8 +15,29 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 # app/web/forms.py
 from flask_wtf import FlaskForm
-from wtforms import PasswordField, SubmitField
-from wtforms.validators import DataRequired, EqualTo, Length
+from wtforms import PasswordField, SubmitField, StringField, IntegerField
+from wtforms.validators import DataRequired, EqualTo, Length, Optional
+
+class SettingsForm(FlaskForm):
+    """Form for editing general application settings."""
+    tunnel_name = StringField(
+        'Tunnel Name',
+        validators=[DataRequired(message="A tunnel name is required.")]
+    )
+    cf_zone_id = StringField(
+        'Primary Cloudflare Zone ID',
+        validators=[Optional()]
+    )
+    tunnel_dns_scan_zone_names = StringField(
+        'Other Zones to Scan (comma-separated)',
+        description="e.g. my-other-domain.com,another.dev",
+        validators=[Optional()]
+    )
+    grace_period_seconds = IntegerField(
+        'Grace Period (seconds)',
+        validators=[DataRequired(message="Grace period is required.")]
+    )
+    submit_settings = SubmitField('Save General Settings')
 
 class ChangePasswordForm(FlaskForm):
     """Form for changing the user's password."""
