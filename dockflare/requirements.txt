@@ -12,12 +12,16 @@ charset-normalizer==3.4.2
     # via requests
 click==8.2.1
     # via flask
+cryptography==43.0.0
+    # via -r dockflare/requirements.in
 docker==7.1.0
     # via -r dockflare/requirements.in
 flask==3.1.1
     # via
     #   -r dockflare/requirements.in
     #   flask-wtf
+flask-login==0.6.3
+    # via -r dockflare/requirements.in
 flask-wtf==1.2.2
     # via -r dockflare/requirements.in
 idna==3.10

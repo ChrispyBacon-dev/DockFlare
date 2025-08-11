@@ -19,6 +19,9 @@ import logging
 import threading
 import time
 import sys
+import os
+import json
+from cryptography.fernet import Fernet
 
 from app import app, docker_client, tunnel_state, cloudflared_agent_state, config, log_queue
 
@@ -90,12 +93,16 @@ def periodic_agent_status_updater():
         stop_event.wait(config.AGENT_STATUS_UPDATE_INTERVAL_SECONDS)
     logging.info("Periodic agent status updater task stopped.")
 
-def perform_initial_setup_and_tasks():
+def start_core_services():
+    """
+    Initializes all core background services of the application.
+    This function is designed to be called once the application configuration is available.
+    """
     global background_threads_list 
 
-    logging.info("Main initialization process started in background thread.")
+    logging.info("Core services initialization process started.")
     if not docker_client:
-        logging.error("Docker client unavailable during initialization process. Critical functionalities will be affected.")
+        logging.error("Docker client unavailable. Critical functionalities will be affected.")
         return
 
     initialize_tunnel() 
@@ -169,16 +176,79 @@ def perform_initial_setup_and_tasks():
     
     run_all_background_tasks()
 
+def perform_initial_setup_and_tasks():
+    """
+    Wrapper function that checks if the app is configured before starting core services.
+    This is the target for the main initialization thread at startup.
+    """
+    with app.app_context():
+        if not app.is_configured:
+            logging.info("Application is not configured. Skipping initial core service startup.")
+            # Start a minimal set of background tasks if needed, e.g., just the agent status updater
+            run_all_background_tasks()
+            return
+
+    logging.info("Application is configured. Starting core services.")
+    start_core_services()
+
 def main_application_entrypoint():
     global main_initialization_thread
 
     logging.info("-" * 52)
     logging.info("--- DockFlare Starting ---")
     logging.info(f"--- Version: {config.APP_VERSION} ---")
-    logging.info("--- web: http://dockflare.app ---") 
+    logging.info("--- web: http://dockflare.app ---")
     logging.info("-" * 52)
 
-    load_state() 
+    # === Pre-Flight Setup Check ===
+    data_path = os.path.dirname(config.STATE_FILE_PATH)
+    key_file = os.path.join(data_path, 'dockflare.key')
+    config_file = os.path.join(data_path, 'dockflare_config.dat')
+
+    app.is_configured = False
+    if os.path.exists(config_file) and os.path.exists(key_file):
+        logging.info("Configuration file found. Loading settings.")
+        try:
+            with open(key_file, 'rb') as f:
+                key = f.read()
+
+            fernet = Fernet(key)
+
+            with open(config_file, 'rb') as f:
+                encrypted_data = f.read()
+
+            decrypted_data = fernet.decrypt(encrypted_data)
+            config_data = json.loads(decrypted_data)
+
+            # Populate Flask app.config with the loaded values
+            app.config['CF_API_TOKEN'] = config_data.get('cf_api_token')
+            app.config['CF_ACCOUNT_ID'] = config_data.get('cf_account_id')
+            app.config['TUNNEL_NAME'] = config_data.get('tunnel_name')
+            app.config['CF_ZONE_ID'] = config_data.get('cf_zone_id')
+            app.config['CLOUDFLARED_CONTAINER_NAME'] = f"cloudflared-agent-{app.config.get('TUNNEL_NAME')}"
+
+            tunnel_dns_scan_zone_names_str = config_data.get('tunnel_dns_scan_zone_names', '')
+            app.config['TUNNEL_DNS_SCAN_ZONE_NAMES'] = [name.strip() for name in tunnel_dns_scan_zone_names_str.split(',') if name.strip()]
+
+            app.config['GRACE_PERIOD_SECONDS'] = int(config_data.get('grace_period_seconds', 28800))
+            app.config['DOCKFLARE_USERNAME'] = config_data.get('username')
+            app.config['DOCKFLARE_PASSWORD_HASH'] = config_data.get('password')
+
+            # Also update the CF_HEADERS in the config module for immediate use
+            if app.config['CF_API_TOKEN']:
+                config.CF_HEADERS['Authorization'] = f"Bearer {app.config['CF_API_TOKEN']}"
+
+            app.is_configured = True
+            logging.info("Application is configured and in Operational Mode.")
+        except Exception as e:
+            logging.error(f"Failed to load or decrypt configuration: {e}. Starting in Pre-Flight mode.", exc_info=True)
+            app.is_configured = False
+    else:
+        logging.info("Configuration file not found. Starting in Pre-Flight Mode.")
+        app.is_configured = False
+    # === End Pre-Flight Setup Check ===
+
+    load_state()
     logging.info("Initial state loading from file complete.")
 
     if not docker_client:
