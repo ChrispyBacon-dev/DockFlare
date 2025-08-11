@@ -3,7 +3,66 @@
 {% block title %}Settings{% endblock %}
 
 {% block content %}
-    
+    <!-- 0. General Settings -->
+    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+        <div class="card-body">
+            <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
+                General Settings
+            </h2>
+            <form method="POST" action="{{ url_for('web.settings_page') }}" class="space-y-4">
+                {{ settings_form.hidden_tag() }}
+                
+                <div class="form-control w-full">
+                    <label class="label" for="tunnel_name">
+                        <span class="label-text">{{ settings_form.tunnel_name.label.text }}</span>
+                    </label>
+                    {{ settings_form.tunnel_name(class="input input-bordered w-full", **{'id': 'tunnel_name'}) }}
+                    {% for error in settings_form.tunnel_name.errors %}
+                        <label class="label">
+                            <span class="label-text-alt text-error">{{ error }}</span>
+                        </label>
+                    {% endfor %}
+                </div>
+
+                <div class="form-control w-full">
+                    <label class="label" for="cf_zone_id">
+                        <span class="label-text">{{ settings_form.cf_zone_id.label.text }}</span>
+                    </label>
+                    {{ settings_form.cf_zone_id(class="input input-bordered w-full", **{'id': 'cf_zone_id'}) }}
+                    <label class="label">
+                        <span class="label-text-alt">Optional. The default Zone ID for new DNS records.</span>
+                    </label>
+                </div>
+
+                <div class="form-control w-full">
+                    <label class="label" for="tunnel_dns_scan_zone_names">
+                        <span class="label-text">{{ settings_form.tunnel_dns_scan_zone_names.label.text }}</span>
+                    </label>
+                    {{ settings_form.tunnel_dns_scan_zone_names(class="input input-bordered w-full", **{'id': 'tunnel_dns_scan_zone_names'}) }}
+                    <label class="label">
+                        <span class="label-text-alt">{{ settings_form.tunnel_dns_scan_zone_names.description }}</span>
+                    </label>
+                </div>
+
+                <div class="form-control w-full">
+                    <label class="label" for="grace_period_seconds">
+                        <span class="label-text">{{ settings_form.grace_period_seconds.label.text }}</span>
+                    </label>
+                    {{ settings_form.grace_period_seconds(class="input input-bordered w-full", **{'id': 'grace_period_seconds', 'type': 'number'}) }}
+                    {% for error in settings_form.grace_period_seconds.errors %}
+                        <label class="label">
+                            <span class="label-text-alt text-error">{{ error }}</span>
+                        </label>
+                    {% endfor %}
+                </div>
+                
+                <div class="card-actions pt-4">
+                    {{ settings_form.submit_settings(class="btn btn-primary") }}
+                </div>
+            </form>
+        </div>
+    </section>
+
     <!-- 1. Access Groups Section -->
     <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
         <div class="card-body">
@@ -193,7 +252,60 @@
         </div>
     </section>
 
-    <!-- 4. Tunnel & Agent Status Section -->
+    <!-- 4. Security Section -->
+    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+        <div class="card-body">
+            <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
+                Security
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+                <div>
+                    <h3 class="font-semibold text-lg mb-2">Change Password</h3>
+                    <form method="POST" action="{{ url_for('web.change_password') }}" class="space-y-4">
+                        {{ change_password_form.hidden_tag() }}
+                        <div class="form-control">
+                            <label class="label" for="current_password">
+                                <span class="label-text">Current Password</span>
+                            </label>
+                            {{ change_password_form.current_password(class="input input-bordered w-full", **{'id': 'current_password'}) }}
+                        </div>
+                        <div class="form-control">
+                            <label class="label" for="new_password">
+                                <span class="label-text">New Password</span>
+                            </label>
+                            {{ change_password_form.new_password(class="input input-bordered w-full", **{'id': 'new_password'}) }}
+                        </div>
+                        <div class="form-control">
+                            <label class="label" for="confirm_new_password">
+                                <span class="label-text">Confirm New Password</span>
+                            </label>
+                            {{ change_password_form.confirm_new_password(class="input input-bordered w-full", **{'id': 'confirm_new_password'}) }}
+                        </div>
+                        <div class="card-actions">
+                            <button type="submit" class="btn btn-primary">Change Password</button>
+                        </div>
+                    </form>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-lg mb-2">Password Reset</h3>
+                    <div role="alert" class="alert alert-info text-sm">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span>
+                            To reset your password, you must have filesystem access to the DockFlare container.
+                            <br>
+                            1. Stop the DockFlare container.
+                            <br>
+                            2. Delete the `dockflare_config.dat` and `dockflare.key` files from your persistent data volume.
+                            <br>
+                            3. Restart the container. You will be prompted to go through the initial setup again.
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 5. Tunnel & Agent Status Section -->
     <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
         <div class="card-body">
             <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">

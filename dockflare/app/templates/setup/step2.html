@@ -1,0 +1,62 @@
+{% extends "setup/base.html" %}
+
+{% block setup_content %}
+<form method="POST" action="{{ url_for('setup.step2_tunnel_config') }}" class="space-y-4">
+    {{ form.hidden_tag() }}
+
+    <div class="form-control">
+        <label class="label">
+            <span class="label-text">{{ form.tunnel_name.label }}</span>
+        </label>
+        {{ form.tunnel_name(class="input input-bordered w-full") }}
+        {% for error in form.tunnel_name.errors %}
+            <label class="label">
+                <span class="label-text-alt text-error">{{ error }}</span>
+            </label>
+        {% endfor %}
+    </div>
+
+    <div class="form-control">
+        <label class="label">
+            <span class="label-text">{{ form.cf_zone_id.label }}</span>
+        </label>
+        {{ form.cf_zone_id(class="input input-bordered w-full", placeholder="e.g., abc123def456...") }}
+        {% for error in form.cf_zone_id.errors %}
+            <label class="label">
+                <span class="label-text-alt text-error">{{ error }}</span>
+            </label>
+        {% endfor %}
+    </div>
+
+    <div class="form-control">
+        <label class="label">
+            <span class="label-text">{{ form.tunnel_dns_scan_zone_names.label }}</span>
+        </label>
+        {{ form.tunnel_dns_scan_zone_names(class="input input-bordered w-full", placeholder="e.g., example.com, my-other-domain.net") }}
+         <label class="label">
+            <span class="label-text-alt">{{ form.tunnel_dns_scan_zone_names.description }}</span>
+        </label>
+        {% for error in form.tunnel_dns_scan_zone_names.errors %}
+            <label class="label">
+                <span class="label-text-alt text-error">{{ error }}</span>
+            </label>
+        {% endfor %}
+    </div>
+
+    <div class="form-control">
+        <label class="label">
+            <span class="label-text">{{ form.grace_period_seconds.label }}</span>
+        </label>
+        {{ form.grace_period_seconds(class="input input-bordered w-full") }}
+        {% for error in form.grace_period_seconds.errors %}
+            <label class="label">
+                <span class="label-text-alt text-error">{{ error }}</span>
+            </label>
+        {% endfor %}
+    </div>
+
+    <div class="card-actions mt-6">
+        {{ form.submit(class="btn btn-primary w-full") }}
+    </div>
+</form>
+{% endblock %}

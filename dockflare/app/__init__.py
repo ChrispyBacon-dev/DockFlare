@@ -13,7 +13,6 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-#
 # app/__init__.py
 import logging
 import queue
@@ -22,6 +21,8 @@ import os
 
 from flask import Flask
 from flask_wtf.csrf import CSRFProtect
+from flask_login import LoginManager
+from .core.user import User
 import docker
 from docker.errors import APIError
 
@@ -84,6 +85,23 @@ def create_app():
     # Initialize CSRF Protection
     csrf = CSRFProtect(app_instance)
 
+    # Initialize Flask-Login
+    login_manager = LoginManager()
+    login_manager.init_app(app_instance)
+    login_manager.login_view = 'auth.login'
+    login_manager.login_message_category = "info"
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        """Load user from the config for session management."""
+        if not app_instance.is_configured:
+            return None
+
+        stored_username = app_instance.config.get('DOCKFLARE_USERNAME')
+        if user_id == stored_username:
+            return User(user_id)
+        return None
+
     app_instance.reconciliation_info = {
         "in_progress": False,
         "progress": 0,
@@ -103,6 +121,15 @@ def create_app():
         csrf.exempt(api_v2_bp)
         app_instance.register_blueprint(api_v2_bp)
         logging.info("API v2 blueprint registered.")
+
+        from .web.setup_routes import setup_bp
+        csrf.exempt(setup_bp)
+        app_instance.register_blueprint(setup_bp)
+        logging.info("Setup blueprint registered.")
+
+        from .web.auth_routes import auth_bp
+        app_instance.register_blueprint(auth_bp)
+        logging.info("Auth blueprint registered.")
 
     return app_instance
 

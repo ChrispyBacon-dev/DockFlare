@@ -15,7 +15,7 @@
   </a>
 </p>
 <p align="center">
-  <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases/tag/v2.0.4"><img src="https://img.shields.io/badge/Release-v2.0.4-blue.svg?style=for-the-badge" alt="Release"></a>
+  <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases/tag/v2.1.1"><img src="https://img.shields.io/badge/Release-v2.1.1-blue.svg?style=for-the-badge" alt="Release"></a>
   <a href="https://hub.docker.com/r/alplat/dockflare"><img src="https://img.shields.io/docker/pulls/alplat/dockflare?style=for-the-badge" alt="Docker Pulls"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Made%20with-Python-1f425f.svg?style=for-the-badge" alt="Python"></a>
   <a href="https://github.com/ChrispyBacon-dev/DockFlare/blob/main/LICENSE.MD"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg?style=for-the-badge" alt="License"></a>
@@ -85,8 +85,6 @@ Before you begin, ensure you have the following:
         restart: unless-stopped
         ports:
           - "5000:5000"
-        env_file:
-          - .env
         volumes:
           - /var/run/docker.sock:/var/run/docker.sock:ro
           - ./dockflare_data:/app/data
@@ -102,15 +100,12 @@ Before you begin, ensure you have the following:
        external: true
     ```
 
-2.  **Create `.env` File**:
-    Copy `env.example` to `.env` and fill in your `CF_API_TOKEN`, `CF_ACCOUNT_ID`, and `CF_ZONE_ID`.
-
-3.  **Run DockFlare**:
+2.  **Run DockFlare**:
     ```bash
     docker compose up -d
     ```
 
-4.  **Access the Web UI**: Open `http://your-server-ip:5000`.
+3.  **Access the Web UI**: Open `http://your-server-ip:5000`.
 
 </details>
 

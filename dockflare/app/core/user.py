@@ -13,25 +13,13 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
-# /app/web/utils.py
-from app import config
-
-def get_rule_key(hostname, path):
-    path_str = str(path or "").strip()
-    return f"{hostname}|{path_str}"
-
-def get_label(labels, key_suffix, default=None):
-    if config.CUSTOM_LABEL_PREFIX:
-        custom_key = f"{config.CUSTOM_LABEL_PREFIX.rstrip('.')}.{key_suffix}"
-        if custom_key in labels:
-            return labels[custom_key]
-
-    primary_key = f"{config.PRIMARY_LABEL_PREFIX}{key_suffix}"
-    if primary_key in labels:
-        return labels[primary_key]
-
-    legacy_key = f"{config.LEGACY_LABEL_PREFIX}{key_suffix}"
-    if legacy_key in labels:
-        return labels[legacy_key]
-
-    return default
+#
+# app/core/user.py
+from flask_login import UserMixin
+class User(UserMixin):
+    """
+    A simple user class for Flask-Login.
+    This class is not a database model but a representation of the logged-in user.
+    """
+    def __init__(self, username):
+        self.id = username

@@ -19,7 +19,8 @@ import copy
 import logging
 import json 
 import time 
-from app import config, docker_client 
+from flask import current_app
+from app import config, docker_client
 from app import tunnel_state, cloudflared_agent_state 
 from app.core import cloudflare_api
 from app.core.state_manager import managed_rules, state_lock 
@@ -28,367 +29,378 @@ from docker.errors import NotFound, APIError
 import requests 
 
 def initialize_tunnel():
-    logging.info("Initializing tunnel...")
-    logging.info(f"Using Cloudflare Account ID: {config.CF_ACCOUNT_ID}")
-    logging.info(f"API Token available: {'Yes' if config.CF_API_TOKEN else 'No'}")
-    logging.info(f"Zone ID available: {'Yes: ' + config.CF_ZONE_ID if config.CF_ZONE_ID else 'No'}")
-    logging.info(f"External mode: {config.USE_EXTERNAL_CLOUDFLARED}")
-    logging.info(f"External tunnel ID: {config.EXTERNAL_TUNNEL_ID}")
-    
-    tunnel_state["status_message"] = "Checking tunnel configuration..."
-    tunnel_state["error"] = None
-    
-    if config.USE_EXTERNAL_CLOUDFLARED:
-        logging.info("External cloudflared configuration detected.")
-        if config.EXTERNAL_TUNNEL_ID:
-            tunnel_id = config.EXTERNAL_TUNNEL_ID
-            logging.info(f"Using external tunnel ID: {tunnel_id}")
-            tunnel_state["id"] = tunnel_id
-            tunnel_state["token"] = None
-            tunnel_state["status_message"] = "Using external tunnel to manage DNS and inbound routes."
-            logging.info(f"External tunnel (ID: {tunnel_id}) initialized for DNS and routes.")
+    from app import app
+    with app.app_context():
+        logging.info("Initializing tunnel...")
+        cf_account_id = current_app.config.get('CF_ACCOUNT_ID')
+        cf_api_token = current_app.config.get('CF_API_TOKEN')
+        cf_zone_id = current_app.config.get('CF_ZONE_ID')
+        tunnel_name = current_app.config.get('TUNNEL_NAME')
+
+        logging.info(f"Using Cloudflare Account ID: {cf_account_id}")
+        logging.info(f"API Token available: {'Yes' if cf_api_token else 'No'}")
+        logging.info(f"Zone ID available: {'Yes: ' + cf_zone_id if cf_zone_id else 'No'}")
+        logging.info(f"External mode: {config.USE_EXTERNAL_CLOUDFLARED}")
+        logging.info(f"External tunnel ID: {config.EXTERNAL_TUNNEL_ID}")
+        
+        tunnel_state["status_message"] = "Checking tunnel configuration..."
+        tunnel_state["error"] = None
+        
+        if config.USE_EXTERNAL_CLOUDFLARED:
+            logging.info("External cloudflared configuration detected.")
+            if config.EXTERNAL_TUNNEL_ID:
+                tunnel_id = config.EXTERNAL_TUNNEL_ID
+                logging.info(f"Using external tunnel ID: {tunnel_id}")
+                tunnel_state["id"] = tunnel_id
+                tunnel_state["token"] = None
+                tunnel_state["status_message"] = "Using external tunnel to manage DNS and inbound routes."
+                logging.info(f"External tunnel (ID: {tunnel_id}) initialized for DNS and routes.")
+                return
+            else:
+                logging.warning("USE_EXTERNAL_CLOUDFLARED is true but EXTERNAL_TUNNEL_ID is not provided.")
+                tunnel_state["status_message"] = "Error: External tunnel config missing tunnel ID."
+                tunnel_state["error"] = "External cloudflared enabled but missing tunnel ID."
+                return
+        
+        if not tunnel_name:
+            logging.error("TUNNEL_NAME not provided. Required when not using external cloudflared.")
+            tunnel_state["status_message"] = "Error: Missing required TUNNEL_NAME."
+            tunnel_state["error"] = "TUNNEL_NAME not provided."
             return
-        else:
-            logging.warning("USE_EXTERNAL_CLOUDFLARED is true but EXTERNAL_TUNNEL_ID is not provided.")
-            tunnel_state["status_message"] = "Error: External tunnel config missing tunnel ID."
-            tunnel_state["error"] = "External cloudflared enabled but missing tunnel ID."
-            return
-    
-    if not config.TUNNEL_NAME:
-        logging.error("TUNNEL_NAME not provided. Required when not using external cloudflared.")
-        tunnel_state["status_message"] = "Error: Missing required TUNNEL_NAME."
-        tunnel_state["error"] = "TUNNEL_NAME not provided."
-        return
 
-    try:
-        tunnel_id, token = cloudflare_api.find_tunnel_via_api(config.TUNNEL_NAME)
+        try:
+            tunnel_id, token = cloudflare_api.find_tunnel_via_api(tunnel_name)
 
-        if not tunnel_id and not tunnel_state.get("error"):
-            tunnel_state["status_message"] = f"Tunnel '{config.TUNNEL_NAME}' not found. Creating..."
-            tunnel_id, token = cloudflare_api.create_tunnel_via_api(config.TUNNEL_NAME)
+            if not tunnel_id and not tunnel_state.get("error"):
+                tunnel_state["status_message"] = f"Tunnel '{tunnel_name}' not found. Creating..."
+                tunnel_id, token = cloudflare_api.create_tunnel_via_api(tunnel_name)
 
-        if tunnel_id and token:
-            tunnel_state["id"] = tunnel_id
-            tunnel_state["token"] = token
-            tunnel_state["status_message"] = "Tunnel setup complete (using API)."
-            tunnel_state["error"] = None
-            logging.info(f"Tunnel '{config.TUNNEL_NAME}' initialized. ID: {tunnel_id}")
-        elif not tunnel_state.get("error"):
-            tunnel_state["status_message"] = "Tunnel initialization failed."
-            tunnel_state["error"] = "Failed to find/create tunnel or get token."
-            logging.error(f"Tunnel init failed for '{config.TUNNEL_NAME}'.")
-        else:
-            tunnel_state["status_message"] = "Tunnel initialization failed (see error details)."
-            
-    except requests.exceptions.RequestException as e:
-        logging.error(f"API exception during tunnel initialization for '{config.TUNNEL_NAME}': {e}")
-        if not tunnel_state.get("error"): 
-            tunnel_state["error"] = f"API error: {e}"
-        tunnel_state["status_message"] = "Tunnel initialization failed (API error)."
-    except Exception as e:
-        logging.error(f"Unhandled exception during tunnel initialization for '{config.TUNNEL_NAME}': {e}", exc_info=True)
-        if not tunnel_state.get("error"):
-            tunnel_state["error"] = f"Unexpected init error: {e}"
-        tunnel_state["status_message"] = "Tunnel initialization failed (unexpected error)."
+            if tunnel_id and token:
+                tunnel_state["id"] = tunnel_id
+                tunnel_state["token"] = token
+                tunnel_state["status_message"] = "Tunnel setup complete (using API)."
+                tunnel_state["error"] = None
+                logging.info(f"Tunnel '{tunnel_name}' initialized. ID: {tunnel_id}")
+            elif not tunnel_state.get("error"):
+                tunnel_state["status_message"] = "Tunnel initialization failed."
+                tunnel_state["error"] = "Failed to find/create tunnel or get token."
+                logging.error(f"Tunnel init failed for '{tunnel_name}'.")
+            else:
+                tunnel_state["status_message"] = "Tunnel initialization failed (see error details)."
+                
+        except requests.exceptions.RequestException as e:
+            logging.error(f"API exception during tunnel initialization for '{tunnel_name}': {e}")
+            if not tunnel_state.get("error"): 
+                tunnel_state["error"] = f"API error: {e}"
+            tunnel_state["status_message"] = "Tunnel initialization failed (API error)."
+        except Exception as e:
+            logging.error(f"Unhandled exception during tunnel initialization for '{tunnel_name}': {e}", exc_info=True)
+            if not tunnel_state.get("error"):
+                tunnel_state["error"] = f"Unexpected init error: {e}"
+            tunnel_state["status_message"] = "Tunnel initialization failed (unexpected error)."
 
 def update_cloudflare_config():
-    if not tunnel_state.get("id"):
-        logging.warning("Cannot update CF config, tunnel ID missing in state.")
-        return False
+    from app import app
+    with app.app_context():
+        if not tunnel_state.get("id"):
+            logging.warning("Cannot update CF config, tunnel ID missing in state.")
+            return False
 
-    with state_lock: 
-        logging.info("Constructing desired Cloudflare tunnel configuration from managed rules...")
-        desired_dockflare_rules = []
-        for rule_key, rule_details in managed_rules.items():
-            if rule_details.get("status") == "active":
-                service_str = rule_details.get("service")
-                actual_hostname_for_cf = rule_details.get("hostname")
-                actual_path_for_cf = rule_details.get("path")
+        with state_lock: 
+            logging.info("Constructing desired Cloudflare tunnel configuration from managed rules...")
+            desired_dockflare_rules = []
+            for rule_key, rule_details in managed_rules.items():
+                if rule_details.get("status") == "active":
+                    service_str = rule_details.get("service")
+                    actual_hostname_for_cf = rule_details.get("hostname")
+                    actual_path_for_cf = rule_details.get("path")
+                    
+                    if service_str and actual_hostname_for_cf: 
+                        no_tls_verify_flag = rule_details.get("no_tls_verify", False) 
+                        origin_server_name_val = rule_details.get("origin_server_name")
+                        http_host_header_val = rule_details.get("http_host_header")
+
+                        rule_config = {"hostname": actual_hostname_for_cf, "service": service_str} 
+                        
+                        if actual_path_for_cf and actual_path_for_cf.strip(): 
+                            processed_path = actual_path_for_cf.strip()
+                            if not processed_path.startswith('/'):
+                                processed_path = '/' + processed_path
+                            if len(processed_path) > 1 and processed_path.endswith('/'):
+                                processed_path = processed_path.rstrip('/')
+                            rule_config["path"] = processed_path
+                        
+                        origin_request_settings = {}
+                        if no_tls_verify_flag and isinstance(service_str, str) and \
+                           (service_str.lower().startswith("http://") or service_str.lower().startswith("https://")):
+                            origin_request_settings["noTLSVerify"] = True
+                        elif no_tls_verify_flag:
+                            logging.debug(f"Rule for {rule_key} has no_tls_verify=true, but service '{service_str}' is not HTTP/HTTPS. 'noTLSVerify' will be ignored by Cloudflare for this service type.")
+
+                        if origin_server_name_val and isinstance(service_str, str) and \
+                           (service_str.lower().startswith("http://") or service_str.lower().startswith("https://")):
+                            origin_request_settings["originServerName"] = origin_server_name_val
+                        elif origin_server_name_val:
+                            logging.debug(f"Rule for {rule_key} has origin_server_name='{origin_server_name_val}', but service '{service_str}' is not HTTP/HTTPS. 'originServerName' might be ignored by Cloudflare for this service type or cause issues.")
+                        if http_host_header_val and isinstance(service_str, str) and \
+                           (service_str.lower().startswith("http://") or service_str.lower().startswith("https://")):
+                            origin_request_settings["httpHostHeader"] = http_host_header_val
+                        elif http_host_header_val:
+                            logging.debug(f"Rule for {rule_key} has http_host_header='{http_host_header_val}', but service '{service_str}' is not HTTP/HTTPS. 'httpHostHeader' might be ignored by Cloudflare for this service type or cause issues.")
+                        if origin_request_settings:
+                            rule_config["originRequest"] = origin_request_settings
+                        
+                        desired_dockflare_rules.append(rule_config)
+                    elif not service_str:
+                        logging.warning(f"Rule {rule_key} is active but missing 'service'. Skipping.")
+                    elif not actual_hostname_for_cf:
+                        logging.warning(f"Rule {rule_key} is active but could not determine a valid hostname for Cloudflare. Skipping.")
+            
+            try:
+                current_api_config_ruleset = cloudflare_api.get_current_cf_config(tunnel_state["id"])
+            except Exception as e:
+                logging.error(f"Failed to fetch current CF config to compare: {e}")
+                tunnel_state["error"] = f"Failed get tunnel config: {e}" 
+                return False
+
+            if current_api_config_ruleset is None: 
+                logging.error("Failed to fetch current CF config ruleset; cannot reliably update.")
+                return False
                 
-                if service_str and actual_hostname_for_cf: 
-                    no_tls_verify_flag = rule_details.get("no_tls_verify", False) 
-                    origin_server_name_val = rule_details.get("origin_server_name")
-                    http_host_header_val = rule_details.get("http_host_header")
+            current_api_ingress_rules = current_api_config_ruleset.get("ingress", [])
+            preserved_api_rules = []
+            catch_all_rule_template = {"service": "http_status:404"} 
 
-                    rule_config = {"hostname": actual_hostname_for_cf, "service": service_str} 
-                    
-                    if actual_path_for_cf and actual_path_for_cf.strip(): 
-                        processed_path = actual_path_for_cf.strip()
-                        if not processed_path.startswith('/'):
-                            processed_path = '/' + processed_path
-                        if len(processed_path) > 1 and processed_path.endswith('/'):
-                            processed_path = processed_path.rstrip('/')
-                        rule_config["path"] = processed_path
-                    
-                    origin_request_settings = {}
-                    if no_tls_verify_flag and isinstance(service_str, str) and \
-                       (service_str.lower().startswith("http://") or service_str.lower().startswith("https://")):
-                        origin_request_settings["noTLSVerify"] = True
-                    elif no_tls_verify_flag:
-                        logging.debug(f"Rule for {rule_key} has no_tls_verify=true, but service '{service_str}' is not HTTP/HTTPS. 'noTLSVerify' will be ignored by Cloudflare for this service type.")
+            for api_rule in current_api_ingress_rules:
+                api_hostname = api_rule.get("hostname")
+                api_service = api_rule.get("service")
+                api_path = api_rule.get("path") 
 
-                    if origin_server_name_val and isinstance(service_str, str) and \
-                       (service_str.lower().startswith("http://") or service_str.lower().startswith("https://")):
-                        origin_request_settings["originServerName"] = origin_server_name_val
-                    elif origin_server_name_val:
-                        logging.debug(f"Rule for {rule_key} has origin_server_name='{origin_server_name_val}', but service '{service_str}' is not HTTP/HTTPS. 'originServerName' might be ignored by Cloudflare for this service type or cause issues.")
-                    if http_host_header_val and isinstance(service_str, str) and \
-                       (service_str.lower().startswith("http://") or service_str.lower().startswith("https://")):
-                        origin_request_settings["httpHostHeader"] = http_host_header_val
-                    elif http_host_header_val:
-                        logging.debug(f"Rule for {rule_key} has http_host_header='{http_host_header_val}', but service '{service_str}' is not HTTP/HTTPS. 'httpHostHeader' might be ignored by Cloudflare for this service type or cause issues.")
-                    if origin_request_settings:
-                        rule_config["originRequest"] = origin_request_settings
-                    
-                    desired_dockflare_rules.append(rule_config)
-                elif not service_str:
-                    logging.warning(f"Rule {rule_key} is active but missing 'service'. Skipping.")
-                elif not actual_hostname_for_cf:
-                    logging.warning(f"Rule {rule_key} is active but could not determine a valid hostname for Cloudflare. Skipping.")
-        
-        try:
-            current_api_config_ruleset = cloudflare_api.get_current_cf_config(tunnel_state["id"])
-        except Exception as e:
-            logging.error(f"Failed to fetch current CF config to compare: {e}")
-            tunnel_state["error"] = f"Failed get tunnel config: {e}" 
-            return False
+                is_catch_all = api_service == catch_all_rule_template["service"] and \
+                               (api_hostname is None or api_hostname == "") and \
+                               (api_path is None or api_path == "")
 
-        if current_api_config_ruleset is None: 
-            logging.error("Failed to fetch current CF config ruleset; cannot reliably update.")
-            return False
-            
-        current_api_ingress_rules = current_api_config_ruleset.get("ingress", [])
-        preserved_api_rules = []
-        catch_all_rule_template = {"service": "http_status:404"} 
+                is_actively_managed_by_dockflare = False
+                if not is_catch_all : 
+                    for df_rule_key, df_rule_details in managed_rules.items():
+                        df_hostname_for_cf = df_rule_details.get("hostname")
+                        df_path_for_cf = df_rule_details.get("path")
 
-        for api_rule in current_api_ingress_rules:
-            api_hostname = api_rule.get("hostname")
-            api_service = api_rule.get("service")
-            api_path = api_rule.get("path") 
+                        if df_rule_details.get("status") == "active" and \
+                           df_hostname_for_cf == api_hostname and \
+                           (df_path_for_cf or None) == (api_path or None): 
+                            is_actively_managed_by_dockflare = True
+                            break
+                
+                is_wildcard_not_actively_managed = api_hostname and '*' in api_hostname and not is_actively_managed_by_dockflare
 
-            is_catch_all = api_service == catch_all_rule_template["service"] and \
-                           (api_hostname is None or api_hostname == "") and \
-                           (api_path is None or api_path == "")
+                if is_catch_all or is_wildcard_not_actively_managed:
+                    if is_catch_all: logging.debug(f"Preserving API catch-all rule: {api_rule}")
+                    if is_wildcard_not_actively_managed: logging.debug(f"Preserving API wildcard rule (not actively managed by DockFlare): {api_rule}")
+                    preserved_api_rules.append(api_rule)
+                    continue
+                
+                if not is_actively_managed_by_dockflare:
+                     logging.info(f"Non-DockFlare managed rule found in API (hostname: {api_hostname}, path: {api_path}, service: {api_service}). It will be removed by authoritative update.")
 
-            is_actively_managed_by_dockflare = False
-            if not is_catch_all : 
-                for df_rule_key, df_rule_details in managed_rules.items():
-                    df_hostname_for_cf = df_rule_details.get("hostname")
-                    df_path_for_cf = df_rule_details.get("path")
-
-                    if df_rule_details.get("status") == "active" and \
-                       df_hostname_for_cf == api_hostname and \
-                       (df_path_for_cf or None) == (api_path or None): 
-                        is_actively_managed_by_dockflare = True
+            final_ingress_rules_to_put = list(desired_dockflare_rules) 
+            for p_rule in preserved_api_rules:
+                is_duplicate = False
+                p_hostname = p_rule.get("hostname")
+                p_service = p_rule.get("service")
+                p_path = p_rule.get("path") 
+                for f_rule in final_ingress_rules_to_put:
+                    if f_rule.get("hostname") == p_hostname and \
+                       f_rule.get("service") == p_service and \
+                       (f_rule.get("path") or None) == (p_path or None):
+                        is_duplicate = True
                         break
+                if not is_duplicate:
+                    final_ingress_rules_to_put.append(p_rule)
+
+            has_explicit_catch_all_in_final_list = any(
+                r.get("service") == catch_all_rule_template["service"] and \
+                (r.get("hostname") is None or r.get("hostname") == "") and \
+                (r.get("path") is None or r.get("path") == "")
+                for r in final_ingress_rules_to_put
+            )
+            if not has_explicit_catch_all_in_final_list:
+                final_ingress_rules_to_put.append(catch_all_rule_template.copy()) 
+                logging.info("Adding default catch-all rule as none was found/preserved from API or generated by DockFlare rules.")
+
+            def rule_to_comparable_dict(rule):          
+                comp_dict = {} 
+                if rule.get("hostname") is not None: 
+                     comp_dict["hostname"] = rule.get("hostname")
+                comp_dict["service"] = rule.get("service") 
+                path_val = rule.get("path")
+                if path_val and path_val.strip():
+                    processed_path_comp = path_val.strip()
+                    if not processed_path_comp.startswith('/'):
+                        processed_path_comp = '/' + processed_path_comp
+                    if len(processed_path_comp) > 1 and processed_path_comp.endswith('/'):
+                        processed_path_comp = processed_path_comp.rstrip('/')
+                    comp_dict["path"] = processed_path_comp
+                
+                origin_request = rule.get("originRequest")
+                if isinstance(origin_request, dict):
+                    if origin_request.get("noTLSVerify") is True:
+                        comp_dict["noTLSVerify"] = True 
+                    if origin_request.get("originServerName"):
+                        comp_dict["originServerName"] = origin_request.get("originServerName")
+                    if origin_request.get("httpHostHeader"):
+                        comp_dict["httpHostHeader"] = origin_request.get("httpHostHeader")
+
+                return comp_dict
+
+            current_api_comparable_set = {json.dumps(rule_to_comparable_dict(r), sort_keys=True) for r in current_api_ingress_rules}
+            final_put_comparable_set = {json.dumps(rule_to_comparable_dict(r), sort_keys=True) for r in final_ingress_rules_to_put}
+
+            needs_api_update = False
+            if current_api_comparable_set != final_put_comparable_set:
+                logging.info("Ingress rule configuration content differs from Cloudflare. Update required.")
+                needs_api_update = True
+            elif len(current_api_ingress_rules) != len(final_ingress_rules_to_put): 
+                logging.info("Number of ingress rules differs from Cloudflare. Update required.")
+                needs_api_update = True
             
-            is_wildcard_not_actively_managed = api_hostname and '*' in api_hostname and not is_actively_managed_by_dockflare
+            if not needs_api_update:
+                logging.info("Cloudflare configuration content and rule count match desired state. No API update deemed necessary.")
+                return True 
 
-            if is_catch_all or is_wildcard_not_actively_managed:
-                if is_catch_all: logging.debug(f"Preserving API catch-all rule: {api_rule}")
-                if is_wildcard_not_actively_managed: logging.debug(f"Preserving API wildcard rule (not actively managed by DockFlare): {api_rule}")
-                preserved_api_rules.append(api_rule)
-                continue
+            logging.info(f"--- FINAL RULES TO PUT (PRE-SORT, {len(final_ingress_rules_to_put)} total) ---")
+            for i, rule_to_log in enumerate(final_ingress_rules_to_put):
+                logging.info(f"Pre-sort Rule {i}: {json.dumps(rule_to_log)}")
             
-            if not is_actively_managed_by_dockflare:
-                 logging.info(f"Non-DockFlare managed rule found in API (hostname: {api_hostname}, path: {api_path}, service: {api_service}). It will be removed by authoritative update.")
-
-        final_ingress_rules_to_put = list(desired_dockflare_rules) 
-        for p_rule in preserved_api_rules:
-            is_duplicate = False
-            p_hostname = p_rule.get("hostname")
-            p_service = p_rule.get("service")
-            p_path = p_rule.get("path") 
-            for f_rule in final_ingress_rules_to_put:
-                if f_rule.get("hostname") == p_hostname and \
-                   f_rule.get("service") == p_service and \
-                   (f_rule.get("path") or None) == (p_path or None):
-                    is_duplicate = True
-                    break
-            if not is_duplicate:
-                final_ingress_rules_to_put.append(p_rule)
-
-        has_explicit_catch_all_in_final_list = any(
-            r.get("service") == catch_all_rule_template["service"] and \
-            (r.get("hostname") is None or r.get("hostname") == "") and \
-            (r.get("path") is None or r.get("path") == "")
-            for r in final_ingress_rules_to_put
-        )
-        if not has_explicit_catch_all_in_final_list:
-            final_ingress_rules_to_put.append(catch_all_rule_template.copy()) 
-            logging.info("Adding default catch-all rule as none was found/preserved from API or generated by DockFlare rules.")
-
-        def rule_to_comparable_dict(rule):          
-            comp_dict = {} 
-            if rule.get("hostname") is not None: 
-                 comp_dict["hostname"] = rule.get("hostname")
-            comp_dict["service"] = rule.get("service") 
-            path_val = rule.get("path")
-            if path_val and path_val.strip():
-                processed_path_comp = path_val.strip()
-                if not processed_path_comp.startswith('/'):
-                    processed_path_comp = '/' + processed_path_comp
-                if len(processed_path_comp) > 1 and processed_path_comp.endswith('/'):
-                    processed_path_comp = processed_path_comp.rstrip('/')
-                comp_dict["path"] = processed_path_comp
-            
-            origin_request = rule.get("originRequest")
-            if isinstance(origin_request, dict):
-                if origin_request.get("noTLSVerify") is True:
-                    comp_dict["noTLSVerify"] = True 
-                if origin_request.get("originServerName"):
-                    comp_dict["originServerName"] = origin_request.get("originServerName")
-                if origin_request.get("httpHostHeader"):
-                    comp_dict["httpHostHeader"] = origin_request.get("httpHostHeader")
-
-            return comp_dict
-
-        current_api_comparable_set = {json.dumps(rule_to_comparable_dict(r), sort_keys=True) for r in current_api_ingress_rules}
-        final_put_comparable_set = {json.dumps(rule_to_comparable_dict(r), sort_keys=True) for r in final_ingress_rules_to_put}
-
-        needs_api_update = False
-        if current_api_comparable_set != final_put_comparable_set:
-            logging.info("Ingress rule configuration content differs from Cloudflare. Update required.")
-            needs_api_update = True
-        elif len(current_api_ingress_rules) != len(final_ingress_rules_to_put): 
-            logging.info("Number of ingress rules differs from Cloudflare. Update required.")
-            needs_api_update = True
-        
-        if not needs_api_update:
-            logging.info("Cloudflare configuration content and rule count match desired state. No API update deemed necessary.")
-            return True 
-
-        logging.info(f"--- FINAL RULES TO PUT (PRE-SORT, {len(final_ingress_rules_to_put)} total) ---")
-        for i, rule_to_log in enumerate(final_ingress_rules_to_put):
-            logging.info(f"Pre-sort Rule {i}: {json.dumps(rule_to_log)}")
-        
-        actual_catch_all_rule = None
-        rules_without_catch_all = []
-        for r_to_sort in final_ingress_rules_to_put: 
-            if r_to_sort.get("service") == catch_all_rule_template["service"] and \
-               (r_to_sort.get("hostname") is None or r_to_sort.get("hostname") == "") and \
-               (r_to_sort.get("path") is None or r_to_sort.get("path") == ""):
-                if actual_catch_all_rule is None: 
-                    actual_catch_all_rule = r_to_sort
+            actual_catch_all_rule = None
+            rules_without_catch_all = []
+            for r_to_sort in final_ingress_rules_to_put: 
+                if r_to_sort.get("service") == catch_all_rule_template["service"] and \
+                   (r_to_sort.get("hostname") is None or r_to_sort.get("hostname") == "") and \
+                   (r_to_sort.get("path") is None or r_to_sort.get("path") == ""):
+                    if actual_catch_all_rule is None: 
+                        actual_catch_all_rule = r_to_sort
+                    else:
+                        logging.warning(f"Multiple catch-all like rules found: {r_to_sort} and {actual_catch_all_rule}. Using first.")
                 else:
-                    logging.warning(f"Multiple catch-all like rules found: {r_to_sort} and {actual_catch_all_rule}. Using first.")
-            else:
-                rules_without_catch_all.append(r_to_sort)
-        
-        rules_without_catch_all.sort(key=lambda r_sort_key: (
-            r_sort_key.get("hostname") or "\uffff", 
-            0 if not r_sort_key.get("path") else 1, 
-            -len(r_sort_key.get("path") or ""), 
-            r_sort_key.get("path") or "" 
-        ))
-
-        final_sorted_rules_for_put = rules_without_catch_all
-        if actual_catch_all_rule:
-            final_sorted_rules_for_put.append(actual_catch_all_rule) 
-
-        logging.info(f"--- FINAL RULES TO PUT (SORTED, {len(final_sorted_rules_for_put)} total) ---")
-        for i, rule_to_log in enumerate(final_sorted_rules_for_put):
-            logging.info(f"Sorted Rule {i}: {json.dumps(rule_to_log)}")
-        
-    if needs_api_update:
-        endpoint = f"/accounts/{config.CF_ACCOUNT_ID}/cfd_tunnel/{tunnel_state['id']}/configurations"
-        config_payload = {"config": {"ingress": final_sorted_rules_for_put}} 
-        
-        try:
-            cloudflare_api.cf_api_request("PUT", endpoint, json_data=config_payload) 
-            logging.info("Successfully updated Cloudflare tunnel configuration.")
-            return True
-        except Exception as e: 
-            logging.error(f"Failed to update CF tunnel config: {e}", exc_info=True)
-            tunnel_state["error"] = f"Failed update tunnel config: {e}" 
-            return False
+                    rules_without_catch_all.append(r_to_sort)
             
-    return True
+            rules_without_catch_all.sort(key=lambda r_sort_key: (
+                r_sort_key.get("hostname") or "\uffff", 
+                0 if not r_sort_key.get("path") else 1, 
+                -len(r_sort_key.get("path") or ""), 
+                r_sort_key.get("path") or "" 
+            ))
+
+            final_sorted_rules_for_put = rules_without_catch_all
+            if actual_catch_all_rule:
+                final_sorted_rules_for_put.append(actual_catch_all_rule) 
+
+            logging.info(f"--- FINAL RULES TO PUT (SORTED, {len(final_sorted_rules_for_put)} total) ---")
+            for i, rule_to_log in enumerate(final_sorted_rules_for_put):
+                logging.info(f"Sorted Rule {i}: {json.dumps(rule_to_log)}")
+        
+        if needs_api_update:
+            account_id = current_app.config.get('CF_ACCOUNT_ID')
+            endpoint = f"/accounts/{account_id}/cfd_tunnel/{tunnel_state['id']}/configurations"
+            config_payload = {"config": {"ingress": final_sorted_rules_for_put}} 
+            
+            try:
+                cloudflare_api.cf_api_request("PUT", endpoint, json_data=config_payload) 
+                logging.info("Successfully updated Cloudflare tunnel configuration.")
+                return True
+            except Exception as e: 
+                logging.error(f"Failed to update CF tunnel config: {e}", exc_info=True)
+                tunnel_state["error"] = f"Failed update tunnel config: {e}" 
+                return False
+                
+        return True
 
 def get_cloudflared_container():
-    if not docker_client:
-        logging.debug("Docker client unavailable in get_cloudflared_container.")
-        return None
-    if config.USE_EXTERNAL_CLOUDFLARED:
-        return None
-    if not config.CLOUDFLARED_CONTAINER_NAME:
-        logging.debug("CLOUDFLARED_CONTAINER_NAME is not set.")
-        return None
-    try:
-        container = docker_client.containers.get(config.CLOUDFLARED_CONTAINER_NAME)
-        container.reload()
-        return container
-    except NotFound:
-        logging.debug(f"Agent container '{config.CLOUDFLARED_CONTAINER_NAME}' not found.")
-        return None
-    except APIError as e:
-        logging.error(f"Docker API error getting agent container '{config.CLOUDFLARED_CONTAINER_NAME}': {e}")
-        cloudflared_agent_state["last_action_status"] = f"Error get agent: {e}"
-        return None
-    except requests.exceptions.ConnectionError as e: 
-        logging.error(f"Docker connection error getting agent container: {e}")
-        cloudflared_agent_state["last_action_status"] = f"Error connect Docker: {e}"
-        return None
-    except Exception as e:
-        logging.error(f"Unexpected error getting agent container '{config.CLOUDFLARED_CONTAINER_NAME}': {e}", exc_info=True)
-        cloudflared_agent_state["last_action_status"] = f"Error unexpected get agent: {e}"
-        return None
+    from app import app
+    with app.app_context():
+        if not docker_client:
+            logging.debug("Docker client unavailable in get_cloudflared_container.")
+            return None
+        if config.USE_EXTERNAL_CLOUDFLARED:
+            return None
+        
+        container_name = current_app.config.get('CLOUDFLARED_CONTAINER_NAME')
+        if not container_name:
+            logging.debug("CLOUDFLARED_CONTAINER_NAME is not set in config.")
+            return None
+        try:
+            container = docker_client.containers.get(container_name)
+            container.reload()
+            return container
+        except NotFound:
+            logging.debug(f"Agent container '{container_name}' not found.")
+            return None
+        except APIError as e:
+            logging.error(f"Docker API error getting agent container '{container_name}': {e}")
+            cloudflared_agent_state["last_action_status"] = f"Error get agent: {e}"
+            return None
+        except requests.exceptions.ConnectionError as e: 
+            logging.error(f"Docker connection error getting agent container: {e}")
+            cloudflared_agent_state["last_action_status"] = f"Error connect Docker: {e}"
+            return None
+        except Exception as e:
+            logging.error(f"Unexpected error getting agent container '{container_name}': {e}", exc_info=True)
+            cloudflared_agent_state["last_action_status"] = f"Error unexpected get agent: {e}"
+            return None
 
 def update_cloudflared_container_status():
-    global docker_client 
-    current_status = cloudflared_agent_state.get("container_status")
+    from app import app
+    with app.app_context():
+        global docker_client 
+        current_status = cloudflared_agent_state.get("container_status")
 
-    if not docker_client:
-        if current_status != "docker_unavailable":
-            logging.warning("Docker client unavailable in update_cloudflared_container_status, attempting reconnect...")
+        if not docker_client:
+            if current_status != "docker_unavailable":
+                logging.warning("Docker client unavailable in update_cloudflared_container_status, attempting reconnect...")
+                try:
+                    import docker as docker_lib 
+                    docker_client = docker_lib.from_env(timeout=5)
+                    docker_client.ping()
+                    logging.info("Reconnected to Docker daemon during agent status update.")
+                except Exception as e_reconnect:
+                    logging.error(f"Failed to reconnect to Docker daemon: {e_reconnect}")
+                    if current_status != "docker_unavailable": 
+                        logging.info(f"Agent status changing to docker_unavailable.")
+                        cloudflared_agent_state["container_status"] = "docker_unavailable"
+                    from app import docker_client as global_dc_ref
+                    if global_dc_ref is not None: 
+                        logging.warning("Global docker_client was not None, but reconnect failed. This needs careful handling.")
+                    return 
+            else: 
+                 return
+
+        container = get_cloudflared_container() 
+        new_status = "not_found"
+        if container:
             try:
-                
-                import docker as docker_lib 
-                docker_client = docker_lib.from_env(timeout=5)
-                docker_client.ping()
-                logging.info("Reconnected to Docker daemon during agent status update.")
-                
-            except Exception as e_reconnect:
-                logging.error(f"Failed to reconnect to Docker daemon: {e_reconnect}")
-                if current_status != "docker_unavailable": 
-                    logging.info(f"Agent status changing to docker_unavailable.")
-                    cloudflared_agent_state["container_status"] = "docker_unavailable"
-                
-                from app import docker_client as global_dc_ref
-                if global_dc_ref is not None: 
-                    logging.warning("Global docker_client was not None, but reconnect failed. This needs careful handling.")
+                container.reload()
+                new_status = container.status
+            except (NotFound, APIError) as e_reload:
+                new_status = "not_found"
+                logging.warning(f"Error reloading agent container status (now 'not_found'): {e_reload}")
+                if cloudflared_agent_state.get("container_status") != "running": 
+                     cloudflared_agent_state["last_action_status"] = "Agent container disappeared or API error."
+            except requests.exceptions.ConnectionError as e_conn:
+                new_status = "docker_unavailable"
+                logging.error(f"Docker connection error during agent status reload: {e_conn}")
+                from app import docker_client as global_dc_ref 
+            except Exception as e_unexpected:
+                logging.error(f"Unexpected error reloading agent status for {container.name}: {e_unexpected}", exc_info=True)
                 return 
-        else: 
-             return
-
-    container = get_cloudflared_container() 
-    new_status = "not_found"
-    if container:
-        try:
-            container.reload()
-            new_status = container.status
-        except (NotFound, APIError) as e_reload:
-            new_status = "not_found"
-            logging.warning(f"Error reloading agent container status (now 'not_found'): {e_reload}")
-            if cloudflared_agent_state.get("container_status") != "running": 
-                 cloudflared_agent_state["last_action_status"] = "Agent container disappeared or API error."
-        except requests.exceptions.ConnectionError as e_conn:
-            new_status = "docker_unavailable"
-            logging.error(f"Docker connection error during agent status reload: {e_conn}")
-            
-            from app import docker_client as global_dc_ref 
-
-        except Exception as e_unexpected:
-            logging.error(f"Unexpected error reloading agent status for {container.name}: {e_unexpected}", exc_info=True)
-            
-            return 
-    
-    if current_status != new_status:
-        logging.info(f"Agent container '{config.CLOUDFLARED_CONTAINER_NAME}' status changed: {current_status} -> {new_status}")
-        cloudflared_agent_state["container_status"] = new_status
-        last_action = cloudflared_agent_state.get("last_action_status")
-        if new_status == 'running' and last_action and last_action.startswith("Error"):
-            cloudflared_agent_state["last_action_status"] = None
+        
+        if current_status != new_status:
+            container_name = current_app.config.get('CLOUDFLARED_CONTAINER_NAME', 'cloudflared-agent')
+            logging.info(f"Agent container '{container_name}' status changed: {current_status} -> {new_status}")
+            cloudflared_agent_state["container_status"] = new_status
+            last_action = cloudflared_agent_state.get("last_action_status")
+            if new_status == 'running' and last_action and last_action.startswith("Error"):
+                cloudflared_agent_state["last_action_status"] = None
 
 def ensure_docker_network_exists(network_name):
     if not docker_client:
@@ -432,201 +444,207 @@ def ensure_docker_network_exists(network_name):
         return False
 
 def start_cloudflared_container():
-    logging.info(f"Attempting to start and reconcile agent container '{config.CLOUDFLARED_CONTAINER_NAME}'...")
-    cloudflared_agent_state["last_action_status"] = "Starting/Reconciling..."
-    
-    if not docker_client:
-        cloudflared_agent_state["last_action_status"] = "Error: Docker client unavailable."
-        logging.error("Docker client unavailable, cannot start agent container.")
-        return False
-    if not tunnel_state.get("token"):
-        cloudflared_agent_state["last_action_status"] = "Error: Tunnel token not available."
-        logging.error("Tunnel token not available, cannot start agent container.")
-        return False
-    if not config.CLOUDFLARED_NETWORK_NAME or not ensure_docker_network_exists(config.CLOUDFLARED_NETWORK_NAME):
-        cloudflared_agent_state["last_action_status"] = "Error: Docker network setup failed."
-        logging.error("Docker network setup failed, cannot start agent container.")
-        return False
-
-    token = tunnel_state["token"]
-    container = get_cloudflared_container()
-    needs_recreate = False
-
-    if container:
-        logging.info(f"Found existing agent container '{container.name}' with status: {container.status}. Checking configuration...")
+    from app import app
+    with app.app_context():
+        container_name = current_app.config.get('CLOUDFLARED_CONTAINER_NAME')
+        logging.info(f"Attempting to start and reconcile agent container '{container_name}'...")
+        cloudflared_agent_state["last_action_status"] = "Starting/Reconciling..."
         
-        network_mode = container.attrs.get('HostConfig', {}).get('NetworkMode', 'default')
-        if network_mode != config.CLOUDFLARED_NETWORK_NAME:
-            logging.warning(f"Network mismatch for managed agent. Desired: '{config.CLOUDFLARED_NETWORK_NAME}', Actual: '{network_mode}'. Recreation required.")
-            needs_recreate = True
-        try:
-            current_image = container.image.tags[0] if container.image.tags else None
-            if current_image != config.CLOUDFLARED_IMAGE:
-                logging.warning(f"Image mismatch for managed agent. Desired: '{config.CLOUDFLARED_IMAGE}', Actual: '{current_image}'. Recreation required.")
+        if not docker_client:
+            cloudflared_agent_state["last_action_status"] = "Error: Docker client unavailable."
+            logging.error("Docker client unavailable, cannot start agent container.")
+            return False
+        if not tunnel_state.get("token"):
+            cloudflared_agent_state["last_action_status"] = "Error: Tunnel token not available."
+            logging.error("Tunnel token not available, cannot start agent container.")
+            return False
+        if not config.CLOUDFLARED_NETWORK_NAME or not ensure_docker_network_exists(config.CLOUDFLARED_NETWORK_NAME):
+            cloudflared_agent_state["last_action_status"] = "Error: Docker network setup failed."
+            logging.error("Docker network setup failed, cannot start agent container.")
+            return False
+
+        token = tunnel_state["token"]
+        container = get_cloudflared_container()
+        needs_recreate = False
+
+        if container:
+            logging.info(f"Found existing agent container '{container.name}' with status: {container.status}. Checking configuration...")
+            
+            network_mode = container.attrs.get('HostConfig', {}).get('NetworkMode', 'default')
+            if network_mode != config.CLOUDFLARED_NETWORK_NAME:
+                logging.warning(f"Network mismatch for managed agent. Desired: '{config.CLOUDFLARED_NETWORK_NAME}', Actual: '{network_mode}'. Recreation required.")
                 needs_recreate = True
-        except Exception as img_err:
-             logging.warning(f"Could not reliably determine image for running agent container: {img_err}")
-        
-        desired_metrics_port = config.CLOUDFLARED_METRICS_PORT
-        port_bindings = container.attrs.get('HostConfig', {}).get('PortBindings', {})
-        
-        actual_metrics_port = None
-        if port_bindings:
-            for port_key in port_bindings:
-                if port_key.endswith('/tcp'):
-                    actual_metrics_port = port_key[:-4] 
-                    break 
-        
-        if desired_metrics_port and actual_metrics_port != desired_metrics_port:
-            logging.warning(f"Metrics port mismatch. Desired: '{desired_metrics_port}', Actual: '{actual_metrics_port}'. Recreation required.")
-            needs_recreate = True
-        elif not desired_metrics_port and actual_metrics_port:
-            logging.warning(f"Metrics port should be disabled, but found port '{actual_metrics_port}' exposed. Recreation required.")
-            needs_recreate = True
-
-        if needs_recreate:
-            logging.info(f"Removing misconfigured agent container '{container.name}' before recreation...")
             try:
-                container.remove(force=True)
-                container = None
-            except (APIError, requests.exceptions.ConnectionError) as rm_err:
-                logging.error(f"Failed to remove misconfigured agent '{container.name}': {rm_err}. Cannot proceed.")
-                cloudflared_agent_state["last_action_status"] = f"Error: Failed to remove old agent: {rm_err}"
-                return False
+                current_image = container.image.tags[0] if container.image.tags else None
+                if current_image != config.CLOUDFLARED_IMAGE:
+                    logging.warning(f"Image mismatch for managed agent. Desired: '{config.CLOUDFLARED_IMAGE}', Actual: '{current_image}'. Recreation required.")
+                    needs_recreate = True
+            except Exception as img_err:
+                 logging.warning(f"Could not reliably determine image for running agent container: {img_err}")
+            
+            desired_metrics_port = config.CLOUDFLARED_METRICS_PORT
+            port_bindings = container.attrs.get('HostConfig', {}).get('PortBindings', {})
+            
+            actual_metrics_port = None
+            if port_bindings:
+                for port_key in port_bindings:
+                    if port_key.endswith('/tcp'):
+                        actual_metrics_port = port_key[:-4] 
+                        break 
+            
+            if desired_metrics_port and actual_metrics_port != desired_metrics_port:
+                logging.warning(f"Metrics port mismatch. Desired: '{desired_metrics_port}', Actual: '{actual_metrics_port}'. Recreation required.")
+                needs_recreate = True
+            elif not desired_metrics_port and actual_metrics_port:
+                logging.warning(f"Metrics port should be disabled, but found port '{actual_metrics_port}' exposed. Recreation required.")
+                needs_recreate = True
 
-    if container:
-        if container.status == 'running':
-            msg = f"Managed agent container '{container.name}' is already running and correctly configured."
-            logging.info(msg)
-            cloudflared_agent_state["last_action_status"] = msg
-        else:
-            logging.info(f"Starting correctly configured but stopped agent container '{container.name}'...");
+            if needs_recreate:
+                logging.info(f"Removing misconfigured agent container '{container.name}' before recreation...")
+                try:
+                    container.remove(force=True)
+                    container = None
+                except (APIError, requests.exceptions.ConnectionError) as rm_err:
+                    logging.error(f"Failed to remove misconfigured agent '{container.name}': {rm_err}. Cannot proceed.")
+                    cloudflared_agent_state["last_action_status"] = f"Error: Failed to remove old agent: {rm_err}"
+                    return False
+
+        if container:
+            if container.status == 'running':
+                msg = f"Managed agent container '{container.name}' is already running and correctly configured."
+                logging.info(msg)
+                cloudflared_agent_state["last_action_status"] = msg
+            else:
+                logging.info(f"Starting correctly configured but stopped agent container '{container.name}'...");
+                try:
+                    container.start()
+                    msg = f"Started existing agent container '{container.name}'."
+                    cloudflared_agent_state["last_action_status"] = msg
+                    logging.info(msg)
+                except NotFound as e:
+                    if 'network' in str(e).lower() and 'not found' in str(e).lower():
+                        logging.warning(f"Agent container '{container.name}' is attached to a stale or missing network. Forcing recreation.")
+                        cloudflared_agent_state["last_action_status"] = "Stale network detected, recreating agent..."
+                        try:
+                            container.remove(force=True)
+                            container = None
+                        except (APIError, requests.exceptions.ConnectionError) as rm_err:
+                            logging.error(f"Failed to remove broken agent '{container.name}': {rm_err}. Cannot proceed.")
+                            cloudflared_agent_state["last_action_status"] = f"Error: Failed to remove broken agent: {rm_err}"
+                            return False
+                    else:
+                        logging.error(f"Failed to start container '{container.name}' due to an unexpected 'NotFound' error: {e}", exc_info=True)
+                        cloudflared_agent_state["last_action_status"] = f"Error starting agent: {e}"
+                        raise
+                except (APIError, requests.exceptions.ConnectionError) as e:
+                    logging.error(f"Failed to start container '{container.name}': {e}", exc_info=True)
+                    cloudflared_agent_state["last_action_status"] = f"Error starting agent: {e}"
+                    return False
+
+        if not container:
+            logging.info(f"Agent container '{container_name}' not found or was broken. Creating new container...")
             try:
-                container.start()
-                msg = f"Started existing agent container '{container.name}'."
+                logging.info(f"Pulling image {config.CLOUDFLARED_IMAGE}...");
+                docker_client.images.pull(config.CLOUDFLARED_IMAGE)
+                logging.info("Image pull complete.")
+            except Exception as img_err:
+                logging.warning(f"Could not pull image {config.CLOUDFLARED_IMAGE}: {img_err}. Will attempt using local if available.")
+
+            command_parts = ["tunnel"]
+            ports_mapping = {}
+            if config.CLOUDFLARED_METRICS_PORT:
+                metrics_address = f"0.0.0.0:{config.CLOUDFLARED_METRICS_PORT}"
+                command_parts.extend(["--metrics", metrics_address])
+                ports_mapping[f"{config.CLOUDFLARED_METRICS_PORT}/tcp"] = int(config.CLOUDFLARED_METRICS_PORT)
+                logging.info(f"Metrics endpoint will be enabled on {metrics_address}")
+
+            command_parts.extend(["--no-autoupdate", "run", "--token", token])
+            try:
+                container_params = {
+                    "image": config.CLOUDFLARED_IMAGE,
+                    "command": command_parts, 
+                    "name": container_name,
+                    "network": config.CLOUDFLARED_NETWORK_NAME,
+                    "restart_policy": {"Name": "unless-stopped"},
+                    "detach": True,
+                    "remove": False, 
+                    "labels": {"managed-by": "dockflare"},
+                    "ports": ports_mapping 
+                }
+                new_container = docker_client.containers.run(**container_params)
+                msg = f"Successfully created and started agent container '{new_container.name}' ({new_container.id[:12]})."
                 cloudflared_agent_state["last_action_status"] = msg
                 logging.info(msg)
-            except NotFound as e:
-                if 'network' in str(e).lower() and 'not found' in str(e).lower():
-                    logging.warning(f"Agent container '{container.name}' is attached to a stale or missing network. Forcing recreation.")
-                    cloudflared_agent_state["last_action_status"] = "Stale network detected, recreating agent..."
-                    try:
-                        container.remove(force=True)
-                        container = None
-                    except (APIError, requests.exceptions.ConnectionError) as rm_err:
-                        logging.error(f"Failed to remove broken agent '{container.name}': {rm_err}. Cannot proceed.")
-                        cloudflared_agent_state["last_action_status"] = f"Error: Failed to remove broken agent: {rm_err}"
-                        return False
-                else:
-                    logging.error(f"Failed to start container '{container.name}' due to an unexpected 'NotFound' error: {e}", exc_info=True)
-                    cloudflared_agent_state["last_action_status"] = f"Error starting agent: {e}"
-                    raise
-            except (APIError, requests.exceptions.ConnectionError) as e:
-                logging.error(f"Failed to start container '{container.name}': {e}", exc_info=True)
-                cloudflared_agent_state["last_action_status"] = f"Error starting agent: {e}"
+            except APIError as create_err:
+                logging.error(f"Failed to create new agent container: {create_err}")
+                cloudflared_agent_state["last_action_status"] = f"Error creating agent: {create_err}"
                 return False
-
-    if not container:
-        logging.info(f"Agent container '{config.CLOUDFLARED_CONTAINER_NAME}' not found or was broken. Creating new container...")
-        try:
-            logging.info(f"Pulling image {config.CLOUDFLARED_IMAGE}...");
-            docker_client.images.pull(config.CLOUDFLARED_IMAGE)
-            logging.info("Image pull complete.")
-        except Exception as img_err:
-            logging.warning(f"Could not pull image {config.CLOUDFLARED_IMAGE}: {img_err}. Will attempt using local if available.")
-
-        command_parts = ["tunnel"]
-        ports_mapping = {}
-        if config.CLOUDFLARED_METRICS_PORT:
-            metrics_address = f"0.0.0.0:{config.CLOUDFLARED_METRICS_PORT}"
-            command_parts.extend(["--metrics", metrics_address])
-            ports_mapping[f"{config.CLOUDFLARED_METRICS_PORT}/tcp"] = int(config.CLOUDFLARED_METRICS_PORT)
-            logging.info(f"Metrics endpoint will be enabled on {metrics_address}")
-
-        command_parts.extend(["--no-autoupdate", "run", "--token", token])
-        try:
-            container_params = {
-                "image": config.CLOUDFLARED_IMAGE,
-                "command": command_parts, 
-                "name": config.CLOUDFLARED_CONTAINER_NAME,
-                "network": config.CLOUDFLARED_NETWORK_NAME,
-                "restart_policy": {"Name": "unless-stopped"},
-                "detach": True,
-                "remove": False, 
-                "labels": {"managed-by": "dockflare"},
-                "ports": ports_mapping 
-            }
-            new_container = docker_client.containers.run(**container_params)
-            msg = f"Successfully created and started agent container '{new_container.name}' ({new_container.id[:12]})."
-            cloudflared_agent_state["last_action_status"] = msg
-            logging.info(msg)
-        except APIError as create_err:
-            logging.error(f"Failed to create new agent container: {create_err}")
-            cloudflared_agent_state["last_action_status"] = f"Error creating agent: {create_err}"
-            return False
-        except requests.exceptions.ConnectionError as e_conn_run:
-            logging.error(f"Docker connection error while creating agent: {e_conn_run}")
-            cloudflared_agent_state["last_action_status"] = "Error: Docker connection lost."
-            return False
-            
-    time.sleep(2) 
-    update_cloudflared_container_status() 
-    logging.info(f"Exiting start_cloudflared_container (Success: True).")
-    return True
-
-def stop_cloudflared_container():
-    logging.info(f"Attempting to stop agent container '{config.CLOUDFLARED_CONTAINER_NAME}'...")
-    cloudflared_agent_state["last_action_status"] = "Stopping..."
-    success_flag = False
-    
-    if not docker_client:
-        msg = "Docker client unavailable."
-        logging.error(msg)
-        cloudflared_agent_state["last_action_status"] = f"Error: {msg}"
-        return False
-
-    container = get_cloudflared_container()
-    if not container:
-        msg = f"Agent container '{config.CLOUDFLARED_CONTAINER_NAME}' not found (already stopped/removed?)."
-        logging.warning(msg)
-        cloudflared_agent_state["last_action_status"] = msg
-        if cloudflared_agent_state["container_status"] != "not_found":
-            cloudflared_agent_state["container_status"] = "not_found"
-        success_flag = True
+            except requests.exceptions.ConnectionError as e_conn_run:
+                logging.error(f"Docker connection error while creating agent: {e_conn_run}")
+                cloudflared_agent_state["last_action_status"] = "Error: Docker connection lost."
+                return False
+                
+        time.sleep(2) 
+        update_cloudflared_container_status() 
+        logging.info(f"Exiting start_cloudflared_container (Success: True).")
         return True
 
-    try:
-        container.reload()
-        if container.status != 'running':
-            msg = f"Agent container '{container.name}' is not running (status: {container.status})."
-            logging.info(msg)
+def stop_cloudflared_container():
+    from app import app
+    with app.app_context():
+        container_name = current_app.config.get('CLOUDFLARED_CONTAINER_NAME')
+        logging.info(f"Attempting to stop agent container '{container_name}'...")
+        cloudflared_agent_state["last_action_status"] = "Stopping..."
+        success_flag = False
+        
+        if not docker_client:
+            msg = "Docker client unavailable."
+            logging.error(msg)
+            cloudflared_agent_state["last_action_status"] = f"Error: {msg}"
+            return False
+
+        container = get_cloudflared_container()
+        if not container:
+            msg = f"Agent container '{container_name}' not found (already stopped/removed?)."
+            logging.warning(msg)
             cloudflared_agent_state["last_action_status"] = msg
-            if cloudflared_agent_state["container_status"] != container.status:
-                cloudflared_agent_state["container_status"] = container.status
+            if cloudflared_agent_state["container_status"] != "not_found":
+                cloudflared_agent_state["container_status"] = "not_found"
             success_flag = True
             return True
 
-        logging.info(f"Stopping running agent container '{container.name}'...");
-        container.stop(timeout=30) 
-        msg = f"Successfully stopped agent container '{container.name}'."
-        cloudflared_agent_state["last_action_status"] = msg
-        logging.info(msg)
-        success_flag = True
-    except (APIError, NotFound) as e_stop: 
-        msg = f"Docker API error stopping agent container '{config.CLOUDFLARED_CONTAINER_NAME}': {e_stop}"
-        logging.error(msg, exc_info=True)
-        cloudflared_agent_state["last_action_status"] = f"Error: {msg}"
-        success_flag = False
-    except requests.exceptions.ConnectionError as e_conn:
-        msg = f"Docker connection error stopping agent container: {e_conn}"
-        logging.error(msg)
-        cloudflared_agent_state["last_action_status"] = f"Error: {msg}"
-        success_flag = False
-    except Exception as e_unexp:
-        msg = f"Unexpected error stopping agent container '{config.CLOUDFLARED_CONTAINER_NAME}': {e_unexp}"
-        logging.error(msg, exc_info=True)
-        cloudflared_agent_state["last_action_status"] = f"Error: {msg}"
-        success_flag = False
+        try:
+            container.reload()
+            if container.status != 'running':
+                msg = f"Agent container '{container.name}' is not running (status: {container.status})."
+                logging.info(msg)
+                cloudflared_agent_state["last_action_status"] = msg
+                if cloudflared_agent_state["container_status"] != container.status:
+                    cloudflared_agent_state["container_status"] = container.status
+                success_flag = True
+                return True
+
+            logging.info(f"Stopping running agent container '{container.name}'...");
+            container.stop(timeout=30) 
+            msg = f"Successfully stopped agent container '{container.name}'."
+            cloudflared_agent_state["last_action_status"] = msg
+            logging.info(msg)
+            success_flag = True
+        except (APIError, NotFound) as e_stop: 
+            msg = f"Docker API error stopping agent container '{container_name}': {e_stop}"
+            logging.error(msg, exc_info=True)
+            cloudflared_agent_state["last_action_status"] = f"Error: {msg}"
+            success_flag = False
+        except requests.exceptions.ConnectionError as e_conn:
+            msg = f"Docker connection error stopping agent container: {e_conn}"
+            logging.error(msg)
+            cloudflared_agent_state["last_action_status"] = f"Error: {msg}"
+            success_flag = False
+        except Exception as e_unexp:
+            msg = f"Unexpected error stopping agent container '{container_name}': {e_unexp}"
+            logging.error(msg, exc_info=True)
+            cloudflared_agent_state["last_action_status"] = f"Error: {msg}"
+            success_flag = False
     
     if success_flag: 
         time.sleep(2)

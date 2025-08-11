@@ -1,0 +1,47 @@
+{% extends "setup/base.html" %}
+
+{% block setup_content %}
+<form method="POST" action="{{ url_for('setup.step3_admin_user') }}" class="space-y-4">
+    {{ form.hidden_tag() }}
+
+    <div class="form-control">
+        <label class="label">
+            <span class="label-text">{{ form.username.label }}</span>
+        </label>
+        {{ form.username(class="input input-bordered w-full", placeholder="e.g., admin") }}
+        {% for error in form.username.errors %}
+            <label class="label">
+                <span class="label-text-alt text-error">{{ error }}</span>
+            </label>
+        {% endfor %}
+    </div>
+
+    <div class="form-control">
+        <label class="label">
+            <span class="label-text">{{ form.password.label }}</span>
+        </label>
+        {{ form.password(class="input input-bordered w-full") }}
+        {% for error in form.password.errors %}
+            <label class="label">
+                <span class="label-text-alt text-error">{{ error }}</span>
+            </label>
+        {% endfor %}
+    </div>
+
+    <div class="form-control">
+        <label class="label">
+            <span class="label-text">{{ form.confirm_password.label }}</span>
+        </label>
+        {{ form.confirm_password(class="input input-bordered w-full") }}
+        {% for error in form.confirm_password.errors %}
+            <label class="label">
+                <span class="label-text-alt text-error">{{ error }}</span>
+            </label>
+        {% endfor %}
+    </div>
+
+    <div class="card-actions mt-6">
+        {{ form.submit(class="btn btn-primary w-full") }}
+    </div>
+</form>
+{% endblock %}
