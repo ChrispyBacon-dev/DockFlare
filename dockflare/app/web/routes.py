@@ -596,7 +596,7 @@ def tunnel_dns_records(tunnel_id):
 
 @bp.route('/ping')
 def ping():
-    return jsonify({ "status": "ok", "timestamp": int(time.time()), "version": "config.APP_VERSION", 
+    return jsonify({ "status": "ok", "timestamp": int(time.time()), "version": config.APP_VERSION, 
                      "protocol": request.environ.get('wsgi.url_scheme', 'unknown')})
 
 @bp.route('/debug')
