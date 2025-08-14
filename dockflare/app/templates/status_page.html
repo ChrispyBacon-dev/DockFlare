@@ -54,7 +54,7 @@
                                 <th class="p-3 w-1/5">Service Target</th>
                                 <th class="p-3 w-auto">Identifier</th>
                                 <th class="p-3 w-1/5">Access Policy</th>
-                                <th class="p-3 w-1/4">Manage Policy</th>
+                                <th class="p-3 w-1/4">Manage Rule</th>
                                 <th class="p-3 w-auto">Expires At</th>
                                 <th class="p-3 w-auto">Actions</th>
                             </tr>
@@ -135,30 +135,11 @@
                                     </td>
                                     <td class="p-3 whitespace-nowrap text-sm policy-actions-cell" style="min-width: 180px;">
                                         <div class="flex items-center space-x-1 sm:space-x-2">
-                                            <div class="dropdown dropdown-end dropdown-hover"> 
-                                                <button tabindex="0" role="button" class="btn btn-xs btn-info btn-outline" data-hostname="{{ hostname }}">Edit Policy</button> 
-                                                <div tabindex="0" class="dropdown-content z-[50] menu p-3 shadow-xl bg-base-100 dark:bg-base-200 rounded-box w-64 sm:w-72">
-                                                    <form action="{{ url_for('web.ui_update_access_policy', hostname=hostname) }}" method="POST" class="protocol-aware-form space-y-3">
-                                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                                        <div>
-                                                            <label class="block text-xs font-medium opacity-80 mb-1">Policy Type:</label>
-                                                            <select name="access_policy_type" class="policy-type-select select select-bordered select-xs w-full" data-hostname="{{ hostname }}">
-                                                                <option value="none" {% if not details.access_policy_type %}selected{% endif %}>None (Public)</option>
-                                                                <option value="bypass" {% if details.access_policy_type == 'bypass' %}selected{% endif %}>Bypass (Public App)</option>
-                                                                <option value="authenticate_email" {% if details.access_policy_type == 'authenticate_email' %}selected{% endif %}>Authenticate by Email</option>
-                                                                <option value="default_tld" {% if details.access_policy_type == 'default_tld' %}selected{% endif %}>Use *.tld Policy</option>
-                                                            </select>
-                                                        </div>
-                                                        <div class="auth-email-field hidden mt-2">
-                                                            <label class="block text-xs font-medium opacity-80 mb-1">Allowed Email:</label>
-                                                            <input type="email" name="auth_email" placeholder="user@example.com" value="{{ details.auth_email or '' }}" class="input input-bordered input-xs w-full">
-                                                        </div>
-                                                        <div class="flex items-center justify-end space-x-2 mt-3">
-                                                            <button type="submit" class="save-policy-btn btn btn-xs btn-primary">Save</button>
-                                                        </div>
-                                                    </form>
-                                                </div>
-                                            </div>
+                                            <button class="btn btn-xs btn-info btn-outline edit-rule-btn" 
+                                                    data-rule-key="{{ hostname }}" 
+                                                    data-rule-details="{{ details|tojson|forceescape }}">
+                                                Edit Rule
+                                            </button>
                                             {% if details.access_policy_ui_override and details.source != 'manual' %}
                                             <form action="{{ url_for('web.revert_access_policy_to_labels', hostname=hostname) }}" method="POST" onsubmit="return confirm('Revert policy for {{ display_hostname }} to be managed by labels/defaults?');" class="protocol-aware-form inline-block">
                                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -180,11 +161,6 @@
                                     <td class="p-3 whitespace-nowrap text-sm" style="min-width: 120px;">
                                         <div class="flex items-center gap-2">
                                             {% if details.source == 'manual' %}
-                                                <button class="btn btn-xs btn-info btn-outline edit-manual-rule-btn" 
-                                                        data-rule-key="{{ hostname }}" 
-                                                        data-rule-details="{{ details|tojson|forceescape }}">
-                                                    Edit
-                                                </button>
                                                 <form action="{{ url_for('web.ui_delete_manual_rule_route', rule_key_from_url=hostname) }}" method="post" onsubmit="return confirm('Delete manual rule for {{ display_hostname }}?');" class="protocol-aware-form">
                                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                                     <button type="submit" class="btn btn-xs btn-error btn-outline">Delete</button>
@@ -375,7 +351,7 @@
             <form method="dialog">
                 <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
             </form>
-            <h3 class="font-bold text-lg mb-6">Edit Manual Ingress Rule</h3>
+            <h3 class="font-bold text-lg mb-6">Edit Ingress Rule</h3>
             <form action="{{ url_for('web.ui_edit_manual_rule_route') }}" method="POST" class="protocol-aware-form flex flex-col flex-grow min-h-0" id="edit_manual_rule_form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="flex-grow overflow-y-auto space-y-6 p-1">

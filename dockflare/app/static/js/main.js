@@ -85,8 +85,8 @@ const themeManager = (function() {
     };
 })();
 
-function initializeEditManualRuleModal() {
-    const editButtons = document.querySelectorAll('.edit-manual-rule-btn');
+function initializeEditRuleModal() {
+    const editButtons = document.querySelectorAll('.edit-rule-btn');
     const modal = document.getElementById('edit_manual_rule_modal');
 
     if (!editButtons.length || !modal) {
@@ -529,7 +529,7 @@ document.addEventListener('DOMContentLoaded', function() {
         updateManualRuleServiceFields(); // Run once on load
         setupPathInput(document.getElementById('manual_path_display'), document.getElementById('manual_path'));
         setupPathInput(document.getElementById('edit_manual_path_display'), document.getElementById('edit_manual_path'));
-        initializeEditManualRuleModal();
+        initializeEditRuleModal();
     }
 
     // Logic for new Access Group dropdown in ADD Manual Rule Modal
