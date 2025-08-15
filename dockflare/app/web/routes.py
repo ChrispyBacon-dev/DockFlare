@@ -223,7 +223,7 @@ def status_page():
                         CF_ZONE_ID_CONFIGURED=bool(current_app.config.get('CF_ZONE_ID'))
                         )
 
-from app.web.forms import ChangePasswordForm, SecuritySettingsForm, SettingsForm
+from app.web.forms import ChangePasswordForm, SecuritySettingsForm, SettingsForm, CloudflareCredentialsForm
 from werkzeug.security import check_password_hash, generate_password_hash
 from cryptography.fernet import Fernet
 
@@ -234,6 +234,7 @@ def settings_page():
     settings_form = SettingsForm(prefix='general')
     change_password_form = ChangePasswordForm()
     security_settings_form = SecuritySettingsForm(prefix='security')
+    cf_credentials_form = CloudflareCredentialsForm(prefix='cf_creds')
 
     # Distinguish between form submissions
     if request.method == 'POST':
@@ -324,6 +325,49 @@ def settings_page():
             except Exception as e:
                 logging.error(f"Failed to update security settings in config file: {e}", exc_info=True)
                 flash('An error occurred while saving security settings.', 'danger')
+        
+        elif cf_credentials_form.submit_cloudflare_credentials.data and cf_credentials_form.validate():
+            data_path = os.path.dirname(config.STATE_FILE_PATH)
+            key_file = os.path.join(data_path, 'dockflare.key')
+            config_file = os.path.join(data_path, 'dockflare_config.dat')
+            try:
+                with open(key_file, 'rb') as f:
+                    key = f.read()
+                fernet = Fernet(key)
+
+                with open(config_file, 'rb') as f:
+                    decrypted_data = fernet.decrypt(f.read())
+                config_data = json.loads(decrypted_data)
+
+                updated = False
+                if cf_credentials_form.cf_account_id.data:
+                    config_data['cf_account_id'] = cf_credentials_form.cf_account_id.data
+                    current_app.config['CF_ACCOUNT_ID'] = config_data['cf_account_id']
+                    config.CF_ACCOUNT_ID = config_data['cf_account_id']
+                    updated = True
+                
+                if cf_credentials_form.cf_api_token.data:
+                    config_data['cf_api_token'] = cf_credentials_form.cf_api_token.data
+                    current_app.config['CF_API_TOKEN'] = config_data['cf_api_token']
+                    config.CF_API_TOKEN = config_data['cf_api_token']
+                    updated = True
+
+                if updated:
+                    encrypted_payload = fernet.encrypt(json.dumps(config_data).encode('utf-8'))
+                    with open(config_file, 'wb') as f:
+                        f.write(encrypted_payload)
+                    flash('Cloudflare credentials updated. Re-initializing tunnel...', 'success')
+                    
+                    from threading import Thread
+                    Thread(target=initialize_tunnel).start()
+                else:
+                    flash('No new credentials were provided.', 'info')
+
+                return redirect(url_for('web.settings_page'))
+            except Exception as e:
+                logging.error(f"Failed to update Cloudflare credentials: {e}", exc_info=True)
+                flash('An error occurred while updating credentials.', 'danger')
+
 
     # Populate forms for GET request
     if request.method == 'GET':
@@ -356,6 +400,7 @@ def settings_page():
         settings_form=settings_form,
         change_password_form=change_password_form,
         security_settings_form=security_settings_form,
+        cf_credentials_form=cf_credentials_form,
         access_groups=groups_for_template,
         used_group_ids=used_group_ids,
         all_account_tunnels=all_account_tunnels_list,

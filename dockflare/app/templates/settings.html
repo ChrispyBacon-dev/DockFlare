@@ -249,6 +249,45 @@
                     </form>
                 </div>
             </div>
+            <div class="border-t border-base-300 mt-8 pt-8">
+                <h3 class="font-semibold text-lg mb-2">Update Cloudflare Credentials</h3>
+                <div role="alert" class="alert alert-info text-sm mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span>
+                        Enter a new Account ID or API Token to update. For security, current values are not displayed.
+                        <br>
+                        Updating credentials may require an application restart to take full effect.
+                    </span>
+                </div>
+                <form method="POST" action="{{ url_for('web.settings_page') }}" class="space-y-4">
+                    {{ cf_credentials_form.hidden_tag() }}
+                    <div class="form-control">
+                        <label class="label" for="cf_account_id">
+                            <span class="label-text">Cloudflare Account ID</span>
+                        </label>
+                        {{ cf_credentials_form.cf_account_id(class="input input-bordered w-full", **{'id': 'cf_account_id', 'placeholder': 'Enter new 32-character Account ID'}) }}
+                        {% for error in cf_credentials_form.cf_account_id.errors %}
+                            <label class="label">
+                                <span class="label-text-alt text-error">{{ error }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                    <div class="form-control">
+                        <label class="label" for="cf_api_token">
+                            <span class="label-text">Cloudflare API Token</span>
+                        </label>
+                        {{ cf_credentials_form.cf_api_token(class="input input-bordered w-full", **{'id': 'cf_api_token', 'placeholder': 'Enter new 40-character API Token'}) }}
+                        {% for error in cf_credentials_form.cf_api_token.errors %}
+                            <label class="label">
+                                <span class="label-text-alt text-error">{{ error }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                    <div class="card-actions">
+                        {{ cf_credentials_form.submit_cloudflare_credentials(class="btn btn-primary") }}
+                    </div>
+                </form>
+            </div>
         </div>
     </section>
 
