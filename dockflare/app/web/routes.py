@@ -394,6 +394,14 @@ def settings_page():
     display_token_val = get_display_token_ui(template_tunnel_state.get("token"))
     all_account_tunnels_list = get_all_account_cloudflare_tunnels()
     cf_account_id = current_app.config.get('CF_ACCOUNT_ID')
+    
+    try:
+        with open(os.path.join(current_app.static_folder, 'json', 'countries.json')) as f:
+            countries = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        countries = []
+        flash('Could not load country list for Access Group modal.', 'error')
+
 
     return render_template(
         'settings.html',
@@ -404,6 +412,7 @@ def settings_page():
         access_groups=groups_for_template,
         used_group_ids=used_group_ids,
         all_account_tunnels=all_account_tunnels_list,
+        countries=countries,
         tunnel_state=template_tunnel_state,
         agent_state=template_agent_state,
         display_token=display_token_val,
@@ -1074,7 +1083,7 @@ def ui_edit_manual_rule_route():
 
     return redirect(url_for('web.status_page'))
 
-def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_str=None):
+def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_list=None):
     include_rules = []
 
     if email_str and email_str.strip():
@@ -1090,9 +1099,8 @@ def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_s
         for ip in ip_parts:
             include_rules.append({"ip": {"ip": ip}})
 
-    if countries_str and countries_str.strip():
-        country_parts = [part.strip().upper() for part in countries_str.split(',') if part.strip()]
-        for country in country_parts:
+    if countries_list:
+        for country in countries_list:
             include_rules.append({"geo": {"country_code": country}})
             
     if not include_rules:
@@ -1128,7 +1136,7 @@ def create_access_group():
             "policies": _parse_and_build_policy_from_form(
                 form.get('emails', ''),
                 form.get('ip_ranges', ''),
-                form.get('countries', '')
+                request.form.getlist('countries')
             )
         }
         access_groups[group_id] = new_group
@@ -1161,7 +1169,7 @@ def edit_access_group(group_id):
             "policies": _parse_and_build_policy_from_form(
                 form.get('emails', ''),
                 form.get('ip_ranges', ''),
-                form.get('countries', '')
+                request.form.getlist('countries')
             )
         }
         access_groups[group_id] = updated_group

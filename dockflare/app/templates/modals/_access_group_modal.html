@@ -36,8 +36,12 @@
                 </div>
                 <div class="form-control">
                     <label class="label" for="group_countries"><span class="label-text">Allowed Countries</span></label>
-                    <textarea id="group_countries" name="countries" class="textarea textarea-bordered h-24" placeholder="US, CA, GB"></textarea>
-                    <div class="label"><span class="label-text-alt">Comma-separated list of 2-letter ISO 3166-1 Alpha-2 country codes.</span></div>
+                    <select id="group_countries" name="countries" multiple="multiple" class="input input-bordered w-full">
+                        {% for country in countries %}
+                            <option value="{{ country.abbreviation }}">{{ country.country }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="label"><span class="label-text-alt">Select one or more countries.</span></div>
                 </div>
             </div>
 

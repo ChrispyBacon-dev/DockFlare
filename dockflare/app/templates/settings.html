@@ -433,3 +433,53 @@
     {{ super() }}
     {% include 'modals/_access_group_modal.html' %}
 {% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var countrySelectInstance = null;
+
+        function initializeCountrySelect() {
+            if (countrySelectInstance) {
+                countrySelectInstance.destroy();
+            }
+            countrySelectInstance = new TomSelect('#group_countries', {
+                plugins: ['remove_button'],
+                create: false,
+                sortField: {
+                    field: "text",
+                    direction: "asc"
+                }
+            });
+        }
+
+        // Handle opening the modal for editing
+        document.querySelectorAll('.edit-access-group-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                setTimeout(() => { // Allow modal to become visible
+                    initializeCountrySelect();
+                    const details = JSON.parse(this.dataset.groupDetails);
+                    if (details.policies) {
+                        const countryCodes = details.policies
+                            .flatMap(p => p.include || [])
+                            .filter(i => i.geo && i.geo.country_code)
+                            .map(i => i.geo.country_code);
+                        countrySelectInstance.setValue(countryCodes);
+                    }
+                }, 100);
+            });
+        });
+
+        // Handle opening the modal for creating
+        const createBtn = document.querySelector('button[onclick="openCreateAccessGroupModal()"]');
+        if (createBtn) {
+            createBtn.addEventListener('click', function() {
+                setTimeout(() => { // Allow modal to become visible
+                    initializeCountrySelect();
+                    countrySelectInstance.clear();
+                }, 100);
+            });
+        }
+    });
+</script>
+{% endblock %}
