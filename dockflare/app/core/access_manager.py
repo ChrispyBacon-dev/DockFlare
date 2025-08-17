@@ -273,7 +273,7 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
         policy_source_type = "group"
         cf_access_policies = []
         
-        # Use settings from the first group as a base
+   
         first_group_id = desired_access_group_ids[0]
         first_group_def = access_groups.get(first_group_id)
         
@@ -283,13 +283,25 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
             desired_allowed_idps = first_group_def.get("allowed_idps")
             desired_auto_redirect = first_group_def.get("auto_redirect_to_identity", False)
 
-        # Merge policies from all groups
+
         for group_id in desired_access_group_ids:
             group_definition = access_groups.get(group_id)
             if group_definition and group_definition.get("policies"):
-                cf_access_policies.extend(group_definition.get("policies"))
+                for policy in group_definition.get("policies"):
+                    is_default_deny = (
+                        policy.get("decision") == "deny" and
+                        isinstance(policy.get("include"), list) and
+                        len(policy.get("include")) == 1 and
+                        policy.get("include")[0] == {"everyone": {}}
+                    )
+                    if not is_default_deny:
+                        cf_access_policies.append(policy)
             else:
                 logging.warning(f"Access Group '{group_id}' not found or has no policies.")
+
+        has_allow_policy = any(p.get('decision') == 'allow' for p in cf_access_policies)
+        if has_allow_policy:
+            cf_access_policies.append({"name": "Default Deny", "decision": "deny", "include": [{"everyone": {}}]})
 
         new_config_hash = generate_access_app_config_hash(
             policy_type=policy_source_type, session_duration=desired_session_duration,
@@ -297,7 +309,7 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
             allowed_idps_str=json.dumps(desired_allowed_idps, sort_keys=True),
             auto_redirect_to_identity=desired_auto_redirect,
             custom_access_rules_str=json.dumps(cf_access_policies, sort_keys=True),
-            group_id=desired_access_group_ids # Pass the whole list
+            group_id=desired_access_group_ids 
         )
     else:
         policy_source_type = hostname_config_item.get("access_policy_type")

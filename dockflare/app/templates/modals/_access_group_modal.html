@@ -35,13 +35,13 @@
                     <div class="label"><span class="label-text-alt">Comma-separated list of IP ranges in CIDR format.</span></div>
                 </div>
                 <div class="form-control">
-                    <label class="label" for="group_countries"><span class="label-text">Allowed Countries</span></label>
+                    <label class="label" for="group_countries"><span class="label-text">Block Countries</span></label>
                     <select id="group_countries" name="countries" multiple="multiple" class="input input-bordered w-full">
                         {% for country in countries %}
                             <option value="{{ country.abbreviation }}">{{ country.country }}</option>
                         {% endfor %}
                     </select>
-                    <div class="label"><span class="label-text-alt">Select one or more countries.</span></div>
+                    <div class="label"><span class="label-text-alt">Select one or more countries to block from accessing the application.</span></div>
                 </div>
             </div>
 

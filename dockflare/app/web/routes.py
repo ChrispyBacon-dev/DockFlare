@@ -1098,32 +1098,49 @@ def ui_edit_manual_rule_route():
     return redirect(url_for('web.status_page'))
 
 def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_list=None):
-    include_rules = []
+    policies = []
+    allow_include_rules = []
 
     if email_str and email_str.strip():
         email_parts = [part.strip() for part in email_str.split(',') if part.strip()]
         for part in email_parts:
             if part.startswith('@'):
-                include_rules.append({"email_domain": {"domain": part[1:]}})
+                allow_include_rules.append({"email_domain": {"domain": part[1:]}})
             else:
-                include_rules.append({"email": {"email": part}})
+                allow_include_rules.append({"email": {"email": part}})
 
     if ip_ranges_str and ip_ranges_str.strip():
         ip_parts = [part.strip() for part in ip_ranges_str.split(',') if part.strip()]
         for ip in ip_parts:
-            include_rules.append({"ip": {"ip": ip}})
+            allow_include_rules.append({"ip": {"ip": ip}})
 
     if countries_list:
-        for country in countries_list:
-            include_rules.append({"geo": {"country_code": country}})
-            
-    if not include_rules:
-        return []
+        country_rules = [{"geo": {"country_code": country}} for country in countries_list]
+        policies.insert(0, {
+            "name": "Block selected countries",
+            "decision": "block",
+            "include": country_rules
+        })
 
-    return [
-        {"name": "Allow defined users, domains, IPs, and countries", "decision": "allow", "include": include_rules},
-        {"name": "Default Deny", "decision": "deny", "include": [{"everyone": {}}]}
-    ]
+    if allow_include_rules:
+        policies.append({
+            "name": "Allow defined users, domains, and IPs",
+            "decision": "allow",
+            "include": allow_include_rules
+        })
+        policies.append({
+            "name": "Default Deny",
+            "decision": "deny",
+            "include": [{"everyone": {}}]
+        })
+    elif countries_list:
+        policies.append({
+            "name": "Allow everyone else",
+            "decision": "allow",
+            "include": [{"everyone": {}}]
+        })
+
+    return policies
 
 
 @bp.route('/ui/access-groups/create', methods=['POST'])
@@ -1133,13 +1150,13 @@ def create_access_group():
     display_name = form.get('display_name', '').strip()
 
     if not group_id or not display_name:
-        cloudflared_agent_state["last_action_status"] = "Error: Group ID and Display Name are required."
-        return redirect(url_for('web.settings_page'))
+        flash("Error: Group ID and Display Name are required.", "error")
+        return redirect(url_for('web.access_policies_page'))
 
     with state_lock:
         if group_id in access_groups:
-            cloudflared_agent_state["last_action_status"] = f"Error: Access Group with ID '{group_id}' already exists."
-            return redirect(url_for('web.settings_page'))
+            flash(f"Error: Access Group with ID '{group_id}' already exists.", "error")
+            return redirect(url_for('web.access_policies_page'))
         
         new_group = {
             "id": group_id,
@@ -1156,22 +1173,22 @@ def create_access_group():
         access_groups[group_id] = new_group
         save_state()
 
-    cloudflared_agent_state["last_action_status"] = f"Success: Access Group '{display_name}' created."
-    return redirect(url_for('web.settings_page'))
+    flash(f"Success: Access Group '{display_name}' created.", "success")
+    return redirect(url_for('web.access_policies_page'))
 
 
 @bp.route('/ui/access-groups/edit/<group_id>', methods=['POST'])
 def edit_access_group(group_id):
     with state_lock:
         if group_id not in access_groups:
-            cloudflared_agent_state["last_action_status"] = f"Error: Access Group with ID '{group_id}' not found."
-            return redirect(url_for('web.settings_page'))
+            flash(f"Error: Access Group with ID '{group_id}' not found.", "error")
+            return redirect(url_for('web.access_policies_page'))
     
     form = request.form
     display_name = form.get('display_name', '').strip()
     if not display_name:
-        cloudflared_agent_state["last_action_status"] = "Error: Display Name is required."
-        return redirect(url_for('web.settings_page'))
+        flash("Error: Display Name is required.", "error")
+        return redirect(url_for('web.access_policies_page'))
     
     with state_lock:
         updated_group = {
@@ -1189,33 +1206,34 @@ def edit_access_group(group_id):
         access_groups[group_id] = updated_group
         save_state()
 
-    cloudflared_agent_state["last_action_status"] = f"Success: Access Group '{display_name}' updated. Triggering reconciliation."
+    flash(f"Success: Access Group '{display_name}' updated. Triggering reconciliation.", "success")
     reconcile_state_threaded()
-    return redirect(url_for('web.settings_page'))
+    return redirect(url_for('web.access_policies_page'))
 
 
 @bp.route('/ui/access-groups/delete/<group_id>', methods=['POST'])
 def delete_access_group(group_id):
     with state_lock:
         if group_id not in access_groups:
-            cloudflared_agent_state["last_action_status"] = f"Error: Access Group with ID '{group_id}' not found."
-            return redirect(url_for('web.settings_page'))
+            flash(f"Error: Access Group with ID '{group_id}' not found.", "error")
+            return redirect(url_for('web.access_policies_page'))
 
         is_in_use = any(
-            rule.get('access_group_id') == group_id
+            (isinstance(rule.get('access_group_id'), list) and group_id in rule.get('access_group_id')) or \
+            (rule.get('access_group_id') == group_id)
             for rule in managed_rules.values()
         )
 
         if is_in_use:
-            cloudflared_agent_state["last_action_status"] = f"Error: Cannot delete Access Group '{access_groups[group_id]['display_name']}' because it is currently in use."
-            return redirect(url_for('web.settings_page'))
+            flash(f"Error: Cannot delete Access Group '{access_groups[group_id]['display_name']}' because it is currently in use.", "error")
+            return redirect(url_for('web.access_policies_page'))
 
         display_name = access_groups[group_id]['display_name']
         del access_groups[group_id]
         save_state()
 
-    cloudflared_agent_state["last_action_status"] = f"Success: Access Group '{display_name}' has been deleted."
-    return redirect(url_for('web.settings_page'))
+    flash(f"Success: Access Group '{display_name}' has been deleted.", "success")
+    return redirect(url_for('web.access_policies_page'))
 
 @bp.route('/cloudflare-ping')
 def cloudflare_ping_route(): 
