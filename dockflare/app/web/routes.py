@@ -133,8 +133,8 @@ def add_security_headers_bp(response):
     
     csp = {
         "default-src": ["'self'"],
-        "script-src": ["'self'", "'unsafe-inline'"],
-        "style-src": ["'self'", "'unsafe-inline'", "https://rsms.me"],
+        "script-src": ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+        "style-src": ["'self'", "'unsafe-inline'", "https://rsms.me", "https://cdn.jsdelivr.net"],
         "img-src": ["'self'", "data:"],
         "font-src": ["'self'", "https://rsms.me"],
         "connect-src": ["'self'"],
