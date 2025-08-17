@@ -444,7 +444,12 @@
                 countrySelectInstance.destroy();
             }
             countrySelectInstance = new TomSelect('#group_countries', {
-                plugins: ['remove_button'],
+                plugins: {
+                    'checkbox_options': {},
+                    'remove_button': {
+                        title: 'Remove this item',
+                    }
+                },
                 create: false,
                 sortField: {
                     field: "text",
