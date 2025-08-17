@@ -1130,7 +1130,7 @@ def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_l
         })
         policies.append({
             "name": "Default Deny",
-            "decision": "deny",
+            "decision": "block",
             "include": [{"everyone": {}}]
         })
     elif countries_list:
