@@ -1118,7 +1118,7 @@ def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_l
         country_rules = [{"geo": {"country_code": country}} for country in countries_list]
         policies.insert(0, {
             "name": "Block selected countries",
-            "decision": "deny",
+            "decision": "block",
             "include": country_rules
         })
 
