@@ -235,10 +235,14 @@ def access_policies_page():
     used_group_ids = set()
 
     with state_lock:
-        used_group_ids = {
-            rule.get('access_group_id') for rule in managed_rules.values()
-            if rule.get('source') == 'docker' and rule.get('access_group_id')
-        }
+        for rule in managed_rules.values():
+            if rule.get('source') == 'docker':
+                group_id_val = rule.get('access_group_id')
+                if isinstance(group_id_val, list):
+                    for gid in group_id_val:
+                        used_group_ids.add(gid)
+                elif group_id_val:
+                    used_group_ids.add(group_id_val)
         groups_for_template = copy.deepcopy(access_groups)
 
     try:
