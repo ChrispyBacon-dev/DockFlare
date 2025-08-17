@@ -403,6 +403,14 @@ def settings_page():
         flash('Could not load country list for Access Group modal.', 'error')
 
 
+    try:
+        with open(os.path.join(current_app.static_folder, 'json', 'countries.json')) as f:
+            countries = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        countries = []
+        flash('Could not load country list for Access Group modal.', 'error')
+
+
     return render_template(
         'settings.html',
         settings_form=settings_form,
