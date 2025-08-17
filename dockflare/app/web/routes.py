@@ -1114,29 +1114,25 @@ def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_l
         for ip in ip_parts:
             allow_include_rules.append({"ip": {"ip": ip}})
 
-    if countries_list:
-        country_rules = [{"geo": {"country_code": country}} for country in countries_list]
-        policies.insert(0, {
-            "name": "Block selected countries",
-            "decision": "block",
-            "include": country_rules
-        })
-
     if allow_include_rules:
         policies.append({
             "name": "Allow defined users, domains, and IPs",
             "decision": "allow",
             "include": allow_include_rules
         })
+
+    if countries_list:
+        country_rules = [{"geo": {"country_code": country}} for country in countries_list]
         policies.append({
-            "name": "Default Deny",
-            "decision": "deny",
-            "include": [{"everyone": {}}]
+            "name": "Bypass for selected countries",
+            "decision": "bypass",
+            "include": country_rules
         })
-    elif countries_list:
+
+    if policies:
         policies.append({
-            "name": "Allow everyone else",
-            "decision": "allow",
+            "name": "Default Block",
+            "decision": "block",
             "include": [{"everyone": {}}]
         })
 
