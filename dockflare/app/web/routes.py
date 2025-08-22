@@ -1103,7 +1103,7 @@ def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_l
 
     # If the action is to deny countries, this rule must come first to have priority.
     if countries_list and country_action == 'deny':
-        country_rules = [{"geo": {"country_code": country}} for country in countries_list]
+        country_rules = [{"geo": {"country_code": country.upper()}} for country in countries_list]
         policies.append({
             "name": "Deny access from selected countries",
             "decision": "deny",
@@ -1132,7 +1132,7 @@ def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_l
     
     # If the action is to bypass, it comes after any 'allow' rules.
     if countries_list and country_action == 'bypass':
-        country_rules = [{"geo": {"country_code": country}} for country in countries_list]
+        country_rules = [{"geo": {"country_code": country.upper()}} for country in countries_list]
         policies.append({
             "name": "Bypass for selected countries",
             "decision": "bypass",
