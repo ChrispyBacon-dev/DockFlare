@@ -108,13 +108,25 @@
             button.addEventListener('click', function() {
                 setTimeout(() => { // Allow modal to become visible
                     initializeCountrySelect();
+                    const modal = document.getElementById('access_group_modal');
+                    if (!modal) return;
+
                     const details = JSON.parse(this.dataset.groupDetails);
                     if (details.policies) {
-                        const countryCodes = details.policies
-                            .flatMap(p => p.include || [])
+                        const countryPolicy = details.policies.find(p =>
+                            p.include && p.include.some(i => i.geo && i.geo.country_code)
+                        );
+
+                        const countryCodes = (countryPolicy ? countryPolicy.include : [])
                             .filter(i => i.geo && i.geo.country_code)
                             .map(i => i.geo.country_code);
+
                         countrySelectInstance.setValue(countryCodes);
+
+                        const countryActionSelect = modal.querySelector('#group_country_action');
+                        if (countryActionSelect) {
+                            countryActionSelect.value = countryPolicy ? countryPolicy.decision : 'bypass';
+                        }
                     }
                 }, 100);
             });
@@ -127,6 +139,12 @@
                 setTimeout(() => { // Allow modal to become visible
                     initializeCountrySelect();
                     countrySelectInstance.clear();
+                    const modal = document.getElementById('access_group_modal');
+                    if (!modal) return;
+                    const countryActionSelect = modal.querySelector('#group_country_action');
+                    if (countryActionSelect) {
+                        countryActionSelect.value = 'bypass';
+                    }
                 }, 100);
             });
         }
