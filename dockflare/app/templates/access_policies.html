@@ -13,7 +13,7 @@
                     </h2>
                     <p class="text-sm opacity-70 mt-1">Create reusable access policies to apply with a single label.</p>
                 </div>
-                <button class="btn btn-sm btn-primary mt-4 sm:mt-0" onclick="openCreateAccessGroupModal()">
+                <button id="create-access-group-btn" class="btn btn-sm btn-primary mt-4 sm:mt-0">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
                     Create New Group
                 </button>
@@ -82,74 +82,22 @@
 {% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        var countrySelectInstance = null;
-
-        function initializeCountrySelect() {
-            if (countrySelectInstance) {
-                countrySelectInstance.destroy();
-            }
-            countrySelectInstance = new TomSelect('#group_countries', {
-                plugins: {
-                    'checkbox_options': {},
-                    'remove_button': {
-                        title: 'Remove this item',
-                    }
-                },
-                create: false,
-                sortField: {
-                    field: "text",
-                    direction: "asc"
-                }
-            });
-        }
-
-        // Handle opening the modal for editing
-        document.querySelectorAll('.edit-access-group-btn').forEach(button => {
-            button.addEventListener('click', function() {
-                setTimeout(() => { // Allow modal to become visible
-                    initializeCountrySelect();
-                    const modal = document.getElementById('access_group_modal');
-                    if (!modal) return;
-
-                    const details = JSON.parse(this.dataset.groupDetails);
-                    if (details.policies) {
-                        const countryPolicy = details.policies.find(p => p.include && p.include.some(i => i.geo));
-                        const everyonePolicy = details.policies.find(p => p.include && p.include.some(i => i.everyone));
-
-                        const countryCodes = (countryPolicy ? countryPolicy.include : [])
-                            .filter(i => i.geo && i.geo.country_code)
-                            .map(i => i.geo.country_code);
-
-                        countrySelectInstance.setValue(countryCodes);
-                        
-                        const countryModeSelect = modal.querySelector('#group_country_policy_mode');
-                        if (countryModeSelect) {
-                            if (countryPolicy && countryPolicy.decision === 'deny' && everyonePolicy && everyonePolicy.decision === 'bypass') {
-                                countryModeSelect.value = 'block_selected';
-                            } else {
-                                // Default to "allow selected" for any other configuration, which is the safer and more common use case.
-                                countryModeSelect.value = 'allow_selected';
-                            }
-                        }
-                    }
-                }, 100);
-            });
-        });
-
-        // Handle opening the modal for creating
-        const createBtn = document.querySelector('button[onclick="openCreateAccessGroupModal()"]');
-        if (createBtn) {
-            createBtn.addEventListener('click', function() {
-                setTimeout(() => { // Allow modal to become visible
-                    initializeCountrySelect();
-                    countrySelectInstance.clear();
-                    const modal = document.getElementById('access_group_modal');
-                    if (!modal) return;
-                    const countryModeSelect = modal.querySelector('#group_country_policy_mode');
-                    if (countryModeSelect) {
-                        countryModeSelect.value = 'allow_selected';
-                    }
-                }, 100);
+        // Initialize TomSelect for the country selector in the modal, if it exists.
+        // The main logic for populating the modal and handling events is in main.js.
+        const countrySelectEl = document.getElementById('group_countries');
+        if (countrySelectEl) {
+            new TomSelect(countrySelectEl, {
+                 plugins: {
+                     'checkbox_options': {},
+                     'remove_button': {
+                         title: 'Remove this item',
+                     }
+                 },
+                 create: false,
+                 sortField: {
+                     field: "text",
+                     direction: "asc"
+                 }
             });
         }
     });

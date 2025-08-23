@@ -1101,7 +1101,7 @@ def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_l
     policies = []
     allow_include_rules = []
 
-    # Always parse email/IP rules first. They represent specific grants.
+    
     if email_str and email_str.strip():
         email_parts = [part.strip() for part in email_str.split(',') if part.strip()]
         for part in email_parts:
@@ -1115,11 +1115,11 @@ def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_l
         for ip in ip_parts:
             allow_include_rules.append({"ip": {"ip": ip}})
 
-    # If there are country rules, they define the broad access pattern.
+    
     if countries_list:
         country_rules = [{"geo": {"country_code": country.upper()}} for country in countries_list]
         if country_policy_mode == 'block_selected':
-            # Create a single policy to bypass everyone except the selected countries.
+    
             policy = {
                 "name": "Bypass all except selected countries",
                 "decision": "bypass",
@@ -1127,24 +1127,24 @@ def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_l
                 "exclude": country_rules
             }
             policies.append(policy)
-            # NOTE: allow_include_rules are ignored in this mode as they can't be combined.
+    
         
         else:  # Default to 'allow_selected'
-            # 1. Allow specific users/IPs if they exist.
+    
             if allow_include_rules:
                 policies.append({"name": "Allow defined users and IPs", "decision": "allow", "include": allow_include_rules})
-            # 2. Allow selected countries.
+    
             policies.append({"name": "Allow selected countries", "decision": "allow", "include": country_rules})
-            # 3. Deny everyone else.
+    
             policies.append({"name": "Default Deny", "decision": "deny", "include": [{"everyone": {}}]})
     
-    # If NO countries are selected, it's a simple allow list.
+    
     else:
         if allow_include_rules:
             policies.append({"name": "Allow defined users and IPs", "decision": "allow", "include": allow_include_rules})
             policies.append({"name": "Default Deny", "decision": "deny", "include": [{"everyone": {}}]})
         else:
-            # If no rules are defined at all, default to a secure "deny all".
+    
             policies.append({"name": "Default Deny (No rules defined)", "decision": "deny", "include": [{"everyone": {}}]})
 
     return policies
