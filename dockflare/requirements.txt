@@ -57,4 +57,4 @@ wtforms==3.2.1
 
 # Help/Docs
 Markdown==3.6
-pymdown-extensions==10.16.1
+pymdown-extensions==10.12
