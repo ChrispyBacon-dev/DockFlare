@@ -68,19 +68,11 @@ def help_page(page='Home.md'):
     with open(file_path, 'r', encoding='utf-8') as f:
         md_content = f.read()
 
+
     extensions = [
-        'pymdownx.extra',
-        'pymdownx.magiclink',
-        'pymdownx.tilde',
-        'pymdownx.caret',
-        'pymdownx.smartsymbols',
-        'pymdownx.details',
-        'pymdownx.superfences',
-        'pymdownx.tabbed',
-        'pymdownx.sane_lists',
-        'toc',
-        'admonition',
-        'pymdownx.brk'
+        'extra',  
+        'toc',    
+        'nl2br',  
     ]
     html_content = markdown.markdown(md_content, extensions=extensions)
     
