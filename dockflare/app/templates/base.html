@@ -48,6 +48,7 @@
                         <li><a href="{{ url_for('web.status_page') }}" class="{{ 'active' if request.endpoint == 'web.status_page' else '' }}">Dashboard</a></li>
                         <li><a href="{{ url_for('web.access_policies_page') }}" class="{{ 'active' if request.endpoint == 'web.access_policies_page' else '' }}">Access Policies</a></li>
                         <li><a href="{{ url_for('web.settings_page') }}" class="{{ 'active' if request.endpoint == 'web.settings_page' else '' }}">Settings</a></li>
+                        <li><a href="{{ url_for('help.help_page') }}" class="{{ 'active' if request.endpoint.startswith('help.') else '' }}">Help</a></li>
                     </ul>
                 </div>
                 <a href="{{ url_for('web.status_page') }}" class="px-2" title="Now you're thinking with tunnels">
@@ -60,6 +61,7 @@
                     <li><a href="{{ url_for('web.status_page') }}" class="{{ 'active' if request.endpoint == 'web.status_page' else '' }}">Dashboard</a></li>
                     <li><a href="{{ url_for('web.access_policies_page') }}" class="{{ 'active' if request.endpoint == 'web.access_policies_page' else '' }}">Access Policies</a></li>
                     <li><a href="{{ url_for('web.settings_page') }}" class="{{ 'active' if request.endpoint == 'web.settings_page' else '' }}">Settings</a></li>
+                    <li><a href="{{ url_for('help.help_page') }}" class="{{ 'active' if request.endpoint.startswith('help.') else '' }}">Help</a></li>
                 </ul>
             </div>
     

@@ -1,0 +1,19 @@
+# Per v2.0.4 changelog: "All Python dependencies in requirements.txt are now pinned to specific versions"
+
+# Core Flask and Web
+Flask==2.3.3
+Flask-WTF==1.2.1
+Flask-Login==0.6.3
+Werkzeug==3.0.1
+requests==2.31.0
+waitress==2.1.2
+
+# Docker
+docker==7.0.0
+
+# Security
+cryptography==42.0.5
+
+# Help/Docs
+Markdown==3.6
+pymdown-extensions==10.7
