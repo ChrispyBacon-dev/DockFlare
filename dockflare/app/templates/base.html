@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
     <link rel="preconnect" href="https://rsms.me" crossorigin>
     <link rel="stylesheet" href="https://rsms.me/inter/inter.css" crossorigin="anonymous">
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.css" rel="stylesheet">
     
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; }
@@ -45,6 +46,7 @@
                     </label>
                     <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[51] p-2 shadow bg-base-100 rounded-box w-52">
                         <li><a href="{{ url_for('web.status_page') }}" class="{{ 'active' if request.endpoint == 'web.status_page' else '' }}">Dashboard</a></li>
+                        <li><a href="{{ url_for('web.access_policies_page') }}" class="{{ 'active' if request.endpoint == 'web.access_policies_page' else '' }}">Access Policies</a></li>
                         <li><a href="{{ url_for('web.settings_page') }}" class="{{ 'active' if request.endpoint == 'web.settings_page' else '' }}">Settings</a></li>
                     </ul>
                 </div>
@@ -56,6 +58,7 @@
             <div class="navbar-center hidden lg:flex">
                 <ul class="menu menu-horizontal px-1">
                     <li><a href="{{ url_for('web.status_page') }}" class="{{ 'active' if request.endpoint == 'web.status_page' else '' }}">Dashboard</a></li>
+                    <li><a href="{{ url_for('web.access_policies_page') }}" class="{{ 'active' if request.endpoint == 'web.access_policies_page' else '' }}">Access Policies</a></li>
                     <li><a href="{{ url_for('web.settings_page') }}" class="{{ 'active' if request.endpoint == 'web.settings_page' else '' }}">Settings</a></li>
                 </ul>
             </div>
@@ -96,6 +99,8 @@
     
     {% block modals %}{% endblock %}
 
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% block scripts %}{% endblock %}
 </body>
 </html>

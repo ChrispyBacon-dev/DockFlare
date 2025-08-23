@@ -67,3 +67,16 @@ class ChangePasswordForm(FlaskForm):
         ]
     )
     submit = SubmitField('Change Password')
+
+
+class CloudflareCredentialsForm(FlaskForm):
+    """Form for updating Cloudflare API credentials."""
+    cf_account_id = StringField(
+        'Cloudflare Account ID',
+        validators=[Optional(), Length(min=32, max=32, message="Account ID must be 32 characters long.")]
+    )
+    cf_api_token = PasswordField(
+        'Cloudflare API Token',
+        validators=[Optional(), Length(min=40, max=40, message="API Token must be 40 characters long.")]
+    )
+    submit_cloudflare_credentials = SubmitField('Update Cloudflare Credentials')

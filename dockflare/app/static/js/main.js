@@ -415,6 +415,12 @@ function openCreateAccessGroupModal() {
     groupIdInput.disabled = false;
     document.getElementById('original_group_id').value = '';
     
+    const countrySelect = document.getElementById('group_countries');
+    if (countrySelect && countrySelect.tomselect) {
+        countrySelect.tomselect.clear();
+        countrySelect.tomselect.sync();
+    }
+    
     modal.showModal();
 }
 
@@ -439,22 +445,54 @@ function openEditAccessGroupModal(groupId, details) {
     document.getElementById('group_auto_redirect').checked = details.auto_redirect_to_identity || false;
 
     let emailText = '';
-    if (details.policies) {
+    let ipRangeText = '';
+    let selectedCountries = [];
+
+    if (details.policies && Array.isArray(details.policies)) {
         const emails = [];
+        const ipRanges = [];
+
+        const blockPolicy = details.policies.find(p =>
+            p.decision === 'bypass' &&
+            p.include && Array.isArray(p.include) && p.include.some(i => i.everyone) &&
+            p.exclude && Array.isArray(p.exclude) && p.exclude.some(e => e.geo)
+        );
+
+        if (blockPolicy) {
+            
+            blockPolicy.exclude.forEach(rule => {
+                if (rule.geo && rule.geo.country_code) {
+                    selectedCountries.push(rule.geo.country_code);
+                }
+            });
+        }
+        
+        
         details.policies.forEach(policy => {
             if (policy.include) {
                 policy.include.forEach(rule => {
-                    if (rule.email && rule.email.email) {
-                        emails.push(rule.email.email);
-                    } else if (rule.email_domain && rule.email_domain.domain) {
-                        emails.push(`@${rule.email_domain.domain}`);
-                    }
+                    if (rule.email && rule.email.email) emails.push(rule.email.email);
+                    else if (rule.email_domain && rule.email_domain.domain) emails.push(`@${rule.email_domain.domain}`);
+                    else if (rule.ip && rule.ip.ip) ipRanges.push(rule.ip.ip);
                 });
             }
         });
-        emailText = emails.join(', ');
+
+        emailText = [...new Set(emails)].join(', ');
+        ipRangeText = [...new Set(ipRanges)].join(', ');
     }
+
     document.getElementById('group_emails').value = emailText;
+    document.getElementById('group_ip_ranges').value = ipRangeText;
+
+    const countrySelect = document.getElementById('group_countries');
+    if (countrySelect && countrySelect.tomselect) {
+        countrySelect.tomselect.setValue(selectedCountries);
+    } else if (countrySelect) { // Fallback for when TomSelect isn't initialized
+        Array.from(countrySelect.options).forEach(option => {
+            option.selected = selectedCountries.includes(option.value);
+        });
+    }
 
     modal.showModal();
 }
@@ -660,6 +698,13 @@ document.addEventListener('DOMContentLoaded', function() {
             openEditAccessGroupModal(groupId, details);
         });
     });
+
+    const createAccessGroupBtn = document.getElementById('create-access-group-btn');
+    if (createAccessGroupBtn) {
+        createAccessGroupBtn.addEventListener('click', function() {
+            openCreateAccessGroupModal();
+        });
+    }
 
     // Universal Form/Link Protocol Correction
     document.querySelectorAll('form.protocol-aware-form').forEach(form => {

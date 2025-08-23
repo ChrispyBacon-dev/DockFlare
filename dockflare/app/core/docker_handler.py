@@ -107,7 +107,12 @@ def process_container_start(container_obj):
             default_originsrvname_label = get_label(labels, "originsrvname")
             default_http_host_header_label = get_label(labels, "httpHostHeader")
 
-            default_access_group = get_label(labels, "access.group")
+            default_access_groups = get_label(labels, "access.groups")
+            default_access_group = get_label(labels, "access.group") if not default_access_groups else None
+            if default_access_groups:
+                default_access_group = [gid.strip() for gid in default_access_groups.split(',')]
+            elif default_access_group:
+                default_access_group = [default_access_group.strip()]
 
             default_access_policy_type_label = get_label(labels, "access.policy")
             default_access_app_name_label = get_label(labels, "access.name")
@@ -157,7 +162,14 @@ def process_container_start(container_obj):
                 originsrvname_indexed_val = get_label(labels, f"{index}.originsrvname", default_originsrvname_label)
                 http_host_header_indexed_val = get_label(labels, f"{index}.httpHostHeader", default_http_host_header_label)
 
-                access_group_indexed = get_label(labels, f"{index}.access.group", default_access_group)
+                access_groups_indexed = get_label(labels, f"{index}.access.groups")
+                access_group_indexed = get_label(labels, f"{index}.access.group") if not access_groups_indexed else None
+                if access_groups_indexed:
+                    access_group_indexed = [gid.strip() for gid in access_groups_indexed.split(',')]
+                elif access_group_indexed:
+                    access_group_indexed = [access_group_indexed.strip()]
+                else:
+                    access_group_indexed = default_access_group
 
                 access_policy_type_indexed = get_label(labels, f"{index}.access.policy", default_access_policy_type_label)
                 access_app_name_indexed = get_label(labels, f"{index}.access.name", default_access_app_name_label)

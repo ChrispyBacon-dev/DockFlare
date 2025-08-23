@@ -49,7 +49,14 @@ def _get_hostname_configs_from_container(container_obj):
     default_originsrvname_label = get_label(labels, "originsrvname")
     default_http_host_header_label = get_label(labels, "httpHostHeader")
 
-    default_access_group = get_label(labels, "access.group")
+    default_access_groups = get_label(labels, "access.groups")
+    default_access_group = get_label(labels, "access.group") if not default_access_groups else None
+    if default_access_groups:
+        default_access_group = [gid.strip() for gid in default_access_groups.split(',')]
+    elif default_access_group:
+        default_access_group = [default_access_group.strip()]
+
+
     default_access_policy_type = get_label(labels, "access.policy")
     default_access_app_name = get_label(labels, "access.name")
     default_session_duration = get_label(labels, "access.session_duration", "24h")
@@ -98,7 +105,15 @@ def _get_hostname_configs_from_container(container_obj):
         osn_idx_val = get_label(labels, f"{idx}.originsrvname", default_originsrvname_label)
         h_h_h_idx_val = get_label(labels, f"{idx}.httpHostHeader", default_http_host_header_label)
 
-        acc_group_idx = get_label(labels, f"{idx}.access.group", default_access_group)
+        acc_groups_idx = get_label(labels, f"{idx}.access.groups")
+        acc_group_idx = get_label(labels, f"{idx}.access.group") if not acc_groups_idx else None
+        if acc_groups_idx:
+            acc_group_idx = [gid.strip() for gid in acc_groups_idx.split(',')]
+        elif acc_group_idx:
+            acc_group_idx = [acc_group_idx.strip()]
+        else:
+            acc_group_idx = default_access_group
+
         acc_pol_idx = get_label(labels, f"{idx}.access.policy", default_access_policy_type)
         acc_name_idx = get_label(labels, f"{idx}.access.name", default_access_app_name)
         acc_sess_idx = get_label(labels, f"{idx}.access.session_duration", default_session_duration)

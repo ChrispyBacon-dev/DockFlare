@@ -29,6 +29,22 @@
                     <textarea id="group_emails" name="emails" class="textarea textarea-bordered h-24" placeholder="me@example.com, myfriend@example.com, @mycompany.com"></textarea>
                     <div class="label"><span class="label-text-alt">Comma-separated. To allow anyone from a domain, use <code class="text-xs">@domain.com</code>.</span></div>
                 </div>
+                <div class="form-control">
+                    <label class="label" for="group_ip_ranges"><span class="label-text">Allowed IP Ranges</span></label>
+                    <textarea id="group_ip_ranges" name="ip_ranges" class="textarea textarea-bordered h-24" placeholder="192.168.1.0/24, 2001:db8::/32"></textarea>
+                    <div class="label"><span class="label-text-alt">Comma-separated list of IP ranges in CIDR format.</span></div>
+                </div>
+                <div class="form-control">
+                    <label class="label" for="group_countries">
+                        <span class="label-text">Blocked Countries</span>
+                    </label>
+                    <select id="group_countries" name="countries" multiple="multiple" class="input input-bordered w-full">
+                        {% for country in countries %}
+                            <option value="{{ country.abbreviation }}">{{ country.country }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="label"><span id="country_policy_help_text" class="label-text-alt">Selected countries will be blocked. All other countries will be allowed.</span></div>
+                </div>
             </div>
 
             <div>

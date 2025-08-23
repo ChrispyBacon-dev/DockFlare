@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Access Policies{% endblock %}
+
+{% block content %}
+    <!-- 1. Access Groups Section -->
+    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+        <div class="card-body">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-base-300 pb-3 mb-6">
+                <div>
+                    <h2 class="card-title text-2xl sm:text-3xl">
+                        Advanced Access Policies
+                    </h2>
+                    <p class="text-sm opacity-70 mt-1">Create reusable access policies to apply with a single label.</p>
+                </div>
+                <button id="create-access-group-btn" class="btn btn-sm btn-primary mt-4 sm:mt-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                    Create New Group
+                </button>
+            </div>
+    
+            {% if access_groups and access_groups.items() %}
+                <div class="overflow-x-auto -mx-6 sm:-mx-8">
+                    <table class="table table-zebra table-sm w-full">
+                        <thead>
+                            <tr>
+                                <th class="p-3">Display Name</th>
+                                <th class="p-3">Group ID (for label)</th>
+                                <th class="p-3">Policy Summary</th>
+                                <th class="p-3">Session</th>
+                                <th class="p-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for group_id, details in access_groups.items()|sort %}
+                                <tr>
+                                    <td class="p-3 font-medium">{{ details.display_name }}</td>
+                                    <td class="p-3"><code class="badge badge-ghost">{{ group_id }}</code></td>
+                                    <td class="p-3 text-xs opacity-80">
+                                        {% if details.policies %}
+                                            {{ details.policies | length }} rule(s) defined
+                                        {% else %}
+                                            <span class="italic opacity-60">No rules</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="p-3 text-xs opacity-70">{{ details.session_duration | default('24h', true) }}</td>
+                                    <td class="p-3">
+                                        <div class="flex items-center gap-2">
+                                            <button class="btn btn-xs btn-info btn-outline edit-access-group-btn"
+                                                    data-group-id="{{ group_id }}"
+                                                    data-group-details="{{ details|tojson|forceescape }}">
+                                                Edit
+                                            </button>
+                                            <form action="{{ url_for('web.delete_access_group', group_id=group_id) }}" method="post" onsubmit="return confirm('Are you sure you want to delete the Access Group \'{{ details.display_name }}\'? This cannot be undone.');" class="protocol-aware-form">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                <button type="submit" class="btn btn-xs btn-error btn-outline" {{ 'disabled' if group_id in used_group_ids else '' }} title="{{ 'Cannot delete: group is in use' if group_id in used_group_ids else 'Delete Group' }}">
+                                                    Delete
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center opacity-70 py-8">
+                    <p>No Access Groups have been created yet.</p>
+                    <p class="mt-2 text-sm">Click "Create New Group" to get started.</p>
+                </div>
+            {% endif %}
+        </div>
+    </section>
+{% endblock %}
+
+{% block modals %}
+    {{ super() }}
+    {% include 'modals/_access_group_modal.html' %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize TomSelect for the country selector in the modal, if it exists.
+        // The main logic for populating the modal and handling events is in main.js.
+        const countrySelectEl = document.getElementById('group_countries');
+        if (countrySelectEl) {
+            new TomSelect(countrySelectEl, {
+                 plugins: {
+                     'checkbox_options': {},
+                     'remove_button': {
+                         title: 'Remove this item',
+                     }
+                 },
+                 create: false,
+                 sortField: {
+                     field: "text",
+                     direction: "asc"
+                 }
+            });
+        }
+    });
+</script>
+{% endblock %}

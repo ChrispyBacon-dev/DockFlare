@@ -60,76 +60,45 @@
                     {{ settings_form.submit_settings(class="btn btn-primary") }}
                 </div>
             </form>
-        </div>
-    </section>
-
-    <!-- 1. Access Groups Section -->
-    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
-        <div class="card-body">
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-base-300 pb-3 mb-6">
-                <div>
-                    <h2 class="card-title text-2xl sm:text-3xl">
-                        Access Groups
-                    </h2>
-                    <p class="text-sm opacity-70 mt-1">Create reusable access policies to apply with a single label.</p>
+            <div class="border-t border-base-300 mt-8 pt-8">
+                <h3 class="font-semibold text-lg mb-2">Update Cloudflare Credentials</h3>
+                <div role="alert" class="alert alert-info text-sm mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span>
+                        Enter a new Account ID or API Token to update. For security, current values are not displayed.
+                        <br>
+                        Updating credentials require an DockFlare restart to take full effect.
+                    </span>
                 </div>
-                <button class="btn btn-sm btn-primary mt-4 sm:mt-0" onclick="openCreateAccessGroupModal()">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                    Create New Group
-                </button>
+                <form method="POST" action="{{ url_for('web.settings_page') }}" class="space-y-4">
+                    {{ cf_credentials_form.hidden_tag() }}
+                    <div class="form-control">
+                        <label class="label" for="cf_account_id">
+                            <span class="label-text">Cloudflare Account ID</span>
+                        </label>
+                        {{ cf_credentials_form.cf_account_id(class="input input-bordered w-full", **{'id': 'cf_account_id', 'placeholder': 'Enter new 32-character Account ID'}) }}
+                        {% for error in cf_credentials_form.cf_account_id.errors %}
+                            <label class="label">
+                                <span class="label-text-alt text-error">{{ error }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                    <div class="form-control">
+                        <label class="label" for="cf_api_token">
+                            <span class="label-text">Cloudflare API Token</span>
+                        </label>
+                        {{ cf_credentials_form.cf_api_token(class="input input-bordered w-full", **{'id': 'cf_api_token', 'placeholder': 'Enter new 40-character API Token'}) }}
+                        {% for error in cf_credentials_form.cf_api_token.errors %}
+                            <label class="label">
+                                <span class="label-text-alt text-error">{{ error }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                    <div class="card-actions">
+                        {{ cf_credentials_form.submit_cloudflare_credentials(class="btn btn-primary") }}
+                    </div>
+                </form>
             </div>
-    
-            {% if access_groups and access_groups.items() %}
-                <div class="overflow-x-auto -mx-6 sm:-mx-8">
-                    <table class="table table-zebra table-sm w-full">
-                        <thead>
-                            <tr>
-                                <th class="p-3">Display Name</th>
-                                <th class="p-3">Group ID (for label)</th>
-                                <th class="p-3">Policy Summary</th>
-                                <th class="p-3">Session</th>
-                                <th class="p-3">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for group_id, details in access_groups.items()|sort %}
-                                <tr>
-                                    <td class="p-3 font-medium">{{ details.display_name }}</td>
-                                    <td class="p-3"><code class="badge badge-ghost">{{ group_id }}</code></td>
-                                    <td class="p-3 text-xs opacity-80">
-                                        {% if details.policies %}
-                                            {{ details.policies | length }} rule(s) defined
-                                        {% else %}
-                                            <span class="italic opacity-60">No rules</span>
-                                        {% endif %}
-                                    </td>
-                                    <td class="p-3 text-xs opacity-70">{{ details.session_duration | default('24h', true) }}</td>
-                                    <td class="p-3">
-                                        <div class="flex items-center gap-2">
-                                            <button class="btn btn-xs btn-info btn-outline edit-access-group-btn"
-                                                    data-group-id="{{ group_id }}"
-                                                    data-group-details="{{ details|tojson|forceescape }}">
-                                                Edit
-                                            </button>
-                                            <form action="{{ url_for('web.delete_access_group', group_id=group_id) }}" method="post" onsubmit="return confirm('Are you sure you want to delete the Access Group \'{{ details.display_name }}\'? This cannot be undone.');" class="protocol-aware-form">
-                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                                <button type="submit" class="btn btn-xs btn-error btn-outline" {{ 'disabled' if group_id in used_group_ids else '' }} title="{{ 'Cannot delete: group is in use' if group_id in used_group_ids else 'Delete Group' }}">
-                                                    Delete
-                                                </button>
-                                            </form>
-                                        </div>
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            {% else %}
-                <div class="text-center opacity-70 py-8">
-                    <p>No Access Groups have been created yet.</p>
-                    <p class="mt-2 text-sm">Click "Create New Group" to get started.</p>
-                </div>
-            {% endif %}
         </div>
     </section>
 
@@ -388,9 +357,4 @@
         </div>
     </section>
 
-{% endblock %}
-
-{% block modals %}
-    {{ super() }}
-    {% include 'modals/_access_group_modal.html' %}
 {% endblock %}

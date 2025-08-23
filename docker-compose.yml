@@ -2,7 +2,7 @@ version: '3.8'
 services:
   dockflare:
     image: alplat/dockflare:stable  # alplat/dockflare:unstable docker tag for beta versions
-    # build: .  # Uncomment to build from source instead
+    # build: ./dockflare  # Uncomment to build from source instead
     container_name: dockflare
     restart: unless-stopped
     ports:

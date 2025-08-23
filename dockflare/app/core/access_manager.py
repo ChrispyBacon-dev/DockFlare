@@ -233,6 +233,10 @@ def delete_cloudflare_access_application(app_uuid):
         return False
 
 def generate_access_app_config_hash(policy_type, session_duration, app_launcher_visible, allowed_idps_str, auto_redirect_to_identity, custom_access_rules_str=None, group_id=None):
+    
+    if isinstance(group_id, list):
+        group_id.sort()
+
     config_items = {
         "group_id": group_id,
         "policy_type": policy_type,
@@ -253,9 +257,8 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
     
     current_access_app_id_from_state = current_rule_in_state.get("access_app_id")
     
-    desired_access_group_id = hostname_config_item.get("access_group")
-    group_definition = access_groups.get(desired_access_group_id) if desired_access_group_id else None
-
+    desired_access_group_ids = hostname_config_item.get("access_group")  # This is now a list
+    
     desired_app_name = f"DockFlare-{hostname}"
     desired_session_duration = "24h"
     desired_app_launcher_visible = False
@@ -265,14 +268,40 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
     new_config_hash = None
     policy_source_type = None
 
-    if group_definition:
-        logging.info(f"Processing Access Group '{desired_access_group_id}' for {hostname}.")
+    if desired_access_group_ids and isinstance(desired_access_group_ids, list):
+        logging.info(f"Processing Access Groups {desired_access_group_ids} for {hostname}.")
         policy_source_type = "group"
-        desired_session_duration = group_definition.get("session_duration", "24h")
-        desired_app_launcher_visible = group_definition.get("app_launcher_visible", False)
-        desired_allowed_idps = group_definition.get("allowed_idps")
-        desired_auto_redirect = group_definition.get("auto_redirect_to_identity", False)
-        cf_access_policies = group_definition.get("policies")
+        cf_access_policies = []
+        
+   
+        first_group_id = desired_access_group_ids[0]
+        first_group_def = access_groups.get(first_group_id)
+        
+        if first_group_def:
+            desired_session_duration = first_group_def.get("session_duration", "24h")
+            desired_app_launcher_visible = first_group_def.get("app_launcher_visible", False)
+            desired_allowed_idps = first_group_def.get("allowed_idps")
+            desired_auto_redirect = first_group_def.get("auto_redirect_to_identity", False)
+
+
+        for group_id in desired_access_group_ids:
+            group_definition = access_groups.get(group_id)
+            if group_definition and group_definition.get("policies"):
+                for policy in group_definition.get("policies"):
+                    is_default_deny = (
+                        policy.get("decision") == "deny" and
+                        isinstance(policy.get("include"), list) and
+                        len(policy.get("include")) == 1 and
+                        policy.get("include")[0] == {"everyone": {}}
+                    )
+                    if not is_default_deny:
+                        cf_access_policies.append(policy)
+            else:
+                logging.warning(f"Access Group '{group_id}' not found or has no policies.")
+
+        has_allow_policy = any(p.get('decision') == 'allow' for p in cf_access_policies)
+        if has_allow_policy:
+            cf_access_policies.append({"name": "Default Deny", "decision": "deny", "include": [{"everyone": {}}]})
 
         new_config_hash = generate_access_app_config_hash(
             policy_type=policy_source_type, session_duration=desired_session_duration,
@@ -280,7 +309,7 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
             allowed_idps_str=json.dumps(desired_allowed_idps, sort_keys=True),
             auto_redirect_to_identity=desired_auto_redirect,
             custom_access_rules_str=json.dumps(cf_access_policies, sort_keys=True),
-            group_id=desired_access_group_id
+            group_id=desired_access_group_ids 
         )
     else:
         policy_source_type = hostname_config_item.get("access_policy_type")
@@ -365,7 +394,7 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
             current_rule_in_state.update({
                 "access_app_id": app_result.get("id"),
                 "access_app_config_hash": new_config_hash,
-                "access_group_id": desired_access_group_id,
+                "access_group_id": desired_access_group_ids,
                 "access_policy_type": policy_source_type
             })
             local_state_changed_by_access_policy = True

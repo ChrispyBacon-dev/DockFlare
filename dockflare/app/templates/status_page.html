@@ -112,7 +112,13 @@
                                     </td>
                                     <td class="p-3 whitespace-nowrap text-sm opacity-80" id="access-policy-display-{{ details.source if details.source else 'docker' }}-{{ hostname | replace('.', '-') }}">
                                         {% if details.access_policy_type == 'group' %}
-                                            <span class="badge badge-primary badge-outline badge-sm">Group: {{ details.access_group_id }}</span>
+                                            {% if details.access_group_id is iterable and details.access_group_id is not string %}
+                                                {% for group_id in details.access_group_id %}
+                                                    <span class="badge badge-primary badge-outline badge-sm mb-1 block">{{ access_groups[group_id].display_name if access_groups[group_id] else group_id }}</span>
+                                                {% endfor %}
+                                            {% else %}
+                                                <span class="badge badge-primary badge-outline badge-sm">{{ access_groups[details.access_group_id].display_name if access_groups[details.access_group_id] else details.access_group_id }}</span>
+                                            {% endif %}
                                         {% elif details.access_policy_type %}
                                             <span class="capitalize">
                                                 {{ details.access_policy_type.replace('_', ' ') }}
@@ -261,17 +267,16 @@
                             
                             <div class="form-control md:col-span-2">
                                 <label class="label" for="manual_access_group">
-                                    <span class="label-text font-medium">1. Assign an Access Group (Recommended)</span>
+                                    <span class="label-text font-medium">1. Assign Access Group(s) (Recommended)</span>
                                 </label>
-                                <select name="manual_access_group" id="manual_access_group" class="select select-bordered w-full">
-                                    <option value="" selected>-- None (Configure Manually Below) --</option>
+                                <select name="manual_access_groups" id="manual_access_group" multiple>
                                     {% if access_groups %}
                                         {% for group_id, details in access_groups.items()|sort %}
                                             <option value="{{ group_id }}">{{ details.display_name }} (ID: {{ group_id }})</option>
                                         {% endfor %}
                                     {% endif %}
                                 </select>
-                                <div class="label"><span class="label-text-alt">Using a group overrides the manual policy options below.</span></div>
+                                <div class="label"><span class="label-text-alt">Using groups overrides the manual policy options below. You can select multiple.</span></div>
                             </div>
         
                             <div class="divider md:col-span-2 text-xs opacity-80 my-0">OR</div>
@@ -407,17 +412,16 @@
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 items-start p-4 rounded-md bg-base-200/50">
                             <div class="form-control md:col-span-2">
                                 <label class="label" for="edit_manual_access_group">
-                                    <span class="label-text font-medium">1. Assign an Access Group (Recommended)</span>
+                                    <span class="label-text font-medium">1. Assign Access Group(s) (Recommended)</span>
                                 </label>
-                                <select name="manual_access_group" id="edit_manual_access_group" class="select select-bordered w-full">
-                                    <option value="">-- None (Configure Manually Below) --</option>
+                                <select name="manual_access_groups" id="edit_manual_access_group" multiple>
                                     {% if access_groups %}
                                         {% for group_id, details in access_groups.items()|sort %}
                                             <option value="{{ group_id }}">{{ details.display_name }} (ID: {{ group_id }})</option>
                                         {% endfor %}
                                     {% endif %}
                                 </select>
-                                <div class="label"><span class="label-text-alt">Using a group overrides the manual policy options below.</span></div>
+                                <div class="label"><span class="label-text-alt">Using groups overrides the manual policy options below. You can select multiple.</span></div>
                             </div>
         
                             <div class="divider md:col-span-2 text-xs opacity-80 my-0">OR</div>
@@ -477,4 +481,34 @@
         </div>
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const tomSelectOptions = {
+            plugins: {
+                'checkbox_options': {},
+                'remove_button': {
+                    title: 'Remove this item',
+                }
+            },
+            create: false,
+            sortField: {
+                field: "text",
+                direction: "asc"
+            }
+        };
+
+        const addGroupSelect = document.getElementById('manual_access_group');
+        if (addGroupSelect) {
+            new TomSelect(addGroupSelect, tomSelectOptions);
+        }
+
+        const editGroupSelect = document.getElementById('edit_manual_access_group');
+        if (editGroupSelect) {
+            new TomSelect(editGroupSelect, tomSelectOptions);
+        }
+    });
+</script>
 {% endblock %}
