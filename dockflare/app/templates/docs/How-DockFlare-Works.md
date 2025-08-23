@@ -1,0 +1,33 @@
+# How DockFlare Works
+
+DockFlare acts as a bridge between your Docker environment and the Cloudflare network, automating the process of exposing services securely to the internet. It continuously monitors your Docker host and uses the Cloudflare API to manage Tunnels, DNS records, and Access Policies on your behalf.
+
+## Core Workflow
+
+The core workflow can be broken down into a few key steps:
+
+1.  **Docker Event Monitoring**: DockFlare listens for Docker socket events, such as `start` and `stop` for containers.
+
+2.  **Label Detection**: When a new container is started, DockFlare inspects it for `dockflare.` labels. If a container has `dockflare.enable=true`, DockFlare knows it needs to manage it.
+
+3.  **Cloudflare API Interaction**: Based on the labels, DockFlare communicates with the Cloudflare API to configure the necessary resources:
+    *   **Cloudflare Tunnel**: It adds an ingress rule to your designated Cloudflare Tunnel. This rule points the public hostname to the container's internal network address (e.g., `http://my-app:8080`).
+    *   **DNS Management**: It creates a CNAME DNS record in your Cloudflare DNS zone, pointing your desired public hostname (e.g., `my-app.example.com`) to your Cloudflare Tunnel.
+    *   **Access Policies**: If you've specified access control labels, DockFlare creates or updates a Cloudflare Access Application to secure your service with Zero Trust policies (e.g., requiring a login from your identity provider).
+
+4.  **Automatic Cleanup**: When a managed container is stopped or removed, DockFlare automatically triggers a cleanup process. It removes the corresponding ingress rule from the Cloudflare Tunnel and, if no other service is using the hostname, deletes the DNS record and the Access Application. This prevents stale records and keeps your Cloudflare configuration clean.
+
+## Layered Configuration Model
+
+DockFlare uses a flexible, layered approach to configuration, giving you both automation and fine-grained control:
+
+1.  **Docker Labels (Base Layer)**: This is the primary, automated method. You define a service's entire configuration—hostname, internal service URL, and access policy—directly in your `docker-compose.yml` or Docker run command. This is the "source of truth" for automated services.
+
+2.  **Access Groups (Abstraction Layer)**: To avoid repeating complex access policies across many services, you can create reusable **Access Groups** in the Web UI. These are templates that bundle a set of access rules (e.g., "allow company emails" or "allow access from specific countries"). You can then apply a whole policy to a container with a single label (`dockflare.access.group=my-policy-group`), simplifying your container labels significantly.
+
+3.  **Web UI Overrides (Control Layer)**: The Web UI provides the ultimate level of control. From the dashboard, you can:
+    *   **Override** the access policy of any service, whether it was defined by labels or an Access Group. These overrides are persistent and will not be undone by a container restart.
+    *   **Create Manual Ingress Rules** for services that are not running in Docker (e.g., a service on another machine in your network).
+    *   **Revert** a service's configuration back to what is defined in its Docker labels, discarding any UI overrides.
+
+This layered model allows you to "set it and forget it" with Docker labels for most services, while still having the power to handle exceptions and complex scenarios through the Web UI.

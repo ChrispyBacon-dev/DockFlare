@@ -1,0 +1,73 @@
+# Container Labels Reference
+
+DockFlare is configured primarily through Docker labels attached to your containers. This page provides a comprehensive reference for all supported labels.
+
+## Basic Configuration
+
+These labels control the fundamental routing and service definition for a container.
+
+| Label | Description | Example |
+| :--- | :--- | :--- |
+| `dockflare.enable` | **Required.** The master switch. Must be set to `true` for DockFlare to manage the container. | `dockflare.enable=true` |
+| `dockflare.hostname` | **Required.** The public-facing hostname for your service. | `dockflare.hostname=myservice.example.com` |
+| `dockflare.service` | **Required.** The internal URL of the service that Cloudflare Tunnel should connect to. Can be `http`, `https`, `tcp`, `ssh`, `rdp`, `http_status:XXX`, or `bastion`. | `dockflare.service=http://my-app-container:8080` |
+| `dockflare.path` | The URL path to route to this service. Useful for exposing multiple services on the same hostname. | `dockflare.path=/api` |
+| `dockflare.zonename` | The name of the Cloudflare Zone (domain) where the DNS record should be created. Overrides the global configuration. | `dockflare.zonename=another-domain.com` |
+| `dockflare.no_tls_verify` | If set to `true`, disables TLS certificate verification for the connection between `cloudflared` and your origin service. Useful for origins with self-signed certificates. | `dockflare.no_tls_verify=true` |
+| `dockflare.originsrvname` | Sets a specific Server Name Indication (SNI) hostname for the TLS connection to the origin. This is also known as "Origin Server Name" in the Cloudflare dashboard. | `dockflare.originsrvname=internal.service.local` |
+| `dockflare.httpHostHeader` | Overrides the `Host` header sent from `cloudflared` to your origin service. | `dockflare.httpHostHeader=custom-host.internal` |
+
+---
+
+## Access Policy Configuration
+
+These labels allow you to dynamically create and manage Cloudflare Access applications to secure your services.
+
+**Note:** It is highly recommended to use **Access Groups** (`dockflare.access.group`) for managing policies. Using individual labels is best for one-off, unique configurations. If `dockflare.access.group` or `dockflare.access.groups` is used, all other `dockflare.access.*` labels are ignored.
+
+| Label | Description | Example |
+| :--- | :--- | :--- |
+| `dockflare.access.group` | The ID of a single, pre-configured Access Group to apply to this service. The ID can be found on the "Access Policies" page in the DockFlare UI. | `dockflare.access.group=internal-tools-policy` |
+| `dockflare.access.groups` | A comma-separated list of Access Group IDs to apply. This allows you to layer multiple policies onto a single service. | `dockflare.access.groups=allow-team-a,allow-admins` |
+| `dockflare.access.policy` | The primary policy type. Can be `bypass` (public), `authenticate` (requires login), or `default_tld` (inherits from a `*.domain.com` policy). If unset, the service will be public. | `dockflare.access.policy=authenticate` |
+| `dockflare.access.name` | A custom name for the Cloudflare Access Application. Defaults to `DockFlare-{hostname}`. | `dockflare.access.name=My Web App Access` |
+| `dockflare.access.session_duration` | The session duration for authenticated users (e.g., `24h`, `30m`). Defaults to `24h`. | `dockflare.access.session_duration=1h` |
+| `dockflare.access.app_launcher_visible` | If `true`, makes the application visible in the Cloudflare Access App Launcher. | `dockflare.access.app_launcher_visible=true` |
+| `dockflare.access.allowed_idps` | A comma-separated list of allowed Identity Provider (IdP) UUIDs. You can find these in your Cloudflare Zero Trust dashboard. | `dockflare.access.allowed_idps=uuid1,uuid2` |
+| `dockflare.access.auto_redirect_to_identity` | If `true`, users will be immediately redirected to the IdP login page instead of the Cloudflare Access splash page. | `dockflare.access.auto_redirect_to_identity=true` |
+| `dockflare.access.custom_rules` | A JSON string representing an array of Cloudflare Access Policy rules. This provides maximum flexibility for complex, one-off policies. | `dockflare.access.custom_rules='[{"email":{"email":"user@example.com"},"action":"allow"}]'` |
+
+---
+
+## Indexed Labels for Multiple Domains
+
+DockFlare supports defining multiple hostnames for a single container using indexed labels. This is useful for exposing different ports or paths of the same service on different public hostnames.
+
+To use indexed labels, prefix the label with an integer, starting from `0`.
+
+*   An indexed hostname (`<index>.hostname`) is always required.
+*   Other labels at the same index (e.g., `<index>.service`, `<index>.path`) will override the base (non-indexed) labels for that specific hostname.
+*   If an indexed label is not provided, it will fall back to the value of the corresponding base label.
+
+### Example
+
+This example exposes two hostnames from a single container:
+1.  `app.example.com` routes to the main web interface on port `80`.
+2.  `api.example.com` routes to the API on port `3000` and is secured with a specific Access Group.
+
+```yaml
+services:
+  my-multi-service:
+    image: my-app
+    labels:
+      - "dockflare.enable=true"
+
+      # --- Definition 0 ---
+      - "dockflare.0.hostname=app.example.com"
+      - "dockflare.0.service=http://my-multi-service:80"
+
+      # --- Definition 1 ---
+      - "dockflare.1.hostname=api.example.com"
+      - "dockflare.1.service=http://my-multi-service:3000"
+      - "dockflare.1.access.group=api-access-policy"
+```
