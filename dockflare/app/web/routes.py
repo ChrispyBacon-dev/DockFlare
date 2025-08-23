@@ -663,7 +663,7 @@ def ui_add_manual_rule_route():
     origin_server_name_input = request.form.get('manual_origin_server_name', '').strip()
     manual_http_host_header = request.form.get('manual_http_host_header', '').strip()
 
-    manual_access_group_id = request.form.get('manual_access_group', '').strip()
+    manual_access_group_ids = request.form.getlist('manual_access_groups')
     manual_access_policy_type = request.form.get('manual_access_policy_type', 'none').strip().lower()
     manual_auth_email = request.form.get('manual_auth_email', '').strip()
 
@@ -708,45 +708,56 @@ def ui_add_manual_rule_route():
     access_group_id = None
 
     with state_lock:
-        if manual_access_group_id and manual_access_group_id in access_groups:
-            group = access_groups[manual_access_group_id]
-            access_group_id = manual_access_group_id
-            access_policy_type = "group"
+        if manual_access_group_ids:
+            cf_access_policies = []
+            desired_session_duration = "24h"
+            desired_app_launcher_visible = False
+            desired_allowed_idps = None
+            desired_auto_redirect = False
             
-            desired_app_name = f"DockFlare-{full_hostname}"
-            desired_session_duration = group.get("session_duration", "24h")
-            desired_app_launcher_visible = group.get("app_launcher_visible", False)
-            desired_allowed_idps = group.get("allowed_idps")
-            desired_auto_redirect = group.get("auto_redirect_to_identity", False)
-            cf_access_policies = group.get("policies")
+            for i, group_id in enumerate(manual_access_group_ids):
+                if group_id in access_groups:
+                    group = access_groups[group_id]
+                    if i == 0: # Use first group for app settings
+                        desired_session_duration = group.get("session_duration", "24h")
+                        desired_app_launcher_visible = group.get("app_launcher_visible", False)
+                        desired_allowed_idps = group.get("allowed_idps")
+                        desired_auto_redirect = group.get("auto_redirect_to_identity", False)
+                    
+                    cf_access_policies.extend(group.get("policies", []))
 
-            access_app_config_hash = generate_access_app_config_hash(
-                policy_type="group", session_duration=desired_session_duration,
-                app_launcher_visible=desired_app_launcher_visible,
-                allowed_idps_str=json.dumps(desired_allowed_idps, sort_keys=True),
-                auto_redirect_to_identity=desired_auto_redirect,
-                custom_access_rules_str=json.dumps(cf_access_policies, sort_keys=True),
-                group_id=access_group_id
-            )
+            if cf_access_policies:
+                access_group_id = manual_access_group_ids
+                access_policy_type = "group"
+                desired_app_name = f"DockFlare-{full_hostname}"
 
-            existing_app = find_cloudflare_access_application_by_hostname(full_hostname)
-            if existing_app:
-                app_result = update_cloudflare_access_application(
-                    existing_app['id'], full_hostname, desired_app_name, desired_session_duration,
-                    desired_app_launcher_visible, [full_hostname], cf_access_policies,
-                    desired_allowed_idps, desired_auto_redirect
-                )
-            else:
-                app_result = create_cloudflare_access_application(
-                    full_hostname, desired_app_name, desired_session_duration,
-                    desired_app_launcher_visible, [full_hostname], cf_access_policies,
-                    desired_allowed_idps, desired_auto_redirect
+                access_app_config_hash = generate_access_app_config_hash(
+                    policy_type="group", session_duration=desired_session_duration,
+                    app_launcher_visible=desired_app_launcher_visible,
+                    allowed_idps_str=json.dumps(desired_allowed_idps, sort_keys=True),
+                    auto_redirect_to_identity=desired_auto_redirect,
+                    custom_access_rules_str=json.dumps(cf_access_policies, sort_keys=True),
+                    group_id=','.join(access_group_id)
                 )
 
-            if app_result:
-                access_app_id = app_result.get('id')
-            else:
-                cloudflared_agent_state["last_action_status"] = f"Error: Failed to create/update Access App for group '{access_group_id}'."
+                existing_app = find_cloudflare_access_application_by_hostname(full_hostname)
+                if existing_app:
+                    app_result = update_cloudflare_access_application(
+                        existing_app['id'], full_hostname, desired_app_name, desired_session_duration,
+                        desired_app_launcher_visible, [full_hostname], cf_access_policies,
+                        desired_allowed_idps, desired_auto_redirect
+                    )
+                else:
+                    app_result = create_cloudflare_access_application(
+                        full_hostname, desired_app_name, desired_session_duration,
+                        desired_app_launcher_visible, [full_hostname], cf_access_policies,
+                        desired_allowed_idps, desired_auto_redirect
+                    )
+
+                if app_result:
+                    access_app_id = app_result.get('id')
+                else:
+                    cloudflared_agent_state["last_action_status"] = f"Error: Failed to create/update Access App for group(s)."
 
         elif manual_access_policy_type and manual_access_policy_type != 'none':
             cf_access_policies = []
@@ -932,7 +943,7 @@ def ui_edit_manual_rule_route():
     no_tls_verify = request.form.get('manual_no_tls_verify') == 'on'
     origin_server_name_input = request.form.get('manual_origin_server_name', '').strip()
     manual_http_host_header = request.form.get('manual_http_host_header', '').strip()
-    manual_access_group_id = request.form.get('manual_access_group', '').strip()
+    manual_access_group_ids = request.form.getlist('manual_access_groups')
     manual_access_policy_type = request.form.get('manual_access_policy_type', 'none').strip().lower()
     manual_auth_email = request.form.get('manual_auth_email', '').strip()
     
@@ -978,48 +989,59 @@ def ui_edit_manual_rule_route():
     app_to_delete = None
 
     with state_lock:
-        if manual_access_group_id and manual_access_group_id in access_groups:
-            group = access_groups[manual_access_group_id]
-            access_group_id = manual_access_group_id
-            access_policy_type = "group"
-            
-            desired_app_name = f"DockFlare-{full_hostname}"
-            desired_session_duration = group.get("session_duration", "24h")
-            desired_app_launcher_visible = group.get("app_launcher_visible", False)
-            desired_allowed_idps = group.get("allowed_idps")
-            desired_auto_redirect = group.get("auto_redirect_to_identity", False)
-            cf_access_policies = group.get("policies")
+        if manual_access_group_ids:
+            cf_access_policies = []
+            desired_session_duration = "24h"
+            desired_app_launcher_visible = False
+            desired_allowed_idps = None
+            desired_auto_redirect = False
 
-            access_app_config_hash = generate_access_app_config_hash(
-                policy_type="group", session_duration=desired_session_duration,
-                app_launcher_visible=desired_app_launcher_visible,
-                allowed_idps_str=json.dumps(desired_allowed_idps, sort_keys=True),
-                auto_redirect_to_identity=desired_auto_redirect,
-                custom_access_rules_str=json.dumps(cf_access_policies, sort_keys=True),
-                group_id=access_group_id
-            )
+            for i, group_id in enumerate(manual_access_group_ids):
+                if group_id in access_groups:
+                    group = access_groups[group_id]
+                    if i == 0:  # Use first group for app settings
+                        desired_session_duration = group.get("session_duration", "24h")
+                        desired_app_launcher_visible = group.get("app_launcher_visible", False)
+                        desired_allowed_idps = group.get("allowed_idps")
+                        desired_auto_redirect = group.get("auto_redirect_to_identity", False)
+                    
+                    cf_access_policies.extend(group.get("policies", []))
 
-            existing_app = find_cloudflare_access_application_by_hostname(full_hostname)
-            app_to_update_id = existing_app['id'] if existing_app else original_rule_details.get('access_app_id')
+            if cf_access_policies:
+                access_group_id = manual_access_group_ids
+                access_policy_type = "group"
+                desired_app_name = f"DockFlare-{full_hostname}"
 
-            if app_to_update_id and (original_rule_details.get('hostname') != full_hostname):
-                app_to_delete = app_to_update_id
-                app_to_update_id = None
-
-            if app_to_update_id:
-                app_result = update_cloudflare_access_application(
-                    app_to_update_id, full_hostname, desired_app_name, desired_session_duration,
-                    desired_app_launcher_visible, [full_hostname], cf_access_policies,
-                    desired_allowed_idps, desired_auto_redirect
-                )
-            else:
-                app_result = create_cloudflare_access_application(
-                    full_hostname, desired_app_name, desired_session_duration,
-                    desired_app_launcher_visible, [full_hostname], cf_access_policies,
-                    desired_allowed_idps, desired_auto_redirect
+                access_app_config_hash = generate_access_app_config_hash(
+                    policy_type="group", session_duration=desired_session_duration,
+                    app_launcher_visible=desired_app_launcher_visible,
+                    allowed_idps_str=json.dumps(desired_allowed_idps, sort_keys=True),
+                    auto_redirect_to_identity=desired_auto_redirect,
+                    custom_access_rules_str=json.dumps(cf_access_policies, sort_keys=True),
+                    group_id=','.join(access_group_id)
                 )
 
-            if app_result: access_app_id = app_result.get('id')
+                existing_app = find_cloudflare_access_application_by_hostname(full_hostname)
+                app_to_update_id = existing_app['id'] if existing_app else original_rule_details.get('access_app_id')
+
+                if app_to_update_id and (original_rule_details.get('hostname') != full_hostname):
+                    app_to_delete = app_to_update_id
+                    app_to_update_id = None
+
+                if app_to_update_id:
+                    app_result = update_cloudflare_access_application(
+                        app_to_update_id, full_hostname, desired_app_name, desired_session_duration,
+                        desired_app_launcher_visible, [full_hostname], cf_access_policies,
+                        desired_allowed_idps, desired_auto_redirect
+                    )
+                else:
+                    app_result = create_cloudflare_access_application(
+                        full_hostname, desired_app_name, desired_session_duration,
+                        desired_app_launcher_visible, [full_hostname], cf_access_policies,
+                        desired_allowed_idps, desired_auto_redirect
+                    )
+
+                if app_result: access_app_id = app_result.get('id')
 
         elif manual_access_policy_type and manual_access_policy_type != 'none':
             cf_access_policies = []
