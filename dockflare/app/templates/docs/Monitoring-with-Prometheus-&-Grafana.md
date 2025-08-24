@@ -49,4 +49,4 @@ To make visualization easy, DockFlare provides a pre-made Grafana dashboard that
 
 You will now have a complete overview of your Cloudflare Tunnel's performance, including request counts, error rates, connection latency, and more.
 
-![Grafana Dashboard Example](https://raw.githubusercontent.com/ChrispyBacon-dev/DockFlare/main/images/grafana_dashboard_example.png)
+![Grafana Dashboard Example](../static/images/grafana_dashboard_example.png)
