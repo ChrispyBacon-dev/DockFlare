@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+## [v2.1.6] - 2025-08-24
+
+### Security
+- **Dependency Vulnerability:** Patched an outdated `brace-expansion` npm package (related to CVE concerning inefficient regex) by updating it to version 2.0.2.
+- **Path Injection:** Hardened the `/help/<path:page>` route against path traversal attacks by implementing stricter validation using `os.path.abspath`.
+- **Open Redirect:** Secured the login redirect mechanism by validating the `next` parameter to prevent redirection to external, malicious sites.
+- **Information Exposure:** Prevented the leakage of sensitive exception details and stack traces in API/JSON responses across multiple endpoints (`/cloudflare-ping`, `/debug`, `/api/v2/debug-info`).
+- **Insecure CI/CD Workflow:** Restricted permissions in the GitHub Actions workflow to `contents: read` to adhere to the principle of least privilege.
+
 ## [v2.1.5] - 2025-08-24
 
 ### New
