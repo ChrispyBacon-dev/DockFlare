@@ -33,7 +33,7 @@ This documentation provides comprehensive information for DockFlare. Whether you
     *   [Content Security Policy (CSP)](Content-Security-Policy.md)
 *   **Troubleshooting**
     *   [Common Issues](Common-Issues.md)
-    *   [Debugging & Logs](Debugging-Logs.md)
+    *   [Debugging & Logs](Debugging-&-Logs.md)
     *   [Health Checks](Health-Checks.md)
 *   **[Contributing](Contributing.md)**
 *   **[License](License.md)**
