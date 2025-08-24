@@ -55,15 +55,13 @@ def parse_docs_nav():
 @login_required
 def help_page(page='Home.md'):
     """Renders a documentation page from a markdown file."""
-    docs_path = os.path.join(current_app.root_path, 'templates', 'docs')
-        
-    safe_page = os.path.normpath(page).lstrip('./\\')
-    if '..' in safe_page.split(os.path.sep) or not safe_page.endswith('.md'):
+    if not page.endswith('.md'):
         abort(404)
 
-    file_path = os.path.join(docs_path, safe_page)
-    
-    if not os.path.commonpath([docs_path]) == os.path.commonpath([docs_path, file_path]) or not os.path.exists(file_path):
+    docs_path = os.path.abspath(os.path.join(current_app.root_path, 'templates', 'docs'))
+    file_path = os.path.abspath(os.path.join(docs_path, page))
+
+    if not file_path.startswith(docs_path + os.sep) or not os.path.isfile(file_path):
         abort(404)
 
     with open(file_path, 'r', encoding='utf-8') as f:
@@ -106,4 +104,4 @@ def help_page(page='Home.md'):
                            title=title, 
                            content=html_content, 
                            navigation=navigation,
-                           current_page=safe_page)
+                           current_page=page)

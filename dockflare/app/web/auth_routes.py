@@ -1,10 +1,11 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
+from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app, abort
 from flask_login import login_user, logout_user, current_user
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField
 from wtforms.validators import DataRequired
 from werkzeug.security import check_password_hash
 from app.core.user import User
+from app.web.utils import is_safe_url
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth', template_folder='../templates')
 
@@ -36,6 +37,9 @@ def login():
             login_user(user)
 
             next_page = request.args.get('next')
+            if next_page and not is_safe_url(next_page):
+                return abort(400)
+
             return redirect(next_page or url_for('web.status_page'))
         else:
             flash('Invalid username or password.', 'danger')

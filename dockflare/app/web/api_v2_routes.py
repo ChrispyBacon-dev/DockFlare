@@ -771,4 +771,5 @@ def debug_info_api():
             "timestamp": int(time.time())
         })
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e), "traceback": traceback.format_exc()}), 500
+        logging.error(f"Error in /api/v2/debug-info route: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": "An internal error occurred."}), 500

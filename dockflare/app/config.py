@@ -21,7 +21,7 @@ import sys
 import logging 
 
 # --- DockFlare Version ---
-APP_VERSION = "v2.1.5"
+APP_VERSION = "v2.1.6"
 # --- web: https://dockflare.app ---
 # --- github: https://github.com/ChrispyBacon-dev/DockFlare ---
 

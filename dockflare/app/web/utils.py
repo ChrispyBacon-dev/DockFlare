@@ -14,7 +14,20 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 # /app/web/utils.py
+from urllib.parse import urlparse, urljoin
+from flask import request
 from app import config
+
+def is_safe_url(target):
+    """
+    Checks if a URL is safe for redirection.
+    """
+    if not target:
+        return False
+    ref_url = urlparse(request.host_url)
+    test_url = urlparse(urljoin(request.host_url, target))
+    return test_url.scheme in ('http', 'https') and \
+           ref_url.netloc == test_url.netloc
 
 def get_rule_key(hostname, path):
     path_str = str(path or "").strip()

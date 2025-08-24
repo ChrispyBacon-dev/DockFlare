@@ -562,7 +562,8 @@ def debug_info():
             "timestamp": int(time.time())
         })
     except Exception as e:
-        return jsonify({ "error": str(e), "traceback": traceback.format_exc() }), 500
+        logging.error(f"Error in /debug route: {e}", exc_info=True)
+        return jsonify({ "error": "An internal error occurred.", "status": "error", "timestamp": int(time.time()) }), 500
 
 @bp.route('/reconciliation-status')
 def reconciliation_status_route(): 
@@ -1265,7 +1266,8 @@ def cloudflare_ping_route():
              "server": { "wsgi_url_scheme": request.environ.get('wsgi.url_scheme') }
         })
     except Exception as e_cfping:
-        return jsonify({ "error": str(e_cfping), "status": "error", "timestamp": int(time.time()) }), 500
+        logging.error(f"Error in /cloudflare-ping route: {e_cfping}", exc_info=True)
+        return jsonify({ "error": "An internal error occurred.", "status": "error", "timestamp": int(time.time()) }), 500
 
 @bp.route('/backup/download')
 def download_state_backup():

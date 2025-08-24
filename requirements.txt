@@ -1,4 +1,0 @@
-
-# Help/Docs
-pymdown-extensions==9.0.0
-Pygments==2.14.0
