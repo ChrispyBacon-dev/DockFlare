@@ -1,6 +1,6 @@
-# Prerequisites
+# Prerequisites  
 
-Before you begin, ensure you have the following:
+Before you begin, ensure you have the following:  
 
 *   **Docker & Docker Compose:** DockFlare is a Docker-based application, so you'll need both Docker and Docker Compose installed on your system.
 *   **A Cloudflare Account:** You'll need a Cloudflare account to manage your domains and create API tokens.
@@ -11,6 +11,6 @@ Before you begin, ensure you have the following:
     *   `Account:Account Settings:Read`
     *   `Account:Access: Apps and Policies:Edit`
     *   `Zone:Zone:Read`
-    *   `Zone:DNS:Edit`
+    *   `Zone:DNS:Edit`  
 
 ![Cloudflare API Permissions](images/cf.png)
