@@ -12,7 +12,10 @@ on:
   pull_request:
     branches:
       - "stable"
-      - "unstable" 
+      - "unstable"
+
+permissions:
+  contents: read
 
 jobs:
   build:
