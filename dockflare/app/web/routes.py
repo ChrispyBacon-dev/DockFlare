@@ -212,6 +212,41 @@ def status_page():
     display_token_val = get_display_token_ui(template_tunnel_state.get("token"))
     cf_account_id = current_app.config.get('CF_ACCOUNT_ID')
 
+    # Build public hostname index mapping for Cloudflare Zero Trust UI links
+    public_hostname_indices = {}
+    try:
+        effective_tunnel_id = template_tunnel_state.get("id") or config.EXTERNAL_TUNNEL_ID
+        zone_ids_to_scan = set()
+        cf_zone_id_cfg = current_app.config.get('CF_ZONE_ID')
+        if cf_zone_id_cfg:
+            zone_ids_to_scan.add(cf_zone_id_cfg)
+        scan_zone_names = current_app.config.get('TUNNEL_DNS_SCAN_ZONE_NAMES', [])
+        for zname in scan_zone_names:
+            try:
+                zid = get_zone_id_from_name(zname)
+                if zid:
+                    zone_ids_to_scan.add(zid)
+            except Exception:
+                logging.debug(f"Failed to resolve zone name '{zname}' to ID", exc_info=True)
+
+        collected_names = []
+        if effective_tunnel_id and zone_ids_to_scan:
+            for zid in zone_ids_to_scan:
+                try:
+                    recs = get_dns_records_for_tunnel(zid, effective_tunnel_id)
+                    for r in recs:
+                        name = r.get("name")
+                        if name:
+                            collected_names.append(name.lower())
+                except Exception:
+                    logging.debug(f"Failed to fetch DNS records for zone {zid} / tunnel {effective_tunnel_id}", exc_info=True)
+
+        unique_sorted_names = sorted(set(collected_names))
+        for idx, name in enumerate(unique_sorted_names):
+            public_hostname_indices[name] = idx
+    except Exception:
+        logging.debug("Failed to build public hostname indices", exc_info=True)
+
     return render_template('status_page.html',
                         tunnel_state=template_tunnel_state,
                         agent_state=template_agent_state,
@@ -220,7 +255,8 @@ def status_page():
                         CF_ACCOUNT_ID_CONFIGURED=bool(cf_account_id),
                         ACCOUNT_ID_FOR_DISPLAY=cf_account_id if cf_account_id else "Not Configured",
                         access_groups=template_access_groups,
-                        CF_ZONE_ID_CONFIGURED=bool(current_app.config.get('CF_ZONE_ID'))
+                        CF_ZONE_ID_CONFIGURED=bool(current_app.config.get('CF_ZONE_ID')),
+                        public_hostname_indices=public_hostname_indices
                         )
 
 from app.web.forms import ChangePasswordForm, SecuritySettingsForm, SettingsForm, CloudflareCredentialsForm
