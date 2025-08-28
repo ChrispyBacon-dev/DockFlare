@@ -684,6 +684,38 @@ def version_check():
             r = requests.get(manifest_url, headers=headers, timeout=10)
             if r.status_code == 200:
                 remote_digest = r.headers.get('Docker-Content-Digest')
+                # attempt to parse manifest and fetch the image config blob to determine push/created timestamp
+                try:
+                    manifest_json = r.json()
+                    config_digest = None
+                    if isinstance(manifest_json, dict):
+                        cfg = manifest_json.get('config') or {}
+                        config_digest = cfg.get('digest')
+                    # If config digest exists, fetch blob to read 'created' timestamp
+                    if config_digest:
+                        blob_url = f"https://registry-1.docker.io/v2/{repo}/blobs/{config_digest}"
+                        r_blob = requests.get(blob_url, headers=headers, timeout=10)
+                        if r_blob.status_code == 200:
+                            try:
+                                cfg_json = r_blob.json()
+                                created = None
+                                if isinstance(cfg_json, dict):
+                                    created = cfg_json.get('created')
+                                    if not created:
+                                        history = cfg_json.get('history')
+                                        if isinstance(history, list) and history:
+                                            try:
+                                                created = history[0].get('created')
+                                            except Exception:
+                                                created = None
+                                if created:
+                                    result['remote_pushed_at'] = created
+                            except Exception:
+                                # ignore parsing errors for blob
+                                pass
+                except Exception:
+                    # ignore manifest parsing errors
+                    pass
         except Exception as e_remote:
             logging.debug(f"Version check: failed to fetch remote manifest/digest: {e_remote}")
 

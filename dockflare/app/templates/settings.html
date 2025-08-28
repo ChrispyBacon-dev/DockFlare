@@ -493,7 +493,14 @@
           } else {
             let repoPart = data.repo ? `${data.repo}:${data.tag || 'stable'}` : '';
             let cmd = repoPart ? `docker pull ${data.repo}:${data.tag || 'stable'} && docker compose restart dockflare` : 'docker pull alplat/dockflare:stable && docker compose restart dockflare';
-            renderMessage(`<span class="text-warning">Update available</span><div class="mt-1">Run: <code class="text-xs">${cmd}</code></div>`);
+            let pushedAt = '';
+            if (data.remote_pushed_at) {
+                try {
+                    const d = new Date(data.remote_pushed_at);
+                    pushedAt = `<div class="mt-1 text-xs">Latest version pushed on: ${d.toLocaleDateString()}</div>`;
+                } catch(e) {}
+            }
+            renderMessage(`<span class="text-warning">Update available</span><div class="mt-1">Run: <code class="text-xs">${cmd}</code></div>${pushedAt}`);
           }
         } else if (data.method === 'version') {
           if (data.up_to_date) {
