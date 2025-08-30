@@ -6,7 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
-## [v2.1.7] - 2025-08-28
+## [v2.1.7] - 2025-08-30
+
+### New
+- UI: Added a version check feature to the Settings page. This allows users to verify if their running DockFlare instance is up-to-date by comparing the local Docker image digest against the official repository or by checking the latest GitHub release tag.
 
 ### Changed
 - UI: Reorganized the Settings page to include a left-side sticky navigation and section anchors for improved discoverability and faster navigation.

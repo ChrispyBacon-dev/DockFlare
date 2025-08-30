@@ -1422,7 +1422,6 @@ def create_access_group():
     flash(f"Success: Access Group '{display_name}' created.", "success")
     return redirect(url_for('web.access_policies_page'))
 
-
 @bp.route('/ui/access-groups/edit/<group_id>', methods=['POST'])
 def edit_access_group(group_id):
     with state_lock:
@@ -1455,7 +1454,6 @@ def edit_access_group(group_id):
     flash(f"Success: Access Group '{display_name}' updated. Triggering reconciliation.", "success")
     reconcile_state_threaded()
     return redirect(url_for('web.access_policies_page'))
-
 
 @bp.route('/ui/access-groups/delete/<group_id>', methods=['POST'])
 def delete_access_group(group_id):
