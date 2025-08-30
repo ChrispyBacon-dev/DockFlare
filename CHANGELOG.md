@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+## [v2.1.7] - 2025-08-30
+
+### New
+- UI: Added a version check feature to the Settings page. This allows users to verify if their running DockFlare instance is up-to-date by comparing the local Docker image digest against the official repository or by checking the latest GitHub release tag.
+
+### Changed
+- UI: Reorganized the Settings page to include a left-side sticky navigation and section anchors for improved discoverability and faster navigation.
+- UI: Added smooth scrolling and adjusted anchor offset so section headings are not hidden behind the sticky top header when navigating to anchors.
+- UI: Left-nav links now resolve to the Settings route with fragment identifiers (e.g. /settings#general-settings) so anchors work from any page.
+- UI: Added a small client-side script that highlights the active left-nav item while scrolling (IntersectionObserver with a fallback).
+- Fix: Kept all existing form names, IDs and POST endpoints unchanged to avoid breaking backend functionality.
+
 ## [v2.1.6] - 2025-08-24
 
 ### Security

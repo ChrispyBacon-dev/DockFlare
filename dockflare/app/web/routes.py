@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 import traceback 
 import json
 import io
+import requests
 from flask import send_file
 from app.core import access_manager
 from urllib.parse import urlparse, urlunparse 
@@ -212,7 +213,7 @@ def status_page():
     display_token_val = get_display_token_ui(template_tunnel_state.get("token"))
     cf_account_id = current_app.config.get('CF_ACCOUNT_ID')
 
-    # Build public hostname index mapping for Cloudflare Zero Trust UI links
+    
     public_hostname_indices = {}
     try:
         effective_tunnel_id = template_tunnel_state.get("id") or config.EXTERNAL_TUNNEL_ID
@@ -304,7 +305,7 @@ def settings_page():
     security_settings_form = SecuritySettingsForm(prefix='security')
     cf_credentials_form = CloudflareCredentialsForm(prefix='cf_creds')
 
-    # Distinguish between form submissions
+    
     if request.method == 'POST':
         if settings_form.submit_settings.data and settings_form.validate():
             data_path = os.path.dirname(config.STATE_FILE_PATH)
@@ -437,7 +438,7 @@ def settings_page():
                 flash('An error occurred while updating credentials.', 'danger')
 
 
-    # Populate forms for GET request
+    
     if request.method == 'GET':
         settings_form.tunnel_name.data = current_app.config.get('TUNNEL_NAME')
         settings_form.cf_zone_id.data = current_app.config.get('CF_ZONE_ID')
@@ -585,6 +586,197 @@ def tunnel_dns_records(tunnel_id):
 def ping():
     return jsonify({ "status": "ok", "timestamp": int(time.time()), "version": config.APP_VERSION, 
                      "protocol": request.environ.get('wsgi.url_scheme', 'unknown')})
+
+@bp.route('/version/check')
+@login_required
+def version_check():
+    """
+    Check whether the running DockFlare image matches the remote tag (digest comparison).
+    Fallback to comparing APP_VERSION to GitHub latest release tag when digest method is not possible.
+    Returns JSON:
+      - method: "digest" or "version"
+      - up_to_date: true/false/null
+      - local_digest, remote_digest (when method == "digest")
+      - current, latest (when method == "version")
+      - repo, tag (when available)
+      - error (when any internal error occurred)
+    """
+    repo = os.getenv('DOCKER_REPO', 'alplat/dockflare')
+    tag = os.getenv('DOCKER_TAG', 'stable')
+    cache_key = f"version_check:{repo}:{tag}"
+    now = time.time()
+
+    
+    cache = getattr(current_app, '_version_check_cache', {})
+    cached = cache.get(cache_key)
+    if cached and cached.get('expires_at', 0) > now:
+        return jsonify(cached['data'])
+
+    result = {"method": None, "up_to_date": None}
+    local_digest = None
+    remote_digest = None
+
+    try:
+       
+        container_id = None
+        try:
+            with open('/proc/self/cgroup', 'r') as f:
+                cg = f.read()
+            import re
+            m = re.search(r'([0-9a-f]{64})', cg)
+            if m:
+                container_id = m.group(1)
+        except Exception:
+            container_id = None
+
+        if not container_id:
+           
+            container_id = os.getenv('HOSTNAME')
+
+        
+        if docker_client and container_id:
+            try:
+                
+                try:
+                    container = docker_client.containers.get(container_id)
+                except Exception:
+                   
+                    containers = docker_client.containers.list(all=True)
+                    container = None
+                    for c in containers:
+                        if c.id.startswith(container_id) or c.name == container_id:
+                            container = c
+                            break
+                    if container is None:
+                        raise RuntimeError("Local Docker container not found via docker client.")
+                image = container.image
+                attrs = getattr(image, 'attrs', {}) or {}
+                repo_digests = attrs.get('RepoDigests') or []
+                if repo_digests:
+                    
+                    matched = None
+                    for rd in repo_digests:
+                        
+                        if rd.startswith(repo + "@"):
+                            matched = rd
+                            break
+                    if not matched:
+                        matched = repo_digests[0]
+                    if "@" in matched:
+                        local_digest = matched.split("@", 1)[1]
+                else:
+                    
+                    local_digest = getattr(image, 'id', None)
+            except Exception as e_local_img:
+                logging.debug(f"Version check: failed to determine local image digest: {e_local_img}")
+
+        
+        try:
+            
+            try:
+                hub_api_url = f"https://hub.docker.com/v2/repositories/{repo}/tags/{tag}/"
+                r_hub = requests.get(hub_api_url, timeout=10)
+                if r_hub.status_code == 200:
+                    hub_data = r_hub.json()
+                    
+                    pushed_at = hub_data.get('tag_last_pushed') or hub_data.get('last_updated')
+                    if pushed_at:
+                        result['remote_pushed_at'] = pushed_at
+                        logging.debug(f"Version check: found remote_pushed_at via Docker Hub API v2: {pushed_at}")
+            except Exception as e_hub:
+                logging.debug(f"Version check: Docker Hub API v2 lookup failed, will proceed with manifest check. Error: {e_hub}")
+
+            
+            token = None
+            auth_url = f"https://auth.docker.io/token?service=registry.docker.io&scope=repository:{repo}:pull"
+            r_tok = requests.get(auth_url, timeout=10)
+            if r_tok.status_code == 200:
+                token = r_tok.json().get('token')
+            
+            headers = {'Accept': 'application/vnd.docker.distribution.manifest.v2+json'}
+            if token:
+                headers['Authorization'] = f"Bearer {token}"
+            
+            manifest_url = f"https://registry-1.docker.io/v2/{repo}/manifests/{tag}"
+            r = requests.get(manifest_url, headers=headers, timeout=10)
+            
+            if r.status_code == 200:
+                remote_digest = r.headers.get('Docker-Content-Digest')
+                
+                
+                if 'remote_pushed_at' not in result:
+                    logging.debug("Version check: remote_pushed_at not found via Hub API, attempting manifest blob inspection.")
+                    try:
+                        manifest_json = r.json()
+                        config_digest = None
+                        if isinstance(manifest_json, dict):
+                            cfg = manifest_json.get('config') or {}
+                            config_digest = cfg.get('digest')
+                        
+                        if config_digest:
+                            blob_url = f"https://registry-1.docker.io/v2/{repo}/blobs/{config_digest}"
+                            
+                            r_blob = requests.get(blob_url, headers=headers, timeout=10)
+                            if r_blob.status_code == 200:
+                                try:
+                                    cfg_json = r_blob.json()
+                                    created = None
+                                    if isinstance(cfg_json, dict):
+                                        created = cfg_json.get('created')
+                                        
+                                        if not created:
+                                            history = cfg_json.get('history')
+                                            if isinstance(history, list) and history:
+                                                created = history[0].get('created')
+                                    if created:
+                                        result['remote_pushed_at'] = created
+                                        logging.debug(f"Version check: found remote_pushed_at via manifest blob: {created}")
+                                except Exception as e_blob_parse:
+                                    logging.debug(f"Version check: failed to parse config blob for timestamp: {e_blob_parse}")
+                    except Exception as e_manifest_parse:
+                        logging.debug(f"Version check: failed to parse manifest for timestamp fallback: {e_manifest_parse}")
+        except Exception as e_remote:
+            logging.debug(f"Version check: failed to fetch remote manifest/digest: {e_remote}")
+
+        if local_digest and remote_digest:
+            result['method'] = 'digest'
+            result['local_digest'] = local_digest
+            result['remote_digest'] = remote_digest
+            result['repo'] = repo
+            result['tag'] = tag
+            result['up_to_date'] = (local_digest == remote_digest)
+        else:
+            
+            result['method'] = 'version'
+            result['current'] = config.APP_VERSION
+            latest = None
+            try:
+                gh_url = 'https://api.github.com/repos/ChrispyBacon-dev/DockFlare/releases/latest'
+                rgh = requests.get(gh_url, timeout=10, headers={'Accept': 'application/vnd.github.v3+json'})
+                if rgh.status_code == 200:
+                    latest_release_data = rgh.json()
+                    latest = latest_release_data.get('tag_name') or latest_release_data.get('name')
+                    if not result.get('remote_pushed_at'):
+                        result['remote_pushed_at'] = latest_release_data.get('published_at')
+            except Exception as e_gh:
+                logging.debug(f"Version check: failed to fetch GitHub latest release: {e_gh}")
+            result['latest'] = latest
+            result['up_to_date'] = (latest is not None and result['current'] == latest)
+
+    except Exception as e:
+        logging.error(f"Error while performing version check: {e}", exc_info=True)
+        result['error'] = str(e)
+        result['up_to_date'] = None
+
+    
+    try:
+        ttl = int(os.getenv('VERSION_CHECK_CACHE_TTL_SECONDS', '21600'))
+    except Exception:
+        ttl = 21600
+    cache[cache_key] = {'data': result, 'expires_at': now + ttl}
+    setattr(current_app, '_version_check_cache', cache)
+
+    return jsonify(result)
 
 @bp.route('/debug')
 def debug_info():
@@ -1230,7 +1422,6 @@ def create_access_group():
     flash(f"Success: Access Group '{display_name}' created.", "success")
     return redirect(url_for('web.access_policies_page'))
 
-
 @bp.route('/ui/access-groups/edit/<group_id>', methods=['POST'])
 def edit_access_group(group_id):
     with state_lock:
@@ -1263,7 +1454,6 @@ def edit_access_group(group_id):
     flash(f"Success: Access Group '{display_name}' updated. Triggering reconciliation.", "success")
     reconcile_state_threaded()
     return redirect(url_for('web.access_policies_page'))
-
 
 @bp.route('/ui/access-groups/delete/<group_id>', methods=['POST'])
 def delete_access_group(group_id):

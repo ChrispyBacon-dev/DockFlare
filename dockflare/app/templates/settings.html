@@ -3,358 +3,528 @@
 {% block title %}Settings{% endblock %}
 
 {% block content %}
-    <!-- 0. General Settings -->
-    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
-        <div class="card-body">
-            <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
-                General Settings
-            </h2>
-            <form method="POST" action="{{ url_for('web.settings_page') }}" class="space-y-4">
-                {{ settings_form.hidden_tag() }}
-                
-                <div class="form-control w-full">
-                    <label class="label" for="tunnel_name">
-                        <span class="label-text">{{ settings_form.tunnel_name.label.text }}</span>
-                    </label>
-                    {{ settings_form.tunnel_name(class="input input-bordered w-full", **{'id': 'tunnel_name'}) }}
-                    {% for error in settings_form.tunnel_name.errors %}
-                        <label class="label">
-                            <span class="label-text-alt text-error">{{ error }}</span>
-                        </label>
-                    {% endfor %}
-                </div>
+<style>
+  html { scroll-behavior: smooth; }
+  section[id] { scroll-margin-top: 5.5rem; }
+  :target { scroll-margin-top: 5.5rem; }
+</style>
 
-                <div class="form-control w-full">
-                    <label class="label" for="cf_zone_id">
-                        <span class="label-text">{{ settings_form.cf_zone_id.label.text }}</span>
-                    </label>
-                    {{ settings_form.cf_zone_id(class="input input-bordered w-full", **{'id': 'cf_zone_id'}) }}
-                    <label class="label">
-                        <span class="label-text-alt">Optional. The default Zone ID for new DNS records.</span>
-                    </label>
-                </div>
+<div class="flex flex-col sm:flex-row gap-8">
+    <aside class="w-full sm:w-1/3 md:w-1/4 flex-shrink-0">
+        <div class="sticky top-20">
+            <ul id="settings-left-nav" class="menu bg-base-200 rounded-box p-2">
+                <li><a href="{{ url_for('web.settings_page') }}#general-settings">General Settings</a></li>
+                <li><a href="{{ url_for('web.settings_page') }}#cloudflare-tunnels">All Cloudflare Tunnels</a></li>
+                <li><a href="{{ url_for('web.settings_page') }}#backup-restore">Backup & Restore</a></li>
+                <li><a href="{{ url_for('web.settings_page') }}#security">Security</a></li>
+                <li><a href="{{ url_for('web.settings_page') }}#tunnel-agent-status">Tunnel & Agent Status</a></li>
+            </ul>
+            <div class="mt-4 px-2">
+                <button id="btn-check-version" class="btn btn-sm btn-outline w-full" type="button" title="Check DockFlare version">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    Check version
+                </button>
+                <div id="version-check-status" class="text-xs opacity-70 mt-2 hidden"></div>
+            </div>
+        </div>
+    </aside>
 
-                <div class="form-control w-full">
-                    <label class="label" for="tunnel_dns_scan_zone_names">
-                        <span class="label-text">{{ settings_form.tunnel_dns_scan_zone_names.label.text }}</span>
-                    </label>
-                    {{ settings_form.tunnel_dns_scan_zone_names(class="input input-bordered w-full", **{'id': 'tunnel_dns_scan_zone_names'}) }}
-                    <label class="label">
-                        <span class="label-text-alt">{{ settings_form.tunnel_dns_scan_zone_names.description }}</span>
-                    </label>
-                </div>
-
-                <div class="form-control w-full">
-                    <label class="label" for="grace_period_seconds">
-                        <span class="label-text">{{ settings_form.grace_period_seconds.label.text }}</span>
-                    </label>
-                    {{ settings_form.grace_period_seconds(class="input input-bordered w-full", **{'id': 'grace_period_seconds', 'type': 'number'}) }}
-                    {% for error in settings_form.grace_period_seconds.errors %}
-                        <label class="label">
-                            <span class="label-text-alt text-error">{{ error }}</span>
-                        </label>
-                    {% endfor %}
-                </div>
-                
-                <div class="card-actions pt-4">
-                    {{ settings_form.submit_settings(class="btn btn-primary") }}
-                </div>
-            </form>
-            <div class="border-t border-base-300 mt-8 pt-8">
-                <h3 class="font-semibold text-lg mb-2">Update Cloudflare Credentials</h3>
-                <div role="alert" class="alert alert-info text-sm mb-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    <span>
-                        Enter a new Account ID or API Token to update. For security, current values are not displayed.
-                        <br>
-                        Updating credentials require an DockFlare restart to take full effect.
-                    </span>
-                </div>
+    <main class="w-full sm:w-2/3 md:w-3/4">
+        <!-- 0. General Settings -->
+        <section id="general-settings" class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+            <div class="card-body">
+                <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
+                    General Settings
+                </h2>
                 <form method="POST" action="{{ url_for('web.settings_page') }}" class="space-y-4">
-                    {{ cf_credentials_form.hidden_tag() }}
-                    <div class="form-control">
-                        <label class="label" for="cf_account_id">
-                            <span class="label-text">Cloudflare Account ID</span>
+                    {{ settings_form.hidden_tag() }}
+                    
+                    <div class="form-control w-full">
+                        <label class="label" for="tunnel_name">
+                            <span class="label-text">{{ settings_form.tunnel_name.label.text }}</span>
                         </label>
-                        {{ cf_credentials_form.cf_account_id(class="input input-bordered w-full", **{'id': 'cf_account_id', 'placeholder': 'Enter new 32-character Account ID'}) }}
-                        {% for error in cf_credentials_form.cf_account_id.errors %}
+                        {{ settings_form.tunnel_name(class="input input-bordered w-full", **{'id': 'tunnel_name'}) }}
+                        {% for error in settings_form.tunnel_name.errors %}
                             <label class="label">
                                 <span class="label-text-alt text-error">{{ error }}</span>
                             </label>
                         {% endfor %}
                     </div>
-                    <div class="form-control">
-                        <label class="label" for="cf_api_token">
-                            <span class="label-text">Cloudflare API Token</span>
+
+                    <div class="form-control w-full">
+                        <label class="label" for="cf_zone_id">
+                            <span class="label-text">{{ settings_form.cf_zone_id.label.text }}</span>
                         </label>
-                        {{ cf_credentials_form.cf_api_token(class="input input-bordered w-full", **{'id': 'cf_api_token', 'placeholder': 'Enter new 40-character API Token'}) }}
-                        {% for error in cf_credentials_form.cf_api_token.errors %}
+                        {{ settings_form.cf_zone_id(class="input input-bordered w-full", **{'id': 'cf_zone_id'}) }}
+                        <label class="label">
+                            <span class="label-text-alt">Optional. The default Zone ID for new DNS records.</span>
+                        </label>
+                    </div>
+
+                    <div class="form-control w-full">
+                        <label class="label" for="tunnel_dns_scan_zone_names">
+                            <span class="label-text">{{ settings_form.tunnel_dns_scan_zone_names.label.text }}</span>
+                        </label>
+                        {{ settings_form.tunnel_dns_scan_zone_names(class="input input-bordered w-full", **{'id': 'tunnel_dns_scan_zone_names'}) }}
+                        <label class="label">
+                            <span class="label-text-alt">{{ settings_form.tunnel_dns_scan_zone_names.description }}</span>
+                        </label>
+                    </div>
+
+                    <div class="form-control w-full">
+                        <label class="label" for="grace_period_seconds">
+                            <span class="label-text">{{ settings_form.grace_period_seconds.label.text }}</span>
+                        </label>
+                        {{ settings_form.grace_period_seconds(class="input input-bordered w-full", **{'id': 'grace_period_seconds', 'type': 'number'}) }}
+                        {% for error in settings_form.grace_period_seconds.errors %}
                             <label class="label">
                                 <span class="label-text-alt text-error">{{ error }}</span>
                             </label>
                         {% endfor %}
                     </div>
-                    <div class="card-actions">
-                        {{ cf_credentials_form.submit_cloudflare_credentials(class="btn btn-primary") }}
+                    
+                    <div class="card-actions pt-4">
+                        {{ settings_form.submit_settings(class="btn btn-primary") }}
                     </div>
                 </form>
-            </div>
-        </div>
-    </section>
-
-    <!-- 2. All Cloudflare Tunnels on Account Section -->
-    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
-        <div class="card-body">
-            <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">All Cloudflare Tunnels on Account</h2>
-            {% if CF_ACCOUNT_ID_CONFIGURED %}
-                <p class="mb-4 text-sm opacity-70">
-                    Displaying tunnels for Account ID: <code class="badge badge-ghost">{{ ACCOUNT_ID_FOR_DISPLAY | e }}</code>.
-                    <br>
-                    <em class="text-xs opacity-60">This list shows all tunnels on the account, not just the one managed by DockFlare. Click '+' to view associated DNS records.</em>
-                </p>
-                {% if all_account_tunnels is defined and all_account_tunnels %}
-                    <div class="overflow-x-auto -mx-6 sm:-mx-8">
-                        <table class="table table-sm w-full">
-                            <thead>
-                                <tr>
-                                    <th class="w-12">+/-</th>
-                                    <th>Tunnel Name</th>
-                                    <th>Tunnel ID</th>
-                                    <th>Status</th>
-                                    <th>Created At</th>
-                                    <th>Connections</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for tunnel in all_account_tunnels %}
-                                    <tr>
-                                        <td class="text-center">
-                                            <button type="button" class="btn btn-xs btn-ghost btn-circle tunnel-dns-toggle"
-                                                    data-tunnel-id="{{ tunnel.id | e }}" aria-expanded="false" aria-controls="dns-records-{{ tunnel.id | e }}" title="Toggle DNS records">
-                                                <svg class="w-4 h-4 expand-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-                                                <svg class="w-4 h-4 collapse-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6"></path></svg>
-                                            </button>
-                                        </td>
-                                        <td class="text-sm font-medium">{{ tunnel.name | e }}</td>
-                                        <td><code class="text-xs opacity-80">{{ tunnel.id | e }}</code></td>
-                                        <td>
-                                            {% set status_color = 'badge-success' if tunnel.status | lower == 'healthy' else ('badge-warning' if tunnel.status | lower == 'degraded' else ('badge-error' if tunnel.status | lower == 'down' else 'badge-ghost')) %}
-                                            <span class="badge {{ status_color }} badge-sm">{{ tunnel.status | capitalize | e }}</span>
-                                        </td>
-                                        <td class="text-xs opacity-70">{% if tunnel.created_at %}{{ tunnel.created_at.split('T')[0] | e }}{% else %}N/A{% endif %}</td>
-                                        <td class="text-xs opacity-70">
-                                            {% if tunnel.connections and tunnel.connections is iterable and not tunnel.connections is string %}
-                                                {% for conn in tunnel.connections %}<span class="badge badge-outline badge-xs mr-1 mb-1">{{ conn.colo_name | e }}</span>{% endfor %}
-                                                {% if tunnel.connections | length > 0 %}({{ tunnel.connections | length }} total){% else %}(0 total){% endif %}
-                                            {% elif tunnel.connections %}{{ tunnel.connections | e }}{% else %}None{% endif %}
-                                        </td>
-                                    </tr>
-                                    <tr class="dns-records-row hidden bg-base-200/30">
-                                        <td colspan="6">
-                                            <div id="dns-records-{{ tunnel.id | e }}" class="p-4 text-sm space-y-2">
-                                                <p class="opacity-60 italic">Click the '+' button to load DNS records for this tunnel.</p>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+                <div class="border-t border-base-300 mt-8 pt-8">
+                    <h3 class="font-semibold text-lg mb-2">Update Cloudflare Credentials</h3>
+                    <div role="alert" class="alert alert-info text-sm mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span>
+                            Enter a new Account ID or API Token to update. For security, current values are not displayed.
+                            <br>
+                            Updating credentials require an DockFlare restart to take full effect.
+                        </span>
                     </div>
-                {% elif all_account_tunnels is defined %}
-                    <p class="text-center opacity-70 py-8">No Cloudflare Tunnels found for Account ID: <code class="badge badge-ghost">{{ ACCOUNT_ID_FOR_DISPLAY | e }}</code>.</p>
-                    <p class="text-center text-xs opacity-60"><em>This could also mean an error occurred. Ensure your API Token has 'Account:Cloudflare Tunnel:Read' permission.</em></p>
-                {% else %}
-                    <p class="alert alert-warning text-center py-8">Could not retrieve tunnel information.</p>
-                {% endif %}
-            {% else %}
-                 <div role="alert" class="alert alert-warning">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                    <span>The <code>CF_ACCOUNT_ID</code> environment variable is not configured. This section cannot be displayed.</span>
+                    <form method="POST" action="{{ url_for('web.settings_page') }}" class="space-y-4">
+                        {{ cf_credentials_form.hidden_tag() }}
+                        <div class="form-control">
+                            <label class="label" for="cf_account_id">
+                                <span class="label-text">Cloudflare Account ID</span>
+                            </label>
+                            {{ cf_credentials_form.cf_account_id(class="input input-bordered w-full", **{'id': 'cf_account_id', 'placeholder': 'Enter new 32-character Account ID'}) }}
+                            {% for error in cf_credentials_form.cf_account_id.errors %}
+                                <label class="label">
+                                    <span class="label-text-alt text-error">{{ error }}</span>
+                                </label>
+                            {% endfor %}
+                        </div>
+                        <div class="form-control">
+                            <label class="label" for="cf_api_token">
+                                <span class="label-text">Cloudflare API Token</span>
+                            </label>
+                            {{ cf_credentials_form.cf_api_token(class="input input-bordered w-full", **{'id': 'cf_api_token', 'placeholder': 'Enter new 40-character API Token'}) }}
+                            {% for error in cf_credentials_form.cf_api_token.errors %}
+                                <label class="label">
+                                    <span class="label-text-alt text-error">{{ error }}</span>
+                                </label>
+                            {% endfor %}
+                        </div>
+                        <div class="card-actions">
+                            {{ cf_credentials_form.submit_cloudflare_credentials(class="btn btn-primary") }}
+                        </div>
+                    </form>
                 </div>
-            {% endif %}
-        </div>
-    </section>
+            </div>
+        </section>
 
-    <!-- 3. Backup & Restore Section -->
-    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl border-2 border-warning">
-        <div class="card-body">
-            <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
-                Backup & Restore
-            </h2>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-                
-                <!-- Backup Column -->
-                <div>
-                    <h3 class="font-semibold text-lg mb-2">Create Backup</h3>
-                    <p class="text-sm opacity-80 mb-4">
-                        Download the current `state.json` file. This file contains all your manual rules, access groups, and the state of your Docker-managed services. Store it in a safe place.
+        <!-- 2. All Cloudflare Tunnels on Account Section -->
+        <section id="cloudflare-tunnels" class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+            <div class="card-body">
+                <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">All Cloudflare Tunnels on Account</h2>
+                {% if CF_ACCOUNT_ID_CONFIGURED %}
+                    <p class="mb-4 text-sm opacity-70">
+                        Displaying tunnels for Account ID: <code class="badge badge-ghost">{{ ACCOUNT_ID_FOR_DISPLAY | e }}</code>.
+                        <br>
+                        <em class="text-xs opacity-60">This list shows all tunnels on the account, not just the one managed by DockFlare. Click '+' to view associated DNS records.</em>
                     </p>
-                    <a href="{{ url_for('web.download_state_backup') }}" class="btn btn-primary">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
-                        Download State File
-                    </a>
-                </div>
-
-                <!-- Restore Column -->
-                <div>
-                    <h3 class="font-semibold text-lg mb-2">Restore from Backup</h3>
-                    <div role="alert" class="alert alert-warning text-sm mb-4">
+                    {% if all_account_tunnels is defined and all_account_tunnels %}
+                        <div class="overflow-x-auto -mx-6 sm:-mx-8">
+                            <table class="table table-sm w-full">
+                                <thead>
+                                    <tr>
+                                        <th class="w-12">+/-</th>
+                                        <th>Tunnel Name</th>
+                                        <th>Tunnel ID</th>
+                                        <th>Status</th>
+                                        <th>Created At</th>
+                                        <th>Connections</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for tunnel in all_account_tunnels %}
+                                        <tr>
+                                            <td class="text-center">
+                                                <button type="button" class="btn btn-xs btn-ghost btn-circle tunnel-dns-toggle"
+                                                        data-tunnel-id="{{ tunnel.id | e }}" aria-expanded="false" aria-controls="dns-records-{{ tunnel.id | e }}" title="Toggle DNS records">
+                                                    <svg class="w-4 h-4 expand-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                                    <svg class="w-4 h-4 collapse-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6"></path></svg>
+                                                </button>
+                                            </td>
+                                            <td class="text-sm font-medium">{{ tunnel.name | e }}</td>
+                                            <td><code class="text-xs opacity-80">{{ tunnel.id | e }}</code></td>
+                                            <td>
+                                                {% set status_color = 'badge-success' if tunnel.status | lower == 'healthy' else ('badge-warning' if tunnel.status | lower == 'degraded' else ('badge-error' if tunnel.status | lower == 'down' else 'badge-ghost')) %}
+                                                <span class="badge {{ status_color }} badge-sm">{{ tunnel.status | capitalize | e }}</span>
+                                            </td>
+                                            <td class="text-xs opacity-70">{% if tunnel.created_at %}{{ tunnel.created_at.split('T')[0] | e }}{% else %}N/A{% endif %}</td>
+                                            <td class="text-xs opacity-70">
+                                                {% if tunnel.connections and tunnel.connections is iterable and not tunnel.connections is string %}
+                                                    {% for conn in tunnel.connections %}<span class="badge badge-outline badge-xs mr-1 mb-1">{{ conn.colo_name | e }}</span>{% endfor %}
+                                                    {% if tunnel.connections | length > 0 %}({{ tunnel.connections | length }} total){% else %}(0 total){% endif %}
+                                                {% elif tunnel.connections %}{{ tunnel.connections | e }}{% else %}None{% endif %}
+                                            </td>
+                                        </tr>
+                                        <tr class="dns-records-row hidden bg-base-200/30">
+                                            <td colspan="6">
+                                                <div id="dns-records-{{ tunnel.id | e }}" class="p-4 text-sm space-y-2">
+                                                    <p class="opacity-60 italic">Click the '+' button to load DNS records for this tunnel.</p>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% elif all_account_tunnels is defined %}
+                        <p class="text-center opacity-70 py-8">No Cloudflare Tunnels found for Account ID: <code class="badge badge-ghost">{{ ACCOUNT_ID_FOR_DISPLAY | e }}</code>.</p>
+                        <p class="text-center text-xs opacity-60"><em>This could also mean an error occurred. Ensure your API Token has 'Account:Cloudflare Tunnel:Read' permission.</em></p>
+                    {% else %}
+                        <p class="alert alert-warning text-center py-8">Could not retrieve tunnel information.</p>
+                    {% endif %}
+                {% else %}
+                     <div role="alert" class="alert alert-warning">
                         <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                        <span><strong>Warning:</strong> This will completely overwrite your current settings, rules, and groups with the content of the backup file. This action cannot be undone.</span>
+                        <span>The <code>CF_ACCOUNT_ID</code> environment variable is not configured. This section cannot be displayed.</span>
+                    </div>
+                {% endif %}
+            </div>
+        </section>
+
+        <!-- 3. Backup & Restore Section -->
+        <section id="backup-restore" class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl border-2 border-warning">
+            <div class="card-body">
+                <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
+                    Backup & Restore
+                </h2>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+                    
+                    <!-- Backup Column -->
+                    <div>
+                        <h3 class="font-semibold text-lg mb-2">Create Backup</h3>
+                        <p class="text-sm opacity-80 mb-4">
+                            Download the current `state.json` file. This file contains all your manual rules, access groups, and the state of your Docker-managed services. Store it in a safe place.
+                        </p>
+                        <a href="{{ url_for('web.download_state_backup') }}" class="btn btn-primary">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            Download State File
+                        </a>
                     </div>
 
-                    <form action="{{ url_for('web.restore_state_backup') }}" method="POST" enctype="multipart/form-data" class="protocol-aware-form space-y-3">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="file" name="backup_file" class="file-input file-input-bordered w-full" accept=".json" required />
-                        <button type="submit" class="btn btn-error w-full" onclick="return confirm('Are you sure you want to overwrite your current state with this backup? This cannot be undone.')">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                            </svg>
-                            Upload and Restore State
-                        </button>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- 4. Security Section -->
-    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
-        <div class="card-body">
-            <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
-                Security
-            </h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-                <div>
-                    <h3 class="font-semibold text-lg mb-2">Change Password</h3>
-                    <form method="POST" action="{{ url_for('web.change_password') }}" class="space-y-4">
-                        {{ change_password_form.hidden_tag() }}
-                        <div class="form-control">
-                            <label class="label" for="current_password">
-                                <span class="label-text">Current Password</span>
-                            </label>
-                            {{ change_password_form.current_password(class="input input-bordered w-full", **{'id': 'current_password'}) }}
-                        </div>
-                        <div class="form-control">
-                            <label class="label" for="new_password">
-                                <span class="label-text">New Password</span>
-                            </label>
-                            {{ change_password_form.new_password(class="input input-bordered w-full", **{'id': 'new_password'}) }}
-                        </div>
-                        <div class="form-control">
-                            <label class="label" for="confirm_new_password">
-                                <span class="label-text">Confirm New Password</span>
-                            </label>
-                            {{ change_password_form.confirm_new_password(class="input input-bordered w-full", **{'id': 'confirm_new_password'}) }}
-                        </div>
-                        <div class="card-actions">
-                            <button type="submit" class="btn btn-primary">Change Password</button>
-                        </div>
-                    </form>
-                </div>
-                <div>
-                    <h3 class="font-semibold text-lg mb-2">Disable Password Login</h3>
-                    <form method="POST" action="{{ url_for('web.settings_page') }}" class="space-y-4 protocol-aware-form">
-                        {{ security_settings_form.hidden_tag() }}
-
-                        <div class="form-control">
-                            <label class="label cursor-pointer p-0">
-                                <span class="label-text">{{ security_settings_form.disable_password_login.label.text }}</span>
-                                {{ security_settings_form.disable_password_login(class="toggle toggle-primary") }}
-                            </label>
-                        </div>
-
-                        <div role="alert" class="alert alert-warning text-sm">
+                    <!-- Restore Column -->
+                    <div>
+                        <h3 class="font-semibold text-lg mb-2">Restore from Backup</h3>
+                        <div role="alert" class="alert alert-warning text-sm mb-4">
                             <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                            <span><strong>Security Warning:</strong> When disabling password login, you become responsible for securing DockFlare access. Best practice is to use a Cloudflare Tunnel with an Access Policy and ensure Docker ports are not exposed, preventing access from the local network (LAN).</span>
+                            <span><strong>Warning:</strong> This will completely overwrite your current settings, rules, and groups with the content of the backup file. This action cannot be undone.</span>
                         </div>
 
-                        <div class="card-actions">
-                             {{ security_settings_form.submit_security_settings(class="btn btn-warning") }}
-                        </div>
-                    </form>
+                        <form action="{{ url_for('web.restore_state_backup') }}" method="POST" enctype="multipart/form-data" class="protocol-aware-form space-y-3">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="file" name="backup_file" class="file-input file-input-bordered w-full" accept=".json" required />
+                            <button type="submit" class="btn btn-error w-full" onclick="return confirm('Are you sure you want to overwrite your current state with this backup? This cannot be undone.')">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                </svg>
+                                Upload and Restore State
+                            </button>
+                        </form>
+                    </div>
                 </div>
             </div>
-            <div class="mt-8">
-                <h3 class="font-semibold text-lg mb-2">Password Reset</h3>
-                <div role="alert" class="alert alert-info text-sm">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    <span>
-                        To reset your password, you must have filesystem access to the DockFlare container.
-                        <br>
-                        1. Stop the DockFlare container.
-                        <br>
-                        2. Delete the `dockflare_config.dat` and `dockflare.key` files from your persistent data volume.
-                        <br>
-                        3. Restart the container. You will be prompted to go through the initial setup again.
-                    </span>
+        </section>
+
+        <!-- 4. Security Section -->
+        <section id="security" class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+            <div class="card-body">
+                <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
+                    Security
+                </h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+                    <div>
+                        <h3 class="font-semibold text-lg mb-2">Change Password</h3>
+                        <form method="POST" action="{{ url_for('web.change_password') }}" class="space-y-4">
+                            {{ change_password_form.hidden_tag() }}
+                            <div class="form-control">
+                                <label class="label" for="current_password">
+                                    <span class="label-text">Current Password</span>
+                                </label>
+                                {{ change_password_form.current_password(class="input input-bordered w-full", **{'id': 'current_password'}) }}
+                            </div>
+                            <div class="form-control">
+                                <label class="label" for="new_password">
+                                    <span class="label-text">New Password</span>
+                                </label>
+                                {{ change_password_form.new_password(class="input input-bordered w-full", **{'id': 'new_password'}) }}
+                            </div>
+                            <div class="form-control">
+                                <label class="label" for="confirm_new_password">
+                                    <span class="label-text">Confirm New Password</span>
+                                </label>
+                                {{ change_password_form.confirm_new_password(class="input input-bordered w-full", **{'id': 'confirm_new_password'}) }}
+                            </div>
+                            <div class="card-actions">
+                                <button type="submit" class="btn btn-primary">Change Password</button>
+                            </div>
+                        </form>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-lg mb-2">Disable Password Login</h3>
+                        <form method="POST" action="{{ url_for('web.settings_page') }}" class="space-y-4 protocol-aware-form">
+                            {{ security_settings_form.hidden_tag() }}
+
+                            <div class="form-control">
+                                <label class="label cursor-pointer p-0">
+                                    <span class="label-text">{{ security_settings_form.disable_password_login.label.text }}</span>
+                                    {{ security_settings_form.disable_password_login(class="toggle toggle-primary") }}
+                                </label>
+                            </div>
+
+                            <div role="alert" class="alert alert-warning text-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                                <span><strong>Security Warning:</strong> When disabling password login, you become responsible for securing DockFlare access. Best practice is to use a Cloudflare Tunnel with an Access Policy and ensure Docker ports are not exposed, preventing access from the local network (LAN).</span>
+                            </div>
+
+                            <div class="card-actions">
+                                 {{ security_settings_form.submit_security_settings(class="btn btn-warning") }}
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div class="mt-8">
+                    <h3 class="font-semibold text-lg mb-2">Password Reset</h3>
+                    <div role="alert" class="alert alert-info text-sm">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span>
+                            To reset your password, you must have filesystem access to the DockFlare container.
+                            <br>
+                            1. Stop the DockFlare container.
+                            <br>
+                            2. Delete the `dockflare_config.dat` and `dockflare.key` files from your persistent data volume.
+                            <br>
+                            3. Restart the container. You will be prompted to go through the initial setup again.
+                        </span>
+                    </div>
                 </div>
             </div>
-        </div>
-    </section>
+        </section>
 
-    <!-- 5. Tunnel & Agent Status Section -->
-    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
-        <div class="card-body">
-            <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
-                Tunnel & Agent Status
-            </h2>
+        <!-- 5. Tunnel & Agent Status Section -->
+        <section id="tunnel-agent-status" class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+            <div class="card-body">
+                <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
+                    Tunnel & Agent Status
+                </h2>
 
-            {% if agent_state.last_action_status or tunnel_state.get('error') %}
-                {% set alert_message = agent_state.last_action_status or tunnel_state.status_message %}
-                {% set is_error = 'Error:' in alert_message or tunnel_state.get('error') %}
-                {% set alert_type = 'alert-error' if is_error else 'alert-info' %}
-                <div role="alert" class="alert {{ alert_type }} shadow-sm text-sm mb-6">
-                    <!-- ... (alert content) ... -->
+                {% if agent_state.last_action_status or tunnel_state.get('error') %}
+                    {% set alert_message = agent_state.last_action_status or tunnel_state.status_message %}
+                    {% set is_error = 'Error:' in alert_message or tunnel_state.get('error') %}
+                    {% set alert_type = 'alert-error' if is_error else 'alert-info' %}
+                    <div role="alert" class="alert {{ alert_type }} shadow-sm text-sm mb-6">
+                        <!-- ... (alert content) ... -->
+                    </div>
+                {% endif %}
+
+                <div class="mb-6">
+                    <h4 class="text-md font-semibold mb-3 opacity-80">Tunnel Details</h4>
+                     <div class="space-y-2 text-sm">
+                        <p><strong class="inline-block w-36 opacity-70">Desired Name:</strong> <code class="badge badge-ghost">{{ tunnel_state.name }}</code></p>
+                        <p><strong class="inline-block w-36 opacity-70">Tunnel ID:</strong> <code class="badge badge-ghost">{{ tunnel_state.id if tunnel_state.id else 'N/A' }}</code></p>
+                        {% if not external_cloudflared %}
+                        <p><strong class="inline-block w-36 opacity-70">Tunnel Token:</strong> <code class="badge badge-ghost">{{ display_token }}</code></p>
+                        {% endif %}
+                    </div>
                 </div>
-            {% endif %}
-
-            <div class="mb-6">
-                <h4 class="text-md font-semibold mb-3 opacity-80">Tunnel Details</h4>
-                 <div class="space-y-2 text-sm">
-                    <p><strong class="inline-block w-36 opacity-70">Desired Name:</strong> <code class="badge badge-ghost">{{ tunnel_state.name }}</code></p>
-                    <p><strong class="inline-block w-36 opacity-70">Tunnel ID:</strong> <code class="badge badge-ghost">{{ tunnel_state.id if tunnel_state.id else 'N/A' }}</code></p>
-                    {% if not external_cloudflared %}
-                    <p><strong class="inline-block w-36 opacity-70">Tunnel Token:</strong> <code class="badge badge-ghost">{{ display_token }}</code></p>
-                    {% endif %}
+                <div>
+                    <h3 class="text-lg font-semibold mb-3 opacity-80">Agent Control</h3>
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-6 mt-2 p-4 bg-base-200/50 rounded-md">
+                        {% if external_cloudflared %}
+                            <div class="flex-grow space-y-1.5">
+                                <strong class="text-sm font-medium">External Mode:</strong> <span class="badge badge-info badge-sm animate-pulse">Active</span>
+                            </div>
+                        {% else %}
+                         <div class="flex-grow space-y-1.5">
+                            <strong class="text-sm font-medium">Agent Status:</strong>
+                            {% set indicator_color = 'bg-gray-400' %}
+                            {% if agent_state.container_status == 'running' %} {% set indicator_color = 'badge-success' %}
+                            {% elif agent_state.container_status in ['exited', 'dead', 'not_found'] %} {% set indicator_color = 'badge-error' %}
+                            {% else %} {% set indicator_color = 'badge-warning' %} {% endif %}
+                            <span class="badge {{ indicator_color }} badge-sm">{{ agent_state.container_status | replace('_',' ') }}</span>
+                         </div>
+                         <div class="w-full sm:w-auto flex-shrink-0">
+                             {% if agent_state.container_status=='running' %}
+                                 <form action="{{ url_for('web.stop_tunnel_route') }}" method="post" class="protocol-aware-form">
+                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                     <button type="submit" class="btn btn-sm btn-error w-full sm:w-auto">Stop Agent</button>
+                                 </form>
+                             {% else %}
+                                 <form action="{{ url_for('web.start_tunnel_route') }}" method="post" class="protocol-aware-form">
+                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                     <button type="submit" class="btn btn-sm btn-success w-full sm:w-auto">Start Agent</button>
+                                 </form>
+                             {% endif %}
+                         </div>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
-            <div>
-                <h3 class="text-lg font-semibold mb-3 opacity-80">Agent Control</h3>
-                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-6 mt-2 p-4 bg-base-200/50 rounded-md">
-                    {% if external_cloudflared %}
-                        <div class="flex-grow space-y-1.5">
-                            <strong class="text-sm font-medium">External Mode:</strong> <span class="badge badge-info badge-sm animate-pulse">Active</span>
-                        </div>
-                    {% else %}
-                     <div class="flex-grow space-y-1.5">
-                        <strong class="text-sm font-medium">Agent Status:</strong>
-                        {% set indicator_color = 'bg-gray-400' %}
-                        {% if agent_state.container_status == 'running' %} {% set indicator_color = 'badge-success' %}
-                        {% elif agent_state.container_status in ['exited', 'dead', 'not_found'] %} {% set indicator_color = 'badge-error' %}
-                        {% else %} {% set indicator_color = 'badge-warning' %} {% endif %}
-                        <span class="badge {{ indicator_color }} badge-sm">{{ agent_state.container_status | replace('_',' ') }}</span>
-                     </div>
-                     <div class="w-full sm:w-auto flex-shrink-0">
-                         {% if agent_state.container_status=='running' %}
-                             <form action="{{ url_for('web.stop_tunnel_route') }}" method="post" class="protocol-aware-form">
-                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                 <button type="submit" class="btn btn-sm btn-error w-full sm:w-auto">Stop Agent</button>
-                             </form>
-                         {% else %}
-                             <form action="{{ url_for('web.start_tunnel_route') }}" method="post" class="protocol-aware-form">
-                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                 <button type="submit" class="btn btn-sm btn-success w-full sm:w-auto">Start Agent</button>
-                             </form>
-                         {% endif %}
-                     </div>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-    </section>
+        </section>
+    </main>
+</div>
+{% endblock %}
 
+{% block scripts %}
+{{ super() }}
+<script>
+(function () {
+  
+  try {
+    const nav = document.getElementById('settings-left-nav');
+    if (!nav) return;
+
+    const links = Array.from(nav.querySelectorAll('a[href^="#"]'));
+    const idToLink = {};
+    links.forEach(a => {
+      const id = a.getAttribute('href').slice(1);
+      idToLink[id] = a;
+    });
+
+    const sections = links.map(a => document.getElementById(a.getAttribute('href').slice(1))).filter(Boolean);
+  
+    if ('IntersectionObserver' in window && sections.length) {
+      const observer = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+          const id = entry.target.id;
+          const link = idToLink[id];
+          if (!link) return;
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.25) {
+            links.forEach(l => l.classList.remove('active'));
+            link.classList.add('active');
+          }
+        });
+      }, { threshold: [0.25, 0.5, 0.75] });
+
+      sections.forEach(s => observer.observe(s));
+    } else {
+
+      function onScroll() {
+        const scrollY = window.scrollY || window.pageYOffset;
+        let best = null;
+        sections.forEach(s => {
+          const rect = s.getBoundingClientRect();
+          const offset = Math.abs(rect.top - 100);
+          if (best === null || offset < best.offset) {
+            best = { el: s, offset };
+          }
+        });
+        if (best) {
+          links.forEach(l => l.classList.remove('active'));
+          const link = idToLink[best.el.id];
+          if (link) link.classList.add('active');
+        }
+      }
+      window.addEventListener('scroll', onScroll, { passive: true });
+
+      setTimeout(onScroll, 200);
+    }
+
+
+    links.forEach(a => {
+      a.addEventListener('click', (e) => {
+
+        const href = a.getAttribute('href');
+        const target = document.querySelector(href);
+        if (target) {
+
+          setTimeout(() => {
+            target.setAttribute('tabindex', '-1');
+            target.focus({ preventScroll: true });
+          }, 300);
+        }
+      });
+    });
+  } catch (err) {
+    console.debug('Settings left-nav script error', err);
+  }
+})();
+</script>
+
+<script>
+(function () {
+  try {
+    const btn = document.getElementById('btn-check-version');
+    const status = document.getElementById('version-check-status');
+    if (!btn || !status) return;
+
+    function renderMessage(html) {
+      status.innerHTML = html;
+      status.classList.remove('hidden');
+    }
+
+    btn.addEventListener('click', async function () {
+      btn.disabled = true;
+      const originalHtml = btn.innerHTML;
+      btn.innerHTML = '<span class="loading loading-spinner"></span> Checking...';
+      status.classList.add('hidden');
+
+      try {
+        const resp = await fetch('{{ url_for("web.version_check") }}', { credentials: 'same-origin' });
+        if (!resp.ok) throw new Error('Network response was not ok');
+        const data = await resp.json();
+
+        if (data.method === 'digest') {
+          if (data.up_to_date) {
+            renderMessage('<span class="text-success">Up to date — running the same image as {{ config.CLOUDFLARED_IMAGE if false else "" }}</span>');
+          } else {
+            let repoPart = data.repo ? `${data.repo}:${data.tag || 'stable'}` : '';
+            let cmd = repoPart ? `docker pull ${data.repo}:${data.tag || 'stable'} && docker compose restart dockflare` : 'docker pull alplat/dockflare:stable && docker compose restart dockflare';
+            let pushedAt = '';
+            if (data.remote_pushed_at) {
+                try {
+                    const d = new Date(data.remote_pushed_at);
+                    pushedAt = `<div class="mt-1 text-xs">Latest version from: ${d.toLocaleString()}</div>`;
+                } catch(e) {}
+            }
+            renderMessage(`<span class="text-warning">Update available</span><div class="mt-1">Run: <code class="text-xs">${cmd}</code></div>${pushedAt}`);
+          }
+        } else if (data.method === 'version') {
+          if (data.up_to_date) {
+            renderMessage('<span class="text-success">Up to date (APP_VERSION matches latest release).</span>');
+          } else if (data.latest) {
+            renderMessage(`<span class="text-warning">Latest: ${data.latest} · Current: ${data.current}</span><div class="mt-1">See the <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases" target="_blank" rel="noopener noreferrer">release notes</a> for upgrade instructions.</div>`);
+          } else {
+            renderMessage('<span class="text-muted">Could not determine latest version.</span>');
+          }
+        } else if (data.error) {
+          renderMessage(`<span class="text-error">Version check error: ${String(data.error)}</span>`);
+        } else {
+          renderMessage('<span class="text-muted">Could not determine version status.</span>');
+        }
+      } catch (err) {
+        console.debug('Version check failed', err);
+        renderMessage('<span class="text-error">Version check failed (network or server error).</span>');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+      }
+    });
+  } catch (e) {
+    console.debug('Version check script error', e);
+  }
+})();
+</script>
 {% endblock %}
