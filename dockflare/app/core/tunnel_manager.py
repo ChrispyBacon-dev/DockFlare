@@ -569,7 +569,8 @@ def start_cloudflared_container():
                     "detach": True,
                     "remove": False, 
                     "labels": {"managed-by": "dockflare"},
-                    "ports": ports_mapping 
+                    "ports": ports_mapping,
+                    "extra_hosts": {"host.docker.internal": "host-gateway"},
                 }
                 new_container = docker_client.containers.run(**container_params)
                 msg = f"Successfully created and started agent container '{new_container.name}' ({new_container.id[:12]})."
