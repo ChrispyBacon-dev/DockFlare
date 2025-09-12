@@ -589,6 +589,23 @@ def get_all_account_cloudflare_tunnels():
     filtered_tunnels.sort(key=lambda t: t.get("name", "").lower()) 
     return filtered_tunnels
 
+
+def delete_tunnel_via_api(tunnel_id):
+    account_id = current_app.config.get('CF_ACCOUNT_ID')
+    logging.info(f"Deleting tunnel ID '{tunnel_id}' via API on account {account_id}")
+    endpoint = f"/accounts/{account_id}/cfd_tunnel/{tunnel_id}"
+    try:
+        cf_api_request("DELETE", endpoint)
+        logging.info(f"Successfully deleted tunnel ID '{tunnel_id}'.")
+        return True
+    except requests.exceptions.RequestException as e:
+        logging.error(f"API error deleting tunnel '{tunnel_id}': {e}")
+        raise
+    except Exception as e:
+        logging.error(f"Unexpected error deleting tunnel '{tunnel_id}': {e}", exc_info=True)
+        raise
+
+
 def get_dns_records_for_tunnel(zone_id, tunnel_id):
     if not zone_id or not tunnel_id:
         logging.warning("get_dns_records_for_tunnel: Missing zone_id or tunnel_id.")

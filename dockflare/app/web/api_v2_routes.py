@@ -36,6 +36,7 @@ from app.core.cloudflare_api import (
     get_dns_records_for_tunnel,
     create_cloudflare_dns_record,
     delete_cloudflare_dns_record,
+    delete_tunnel_via_api,
     get_zone_id_from_name,
     get_zone_details_by_id
 )
@@ -711,6 +712,24 @@ def revert_rule_access_policy_to_labels(rule_key):
 def get_account_tunnels_api():
     tunnels = get_all_account_cloudflare_tunnels()
     return jsonify({"tunnels": tunnels})
+
+
+@api_v2_bp.route('/tunnels/<tunnel_id>', methods=['DELETE'])
+def delete_tunnel_api(tunnel_id):
+    if not tunnel_id:
+        return jsonify({"error": "Tunnel ID is required"}), 400
+
+    dockflare_tunnel_id = tunnel_state.get("id")
+    if tunnel_id == dockflare_tunnel_id:
+        return jsonify({"error": "Cannot delete the primary DockFlare-managed tunnel."}), 403
+
+    try:
+        delete_tunnel_via_api(tunnel_id)
+        return jsonify({"message": f"Tunnel {tunnel_id} deleted successfully."}), 200
+    except Exception as e:
+        logging.error(f"Error deleting tunnel {tunnel_id}: {e}", exc_info=True)
+        return jsonify({"error": f"Failed to delete tunnel: {e}"}), 500
+
 
 @api_v2_bp.route('/tunnels/<tunnel_id>/dns-records', methods=['GET'])
 def get_tunnel_dns_records_api(tunnel_id):

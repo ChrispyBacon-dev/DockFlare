@@ -472,7 +472,8 @@ def settings_page():
         external_cloudflared=config.USE_EXTERNAL_CLOUDFLARED,
         external_tunnel_id=config.EXTERNAL_TUNNEL_ID,
         CF_ACCOUNT_ID_CONFIGURED=bool(cf_account_id),
-        ACCOUNT_ID_FOR_DISPLAY=cf_account_id if cf_account_id else "Not Configured"
+        ACCOUNT_ID_FOR_DISPLAY=cf_account_id if cf_account_id else "Not Configured",
+        dockflare_tunnel_id=template_tunnel_state.get("id")
     )
 
 @bp.route('/change-password', methods=['POST'])

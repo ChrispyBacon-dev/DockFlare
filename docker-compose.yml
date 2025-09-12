@@ -1,8 +1,8 @@
 version: '3.8'
 services:
   dockflare:
-    image: alplat/dockflare:stable  # alplat/dockflare:unstable docker tag for beta versions
-    # build: ./dockflare  # Uncomment to build from source instead
+    # image: alplat/dockflare:stable  # alplat/dockflare:unstable docker tag for beta versions
+    build: ./dockflare  # Uncomment to build from source instead
     container_name: dockflare
     restart: unless-stopped
     ports:
@@ -14,7 +14,7 @@ services:
       - cloudflare-net  # Network for communication with other containers
     environment:
       - STATE_FILE_PATH=/app/data/state.json
-      - TZ=Europe/Zurich  # Set your timezone here
+      - TZ=America/Sao_Paulo  # Set your timezone here
     #labels: # Optional
     #- dockflare.enable=true
     #- dockflare.hostname=dockflare.yourdomain.tld

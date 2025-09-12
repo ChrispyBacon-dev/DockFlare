@@ -150,6 +150,7 @@
                                         <th>Status</th>
                                         <th>Created At</th>
                                         <th>Connections</th>
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -175,9 +176,16 @@
                                                     {% if tunnel.connections | length > 0 %}({{ tunnel.connections | length }} total){% else %}(0 total){% endif %}
                                                 {% elif tunnel.connections %}{{ tunnel.connections | e }}{% else %}None{% endif %}
                                             </td>
+                                            <td>
+                                                <button class="btn btn-xs btn-error" 
+                                                        onclick="confirmDelete('{{ tunnel.id }}', '{{ tunnel.name }}')"
+                                                        {% if tunnel.id == dockflare_tunnel_id %}disabled{% endif %}>
+                                                    Delete
+                                                </button>
+                                            </td>
                                         </tr>
                                         <tr class="dns-records-row hidden bg-base-200/30">
-                                            <td colspan="6">
+                                            <td colspan="7">
                                                 <div id="dns-records-{{ tunnel.id | e }}" class="p-4 text-sm space-y-2">
                                                     <p class="opacity-60 italic">Click the '+' button to load DNS records for this tunnel.</p>
                                                 </div>
@@ -527,4 +535,44 @@
   }
 })();
 </script>
+
+<script>
+    function confirmDelete(tunnelId, tunnelName) {
+        if (confirm(`Are you sure you want to delete the tunnel "${tunnelName}"? This action cannot be undone.`)) {
+            fetch(`/api/v2/tunnels/${tunnelId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json().then(data => ({status: response.status, body: data})))
+            .then(({status, body}) => {
+                if (status === 200) {
+                    showToast(body.message, 'success');
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    showToast(`Error: ${body.error}`, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('An unexpected error occurred.', 'error');
+            });
+        }
+    }
+
+    function showToast(message, type = 'info') {
+        const toastContainer = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = `alert alert-${type}`;
+        toast.innerHTML = `<span>${message}</span>`;
+        toastContainer.appendChild(toast);
+        setTimeout(() => {
+            toast.remove();
+        }, 5000);
+    }
+</script>
+
+<div id="toast-container" class="toast toast-top toast-end"></div>
+
 {% endblock %}
