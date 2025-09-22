@@ -82,77 +82,77 @@ Before you begin, ensure you have the following:
 1.  **Create `docker-compose.yml`**:
     ```yaml
     version: '3.8'
-services:
-  docker-socket-proxy:
-    image: tecnativa/docker-socket-proxy:v0.4.1
-    container_name: docker-socket-proxy
-    restart: unless-stopped
-    environment:
-      - DOCKER_HOST=unix:///var/run/docker.sock
-      - CONTAINERS=1
-      - EVENTS=1
-      - NETWORKS=1
-      - IMAGES=1
-      - POST=1
-      - PING=1
-      - INFO=1
-      - EXEC=1
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    networks:
-      - dockflare-internal
-
-  dockflare-init:
-    image: alpine:3.20
-    command: ["sh", "-c", "chown -R 65532:65532 /app/data"]
-    volumes:
-      - dockflare_data:/app/data
-    networks:
-      - dockflare-internal
-    restart: "no"
-
-  dockflare:
-    image: alplat/dockflare:stable
-    container_name: dockflare
-    restart: unless-stopped
-    ports:
-      - "5000:5000"
-    volumes:
-      - dockflare_data:/app/data
-    environment:
-      - REDIS_URL=redis://redis:6379/0
-      - DOCKER_HOST=tcp://docker-socket-proxy:2375
-    depends_on:
+    services:
       docker-socket-proxy:
-        condition: service_started
+        image: tecnativa/docker-socket-proxy:v0.4.1
+        container_name: docker-socket-proxy
+        restart: unless-stopped
+        environment:
+          - DOCKER_HOST=unix:///var/run/docker.sock
+          - CONTAINERS=1
+          - EVENTS=1
+          - NETWORKS=1
+          - IMAGES=1
+          - POST=1
+          - PING=1
+          - INFO=1
+          - EXEC=1
+        volumes:
+          - /var/run/docker.sock:/var/run/docker.sock
+        networks:
+          - dockflare-internal
+
       dockflare-init:
-        condition: service_completed_successfully
+        image: alpine:3.20
+        command: ["sh", "-c", "chown -R ${DOCKFLARE_UID:-65532}:${DOCKFLARE_GID:-65532} /app/data"]
+        volumes:
+          - dockflare_data:/app/data
+        networks:
+          - dockflare-internal
+        restart: "no"
+
+      dockflare:
+        image: alplat/dockflare:stable
+        container_name: dockflare
+        restart: unless-stopped
+        ports:
+          - "5000:5000"
+        volumes:
+          - dockflare_data:/app/data
+        environment:
+          - REDIS_URL=redis://redis:6379/0
+          - DOCKER_HOST=tcp://docker-socket-proxy:2375
+        depends_on:
+          docker-socket-proxy:
+            condition: service_started
+          dockflare-init:
+            condition: service_completed_successfully
+          redis:
+            condition: service_started
+        networks:
+          - cloudflare-net
+          - dockflare-internal
+
       redis:
-        condition: service_started
-    networks:
-      - cloudflare-net
-      - dockflare-internal
+        image: redis:7-alpine
+        container_name: dockflare-redis
+        restart: unless-stopped
+        command: ["redis-server", "--save", "", "--appendonly", "no"]
+        volumes:
+          - dockflare_redis:/data
+        networks:
+          - dockflare-internal
 
-  redis:
-    image: redis:7-alpine
-    container_name: dockflare-redis
-    restart: unless-stopped
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
     volumes:
-      - dockflare_redis:/data
+      dockflare_data:
+      dockflare_redis:
+
     networks:
-      - dockflare-internal
-
-volumes:
-  dockflare_data:
-  dockflare_redis:
-
-networks:
-  cloudflare-net:
-    name: cloudflare-net
-    external: true
-  dockflare-internal:
-    name: dockflare-internal
+      cloudflare-net:
+        name: cloudflare-net
+        external: true
+      dockflare-internal:
+        name: dockflare-internal
     ```
 
 2.  **Run DockFlare**:
@@ -231,7 +231,6 @@ Use these labels only when **not** using `dockflare.access.group`.
 | `dockflare.access.session_duration` | Session duration (e.g., `24h`, `30m`). | `24h` | `dockflare.access.session_duration="1h"` |
 | `dockflare.access.custom_rules` | JSON string array of [Cloudflare Access Policy rules](https://developers.cloudflare.com/api/operations/access-policies-create-an-access-policy). Overrides basic `access.policy` decisions. | (None) | `'...=[{"email":{"email":"user@example.com"},"action":"allow"},{"action":"block"}]'` |
 | ... | *Other `access.*` labels for launcher visibility, IdPs, etc. are also available.* | | |
-
 
 </details>
 

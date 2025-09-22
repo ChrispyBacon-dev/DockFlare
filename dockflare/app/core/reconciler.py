@@ -19,9 +19,7 @@ import logging
 import time
 import threading
 from datetime import datetime, timedelta, timezone
-import queue
-
-from app import config, docker_client, tunnel_state, state_update_queue
+from app import config, docker_client, tunnel_state, publish_state_event
 from flask import current_app 
 
 from app.core.state_manager import managed_rules, state_lock, save_state, get_agent, update_agent
@@ -280,10 +278,7 @@ def reconcile_agent_report(agent_id, reported_containers):
                     except Exception:
                         logging.exception(f"[Reconcile-Agent] Could not update agent record for last_auto_restore_at: {agent_id}")
                     save_state()
-                    try:
-                        state_update_queue.put_nowait('update')
-                    except queue.Full:
-                        logging.warning("State update queue is full. UI may not refresh immediately.")
+                    publish_state_event('snapshot_refresh')
 
             if restored_any:
                 try:
@@ -484,10 +479,7 @@ def _run_reconciliation_logic():
             if state_changed_locally:
                 current_app.reconciliation_info["status"] = "Saving reconciled state..."
                 save_state()
-                try:
-                    state_update_queue.put_nowait('update')
-                except queue.Full:
-                    logging.warning("State update queue is full. UI may not refresh immediately.")
+                publish_state_event('snapshot_refresh')
 
         if time.time() - reconciliation_start_time > max_total_time - 15:
             logging.warning("[Reconcile] Timeout before Tunnel/DNS operations.")
@@ -656,10 +648,7 @@ def cleanup_expired_rules(stop_event_param):
                             if deleted_count > 0:
                                 logging.info(f"Removed {deleted_count} expired rules from local state.")
                                 save_state()
-                                try:
-                                    state_update_queue.put_nowait('update')
-                                except queue.Full:
-                                    logging.warning("State update queue is full. UI may not refresh immediately.")
+                                publish_state_event('snapshot_refresh')
 
             except Exception as e_cleanup:
                 logging.error(f"Error in cleanup task loop: {e_cleanup}", exc_info=True)

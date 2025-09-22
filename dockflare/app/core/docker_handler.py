@@ -20,11 +20,10 @@ import time
 import requests
 import copy 
 import re
-import queue
 from docker.errors import NotFound, APIError
 from flask import current_app
 
-from app import config, docker_client, cloudflared_agent_state, tunnel_state, state_update_queue
+from app import config, docker_client, cloudflared_agent_state, tunnel_state, publish_state_event
 
 from app.core.state_manager import managed_rules, state_lock, save_state
 from app.core.tunnel_manager import update_cloudflare_config
@@ -353,10 +352,7 @@ def process_container_start(container_obj):
             if state_changed_locally_for_this_container:
                 logging.debug(f"DOCKER_HANDLER_PRE_SAVE: For container {container_name_val}.")
                 save_state()
-                try:
-                    state_update_queue.put_nowait('update')
-                except queue.Full:
-                    logging.warning("State update queue is full. UI may not refresh immediately.")
+                publish_state_event('snapshot_refresh')
             else:
                 logging.info(f"DOCKER_HANDLER: No local state changes for {container_name_val}. Skipping save_state().")
 
@@ -444,10 +440,7 @@ def schedule_container_stop(container_id_val):
 
             if state_changed_after_stop_processing:
                 save_state()
-                try:
-                    state_update_queue.put_nowait('update')
-                except queue.Full:
-                    logging.warning("State update queue is full. UI may not refresh immediately.")
+                publish_state_event('snapshot_refresh')
 
 def docker_event_listener(stop_event_param): 
     if not docker_client:

@@ -87,13 +87,13 @@
                         </thead>
                         <tbody>
                             {% for hostname, details in rules.items()|sort %}
-                                <tr> 
-                                    <td class="p-3 whitespace-nowrap">
+                                <tr data-rule-key="{{ hostname }}" data-rule-status="{{ details.status }}" data-rule-source="{{ details.source }}">
+                                    <td class="p-3 whitespace-nowrap" data-role="status-cell">
                                         {% if details.source == 'manual' %}
-                                            <span class="badge badge-info badge-sm">Manual</span>                                               
+                                            <span class="badge badge-info badge-sm status-badge">Manual</span>
                                         {% else %}
                                             {% set status_badge_color = 'badge-warning' if 'pending' in details.status else 'badge-success' %}
-                                            <span class="badge {{ status_badge_color }} badge-sm"> 
+                                            <span class="badge {{ status_badge_color }} badge-sm status-badge">
                                                 {{ details.status.replace('_',' ') }}
                                             </span>
                                         {% endif %}
@@ -205,14 +205,14 @@
                                             {% endif %}
                                         </div>
                                     </td>
-                                    <td class="p-3 whitespace-nowrap text-sm opacity-70">
+                                    <td class="p-3 whitespace-nowrap text-sm opacity-70" data-role="expires-cell">
                                         {% if details.status=='pending_deletion' and details.delete_at %}
                                             <div data-delete-at="{{ details.delete_at.isoformat() }}">
-                                                <span class="absolute-time-display"></span> 
+                                                <span class="absolute-time-display"></span>
                                                 <span class="countdown-timer block text-xs opacity-80"></span>
                                             </div>
-                                        {% else %} 
-                                            N/A 
+                                        {% else %}
+                                            <span class="text-xs opacity-60">N/A</span>
                                         {% endif %}
                                     </td>
                                     <td class="p-3 whitespace-nowrap text-sm" style="min-width: 120px;">

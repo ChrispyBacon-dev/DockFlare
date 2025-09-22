@@ -33,7 +33,7 @@ from flask import (
 from flask_login import current_user, login_required, login_user
 from app.core.user import User
 
-from app import config, docker_client, tunnel_state, cloudflared_agent_state, log_queue, state_update_queue
+from app import config, docker_client, tunnel_state, cloudflared_agent_state, log_queue, state_update_queue, publish_state_event
 from app.core.cache import CACHE_ENABLED
 from app.core.state_manager import managed_rules, access_groups, state_lock, save_state, load_state
 from app.core.tunnel_manager import (
@@ -699,10 +699,7 @@ def revert_access_policy_to_labels(hostname):
         state_changed_for_revert = True
         if state_changed_for_revert:
             save_state()
-            try:
-                state_update_queue.put_nowait('update')
-            except queue.Full:
-                logging.warning("State update queue is full. UI may not refresh immediately.")
+            publish_state_event('snapshot_refresh')
 
     if app_id_to_delete_if_any:
         if delete_cloudflare_access_application(app_id_to_delete_if_any):
@@ -996,10 +993,7 @@ def force_delete_rule_route(hostname):
             del managed_rules[hostname]
             rule_removed_from_state = True
             save_state()
-            try:
-                state_update_queue.put_nowait('update')
-            except queue.Full:
-                logging.warning("State update queue is full. UI may not refresh immediately.")
+            publish_state_event('snapshot_refresh')
     if rule_removed_from_state and not config.USE_EXTERNAL_CLOUDFLARED:
         if update_cloudflare_config():
             pass
@@ -1265,10 +1259,7 @@ def ui_add_manual_rule_route():
             "tunnel_name": target_tunnel_name
         }
         save_state()
-        try:
-            state_update_queue.put_nowait('update')
-        except queue.Full:
-            logging.warning("State update queue is full. UI may not refresh immediately.")
+        publish_state_event('snapshot_refresh')
     
     if update_cloudflare_config(target_tunnel_id):
         create_cloudflare_dns_record(target_zone_id, full_hostname, target_tunnel_id)
@@ -1452,10 +1443,7 @@ def ui_edit_manual_rule_route():
             del managed_rules[rule_key]
         managed_rules[new_key] = rule_entry
         save_state()
-        try:
-            state_update_queue.put_nowait('update')
-        except queue.Full:
-            logging.warning("State update queue is full. UI may not refresh immediately.")
+        publish_state_event('snapshot_refresh')
 
     
     effective_tunnel_id = tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
@@ -1495,10 +1483,7 @@ def ui_delete_manual_rule_route(rule_key_from_url):
 
         del managed_rules[rule_key_from_url]
         save_state()
-        try:
-            state_update_queue.put_nowait('update')
-        except queue.Full:
-            logging.warning("State update queue is full. UI may not refresh immediately after delete.")
+        publish_state_event('snapshot_refresh')
 
     dns_deleted_ok = True
     if hostname_for_dns and zone_id_for_delete and rule_tunnel_id:
@@ -1596,10 +1581,7 @@ def create_access_group():
         }
         access_groups[group_id] = new_group
         save_state()
-        try:
-            state_update_queue.put_nowait('update')
-        except queue.Full:
-            logging.warning("State update queue is full. UI may not refresh immediately.")
+        publish_state_event('snapshot_refresh')
 
     flash(f"Success: Access Group '{display_name}' created.", "success")
     return redirect(url_for('web.access_policies_page'))
@@ -1632,10 +1614,7 @@ def edit_access_group(group_id):
         }
         access_groups[group_id] = updated_group
         save_state()
-        try:
-            state_update_queue.put_nowait('update')
-        except queue.Full:
-            logging.warning("State update queue is full. UI may not refresh immediately.")
+        publish_state_event('snapshot_refresh')
 
     flash(f"Success: Access Group '{display_name}' updated. Triggering reconciliation.", "success")
     reconcile_state_threaded()
@@ -1661,10 +1640,7 @@ def delete_access_group(group_id):
         display_name = access_groups[group_id]['display_name']
         del access_groups[group_id]
         save_state()
-        try:
-            state_update_queue.put_nowait('update')
-        except queue.Full:
-            logging.warning("State update queue is full. UI may not refresh immediately.")
+        publish_state_event('snapshot_refresh')
 
     flash(f"Success: Access Group '{display_name}' has been deleted.", "success")
     return redirect(url_for('web.access_policies_page'))

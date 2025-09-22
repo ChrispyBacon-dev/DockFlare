@@ -8,6 +8,8 @@ let manualTunnelTomSelect = null;
 let cachedTunnels = null;
 let cachedZones = null;
 let manualZoneDetectionTimeout = null;
+let servicesSnapshotPromise = null;
+let servicesSnapshotQueued = false;
 
 function getMasterApiKey() {
     const meta = document.querySelector('meta[name="dockflare-api-key"]');
@@ -300,6 +302,178 @@ function fixResourcesAndBase() {
     };
 }
 
+function fetchServicesSnapshot() {
+    const url = `${document.baseURI}api/v2/services?t=${Date.now()}`;
+    return fetch(url, { headers: buildApiHeaders() })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Snapshot request failed: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(payload => Array.isArray(payload.services) ? payload.services : []);
+}
+
+function updateRowFromService(row, service) {
+    if (!row || !service) return;
+    row.dataset.ruleStatus = service.status || '';
+    row.dataset.ruleSource = service.source || '';
+
+    const statusCell = row.querySelector('[data-role="status-cell"]');
+    const statusBadge = statusCell ? statusCell.querySelector('.status-badge') : null;
+    if (statusBadge) {
+        if (service.source === 'manual') {
+            statusBadge.textContent = 'Manual';
+            statusBadge.className = 'badge badge-info badge-sm status-badge';
+        } else {
+            const normalizedStatus = (service.status || 'unknown').replace(/_/g, ' ');
+            statusBadge.textContent = normalizedStatus;
+            let badgeClass = 'badge-success';
+            if (service.status && service.status.includes('pending')) {
+                badgeClass = 'badge-warning';
+            } else if (service.status && service.status.includes('error')) {
+                badgeClass = 'badge-error';
+            }
+            statusBadge.className = `badge ${badgeClass} badge-sm status-badge`;
+        }
+    }
+
+    const expiresCell = row.querySelector('[data-role="expires-cell"]');
+    if (expiresCell) {
+        if (service.status === 'pending_deletion' && service.delete_at) {
+            let container = expiresCell.querySelector('[data-delete-at]');
+            if (!container) {
+                expiresCell.innerHTML = '';
+                container = document.createElement('div');
+                expiresCell.appendChild(container);
+            }
+            container.setAttribute('data-delete-at', service.delete_at);
+
+            let absoluteSpan = container.querySelector('.absolute-time-display');
+            if (!absoluteSpan) {
+                absoluteSpan = document.createElement('span');
+                absoluteSpan.className = 'absolute-time-display';
+                container.appendChild(absoluteSpan);
+            }
+
+            let countdownSpan = container.querySelector('.countdown-timer');
+            if (!countdownSpan) {
+                countdownSpan = document.createElement('span');
+                countdownSpan.className = 'countdown-timer block text-xs opacity-80';
+                container.appendChild(countdownSpan);
+            }
+        } else {
+            expiresCell.innerHTML = '<span class="text-xs opacity-60">N/A</span>';
+        }
+    }
+}
+
+function removeServiceRow(ruleId) {
+    if (!ruleId) return false;
+    let removed = false;
+    document.querySelectorAll('tr[data-rule-key]').forEach(row => {
+        if (row.dataset.ruleKey === ruleId) {
+            row.remove();
+            removed = true;
+        }
+    });
+    return removed;
+}
+
+function applyServicesSnapshot(services) {
+    const servicesById = new Map();
+    services.forEach(service => {
+        if (service && service.id) {
+            servicesById.set(service.id, service);
+        }
+    });
+
+    const rows = Array.from(document.querySelectorAll('tr[data-rule-key]'));
+    rows.forEach(row => {
+        const key = row.dataset.ruleKey;
+        if (!servicesById.has(key)) {
+            row.remove();
+            return;
+        }
+        const service = servicesById.get(key);
+        updateRowFromService(row, service);
+        servicesById.delete(key);
+    });
+
+    if (servicesById.size > 0) {
+        window.location.reload();
+        return;
+    }
+
+    updateCountdowns();
+}
+
+function scheduleServicesSnapshotRefresh() {
+    if (!document.querySelector('tr[data-rule-key]')) {
+        return;
+    }
+
+    if (servicesSnapshotPromise) {
+        servicesSnapshotQueued = true;
+        return;
+    }
+
+    servicesSnapshotPromise = fetchServicesSnapshot()
+        .then(applyServicesSnapshot)
+        .catch(error => {
+            console.warn('Failed to refresh services snapshot:', error);
+        })
+        .finally(() => {
+            servicesSnapshotPromise = null;
+            if (servicesSnapshotQueued) {
+                servicesSnapshotQueued = false;
+                scheduleServicesSnapshotRefresh();
+            }
+        });
+}
+
+function findRowByRuleKey(ruleId) {
+    if (!ruleId) return null;
+    const rows = document.querySelectorAll('tr[data-rule-key]');
+    for (const row of rows) {
+        if (row.dataset.ruleKey === ruleId) {
+            return row;
+        }
+    }
+    return null;
+}
+
+function handleStructuredStateEvent(message) {
+    const eventType = message.type;
+    const data = message.data || {};
+    const ruleId = data.id;
+
+    switch (eventType) {
+        case 'snapshot_refresh':
+            scheduleServicesSnapshotRefresh();
+            break;
+        case 'service_deleted':
+            if (!removeServiceRow(ruleId)) {
+                scheduleServicesSnapshotRefresh();
+            }
+            break;
+        case 'service_pending_deletion':
+        case 'service_updated':
+            const targetRow = findRowByRuleKey(ruleId);
+            if (targetRow && data) {
+                updateRowFromService(targetRow, data);
+                updateCountdowns();
+            } else {
+                scheduleServicesSnapshotRefresh();
+            }
+            break;
+        case 'service_created':
+        default:
+            scheduleServicesSnapshotRefresh();
+            break;
+    }
+}
+
 function connectStateUpdateSource() {
     if (!window.EventSource) {
         console.error("Browser doesn't support Server-Sent Events. State auto-refresh disabled.");
@@ -310,9 +484,29 @@ function connectStateUpdateSource() {
     const eventSource = new EventSource(streamUrl);
 
     eventSource.onmessage = function(event) {
-        if (event.data === "update") {
-            console.log("State update received, reloading page.");
-            window.location.reload(true);
+        if (!event.data) {
+            return;
+        }
+
+        if (event.data === 'update') {
+            scheduleServicesSnapshotRefresh();
+            return;
+        }
+
+        if (event.data.trim().length === 0) {
+            return;
+        }
+
+        try {
+            const message = JSON.parse(event.data);
+            if (message && message.type) {
+                handleStructuredStateEvent(message);
+            } else {
+                scheduleServicesSnapshotRefresh();
+            }
+        } catch (error) {
+            console.warn('Failed to parse state stream payload:', error);
+            scheduleServicesSnapshotRefresh();
         }
     };
 
@@ -1165,11 +1359,14 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     if (document.getElementById('reconciliation-status')) {
+       
         updateReconciliationStatus();
         setInterval(updateReconciliationStatus, 2000);
-        connectStateUpdateSource();
     }
-    
+
+    connectStateUpdateSource();
+    scheduleServicesSnapshotRefresh();
+
     startServerPing();
 
     // Universal Cleanup

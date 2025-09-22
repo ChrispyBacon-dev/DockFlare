@@ -19,16 +19,16 @@ import copy
 import logging
 import time
 import json
-import queue
 from datetime import datetime, timezone, timedelta
 import secrets
 import uuid
 from flask import Blueprint, jsonify, request, current_app, url_for
 
-from app import config, docker_client, tunnel_state, cloudflared_agent_state, state_update_queue
+from app import config, docker_client, tunnel_state, cloudflared_agent_state, publish_state_event
 from app.core.state_manager import (
     managed_rules, state_lock, save_state,
-    add_agent, get_agent, update_agent, list_agents, remove_agent, add_agent_key, revoke_agent_key, find_agent_id_by_key, list_agent_keys, get_agent_key_info
+    add_agent, get_agent, update_agent, list_agents, remove_agent, add_agent_key, revoke_agent_key, find_agent_id_by_key, list_agent_keys, get_agent_key_info,
+    get_services_snapshot
 )
 from app.core.tunnel_manager import (
     start_cloudflared_container,
@@ -135,6 +135,12 @@ def _ensure_agent_api_key(agent_id, agent_record, token):
 
 def get_effective_tunnel_id():
     return tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
+
+
+@api_v2_bp.route('/services', methods=['GET'])
+def list_services():
+    snapshot = get_services_snapshot()
+    return jsonify({"services": snapshot})
 
 @api_v2_bp.route('/overview', methods=['GET'])
 def get_overview_data():
@@ -497,10 +503,7 @@ def create_manual_rule_api():
             save_state()
             state_changed = True
     if state_changed:
-        try:
-            state_update_queue.put_nowait('update')
-        except queue.Full:
-            logging.warning("State update queue full while broadcasting manual rule change")
+        publish_state_event('snapshot_refresh')
     try:
         create_cloudflare_dns_record(zone_id, hostname, tunnel_id)
     except Exception as dns_error:
@@ -730,6 +733,7 @@ def process_agent_container_start(payload, agent_id):
 
             if state_changed_locally:
                 save_state()
+                publish_state_event('snapshot_refresh')
     
             if needs_tunnel_config_update:
                 logging.info(f"AGENT_PROCESS: DNS and tunnel config update needed for agent {agent_id}.")
@@ -803,6 +807,7 @@ def process_agent_container_stop(payload, agent_id):
                         rule["delete_at"] = datetime.now(timezone.utc) + grace_delta
                         logging.info(f"AGENT_PROCESS_STOP: Rule for {rule_key} scheduled for deletion (grace period: {grace_period}s)")
                 save_state()
+                publish_state_event('snapshot_refresh')
                 logging.info(f"AGENT_PROCESS_STOP: Scheduled {len(rule_keys_affected)} rules for deletion from agent {agent_id}")
             else:
                 logging.info(f"AGENT_PROCESS_STOP: No active agent-managed rules found for container {container_id[:12]} from agent {agent_id}")
@@ -1068,6 +1073,7 @@ def agents_post_events(agent_id):
                     if rules_marked:
                         logging.info(f"AGENTS_EVENTS: Marked {rules_marked} agent-managed rules for agent {agent_id} as pending_deletion due to missing containers in status_report.")
                         save_state()
+                        publish_state_event('snapshot_refresh')
             except Exception as e:
                 logging.error(f"AGENTS_EVENTS: Error while marking missing agent rules pending_deletion for {agent_id}: {e}", exc_info=True)
         except Exception as e:
@@ -1349,10 +1355,7 @@ def delete_manual_rule(rule_key):
     
     config_update_success = update_cloudflare_config(tunnel_id_for_delete)
 
-    try:
-        state_update_queue.put_nowait('update')
-    except queue.Full:
-        logging.warning("State update queue full while handling manual rule delete")
+    publish_state_event('snapshot_refresh')
 
     if config_update_success:
         message = f"Manual rule {rule_key} deleted."

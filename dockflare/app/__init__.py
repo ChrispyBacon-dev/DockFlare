@@ -18,6 +18,7 @@ import logging
 import queue
 import sys
 import os
+import json
 
 from flask import Flask
 from flask_wtf.csrf import CSRFProtect
@@ -64,6 +65,17 @@ queue_handler = QueueLogHandler(log_queue)
 queue_handler.setFormatter(log_formatter)
 queue_handler.setLevel(logging.INFO) 
 root_logger.addHandler(queue_handler)
+
+
+def publish_state_event(event_type, data=None):
+    message = json.dumps({
+        "type": event_type,
+        "data": data or {}
+    })
+    try:
+        state_update_queue.put_nowait(message)
+    except queue.Full:
+        logging.warning("State event queue full. Dropping event: %s", event_type)
 
 
 docker_client = None

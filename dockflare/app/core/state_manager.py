@@ -20,6 +20,7 @@ import logging
 import os
 import threading
 from datetime import datetime, timezone
+from typing import Dict, Any, List
 from app import config
 from app.core import agent_key_store
 from app.core.utils import get_rule_key
@@ -316,3 +317,40 @@ def get_agent_rules(agent_id):
             key: rule for key, rule in managed_rules.items()
             if rule.get("agent_id") == agent_id and rule.get("status") == "active"
         }
+
+
+def _serialize_datetime(value):
+    if isinstance(value, datetime):
+        value_utc = value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return value_utc.isoformat().replace('+00:00', 'Z')
+    return None
+
+
+def serialize_managed_rule(rule_key: str, rule: Dict[str, Any]) -> Dict[str, Any]:
+    if not rule:
+        return {"id": rule_key}
+
+    return {
+        "id": rule_key,
+        "hostname": rule.get("hostname"),
+        "path": rule.get("path"),
+        "service": rule.get("service"),
+        "status": rule.get("status"),
+        "delete_at": _serialize_datetime(rule.get("delete_at")),
+        "zone_id": rule.get("zone_id"),
+        "zone_name": rule.get("zone_name"),
+        "source": rule.get("source"),
+        "container_id": rule.get("container_id"),
+        "tunnel_id": rule.get("tunnel_id"),
+        "tunnel_name": rule.get("tunnel_name"),
+        "access_policy_type": rule.get("access_policy_type"),
+        "access_policy_ui_override": rule.get("access_policy_ui_override", False)
+    }
+
+
+def get_services_snapshot() -> List[Dict[str, Any]]:
+    with state_lock:
+        return [
+            serialize_managed_rule(rule_key, rule.copy())
+            for rule_key, rule in managed_rules.items()
+        ]
