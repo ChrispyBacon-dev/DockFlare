@@ -29,10 +29,6 @@
   <a href="https://github.com/sponsors/ChrispyBacon-dev">❤️ Sponsor</a>
 </p>
 
-<p align="center">
-  <img src="images/status_web.png" alt="DockFlare Dashboard" style="border-radius: 8px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);" />
-</p>
-
 ---
 
 ## Introduction
