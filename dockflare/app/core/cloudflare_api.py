@@ -646,6 +646,95 @@ def get_tunnel_name_by_id(tunnel_id):
 
     return None
 
+def get_tunnel_configuration(tunnel_id):
+    """
+    Get the current ingress configuration for a tunnel.
+    Returns the tunnel's ingress rules and configuration.
+    """
+    if not tunnel_id:
+        return None
+
+    try:
+        url = f"https://api.cloudflare.com/client/v4/accounts/{config.CF_ACCOUNT_ID}/cfd_tunnel/{tunnel_id}/configurations"
+        response = requests.get(url, headers=config.CF_HEADERS, timeout=15)
+        response.raise_for_status()
+
+        data = response.json()
+        if not data.get("success", False):
+            logging.error(f"Cloudflare API error getting tunnel config for {tunnel_id}: {data.get('errors', [])}")
+            return None
+
+        result = data.get("result")
+        if not result:
+            logging.warning(f"No configuration found for tunnel {tunnel_id}")
+            return None
+
+        config_data = result.get("config", {})
+        ingress_rules = config_data.get("ingress", [])
+
+        logging.info(f"Retrieved tunnel configuration for {tunnel_id}: {len(ingress_rules)} ingress rules")
+        return {
+            "tunnel_id": tunnel_id,
+            "ingress": ingress_rules,
+            "config": config_data,
+            "version": result.get("version"),
+            "created_at": result.get("created_at")
+        }
+
+    except Exception as e:
+        logging.error(f"Error getting tunnel configuration for {tunnel_id}: {e}")
+        return None
+
+def parse_tunnel_rules_for_migration(tunnel_config):
+    """
+    Parse tunnel configuration into DockFlare rule format for migration.
+    """
+    if not tunnel_config or not tunnel_config.get("ingress"):
+        return []
+
+    rules = []
+    ingress_rules = tunnel_config["ingress"]
+
+    for rule in ingress_rules:
+        hostname = rule.get("hostname")
+        service = rule.get("service")
+        path = rule.get("path")
+
+        # Skip catch-all rules (no hostname)
+        if not hostname or not service:
+            continue
+
+        # Skip http_status rules
+        if service.startswith("http_status:"):
+            continue
+
+        # Convert to DockFlare rule format
+        rule_data = {
+            "hostname": hostname,
+            "path": path,
+            "service": service,
+            "status": "active",
+            "source": "tunnel_import",
+            "container_id": None,
+            "zone_id": None,
+            "no_tls_verify": False,
+            "origin_server_name": rule.get("originRequest", {}).get("httpHostHeader"),
+            "http_host_header": rule.get("originRequest", {}).get("httpHostHeader"),
+            "access_app_id": None,
+            "access_policy_type": None,
+            "access_app_config_hash": None,
+            "access_policy_ui_override": False,
+            "rule_ui_override": False,
+            "access_group_id": None,
+            "tunnel_id": tunnel_config["tunnel_id"],
+            "tunnel_name": None
+        }
+
+        rules.append(rule_data)
+
+    logging.info(f"Parsed {len(rules)} rules from tunnel configuration")
+    return rules
+
 def delete_tunnel_via_api(tunnel_id):
     """
     Delete a Cloudflare tunnel by ID.

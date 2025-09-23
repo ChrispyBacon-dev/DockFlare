@@ -79,6 +79,50 @@ def agents_page():
         agents = list_agents()
     return render_template('agents.html', agents=agents)
 
+@bp.route('/agents/<agent_id>/roll-key', methods=['POST'])
+@login_required
+def roll_agent_key(agent_id):
+    """
+    Rolls (regenerates) the API key for a specific agent.
+    """
+    from app.core.state_manager import get_agent, update_agent, revoke_agent_key, add_agent_key
+    import secrets
+    from datetime import datetime, timezone
+
+    if not agent_id:
+        cloudflared_agent_state["last_action_status"] = "Error: Missing agent ID."
+        return redirect(url_for('web.agents_page'))
+
+    with state_lock:
+        agent = get_agent(agent_id)
+        if not agent:
+            cloudflared_agent_state["last_action_status"] = f"Error: Agent '{agent_id}' not found."
+            return redirect(url_for('web.agents_page'))
+
+        old_api_key = agent.get("api_key")
+
+        new_api_key = secrets.token_urlsafe(32)
+
+        success = update_agent(agent_id, {"api_key": new_api_key})
+        if not success:
+            cloudflared_agent_state["last_action_status"] = f"Error: Failed to update agent '{agent_id}' with new API key."
+            return redirect(url_for('web.agents_page'))
+
+        if old_api_key:
+            revoke_agent_key(old_api_key)
+
+        now_iso = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+        add_agent_key(new_api_key, {
+            "bound_agent_id": agent_id,
+            "created_at": now_iso,
+            "last_used_at": None,
+            "rolled_from": old_api_key[:8] + "..." if old_api_key else None
+        })
+
+        cloudflared_agent_state["last_action_status"] = f"Success: API key rolled for agent '{agent.get('display_name', agent_id)}'. Agent must be restarted with new key: {new_api_key}"
+
+    return redirect(url_for('web.agents_page'))
+
 def get_display_token_ui(token_value):
     if not token_value:
         return "Not available"

@@ -22,9 +22,9 @@
             <th class="p-3">Status</th>
             <th class="p-3">Last Seen</th>
             <th class="p-3">Assigned Tunnel</th>
+            <th class="p-3">Migration</th>
             <th class="p-3">Cloudflared Version</th>
             <th class="p-3">Tunnel Status</th>
-            <th class="p-3">Last Event</th>
             <th class="p-3 text-center">Actions</th>
           </tr>
         </thead>
@@ -105,6 +105,20 @@
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-enroll-agent').close()">Cancel</button>
       </div>
     </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<!-- Modal for Migration Assistant -->
+<dialog id="modal-migration-assistant" class="modal">
+  <div class="modal-box w-11/12 max-w-4xl">
+    <h3 class="font-bold text-lg">Migration Assistant</h3>
+    <div id="migration-content" class="py-4">
+      <!-- Migration content will be populated by JavaScript -->
+    </div>
+    <div class="modal-action">
+      <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-migration-assistant').close()">Close</button>
+    </div>
   </div>
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
@@ -215,7 +229,7 @@
   const renderAgentsTable = (agents) => {
     agentsTableBody.innerHTML = '';
     if (!agents || Object.keys(agents).length === 0) {
-      agentsTableBody.innerHTML = '<tr><td colspan="10" class="text-center p-4">No agents have registered yet.</td></tr>';
+      agentsTableBody.innerHTML = '<tr><td colspan="9" class="text-center p-4">No agents have registered yet.</td></tr>';
       return;
     }
     for (const [agentId, agent] of Object.entries(agents)) {
@@ -230,6 +244,22 @@
 
       const cloudflaredVersion = agent.tunnel_version || (agent.tunnel_status && agent.tunnel_status.version) || '<i>N/A</i>';
 
+      // Migration status display
+      const migrationStatus = agent.migration_status;
+      let migrationHtml = '<span class="badge badge-ghost badge-sm">None</span>';
+      if (migrationStatus) {
+        if (migrationStatus.completed_at) {
+          migrationHtml = '<span class="badge badge-success badge-sm">Complete</span>';
+        } else if (migrationStatus.has_conflicts || migrationStatus.has_orphaned) {
+          const issues = [];
+          if (migrationStatus.has_conflicts) issues.push('conflicts');
+          if (migrationStatus.has_orphaned) issues.push('orphaned');
+          migrationHtml = `<span class="badge badge-warning badge-sm">Needs attention (${issues.join(', ')})</span>`;
+        } else if (migrationStatus.auto_imported > 0) {
+          migrationHtml = `<span class="badge badge-info badge-sm">Auto-imported ${migrationStatus.auto_imported}</span>`;
+        }
+      }
+
       tr.innerHTML = `
         <td class="p-3 whitespace-nowrap">${agentId}</td>
         <td class="p-3 whitespace-nowrap">${agent.display_name || '<i>N/A</i>'}</td>
@@ -237,12 +267,13 @@
         <td class="p-3">${statusHtml}</td>
         <td class="p-3 whitespace-nowrap">${lastSeenText}</td>
         <td class="p-3 whitespace-nowrap">${agent.assigned_tunnel_name || '<i>None</i>'}</td>
+        <td class="p-3">${migrationHtml}${migrationStatus && (migrationStatus.has_conflicts || migrationStatus.has_orphaned) ? `<button class="btn btn-xs btn-info ml-2 btn-migration-assistant" data-agent-id="${agentId}" title="Open Migration Assistant">🔧</button>` : ''}</td>
         <td class="p-3 whitespace-nowrap">${cloudflaredVersion}</td>
         <td class="p-3">${getTunnelStatusBadge(agent.tunnel_status)}</td>
-        <td class="p-3 whitespace-nowrap">${agent.last_event ? agent.last_event.type : '<i>None</i>'}</td>
         <td class="p-3 text-center">
           <button class="btn btn-xs btn-primary btn-enroll" data-agent-id="${agentId}" ${agent.status === 'enrolled' && agent.assigned_tunnel_name ? 'disabled' : ''}>Enroll</button>
-          <button class="btn btn-xs btn-error btn-remove ml-2" data-agent-id="${agentId}">Remove</button>
+          <button class="btn btn-xs btn-secondary btn-roll-key ml-1" data-agent-id="${agentId}" ${agent.status !== 'enrolled' ? 'disabled' : ''} title="Roll API Key">🔄</button>
+          <button class="btn btn-xs btn-error btn-remove ml-1" data-agent-id="${agentId}">Remove</button>
         </td>
       `;
 
@@ -301,6 +332,136 @@
 
 
   // --- Event Handlers and Actions ---
+
+  // Migration Assistant functions
+  async function openMigrationAssistant(agentId) {
+    const data = await apiCall('/api/v2/overview');
+    if (!data || !data.agents || !data.agents[agentId]) {
+      alert('Agent not found or data unavailable.');
+      return;
+    }
+
+    const agent = data.agents[agentId];
+    const migrationStatus = agent.migration_status;
+
+    if (!migrationStatus || (!migrationStatus.has_conflicts && !migrationStatus.has_orphaned)) {
+      alert('No migration issues to resolve for this agent.');
+      return;
+    }
+
+    const modal = document.getElementById('modal-migration-assistant');
+    const content = document.getElementById('migration-content');
+
+    let html = `<div class="mb-4"><h4 class="text-lg font-semibold">Migration Status for Agent: ${agentId}</h4></div>`;
+
+    const analysis = migrationStatus.last_analysis;
+    if (!analysis) {
+      content.innerHTML = html + '<p>No migration analysis data available.</p>';
+      modal.showModal();
+      return;
+    }
+
+    if (analysis.conflicts && analysis.conflicts.length > 0) {
+      html += `
+        <div class="mb-6">
+          <h5 class="text-md font-semibold text-warning mb-2">⚠️ Conflicts (${analysis.conflicts.length})</h5>
+          <p class="text-sm mb-3">These rules have service URL conflicts between the tunnel configuration and container labels:</p>
+          <div class="overflow-x-auto">
+            <table class="table table-compact table-zebra">
+              <thead>
+                <tr>
+                  <th>Hostname</th>
+                  <th>Tunnel Service</th>
+                  <th>Container Service</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+      `;
+
+      analysis.conflicts.forEach((conflict, idx) => {
+        html += `
+          <tr>
+            <td>${conflict.rule.hostname}</td>
+            <td><code>${conflict.tunnel_service}</code></td>
+            <td><code>${conflict.container_service}</code></td>
+            <td>
+              <button class="btn btn-xs btn-primary" onclick="resolveConflict('${agentId}', ${idx}, 'container')">Use Container</button>
+              <button class="btn btn-xs btn-secondary ml-1" onclick="resolveConflict('${agentId}', ${idx}, 'tunnel')">Keep Tunnel</button>
+            </td>
+          </tr>
+        `;
+      });
+
+      html += `
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    if (analysis.orphaned && analysis.orphaned.length > 0) {
+      html += `
+        <div class="mb-6">
+          <h5 class="text-md font-semibold text-info mb-2">🔗 Orphaned Rules (${analysis.orphaned.length})</h5>
+          <p class="text-sm mb-3">These tunnel rules don't have matching containers:</p>
+          <div class="overflow-x-auto">
+            <table class="table table-compact table-zebra">
+              <thead>
+                <tr>
+                  <th>Hostname</th>
+                  <th>Path</th>
+                  <th>Service</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+      `;
+
+      analysis.orphaned.forEach((rule, idx) => {
+        html += `
+          <tr>
+            <td>${rule.hostname}</td>
+            <td>${rule.path || '/'}</td>
+            <td><code>${rule.service}</code></td>
+            <td>
+              <button class="btn btn-xs btn-primary" onclick="importOrphanedRule('${agentId}', ${idx})">Import</button>
+              <button class="btn btn-xs btn-error ml-1" onclick="removeOrphanedRule('${agentId}', ${idx})">Remove</button>
+            </td>
+          </tr>
+        `;
+      });
+
+      html += `
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    content.innerHTML = html;
+    modal.showModal();
+  }
+
+  window.resolveConflict = async function(agentId, conflictIndex, resolution) {
+    // This would call an API endpoint to resolve the specific conflict
+    alert(`Conflict resolution for agent ${agentId}, conflict ${conflictIndex}: ${resolution}`);
+    // TODO: Implement actual conflict resolution API call
+  };
+
+  window.importOrphanedRule = async function(agentId, ruleIndex) {
+    // This would call an API endpoint to import the orphaned rule
+    alert(`Import orphaned rule for agent ${agentId}, rule ${ruleIndex}`);
+    // TODO: Implement actual orphaned rule import API call
+  };
+
+  window.removeOrphanedRule = async function(agentId, ruleIndex) {
+    // This would call an API endpoint to remove the orphaned rule from tunnel config
+    alert(`Remove orphaned rule for agent ${agentId}, rule ${ruleIndex}`);
+    // TODO: Implement actual orphaned rule removal API call
+  };
 
   // Main data fetch function
   async function fetchData() {
@@ -372,6 +533,18 @@
             fetchData();
           }
         }
+      } else if (e.target.classList.contains('btn-roll-key')) {
+        const agentId = e.target.getAttribute('data-agent-id');
+        if (confirm(`Are you sure you want to roll the API key for agent "${agentId}"? The agent will need to be updated with the new key.`)) {
+          const result = await apiCall(`/api/v2/agents/${agentId}/roll-key`, 'POST');
+          if (result && result.new_key) {
+            alert(`Agent API key rolled successfully. New key: ${result.new_key}\n\nPlease update your agent configuration with this new key. You will not be able to see it again.`);
+            fetchData();
+          }
+        }
+      } else if (e.target.classList.contains('btn-migration-assistant')) {
+        const agentId = e.target.getAttribute('data-agent-id');
+        openMigrationAssistant(agentId);
       }
     });
 

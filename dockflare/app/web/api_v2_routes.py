@@ -1093,6 +1093,38 @@ def agents_post_events(agent_id):
         except Exception as _re_exc:
             logging.error(f"AGENTS_EVENTS: Failed to start reconcile_agent_report for agent {agent_id}: {_re_exc}", exc_info=True)
 
+        # Check for migration opportunities when agent reports containers
+        try:
+            from app.core.migration_service import TunnelMigrationService
+
+            agent_record = get_agent(agent_id)
+            if agent_record:
+                assigned_tunnel_id = agent_record.get("assigned_tunnel_id")
+                migration_status = agent_record.get("migration_status")
+
+                # Only trigger migration analysis if:
+                # 1. Agent is assigned to a tunnel
+                # 2. Migration hasn't been completed yet
+                # 3. There are containers to analyze
+                if (assigned_tunnel_id and
+                    containers and
+                    (not migration_status or not migration_status.get("completed_at"))):
+
+                    def run_migration_analysis():
+                        try:
+                            result = TunnelMigrationService.trigger_migration_analysis(
+                                agent_id, assigned_tunnel_id, containers
+                            )
+                            if result["success"] and result["imported_count"] > 0:
+                                logging.info(f"MIGRATION: Auto-imported {result['imported_count']} rules for agent {agent_id}")
+                        except Exception as e:
+                            logging.error(f"MIGRATION: Error during migration analysis for agent {agent_id}: {e}")
+
+                    _threading.Thread(target=run_migration_analysis, name=f"MigrationAnalysis-{agent_id}", daemon=True).start()
+
+        except Exception as _mig_exc:
+            logging.error(f"AGENTS_EVENTS: Failed to trigger migration analysis for agent {agent_id}: {_mig_exc}", exc_info=True)
+
     elif event_type in ["heartbeat", "hello"]:
         logging.debug(f"AGENTS_EVENTS: Heartbeat received from agent {agent_id}")
     elif event_type == "tunnel_status":
