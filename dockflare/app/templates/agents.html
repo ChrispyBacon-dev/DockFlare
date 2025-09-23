@@ -122,6 +122,28 @@
   </div>
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
+
+<!-- Modal for Agent Rename -->
+<dialog id="modal-rename-agent" class="modal">
+  <div class="modal-box">
+    <h3 class="font-bold text-lg">Rename Agent</h3>
+    <form id="form-rename-agent" class="py-4">
+      <input type="hidden" id="rename-agent-id" name="agent_id">
+      <div class="form-control w-full">
+        <label class="label" for="rename-display-name"><span class="label-text">Display Name</span></label>
+        <input type="text" id="rename-display-name" name="display_name" placeholder="e.g., Production Server, NAS Server" class="input input-bordered w-full" required />
+        <label class="label">
+          <span class="label-text-alt">This name will persist even when the agent reconnects</span>
+        </label>
+      </div>
+      <div class="modal-action">
+        <button type="submit" class="btn btn-primary">Save Name</button>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-rename-agent').close()">Cancel</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 {% endblock %}
 
 {% block scripts %}
@@ -275,6 +297,7 @@
           <button class="btn btn-xs btn-secondary btn-roll-key ml-1" data-agent-id="${agentId}" ${agent.status !== 'enrolled' ? 'disabled' : ''} title="Roll API Key">Roll Key</button>
           <button class="btn btn-xs btn-info btn-trigger-migration ml-1" data-agent-id="${agentId}" ${!agent.assigned_tunnel_name ? 'disabled' : ''} title="Trigger Migration">Migration</button>
           <button class="btn btn-xs btn-warning btn-redeploy-tunnel ml-1" data-agent-id="${agentId}" ${agent.status !== 'enrolled' ? 'disabled' : ''} title="Redeploy Tunnel Container">Redeploy</button>
+          <button class="btn btn-xs btn-ghost btn-rename-agent ml-1" data-agent-id="${agentId}" title="Rename Agent">Rename</button>
           <button class="btn btn-xs btn-error btn-remove ml-1" data-agent-id="${agentId}">Remove</button>
         </td>
       `;
@@ -492,11 +515,25 @@
     }
   }
 
+  function openRenameModal(agentId) {
+    const data = window.lastFetchedData;
+    if (!data || !data.agents || !data.agents[agentId]) {
+      alert('Agent data not available. Please refresh the page.');
+      return;
+    }
+
+    const agent = data.agents[agentId];
+    document.getElementById('rename-agent-id').value = agentId;
+    document.getElementById('rename-display-name').value = agent.display_name || '';
+    document.getElementById('modal-rename-agent').showModal();
+  }
+
   // Main data fetch function
   async function fetchData() {
     // Use overview endpoint which provides agents, agent_keys and account tunnels.
     const data = await apiCall('/api/v2/overview');
     if (data) {
+      window.lastFetchedData = data; // Store for rename modal
       renderAgentsTable(data.agents || {});
       renderApiKeysTable(data.agent_keys || {});
       populateTunnelSelect(data.all_account_tunnels || {}); // For the enroll modal
@@ -584,6 +621,9 @@
         if (confirm(`Redeploy tunnel container for agent "${agentId}"? This will restart the cloudflared tunnel container.`)) {
           redeployTunnelContainer(agentId);
         }
+      } else if (e.target.classList.contains('btn-rename-agent')) {
+        const agentId = e.target.getAttribute('data-agent-id');
+        openRenameModal(agentId);
       }
     });
 
@@ -627,6 +667,30 @@
             fetchData(); // Refresh API keys table
           }
         }
+      }
+    });
+
+    // Rename Agent form submission
+    document.getElementById('form-rename-agent').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const agentId = document.getElementById('rename-agent-id').value;
+      const displayName = document.getElementById('rename-display-name').value.trim();
+
+      if (!displayName) {
+        alert('Please enter a display name.');
+        return;
+      }
+
+      try {
+        const result = await apiCall(`/api/v2/agents/${agentId}/rename`, 'POST', { display_name: displayName });
+        if (result && result.status === 'success') {
+          alert('Agent renamed successfully.');
+          document.getElementById('modal-rename-agent').close();
+          fetchData();
+        }
+      } catch (error) {
+        console.error('Rename failed:', error);
+        alert('Failed to rename agent. Please check the logs.');
       }
     });
 

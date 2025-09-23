@@ -944,8 +944,10 @@ def agents_register():
         update_payload = {
             "last_seen": now,
             "version": version,
-            "display_name": display_name
         }
+
+        if not existing_agent.get("custom_name"):
+            update_payload["display_name"] = display_name
         update_agent(existing_agent_id, update_payload)
         agent_record = get_agent(existing_agent_id)
         agent_id = existing_agent_id
@@ -1374,6 +1376,35 @@ def redeploy_agent_tunnel(agent_id):
     except Exception as e:
         logging.error(f"Failed to queue redeploy command for agent {agent_id}: {e}", exc_info=True)
         return jsonify({"status": "error", "message": f"Failed to queue redeploy command: {str(e)}"}), 500
+
+@api_v2_bp.route('/agents/<agent_id>/rename', methods=['POST'])
+def rename_agent(agent_id):
+    try:
+        from app.core.state_manager import get_agent, update_agent
+
+        agent_record = get_agent(agent_id)
+        if not agent_record:
+            return jsonify({"status": "error", "message": "Agent not found."}), 404
+
+        data = request.get_json() or {}
+        display_name = data.get('display_name', '').strip()
+
+        if not display_name:
+            return jsonify({"status": "error", "message": "Display name is required."}), 400
+
+        update_agent(agent_id, {
+            "display_name": display_name,
+            "custom_name": True
+        })
+
+        return jsonify({
+            "status": "success",
+            "message": "Agent renamed successfully."
+        }), 200
+
+    except Exception as e:
+        logging.error(f"Failed to rename agent {agent_id}: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": f"Failed to rename agent: {str(e)}"}), 500
 
 @api_v2_bp.route('/agent/start', methods=['POST'])
 def agent_start():
