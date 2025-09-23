@@ -95,7 +95,7 @@ def gating_logic():
 
     if not is_configured:
 
-        if request.endpoint and not request.endpoint.startswith('setup.') and request.endpoint != 'static':
+        if request.endpoint and not request.endpoint.startswith('setup.') and request.endpoint != 'static' and not request.endpoint.startswith('api_v2.'):
             try:
                 if getattr(current_app, 'import_from_env', False):
 
