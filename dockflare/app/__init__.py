@@ -115,6 +115,17 @@ def create_app():
         # For web requests, redirect to login page
         return redirect(url_for('auth.login'))
 
+    # Custom user loader that exempts API routes from authentication checks
+    @login_manager.request_loader
+    def load_user_from_request(request):
+        """Load user from request - bypass authentication for API endpoints"""
+        # For API v2 endpoints, don't require Flask-Login authentication
+        if request.endpoint and request.endpoint.startswith('api_v2.'):
+            # Create a dummy user to satisfy Flask-Login for API endpoints
+            from app.core.user import User
+            return User('api_user')
+        return None
+
     @login_manager.user_loader
     def load_user(user_id):
         """Load user from the config for session management."""
