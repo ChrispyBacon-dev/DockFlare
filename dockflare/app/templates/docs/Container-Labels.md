@@ -12,10 +12,12 @@ These labels control the fundamental routing and service definition for a contai
 | `dockflare.hostname` | **Required.** The public-facing hostname for your service. | `dockflare.hostname=myservice.example.com` |
 | `dockflare.service` | **Required.** The internal URL of the service that Cloudflare Tunnel should connect to. Can be `http`, `https`, `tcp`, `ssh`, `rdp`, `http_status:XXX`, or `bastion`. | `dockflare.service=http://my-app-container:8080` |
 | `dockflare.path` | The URL path to route to this service. Useful for exposing multiple services on the same hostname. | `dockflare.path=/api` |
-| `dockflare.zonename` | The name of the Cloudflare Zone (domain) where the DNS record should be created. Overrides the global configuration. | `dockflare.zonename=another-domain.com` |
+| `dockflare.zonename` | (Optional) Explicit Cloudflare zone (domain) where the DNS record should be created. If omitted, DockFlare now auto-detects the zone based on the hostname and only falls back to the configured default (`CF_ZONE_ID`) when auto-detect fails. | `dockflare.zonename=another-domain.com` |
 | `dockflare.no_tls_verify` | If set to `true`, disables TLS certificate verification for the connection between `cloudflared` and your origin service. Useful for origins with self-signed certificates. | `dockflare.no_tls_verify=true` |
 | `dockflare.originsrvname` | Sets a specific Server Name Indication (SNI) hostname for the TLS connection to the origin. This is also known as "Origin Server Name" in the Cloudflare dashboard. | `dockflare.originsrvname=internal.service.local` |
 | `dockflare.httpHostHeader` | Overrides the `Host` header sent from `cloudflared` to your origin service. | `dockflare.httpHostHeader=custom-host.internal` |
+
+> **Tip:** Starting with DockFlare v3.0, you can skip `dockflare.zonename` for most workloads. The master detects the correct Cloudflare zone by matching the hostname suffix and only falls back to the configured default zone when it cannot find a match. Provide the label when you intentionally want to place a record in a different zone.
 
 ---
 

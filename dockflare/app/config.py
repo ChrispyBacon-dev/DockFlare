@@ -17,11 +17,10 @@
 #
 # app/config.py
 import os
-import sys
 import logging 
 
 # --- DockFlare Version ---
-APP_VERSION = "v2.1.7"
+APP_VERSION = "v3.0"
 # --- web: https://dockflare.app ---
 # --- github: https://github.com/ChrispyBacon-dev/DockFlare ---
 
@@ -38,6 +37,7 @@ CF_ZONE_ID = None
 TUNNEL_NAME = "dockflare-tunnel"
 GRACE_PERIOD_SECONDS = 600
 TUNNEL_DNS_SCAN_ZONE_NAMES = []
+MASTER_API_KEY = os.getenv('DOCKFLARE_API_KEY')
 
 # --- Static & Environment-Based Configuration ---
 CF_API_BASE_URL = "https://api.cloudflare.com/client/v4"
@@ -86,3 +86,25 @@ if CLOUDFLARED_METRICS_PORT:
     except ValueError:
         logging.warning(f"Invalid value for CLOUDFLARED_METRICS_PORT: '{CLOUDFLARED_METRICS_PORT}'. Must be a number. Disabling.")
         CLOUDFLARED_METRICS_PORT = None
+
+# --- Auto-restore (self-heal) settings ---
+# If true, the Master will attempt to recreate rules reported by Agents when the rule has been removed on Master.
+AUTO_RESTORE_AGENT_RULES = os.getenv('AUTO_RESTORE_AGENT_RULES', 'true').lower() in ['true', '1', 't', 'yes']
+# Cooldown (seconds) between automatic restore operations per-agent to avoid flapping/loops.
+AUTO_RESTORE_COOLDOWN_SECONDS = int(os.getenv('AUTO_RESTORE_COOLDOWN_SECONDS', '60'))
+
+# --- Multi-server / Agent support settings ---
+# URL prefix for agent API endpoints (kept here for consistency; routing will use this in the Master)
+AGENT_API_PREFIX = os.getenv('AGENT_API_PREFIX', '/api/v2/agents')
+
+# Seconds without heartbeat before an agent is considered offline
+AGENT_HEARTBEAT_TIMEOUT = int(os.getenv('AGENT_HEARTBEAT_TIMEOUT', 60))
+
+# Whether agents must be manually enrolled via the UI (recommended: true)
+AGENT_ENROLLMENT_REQUIRED = os.getenv('AGENT_ENROLLMENT_REQUIRED', 'true').lower() in ['true', '1', 't', 'yes']
+
+# Optional path for storing agent API key metadata (defaults to encrypted config storage if None)
+AGENT_KEY_STORAGE_PATH = os.getenv('AGENT_KEY_STORAGE_PATH', None)
+
+# Polling interval (seconds) recommended for agents to poll the Master for commands
+AGENT_COMMAND_POLL_INTERVAL = int(os.getenv('AGENT_COMMAND_POLL_INTERVAL', 5))

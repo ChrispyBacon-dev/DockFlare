@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
     <title>{% block title %}DockFlare{% endblock %} {{ app_version }} - Cloudflare Tunnel Manager</title>
+    {% if master_api_key %}
+    <meta name="dockflare-api-key" content="{{ master_api_key }}">
+    {% endif %}
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon/apple-touch-icon.png') }}">
     <link rel="icon" type="image/png" sizes="192x192"  href="{{ url_for('static', filename='favicon/android-chrome-192x192.png') }}">
     <link rel="icon" type="image/png" sizes="512x512"  href="{{ url_for('static', filename='favicon/android-chrome-512x512.png') }}">
@@ -56,10 +59,11 @@
                 <ul class="menu menu-horizontal px-1">
                     <li><a href="{{ url_for('web.status_page') }}" class="{{ 'active' if request.endpoint == 'web.status_page' else '' }}">Dashboard</a></li>
                     <li><a href="{{ url_for('web.access_policies_page') }}" class="{{ 'active' if request.endpoint == 'web.access_policies_page' else '' }}">Access Policies</a></li>
+                    <li><a href="{{ url_for('web.agents_page') }}" class="{{ 'active' if request.endpoint == 'web.agents_page' else '' }}">Agents</a></li>
                     <li><a href="{{ url_for('web.settings_page') }}" class="{{ 'active' if request.endpoint == 'web.settings_page' else '' }}">Settings</a></li>
                     <li><a href="{{ url_for('help.help_page') }}" class="{{ 'active' if request.endpoint.startswith('help.') else '' }}">Help</a></li>
                 </ul>
-            </div>
+              </div>
     
             <div class="navbar-end">
                 <div class="dropdown dropdown-end">
@@ -95,7 +99,7 @@
 
         <p class="mb-2">
             <a href="https://dockflare.app" target="_blank" rel="noopener noreferrer" class="link link-hover link-primary">DockFlare.app</a>
-            <span class="text-xs opacity-60">{{ app_version }}</span>
+            <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases" target="_blank" rel="noopener noreferrer" class="link link-hover text-xs opacity-60">{{ app_version }}</a>
         </p>
         
         <p class="my-3">

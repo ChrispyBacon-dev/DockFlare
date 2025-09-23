@@ -149,7 +149,7 @@
                                         <th>Tunnel ID</th>
                                         <th>Status</th>
                                         <th>Created At</th>
-                                        <th>Connections</th>
+                                        <th class="w-32">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -169,11 +169,12 @@
                                                 <span class="badge {{ status_color }} badge-sm">{{ tunnel.status | capitalize | e }}</span>
                                             </td>
                                             <td class="text-xs opacity-70">{% if tunnel.created_at %}{{ tunnel.created_at.split('T')[0] | e }}{% else %}N/A{% endif %}</td>
-                                            <td class="text-xs opacity-70">
-                                                {% if tunnel.connections and tunnel.connections is iterable and not tunnel.connections is string %}
-                                                    {% for conn in tunnel.connections %}<span class="badge badge-outline badge-xs mr-1 mb-1">{{ conn.colo_name | e }}</span>{% endfor %}
-                                                    {% if tunnel.connections | length > 0 %}({{ tunnel.connections | length }} total){% else %}(0 total){% endif %}
-                                                {% elif tunnel.connections %}{{ tunnel.connections | e }}{% else %}None{% endif %}
+                                            <td class="text-xs">
+                                                <button type="button" class="btn btn-xs btn-error delete-tunnel-btn"
+                                                        data-tunnel-id="{{ tunnel.id | e }}"
+                                                        data-tunnel-name="{{ tunnel.name | e }}">
+                                                    Delete
+                                                </button>
                                             </td>
                                         </tr>
                                         <tr class="dns-records-row hidden bg-base-200/30">
@@ -202,6 +203,31 @@
             </div>
         </section>
 
+        <dialog id="delete_tunnel_modal" class="modal">
+            <div class="modal-box w-11/12 max-w-md bg-base-100/90 backdrop-blur">
+                <form method="dialog">
+                    <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" title="Close">✕</button>
+                </form>
+                <h3 class="font-bold text-lg mb-2">Delete Cloudflare Tunnel</h3>
+                <p id="delete_tunnel_warning_text" class="text-sm opacity-80 mb-4">
+                    Deleting this tunnel will disconnect any agents currently using it.
+                </p>
+                <form id="delete_tunnel_form" action="{{ url_for('web.ui_delete_cloudflare_tunnel_route') }}" method="POST" class="space-y-4">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="tunnel_id" id="delete_tunnel_id">
+                    <label class="form-control w-full">
+                        <span class="label-text text-sm">Type <span class="font-semibold">delete</span> to confirm</span>
+                        <input type="text" name="confirm_text" id="delete_tunnel_confirm_input" class="input input-bordered w-full" autocomplete="off" required>
+                    </label>
+                    <div class="modal-action mt-4">
+                        <button type="submit" id="delete_tunnel_confirm_button" class="btn btn-error" disabled>Delete Tunnel</button>
+                        <button type="button" class="btn" onclick="document.getElementById('delete_tunnel_modal').close()">Cancel</button>
+                    </div>
+                </form>
+            </div>
+            <form method="dialog" class="modal-backdrop"><button>Close</button></form>
+        </dialog>
+
         <!-- 3. Backup & Restore Section -->
         <section id="backup-restore" class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl border-2 border-warning">
             <div class="card-body">
@@ -215,13 +241,13 @@
                     <div>
                         <h3 class="font-semibold text-lg mb-2">Create Backup</h3>
                         <p class="text-sm opacity-80 mb-4">
-                            Download the current `state.json` file. This file contains all your manual rules, access groups, and the state of your Docker-managed services. Store it in a safe place.
+                            Download a full DockFlare backup archive (`.zip`) containing your encrypted configuration, agent keys, and state file. Store it safely with the `dockflare.key` included in the archive.
                         </p>
                         <a href="{{ url_for('web.download_state_backup') }}" class="btn btn-primary">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                               <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                             </svg>
-                            Download State File
+                            Download Backup Archive
                         </a>
                     </div>
 
@@ -230,17 +256,20 @@
                         <h3 class="font-semibold text-lg mb-2">Restore from Backup</h3>
                         <div role="alert" class="alert alert-warning text-sm mb-4">
                             <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                            <span><strong>Warning:</strong> This will completely overwrite your current settings, rules, and groups with the content of the backup file. This action cannot be undone.</span>
+                            <span><strong>Warning:</strong> Restoring a backup overwrites configuration, credentials, agent keys, and state. This action cannot be undone.</span>
                         </div>
 
                         <form action="{{ url_for('web.restore_state_backup') }}" method="POST" enctype="multipart/form-data" class="protocol-aware-form space-y-3">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="file" name="backup_file" class="file-input file-input-bordered w-full" accept=".json" required />
-                            <button type="submit" class="btn btn-error w-full" onclick="return confirm('Are you sure you want to overwrite your current state with this backup? This cannot be undone.')">
+                            <input type="file" name="backup_file" class="file-input file-input-bordered w-full" accept=".zip,.json" required />
+                            <label class="label">
+                                <span class="label-text-alt text-sm">Upload a DockFlare backup archive (`.zip`). Legacy `state.json` files are still accepted but only restore rules/groups.</span>
+                            </label>
+                            <button type="submit" class="btn btn-error w-full" onclick="return confirm('Are you sure you want to overwrite your current settings with this backup? This cannot be undone.')">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                   <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                 </svg>
-                                Upload and Restore State
+                                Upload and Restore Backup
                             </button>
                         </form>
                     </div>
@@ -303,6 +332,11 @@
                                  {{ security_settings_form.submit_security_settings(class="btn btn-warning") }}
                             </div>
                         </form>
+                        <div class="mt-6">
+                            <h4 class="text-md font-semibold mb-2 opacity-80">Master API Key</h4>
+                            <button type="button" class="btn btn-sm btn-outline" id="btn-show-master-key">Show Master API Key</button>
+                            <span class="block text-xs opacity-70 mt-2">Keep this key secret; rotate it if exposed.</span>
+                        </div>
                     </div>
                 </div>
                 <div class="mt-8">
@@ -383,70 +417,149 @@
                 </div>
             </div>
         </section>
-    </main>
+</main>
 </div>
+
+<dialog id="master-key-modal" class="modal">
+  <div class="modal-box max-w-xl">
+    <h3 class="font-bold text-lg mb-2">Master API Key</h3>
+    <p class="text-sm opacity-70 mb-4">Treat this key like a password. Anyone with it can call the DockFlare API.</p>
+    <div class="bg-base-200 rounded-md p-4">
+      <code id="master-key-display" class="break-all text-sm">Loading...</code>
+    </div>
+    <div class="modal-action mt-6 gap-2">
+      <button type="button" class="btn btn-sm" id="btn-copy-master-key">Copy</button>
+      <button type="button" class="btn btn-sm btn-primary" id="btn-close-master-key">Close</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 {% endblock %}
 
 {% block scripts %}
 {{ super() }}
 <script>
-(function () {
-  
-  try {
-    const nav = document.getElementById('settings-left-nav');
-    if (!nav) return;
+  (function () {
 
-    const links = Array.from(nav.querySelectorAll('a[href^="#"]'));
-    const idToLink = {};
-    links.forEach(a => {
-      const id = a.getAttribute('href').slice(1);
-      idToLink[id] = a;
-    });
+    const showMasterKeyBtn = document.getElementById('btn-show-master-key');
+    if (showMasterKeyBtn) {
+      showMasterKeyBtn.addEventListener('click', async () => {
+        try {
+          const response = await fetch("{{ url_for('web.reveal_master_key') }}", {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-CSRFToken': '{{ csrf_token() }}'
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({})
+          });
 
-    const sections = links.map(a => document.getElementById(a.getAttribute('href').slice(1))).filter(Boolean);
-  
-    if ('IntersectionObserver' in window && sections.length) {
-      const observer = new IntersectionObserver(entries => {
-        entries.forEach(entry => {
-          const id = entry.target.id;
-          const link = idToLink[id];
-          if (!link) return;
-          if (entry.isIntersecting && entry.intersectionRatio >= 0.25) {
-            links.forEach(l => l.classList.remove('active'));
-            link.classList.add('active');
+          if (!response.ok) {
+            const errorPayload = await response.json().catch(() => ({}));
+            const msg = errorPayload.message || 'Unable to reveal the master key. Check logs.';
+            alert(`Error: ${msg}`);
+            return;
           }
-        });
-      }, { threshold: [0.25, 0.5, 0.75] });
 
-      sections.forEach(s => observer.observe(s));
-    } else {
-
-      function onScroll() {
-        const scrollY = window.scrollY || window.pageYOffset;
-        let best = null;
-        sections.forEach(s => {
-          const rect = s.getBoundingClientRect();
-          const offset = Math.abs(rect.top - 100);
-          if (best === null || offset < best.offset) {
-            best = { el: s, offset };
+          const payload = await response.json();
+          const modal = document.getElementById('master-key-modal');
+          const keyDisplay = document.getElementById('master-key-display');
+          if (modal && keyDisplay) {
+            keyDisplay.textContent = payload.master_api_key || 'Unavailable';
+            modal.showModal();
           }
-        });
-        if (best) {
-          links.forEach(l => l.classList.remove('active'));
-          const link = idToLink[best.el.id];
-          if (link) link.classList.add('active');
+        } catch (err) {
+          console.error('Failed to fetch master API key:', err);
+          alert('Failed to contact the server.');
         }
-      }
-      window.addEventListener('scroll', onScroll, { passive: true });
-
-      setTimeout(onScroll, 200);
+      });
     }
 
+    const closeMasterKeyBtn = document.getElementById('btn-close-master-key');
+    if (closeMasterKeyBtn) {
+      closeMasterKeyBtn.addEventListener('click', () => {
+        const modal = document.getElementById('master-key-modal');
+        if (modal) {
+          modal.close();
+        }
+      });
+    }
 
-    links.forEach(a => {
-      a.addEventListener('click', (e) => {
+    const copyMasterKeyBtn = document.getElementById('btn-copy-master-key');
+    if (copyMasterKeyBtn) {
+      copyMasterKeyBtn.addEventListener('click', async () => {
+        const keyDisplay = document.getElementById('master-key-display');
+        if (!keyDisplay) return;
+        try {
+          if (!navigator.clipboard) {
+            throw new Error('clipboard_unavailable');
+          }
+          await navigator.clipboard.writeText(keyDisplay.textContent || '');
+          copyMasterKeyBtn.textContent = 'Copied!';
+          setTimeout(() => { copyMasterKeyBtn.textContent = 'Copy'; }, 2000);
+        } catch (err) {
+          console.error('Clipboard copy failed', err);
+          alert('Could not copy to clipboard.');
+        }
+      });
+    }
 
-        const href = a.getAttribute('href');
+    try {
+      const nav = document.getElementById('settings-left-nav');
+      if (!nav) return;
+
+      const links = Array.from(nav.querySelectorAll('a[href^="#"]'));
+      const idToLink = {};
+      links.forEach(a => {
+        const id = a.getAttribute('href').slice(1);
+        idToLink[id] = a;
+      });
+
+      const sections = links.map(a => document.getElementById(a.getAttribute('href').slice(1))).filter(Boolean);
+
+      if ('IntersectionObserver' in window && sections.length) {
+        const observer = new IntersectionObserver(entries => {
+          entries.forEach(entry => {
+            const id = entry.target.id;
+            const link = idToLink[id];
+            if (!link) return;
+            if (entry.isIntersecting && entry.intersectionRatio >= 0.25) {
+              links.forEach(l => l.classList.remove('active'));
+              link.classList.add('active');
+            }
+          });
+        }, { threshold: [0.25, 0.5, 0.75] });
+
+        sections.forEach(s => observer.observe(s));
+      } else {
+
+        function onScroll() {
+          const scrollY = window.scrollY || window.pageYOffset;
+          let best = null;
+          sections.forEach(s => {
+            const rect = s.getBoundingClientRect();
+            const offset = Math.abs(rect.top - 100);
+            if (best === null || offset < best.offset) {
+              best = { el: s, offset };
+            }
+          });
+          if (best) {
+            links.forEach(l => l.classList.remove('active'));
+            const link = idToLink[best.el.id];
+            if (link) link.classList.add('active');
+          }
+        }
+        window.addEventListener('scroll', onScroll, { passive: true });
+
+        setTimeout(onScroll, 200);
+      }
+
+
+      links.forEach(a => {
+        a.addEventListener('click', (e) => {
+
+          const href = a.getAttribute('href');
         const target = document.querySelector(href);
         if (target) {
 
@@ -464,7 +577,7 @@
 </script>
 
 <script>
-(function () {
+  (function () {
   try {
     const btn = document.getElementById('btn-check-version');
     const status = document.getElementById('version-check-status');

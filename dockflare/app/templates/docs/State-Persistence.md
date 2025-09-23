@@ -4,14 +4,16 @@ DockFlare is a stateful application. It needs to keep track of the services it m
 
 ## How State is Stored
 
-DockFlare stores its state in two main files located in the `/app/data` directory inside the container:
+DockFlare stores its state in three key files located in the `/app/data` directory inside the container:
 
 1.  `dockflare_config.dat`: This is the most critical file. It contains all your core settings and sensitive information in an **encrypted** format. This includes:
     *   Your Cloudflare API Token and Account ID.
     *   Your DockFlare UI password hash.
     *   Core settings configured through the UI, such as the Tunnel Name and Zone IDs.
 
-2.  `state.json`: This file stores the dynamic state of your managed services in a plain JSON format. This includes:
+2.  `agent_keys.dat`: An encrypted store containing all agent API keys and their metadata (owner, status, timestamps). Keeping this file safe prevents stale keys from being reused.
+
+3.  `state.json`: This file stores the dynamic state of your managed services in a plain JSON format. This includes:
     *   The list of all ingress rules DockFlare is managing, whether they come from Docker labels or were created manually in the UI.
     *   Any UI overrides applied to access policies.
     *   All Access Groups you have created.
@@ -40,10 +42,17 @@ volumes:
   dockflare_data:
 ```
 
-With this configuration, your `dockflare_config.dat` and `state.json` files will be stored in a directory named `dockflare_data` on your host, safely preserving your setup across container updates.
+With this configuration, your `dockflare_config.dat`, `agent_keys.dat`, and `state.json` files will be stored in a directory named `dockflare_data` on your host, safely preserving your setup across container updates.
 
 ## Backup and Restore
 
-The `state.json` file can be backed up and restored. The DockFlare UI provides a "Backup & Restore" feature on the **Settings** page that allows you to download a copy of your `state.json` and upload it to restore your configuration.
+DockFlare now bundles all critical data into a single encrypted backup archive. Redis caches are omitted because they can be safely rebuilt on the private `dockflare-internal` network. The **Settings → Backup & Restore** panel lets you download a `.zip` that contains:
 
-**Note:** The backup and restore feature only includes the `state.json` file. It does **not** include the encrypted `dockflare_config.dat` file. To fully back up your DockFlare instance, you should back up the entire `/app/data` directory.
+* `dockflare_config.dat`
+* `dockflare.key`
+* `agent_keys.dat`
+* `state.json` (when present)
+* A manifest with checksums for integrity verification
+
+Restoring the archive recreates these files and reloads them into the running instance. Legacy `state.json` uploads are still accepted, but they only restore rule metadata—you will need to re-enter credentials manually afterwards.
+DockFlare automatically restarts the container after a full archive restore so that the encrypted configuration is loaded immediately.

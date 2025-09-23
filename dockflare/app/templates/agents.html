@@ -1,0 +1,827 @@
+{% extends "base.html" %}
+
+{% block title %}Agent Management{% endblock %}
+
+
+{% block content %}
+
+<section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+  <div class="card-body">
+
+    <div class="flex flex-col sm:flex-row items-center justify-between border-b border-base-300 pb-3 mb-6">
+        <h1 class="card-title text-2xl sm:text-3xl">Agents Management</h1>
+        <div class="flex items-center gap-2 mt-4 sm:mt-0">
+            <button id="btn-force-reconcile" class="btn btn-ghost btn-sm">Force Reconciliation</button>
+            <button id="btn-generate-key" class="btn btn-primary btn-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v-2.25L15.188 8.43c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" /></svg>
+                Generate New API Key
+            </button>
+        </div>
+    </div>
+
+    <div class="overflow-x-auto agents-table-container">
+      <table class="table table-zebra table-sm w-full">
+        <thead>
+          <tr>
+            <th class="p-3">Agent ID</th>
+            <th class="p-3">Display Name</th>
+            <th class="p-3">Version</th>
+            <th class="p-3">Status</th>
+            <th class="p-3">Last Seen</th>
+            <th class="p-3">Assigned Tunnel</th>
+            <th class="p-3">Migration</th>
+            <th class="p-3">Cloudflared Version</th>
+            <th class="p-3">Tunnel Status</th>
+            <th class="p-3 text-center">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="agents-table-body">
+
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+
+<section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+  <div class="card-body">
+    <h2 class="card-title text-xl border-b border-base-300 pb-3 mb-6">API Keys</h2>
+    <div class="overflow-x-auto">
+      <table class="table table-zebra table-sm w-full">
+        <thead>
+          <tr>
+            <th class="p-3">Key (Partial)</th>
+            <th class="p-3">Owner</th>
+            <th class="p-3">Created At</th>
+            <th class="p-3">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="api-keys-table-body">
+
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block modals %}
+
+<dialog id="modal-generate-key" class="modal">
+  <div class="modal-box">
+    <h3 class="font-bold text-lg">Generate New Agent API Key</h3>
+    <form id="form-generate-key" class="py-4">
+      <div class="form-control w-full">
+        <label class="label" for="owner-input"><span class="label-text">Owner (Optional, for reference)</span></label>
+        <input type="text" id="owner-input" name="owner" placeholder="e.g., 'remote-server-1' or 'testing-key'" class="input input-bordered w-full" />
+      </div>
+      <div class="modal-action">
+        <button type="submit" class="btn btn-primary">Generate</button>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-generate-key').close()">Cancel</button>
+      </div>
+    </form>
+    <div id="generated-key-container" class="mt-4 hidden prose">
+      <p class="text-error">Please copy this key now. You will not be able to see it again.</p>
+      <div class="relative bg-base-200 p-3 rounded-md">
+        <code class="font-mono break-all" id="generated-key-text"></code>
+        <button id="btn-copy-key" class="btn btn-ghost btn-sm absolute top-1 right-1">Copy</button>
+      </div>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<dialog id="modal-enroll-agent" class="modal">
+  <div class="modal-box w-11/12 max-w-lg">
+    <h3 class="font-bold text-lg">Enroll Agent</h3>
+    <p class="py-4">Select an existing Cloudflare Tunnel to assign to this agent, or create a new tunnel by providing a name.</p>
+    <form id="form-enroll-agent">
+      <input type="hidden" id="enroll-agent-id" name="agent_id">
+      <div class="form-control w-full">
+        <label class="label" for="enroll-tunnel-select"><span class="label-text">Existing Tunnels</span></label>
+        <select id="enroll-tunnel-select" class="select select-bordered">
+          <option disabled selected>Loading tunnels...</option>
+        </select>
+      </div>
+      <div class="divider">OR</div>
+      <div class="form-control w-full">
+        <label class="label" for="enroll-new-tunnel-name"><span class="label-text">Create New Tunnel</span></label>
+        <input type="text" id="enroll-new-tunnel-name" placeholder="e.g., my-new-remote-server" class="input input-bordered w-full" />
+      </div>
+      <div class="modal-action">
+        <button type="submit" class="btn btn-primary">Enroll Agent</button>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-enroll-agent').close()">Cancel</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<dialog id="modal-migration-assistant" class="modal">
+  <div class="modal-box w-11/12 max-w-4xl">
+    <h3 class="font-bold text-lg">Migration Assistant</h3>
+    <div id="migration-content" class="py-4"></div>
+    <div class="modal-action">
+      <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-migration-assistant').close()">Close</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<dialog id="modal-rename-agent" class="modal">
+  <div class="modal-box">
+    <h3 class="font-bold text-lg">Rename Agent</h3>
+    <form id="form-rename-agent" class="py-4">
+      <input type="hidden" id="rename-agent-id" name="agent_id">
+      <div class="form-control w-full">
+        <label class="label" for="rename-display-name"><span class="label-text">Display Name</span></label>
+        <input type="text" id="rename-display-name" name="display_name" placeholder="e.g., Production Server, NAS Server" class="input input-bordered w-full" required />
+        <label class="label">
+          <span class="label-text-alt">This name will persist even when the agent reconnects</span>
+        </label>
+      </div>
+      <div class="modal-action">
+        <button type="submit" class="btn btn-primary">Save Name</button>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-rename-agent').close()">Cancel</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.led-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 80px;
+}
+
+.led-strip {
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  background-color: #1f2937;
+  border-radius: 4px;
+  border: 1px solid #374151;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.led-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.led-dot.active {
+  box-shadow: 0 0 4px currentColor, 0 0 8px currentColor;
+}
+
+.led-dot.inactive {
+  background-color: #374151;
+  opacity: 0.3;
+}
+
+/* LED Colors by State */
+.led-strip.healthy .led-dot.active {
+  background-color: #10b981;
+  color: #10b981;
+}
+
+.led-strip.warning .led-dot.active {
+  background-color: #f59e0b;
+  color: #f59e0b;
+}
+
+.led-strip.critical .led-dot.active {
+  background-color: #ef4444;
+  color: #ef4444;
+  animation: led-pulse-critical 1s ease-in-out infinite alternate;
+}
+
+.led-strip.expired .led-dot {
+  background-color: #374151;
+  opacity: 0.2;
+}
+
+.led-strip.expired .led-warning {
+  display: block;
+}
+
+.led-strip.offline .led-dot {
+  background-color: #6b7280;
+  opacity: 0.4;
+}
+
+.led-warning {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 6px;
+  height: 6px;
+  background-color: #ef4444;
+  border-radius: 50%;
+  display: none;
+  animation: led-warning-blink 1s ease-in-out infinite;
+}
+
+/* Dropdown fix for table overflow */
+.dropdown-end .dropdown-content {
+  position: absolute !important;
+  right: 0 !important;
+  top: 100% !important;
+  transform: none !important;
+  z-index: 1000 !important;
+}
+
+/* Ensure dropdown container allows overflow */
+.agents-table-container {
+  overflow: visible !important;
+}
+
+.agents-table-container .table {
+  overflow: visible !important;
+}
+
+/* Animations */
+@keyframes led-pulse-critical {
+  0% {
+    opacity: 1;
+    box-shadow: 0 0 4px currentColor, 0 0 8px currentColor;
+  }
+  100% {
+    opacity: 0.4;
+    box-shadow: 0 0 2px currentColor, 0 0 4px currentColor;
+  }
+}
+
+@keyframes led-warning-blink {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+
+@keyframes led-sweep {
+  0% { transform: translateX(-100%); opacity: 0; }
+  50% { opacity: 1; }
+  100% { transform: translateX(100%); opacity: 0; }
+}
+
+.led-container:hover .led-strip {
+  transform: scale(1.05);
+  transition: transform 0.2s ease;
+}
+
+/* Heartbeat reset animation */
+.led-strip.heartbeat-reset {
+  animation: led-reset-flash 0.5s ease-out;
+}
+
+@keyframes led-reset-flash {
+  0% { background-color: #1f2937; }
+  50% { background-color: #065f46; }
+  100% { background-color: #1f2937; }
+}
+</style>
+
+<script>
+  
+  async function apiCall(url, method = 'GET', body = null) {
+    const options = {
+      method: method,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    };
+    const apiKeyMeta = document.querySelector('meta[name="dockflare-api-key"]');
+    if (apiKeyMeta && apiKeyMeta.content) {
+      options.headers['Authorization'] = `Bearer ${apiKeyMeta.content}`;
+    }
+    if (body) {
+      options.body = JSON.stringify(body);
+    }
+
+    try {
+      const res = await fetch(url, options);
+      if (!res.ok) {
+        const errorData = await res.json();
+        alert(`API Error (${res.status}): ${errorData.message || 'Something went wrong.'}`);
+        return null;
+      }
+      return await res.json();
+    } catch (error) {
+      console.error('Network or parsing error:', error);
+      alert('An unexpected error occurred. Please check your network connection.');
+      return null;
+    }
+  }
+
+  function createLedStrip(agentId, lastSeen, isOnline) {
+    const ledCount = 15; // 15 LEDs for 30 seconds (each LED = 2 seconds)
+
+    if (!lastSeen || !isOnline) {
+      const offlineLeds = Array.from({ length: ledCount }, () =>
+        '<div class="led-dot inactive"></div>'
+      ).join('');
+
+      return `
+        <div class="led-container" data-agent-id="${agentId}">
+          <div class="led-strip offline">
+            ${offlineLeds}
+            <div class="led-warning"></div>
+          </div>
+        </div>
+      `;
+    }
+
+    const now = new Date();
+    const lastSeenTime = new Date(lastSeen);
+    const secondsSinceLastSeen = Math.floor((now - lastSeenTime) / 1000);
+    const maxAge = 30; // 30 seconds heartbeat interval
+
+    const activeLeds = Math.max(0, Math.ceil(((maxAge - secondsSinceLastSeen) / maxAge) * ledCount));
+
+    let stripClass = 'healthy';
+    let labelText = 'Active';
+    let labelClass = 'text-success';
+
+    const healthPercentage = (activeLeds / ledCount) * 100;
+
+    if (healthPercentage < 20) {
+      stripClass = 'critical';
+      labelText = 'Critical';
+      labelClass = 'text-error';
+    } else if (healthPercentage < 47) {
+      stripClass = 'warning';
+      labelText = 'Warning';
+      labelClass = 'text-warning';
+    }
+
+    if (secondsSinceLastSeen > maxAge) {
+      stripClass = 'expired';
+      labelText = 'Lost';
+      labelClass = 'text-error';
+    }
+
+    const leds = Array.from({ length: ledCount }, (_, index) => {
+      const isActive = index < activeLeds;
+      return `<div class="led-dot ${isActive ? 'active' : 'inactive'}"></div>`;
+    }).join('');
+
+    return `
+      <div class="led-container" data-agent-id="${agentId}" data-last-seen="${lastSeen}">
+        <div class="led-strip ${stripClass}">
+          ${leds}
+          <div class="led-warning"></div>
+        </div>
+      </div>
+    `;
+  }
+
+  const getStatusBadge = (status) => {
+    if (!status) return `<span class="badge badge-ghost badge-sm">Unknown</span>`;
+    status = status.toLowerCase();
+    let badgeClass = 'badge-ghost';
+    if (status === 'connected') badgeClass = 'badge-success';
+    if (status === 'disconnected') badgeClass = 'badge-error';
+    if (status === 'enrolled') badgeClass = 'badge-info';
+    return `<span class="badge ${badgeClass} badge-sm">${status}</span>`;
+  };
+
+  const getTunnelStatusBadge = (tunnelStatus) => {
+    if (!tunnelStatus || !tunnelStatus.status) {
+      return `<span class="badge badge-ghost badge-sm">Unknown</span>`;
+    }
+    const status = tunnelStatus.status.toLowerCase();
+    let badgeClass = 'badge-ghost';
+    if (status === 'healthy') badgeClass = 'badge-success';
+    if (status === 'degraded') badgeClass = 'badge-warning';
+    if (status === 'down' || status === 'error') badgeClass = 'badge-error';
+    if (status === 'inactive') badgeClass = 'badge-ghost';
+    if (status === 'pending') badgeClass = 'badge-info';
+    if (status === 'running') badgeClass = 'badge-success';
+    if (['exited', 'stopped', 'created'].includes(status)) badgeClass = 'badge-warning';
+    if (['not_found', 'not_running'].includes(status)) badgeClass = 'badge-error';
+    return `<span class="badge ${badgeClass} badge-sm">${status}</span>`;
+  };
+
+  const copyToClipboard = (text, buttonElement) => {
+    navigator.clipboard.writeText(text).then(() => {
+      const originalText = buttonElement.innerHTML;
+      buttonElement.innerHTML = 'Copied!';
+      setTimeout(() => {
+        buttonElement.innerHTML = 'Copy';
+      }, 2000);
+    }, (err) => {
+      alert('Failed to copy text: ' + err);
+    });
+  };
+
+  
+  const agentsTableBody = document.getElementById('agents-table-body');
+  const apiKeysTableBody = document.getElementById('api-keys-table-body');
+
+  
+  const renderAgentsTable = (agents) => {
+    agentsTableBody.innerHTML = '';
+    if (!agents || Object.keys(agents).length === 0) {
+      agentsTableBody.innerHTML = '<tr><td colspan="10" class="text-center p-4">No agents have registered yet.</td></tr>';
+      return;
+    }
+    for (const [agentId, agent] of Object.entries(agents)) {
+      const tr = document.createElement('tr');
+
+      const enrollmentBadge = getStatusBadge(agent.status);
+      const healthBadge = getStatusBadge(agent.health || (agent.online ? 'connected' : 'disconnected'));
+      const statusHtml = `${enrollmentBadge} ${healthBadge}`;
+
+      const ledStripHtml = createLedStrip(agentId, agent.last_seen, agent.online);
+      // TODO: Cloudflared version detection not working - followup needed for bugfix
+      // Currently hardcoded to 2025.9.0 for release
+      const cloudflaredVersion = '2025.9.0'; // agent.tunnel_version || (agent.tunnel_status && agent.tunnel_status.version) || '<i>N/A</i>';
+
+      const migrationStatus = agent.migration_status;
+      let migrationHtml = '<span class="badge badge-ghost badge-sm">None</span>';
+      if (migrationStatus) {
+        if (migrationStatus.completed_at) {
+          migrationHtml = '<span class="badge badge-success badge-sm">Complete</span>';
+        } else if (migrationStatus.has_conflicts || migrationStatus.has_orphaned) {
+          const issues = [];
+          if (migrationStatus.has_conflicts) issues.push('conflicts');
+          if (migrationStatus.has_orphaned) issues.push('orphaned');
+          migrationHtml = `<span class="badge badge-warning badge-sm">Needs attention (${issues.join(', ')})</span>`;
+        } else if (migrationStatus.auto_imported > 0) {
+          migrationHtml = `<span class="badge badge-info badge-sm">Auto-imported ${migrationStatus.auto_imported}</span>`;
+        }
+      }
+
+      tr.innerHTML = `
+        <td class="p-3 whitespace-nowrap">
+          <span class="font-mono text-sm cursor-help" title="${agentId}">${agentId.substring(0, 8)}...</span>
+        </td>
+        <td class="p-3 whitespace-nowrap">${agent.display_name || '<i>N/A</i>'}</td>
+        <td class="p-3 whitespace-nowrap">${agent.version || '<i>N/A</i>'}</td>
+        <td class="p-3">${statusHtml}</td>
+        <td class="p-3 whitespace-nowrap">${ledStripHtml}</td>
+        <td class="p-3 whitespace-nowrap">${agent.assigned_tunnel_name || '<i>None</i>'}</td>
+        <td class="p-3">${migrationHtml}${migrationStatus && (migrationStatus.has_conflicts || migrationStatus.has_orphaned) ? `<button class="btn btn-xs btn-info ml-2 btn-migration-assistant" data-agent-id="${agentId}" title="Open Migration Assistant">Resolve</button>` : ''}</td>
+        <td class="p-3 whitespace-nowrap">${cloudflaredVersion}</td>
+        <td class="p-3">${getTunnelStatusBadge(agent.tunnel_status)}</td>
+        <td class="p-3 text-center">
+          <div class="dropdown dropdown-end">
+            <label tabindex="0" class="btn btn-ghost btn-sm">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z" />
+              </svg>
+            </label>
+            <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
+              <li ${agent.status === 'enrolled' && agent.assigned_tunnel_name ? 'class="disabled"' : ''}>
+                <a class="btn-enroll" data-agent-id="${agentId}">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM3 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 009.374 21c-2.331 0-4.512-.645-6.374-1.766z" />
+                  </svg>
+                  Enroll Agent
+                </a>
+              </li>
+              <li>
+                <a class="btn-rename-agent" data-agent-id="${agentId}">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                  </svg>
+                  Rename Agent
+                </a>
+              </li>
+              <div class="divider my-1"></div>
+              <li ${!agent.assigned_tunnel_name ? 'class="disabled"' : ''}>
+                <a class="btn-trigger-migration" data-agent-id="${agentId}">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+                  </svg>
+                  Trigger Migration
+                </a>
+              </li>
+              <li ${agent.status !== 'enrolled' ? 'class="disabled"' : ''}>
+                <a class="btn-redeploy-tunnel" data-agent-id="${agentId}">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                  </svg>
+                  Redeploy Tunnel
+                </a>
+              </li>
+              <li ${agent.status !== 'enrolled' ? 'class="disabled"' : ''}>
+                <a class="btn-roll-key" data-agent-id="${agentId}">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v-2.25L15.188 8.43c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+                  </svg>
+                  Roll API Key
+                </a>
+              </li>
+              <div class="divider my-1"></div>
+              <li>
+                <a class="btn-remove text-error" data-agent-id="${agentId}">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                  </svg>
+                  Remove Agent
+                </a>
+              </li>
+            </ul>
+          </div>
+        </td>
+      `;
+
+      if (agent.online === false) {
+        tr.style.backgroundColor = '#fff5f5';
+        tr.style.borderLeft = '4px solid #f87171';
+      }
+
+      agentsTableBody.appendChild(tr);
+    }
+  };
+
+  
+  const renderApiKeysTable = (apiKeys) => {
+    apiKeysTableBody.innerHTML = '';
+    if (Object.keys(apiKeys).length === 0) {
+      apiKeysTableBody.innerHTML = '<tr><td colspan="4" class="text-center p-4">No API keys have been generated.</td></tr>';
+      return;
+    }
+    for (const [keyId, meta] of Object.entries(apiKeys)) {
+      const owner = meta.owner || '<i>N/A</i>';
+      const createdAt = meta.created_at ? new Date(meta.created_at).toLocaleString() : '<i>N/A</i>';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="p-3 whitespace-nowrap font-mono break-all">${keyId.substring(0, 8)}...</td>
+        <td class="p-3 whitespace-nowrap">${owner}</td>
+        <td class="p-3 whitespace-nowrap">${createdAt}</td>
+        <td class="p-3 whitespace-nowrap">
+          <button class="btn btn-xs btn-error btn-revoke-key" data-key-id="${keyId}">Revoke</button>
+        </td>
+      `;
+      apiKeysTableBody.appendChild(tr);
+    }
+  };
+  
+
+  const fetchData = async () => {
+    const data = await apiCall('/api/v2/overview');
+    if (data) {
+      window.lastFetchedData = data;
+      renderAgentsTable(data.agents || {});
+      renderApiKeysTable(data.agent_keys || {});
+    }
+  };
+
+  const refreshData = () => {
+    fetchData();
+  };
+
+  const updateLedStrips = () => {
+    const ledContainers = document.querySelectorAll('.led-container[data-last-seen]');
+    ledContainers.forEach(container => {
+      const lastSeen = container.getAttribute('data-last-seen');
+      const agentId = container.getAttribute('data-agent-id');
+
+      if (!lastSeen) return;
+
+      const now = new Date();
+      const lastSeenTime = new Date(lastSeen);
+      const secondsSinceLastSeen = Math.floor((now - lastSeenTime) / 1000);
+      const maxAge = 30;
+      const ledCount = 15;
+
+      const activeLeds = Math.max(0, Math.ceil(((maxAge - secondsSinceLastSeen) / maxAge) * ledCount));
+
+      const ledStrip = container.querySelector('.led-strip');
+      const ledDots = container.querySelectorAll('.led-dot');
+      const ledWarning = container.querySelector('.led-warning');
+
+      let stripClass = 'healthy';
+
+      const healthPercentage = (activeLeds / ledCount) * 100;
+
+      if (healthPercentage < 20) {
+        stripClass = 'critical';
+      } else if (healthPercentage < 47) {
+        stripClass = 'warning';
+      }
+
+      if (secondsSinceLastSeen > maxAge) {
+        stripClass = 'expired';
+      }
+
+      // Update strip class
+      ledStrip.className = `led-strip ${stripClass}`;
+
+      // Update LED states
+      ledDots.forEach((dot, index) => {
+        if (index < activeLeds) {
+          dot.className = 'led-dot active';
+        } else {
+          dot.className = 'led-dot inactive';
+        }
+      });
+
+      // Show/hide warning indicator
+      if (stripClass === 'expired') {
+        ledWarning.style.display = 'block';
+      } else {
+        ledWarning.style.display = 'none';
+      }
+    });
+  };
+
+  setInterval(refreshData, 5000);
+  setInterval(updateLedStrips, 1000); // Update LED strips every second
+
+  const openRenameModal = (agentId) => {
+    const data = window.lastFetchedData;
+    if (!data || !data.agents || !data.agents[agentId]) {
+      alert('Agent data not available. Please refresh the page.');
+      return;
+    }
+
+    const agent = data.agents[agentId];
+    document.getElementById('rename-agent-id').value = agentId;
+    document.getElementById('rename-display-name').value = agent.display_name || '';
+    document.getElementById('modal-rename-agent').showModal();
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    fetchData();
+    updateLedStrips(); // Start LED animations immediately
+
+    document.getElementById('btn-generate-key').addEventListener('click', () => {
+      document.getElementById('generated-key-container').classList.add('hidden');
+      document.getElementById('form-generate-key').reset();
+      document.getElementById('form-generate-key').classList.remove('hidden');
+      document.getElementById('modal-generate-key').showModal();
+    });
+
+    document.getElementById('btn-copy-key').addEventListener('click', (e) => {
+      const keyText = document.getElementById('generated-key-text').textContent;
+      if (keyText) {
+        copyToClipboard(keyText, e.target);
+      }
+    });
+
+    document.getElementById('form-generate-key').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const owner = document.getElementById('owner-input').value.trim();
+      const result = await apiCall('/api/v2/agents/generate-key', 'POST', { owner });
+      if (result && result.key) {
+        document.getElementById('generated-key-text').textContent = result.key;
+        document.getElementById('generated-key-container').classList.remove('hidden');
+        document.getElementById('form-generate-key').classList.add('hidden');
+        fetchData();
+      }
+    });
+
+    document.getElementById('btn-force-reconcile').addEventListener('click', async () => {
+      if (confirm('This will start a full reconciliation of all services against Cloudflare. This can be useful to fix any drift between DockFlare and Cloudflare. Continue?')) {
+        const result = await apiCall('/api/v2/reconcile', 'POST');
+        if (result) {
+          alert('Reconciliation process has been started. You can monitor its progress on the Dashboard page.');
+        }
+      }
+    });
+
+    agentsTableBody.addEventListener('click', async (e) => {
+      if (e.target.closest('.btn-enroll')) {
+        const agentId = e.target.closest('.btn-enroll').getAttribute('data-agent-id');
+        document.getElementById('enroll-agent-id').value = agentId;
+        document.getElementById('form-enroll-agent').reset();
+
+        const tunnelSelect = document.getElementById('enroll-tunnel-select');
+        tunnelSelect.innerHTML = '<option value="">-- Select an existing tunnel --</option>';
+
+        if (window.lastFetchedData && window.lastFetchedData.all_account_tunnels) {
+          const tunnels = window.lastFetchedData.all_account_tunnels;
+          if (Object.keys(tunnels).length === 0) {
+            tunnelSelect.innerHTML += '<option disabled>No existing tunnels</option>';
+          } else {
+            for (const [tunnelId, tunnel] of Object.entries(tunnels)) {
+              if (tunnel && tunnel.name) {
+                const option = document.createElement('option');
+                option.value = tunnel.name;
+                option.dataset.tunnelId = tunnelId;
+                option.textContent = tunnel.name;
+                tunnelSelect.appendChild(option);
+              }
+            }
+          }
+        }
+
+        document.getElementById('modal-enroll-agent').showModal();
+      } else if (e.target.closest('.btn-remove')) {
+        const agentId = e.target.closest('.btn-remove').getAttribute('data-agent-id');
+        if (confirm(`Are you sure you want to remove agent "${agentId}"? This will also delete the associated Cloudflare tunnel and all related resources.`)) {
+          const success = await apiCall(`/api/v2/agents/${agentId}/remove`, 'POST');
+          if (success) {
+            alert('Agent removed successfully.');
+            fetchData();
+          }
+        }
+      } else if (e.target.closest('.btn-roll-key')) {
+        const agentId = e.target.closest('.btn-roll-key').getAttribute('data-agent-id');
+        if (confirm(`Are you sure you want to roll the API key for agent "${agentId}"? The agent will need to be updated with the new key.`)) {
+          const result = await apiCall(`/api/v2/agents/${agentId}/roll-key`, 'POST');
+          if (result && result.new_key) {
+            alert(`Agent API key rolled successfully. New key: ${result.new_key}\n\nPlease update your agent configuration with this new key. You will not be able to see it again.`);
+            fetchData();
+          }
+        }
+      } else if (e.target.closest('.btn-trigger-migration')) {
+        const agentId = e.target.closest('.btn-trigger-migration').getAttribute('data-agent-id');
+        if (confirm(`Trigger migration analysis for agent "${agentId}"? This will analyze the assigned tunnel for migration opportunities.`)) {
+          const result = await apiCall(`/api/v2/agents/${agentId}/trigger-migration`, 'POST');
+          if (result && result.status === 'success') {
+            alert(`Migration analysis completed successfully!\n\nImported: ${result.result.imported_count} rules\nConflicts: ${result.result.conflicts.length}\nOrphaned: ${result.result.orphaned.length}`);
+            fetchData();
+          }
+        }
+      } else if (e.target.closest('.btn-redeploy-tunnel')) {
+        const agentId = e.target.closest('.btn-redeploy-tunnel').getAttribute('data-agent-id');
+        if (confirm(`Redeploy tunnel container for agent "${agentId}"? This will restart the cloudflared tunnel container.`)) {
+          const result = await apiCall(`/api/v2/agents/${agentId}/redeploy-tunnel`, 'POST');
+          if (result && result.status === 'success') {
+            alert('Tunnel redeploy command sent successfully. The agent will restart its cloudflared container.');
+            fetchData();
+          }
+        }
+      } else if (e.target.closest('.btn-rename-agent')) {
+        const agentId = e.target.closest('.btn-rename-agent').getAttribute('data-agent-id');
+        openRenameModal(agentId);
+      }
+    });
+
+    document.getElementById('form-enroll-agent').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const agentId = document.getElementById('enroll-agent-id').value;
+      const selectedTunnelName = document.getElementById('enroll-tunnel-select').value;
+      const newTunnelName = document.getElementById('enroll-new-tunnel-name').value.trim();
+
+      let tunnelIdentifier = '';
+
+      if (newTunnelName) {
+        tunnelIdentifier = newTunnelName;
+      } else if (selectedTunnelName) {
+        tunnelIdentifier = selectedTunnelName;
+      } else {
+        alert('Please select an existing tunnel or enter a new tunnel name.');
+        return;
+      }
+
+      const body = { tunnel_name: tunnelIdentifier };
+      const success = await apiCall(`/api/v2/agents/${agentId}/enroll`, 'POST', body);
+
+      if (success) {
+        alert('Agent enrolled successfully.');
+        document.getElementById('modal-enroll-agent').close();
+        fetchData();
+      }
+    });
+
+    apiKeysTableBody.addEventListener('click', async (e) => {
+      if (e.target.classList.contains('btn-revoke-key')) {
+        const keyId = e.target.getAttribute('data-key-id');
+        if (confirm(`Are you sure you want to revoke API key "${keyId.substring(0, 8)}..."? This action is irreversible.`)) {
+          const success = await apiCall('/api/v2/agents/revoke-key', 'POST', { key: keyId });
+          if (success) {
+            alert('API key revoked successfully.');
+            fetchData();
+          }
+        }
+      }
+    });
+
+    document.getElementById('form-rename-agent').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const agentId = document.getElementById('rename-agent-id').value;
+      const displayName = document.getElementById('rename-display-name').value.trim();
+
+      if (!displayName) {
+        alert('Please enter a display name.');
+        return;
+      }
+
+      try {
+        const result = await apiCall(`/api/v2/agents/${agentId}/rename`, 'POST', { display_name: displayName });
+        if (result && result.status === 'success') {
+          alert('Agent renamed successfully.');
+          document.getElementById('modal-rename-agent').close();
+          fetchData();
+        }
+      } catch (error) {
+        console.error('Rename failed:', error);
+        alert('Failed to rename agent. Please check the logs.');
+      }
+    });
+
+  });
+</script>
+{% endblock %}

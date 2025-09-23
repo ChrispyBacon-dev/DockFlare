@@ -30,8 +30,9 @@
         {% endfor %}
     </div>
 
-    <div class="card-actions mt-6">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-6">
         {{ form.submit(class="btn btn-primary w-full") }}
+        <a href="{{ url_for('setup.step1_admin_user') }}" class="btn btn-ghost w-full">Back to Step 1</a>
     </div>
 </form>
 {% endblock %}

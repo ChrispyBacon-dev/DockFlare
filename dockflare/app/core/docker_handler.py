@@ -23,30 +23,39 @@ import re
 from docker.errors import NotFound, APIError
 from flask import current_app
 
-from app import config, docker_client, cloudflared_agent_state, tunnel_state 
+from app import config, docker_client, cloudflared_agent_state, tunnel_state, publish_state_event
 
-from app.core.state_manager import managed_rules, access_groups, state_lock, save_state
+from app.core.state_manager import managed_rules, state_lock, save_state
 from app.core.tunnel_manager import update_cloudflare_config
-from app.core.cloudflare_api import create_cloudflare_dns_record, get_zone_id_from_name
+from app.core.cloudflare_api import create_cloudflare_dns_record, get_zone_id_from_name, list_account_zones
 from app.core.access_manager import handle_access_policy_from_labels
 from app.core.utils import get_rule_key, get_label
 
-def is_valid_hostname(hostname): 
-    if not hostname: return False
+def is_valid_hostname(hostname):
+    if not hostname:
+        return False
     if hostname.startswith('*.'):
         domain_part = hostname[2:]
-        if not domain_part or len(domain_part) > 253: return False
+        if not domain_part or len(domain_part) > 253:
+            return False
         for label in domain_part.split('.'):
-            if not label or len(label) > 63: return False
-            if not all(c.isalnum() or c == '-' for c in label): return False
-            if label.startswith('-') or label.endswith('-'): return False
+            if not label or len(label) > 63:
+                return False
+            if not all(c.isalnum() or c == '-' for c in label):
+                return False
+            if label.startswith('-') or label.endswith('-'):
+                return False
         return True
-    if len(hostname) > 253: return False
+    if len(hostname) > 253:
+        return False
     labels = hostname.split('.')
     for label in labels:
-        if not label or len(label) > 63: return False
-        if not all(c.isalnum() or c == '-' for c in label): return False
-        if label.startswith('-') or label.endswith('-'): return False
+        if not label or len(label) > 63:
+            return False
+        if not all(c.isalnum() or c == '-' for c in label):
+            return False
+        if label.startswith('-') or label.endswith('-'):
+            return False
     return True
 
 def is_valid_service(service_str):
@@ -57,8 +66,8 @@ def is_valid_service(service_str):
     
     if service_str == "bastion":
         return True
-
-    host_ip_pattern = r"([a-zA-Z0-9_](?:[a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9_])?(?:\.[a-zA-Z0-9_](?:[a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9_])?)*\.?|[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|\[[0-9a-fA-F:]+\])"
+    
+    host_ip_pattern = r"([a-zA-Z0-9_](?:[a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9_])?(?:\.[a-zA-Z0-9_](?:[a-zA-Z0-9\-_]{0,61}[a-zA-Z0-9_])?)*|[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|\[[0-9a-fA-F:]+\])"
     port_pattern = r"[0-9]{1,5}"
 
     http_https_pattern = rf"^(?:https?)://{host_ip_pattern}(?::{port_pattern})?$"
@@ -92,7 +101,7 @@ def process_container_start(container_obj):
         
         try:
             container_id_val = container_obj.id
-            container_obj.reload()
+            container_obj.reload() # Reload to get fresh labels
             container_name_val = container_obj.name
             logging.info(f"DOCKER_HANDLER_PROCESS_START: Processing container {container_name_val} ({container_id_val[:12]})")
             labels = container_obj.labels
@@ -148,12 +157,14 @@ def process_container_start(container_obj):
             index = 0
             while True:
                 hostname_indexed = get_label(labels, f"{index}.hostname")
-                if not hostname_indexed: break
+                if not hostname_indexed:
+                    break
 
                 service_indexed = get_label(labels, f"{index}.service", service_label)
                 if not service_indexed:
                     logging.warning(f"DOCKER_HANDLER: Indexed hostname {hostname_indexed} for {container_name_val} missing service, skipping index {index}.")
-                    index += 1; continue
+                    index += 1
+                    continue
 
                 path_indexed = get_label(labels, f"{index}.path", default_path_label)
                 zone_name_indexed = get_label(labels, f"{index}.zonename", zone_name_label)
@@ -206,6 +217,16 @@ def process_container_start(container_obj):
             
             state_changed_locally_for_this_container = False
             needs_tunnel_config_update_for_this_container = False
+            master_tunnel_id = tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
+            master_tunnel_name = tunnel_state.get("name")
+
+            if not master_tunnel_name or master_tunnel_name == "dockflare-tunnel":
+                from app.core.cloudflare_api import get_tunnel_name_by_id
+                if master_tunnel_id:
+                    api_tunnel_name = get_tunnel_name_by_id(master_tunnel_id)
+                    if api_tunnel_name:
+                        master_tunnel_name = api_tunnel_name
+                        tunnel_state["name"] = api_tunnel_name
 
             for config_item in hostnames_to_process:
                 hostname = config_item["hostname"]
@@ -219,16 +240,25 @@ def process_container_start(container_obj):
                 http_host_header_from_item = config_item.get("http_host_header")
 
                 target_zone_id = None
+                detected_zone_name = zone_name_from_item
                 if zone_name_from_item:
                     target_zone_id = get_zone_id_from_name(zone_name_from_item)
                     if not target_zone_id:
-                        logging.error(f"DOCKER_HANDLER: Failed Zone ID lookup for '{zone_name_from_item}' (rule {rule_key}). Skipping.")
-                        continue
-                elif current_app.config.get('CF_ZONE_ID'):
+                        logging.error(f"DOCKER_HANDLER: Failed Zone ID lookup for '{zone_name_from_item}' (rule {rule_key}). Attempting auto-detect.")
+                        target_zone_id = None
+                if not target_zone_id:
+                    detected_zone_id, detected_zone_name_candidate = _detect_zone_for_hostname(hostname)
+                    if detected_zone_id:
+                        target_zone_id = detected_zone_id
+                        detected_zone_name = detected_zone_name_candidate or detected_zone_name
+                if not target_zone_id and current_app.config.get('CF_ZONE_ID'):
                     target_zone_id = current_app.config.get('CF_ZONE_ID')
-                else:
-                    logging.error(f"DOCKER_HANDLER: No Zone ID for rule {rule_key}. Skipping.")
+                    if not detected_zone_name:
+                        detected_zone_name = None
+                if not target_zone_id:
+                    logging.error(f"DOCKER_HANDLER: No Zone ID resolved for rule {rule_key}. Skipping DNS and rule update.")
                     continue
+                config_item["zone_name"] = detected_zone_name
                 
                 logging.debug(f"DOCKER_HANDLER_LOOP_ITEM: For rule_key: {rule_key}. Before lock.")
                 with state_lock:
@@ -238,21 +268,48 @@ def process_container_start(container_obj):
                         logging.info(f"DOCKER_HANDLER: Rule {rule_key} is manual, skipping for {container_name_val}.")
                         continue
 
+                    if existing_rule and existing_rule.get("rule_ui_override", False):
+                        logging.info(f"DOCKER_HANDLER: Rule {rule_key} is UI-overridden, skipping Docker updates for {container_name_val}.")
+                        continue
+
                     original_existing_rule_for_comparison = copy.deepcopy(existing_rule) if existing_rule else None
                     
                     if existing_rule:
                         logging.debug(f"DOCKER_HANDLER_UPD_RULE_PRE: Updating rule for {rule_key}. Current: {existing_rule}")
 
                         rule_data_changed = False
-                        if existing_rule.get("service") != service: existing_rule["service"] = service; rule_data_changed = True
-                        if existing_rule.get("path") != path_from_item: existing_rule["path"] = path_from_item; rule_data_changed = True
-                        if existing_rule.get("container_id") != container_id_val: existing_rule["container_id"] = container_id_val
-                        if existing_rule.get("zone_id") != target_zone_id: existing_rule["zone_id"] = target_zone_id; rule_data_changed = True
-                        if existing_rule.get("no_tls_verify") != no_tls_verify_from_item: existing_rule["no_tls_verify"] = no_tls_verify_from_item; rule_data_changed = True
-                        if existing_rule.get("origin_server_name") != origin_server_name_from_item: existing_rule["origin_server_name"] = origin_server_name_from_item; rule_data_changed = True
-                        if existing_rule.get("http_host_header") != http_host_header_from_item: existing_rule["http_host_header"] = http_host_header_from_item; rule_data_changed = True
+                        if existing_rule.get("service") != service:
+                            existing_rule["service"] = service
+                            rule_data_changed = True
+                        if existing_rule.get("path") != path_from_item:
+                            existing_rule["path"] = path_from_item
+                            rule_data_changed = True
+                        if existing_rule.get("container_id") != container_id_val:
+                            existing_rule["container_id"] = container_id_val
+                            rule_data_changed = True
+                        if existing_rule.get("zone_id") != target_zone_id:
+                            existing_rule["zone_id"] = target_zone_id
+                            rule_data_changed = True
+                        if existing_rule.get("zone_name") != config_item.get("zone_name"):
+                            existing_rule["zone_name"] = config_item.get("zone_name")
+                            rule_data_changed = True
+                        if existing_rule.get("no_tls_verify") != no_tls_verify_from_item:
+                            existing_rule["no_tls_verify"] = no_tls_verify_from_item
+                            rule_data_changed = True
+                        if existing_rule.get("origin_server_name") != origin_server_name_from_item:
+                            existing_rule["origin_server_name"] = origin_server_name_from_item
+                            rule_data_changed = True
+                        if existing_rule.get("http_host_header") != http_host_header_from_item:
+                            existing_rule["http_host_header"] = http_host_header_from_item
+                            rule_data_changed = True
 
                         existing_rule["source"] = "docker"
+                        if master_tunnel_id and existing_rule.get("tunnel_id") != master_tunnel_id:
+                            existing_rule["tunnel_id"] = master_tunnel_id
+                            rule_data_changed = True
+                        if master_tunnel_name and existing_rule.get("tunnel_name") != master_tunnel_name:
+                            existing_rule["tunnel_name"] = master_tunnel_name
+                            rule_data_changed = True
 
                         if existing_rule.get("status") == "pending_deletion":
                             existing_rule["status"] = "active"
@@ -276,6 +333,7 @@ def process_container_start(container_obj):
                             "status": "active",
                             "delete_at": None,
                             "zone_id": target_zone_id,
+                            "zone_name": config_item.get("zone_name"),
                             "no_tls_verify": no_tls_verify_from_item,
                             "origin_server_name": origin_server_name_from_item,
                             "http_host_header": http_host_header_from_item,
@@ -283,8 +341,11 @@ def process_container_start(container_obj):
                             "access_policy_type": None,
                             "access_app_config_hash": None,
                             "access_policy_ui_override": False,
+                            "rule_ui_override": False,
                             "source": "docker",
-                            "access_group_id": None
+                            "access_group_id": None,
+                            "tunnel_id": master_tunnel_id,
+                            "tunnel_name": master_tunnel_name
                         }
                         existing_rule = managed_rules[rule_key]
                         state_changed_locally_for_this_container = True
@@ -304,6 +365,7 @@ def process_container_start(container_obj):
             if state_changed_locally_for_this_container:
                 logging.debug(f"DOCKER_HANDLER_PRE_SAVE: For container {container_name_val}.")
                 save_state()
+                publish_state_event('snapshot_refresh')
             else:
                 logging.info(f"DOCKER_HANDLER: No local state changes for {container_name_val}. Skipping save_state().")
 
@@ -316,19 +378,33 @@ def process_container_start(container_obj):
                         hostnames_for_dns_check = set(item["hostname"] for item in hostnames_to_process)
                         for hostname_dns in hostnames_for_dns_check:
                             config_item_dns = next((item for item in hostnames_to_process if item["hostname"] == hostname_dns), None)
-                            if not config_item_dns: continue
+                            if not config_item_dns:
+                                continue
 
-                            zone_name_dns_item = config_item_dns["zone_name"]
-                            target_zone_id_for_dns_item = get_zone_id_from_name(zone_name_dns_item) if zone_name_dns_item else current_app.config.get('CF_ZONE_ID')
+                            zone_name_dns_item = config_item_dns.get("zone_name")
+                            target_zone_id_for_dns_item = None
+                            if zone_name_dns_item:
+                                target_zone_id_for_dns_item = get_zone_id_from_name(zone_name_dns_item)
+                            if not target_zone_id_for_dns_item and config_item_dns.get('hostname'):
+                                detected_zone_id_dns, detected_zone_name_dns = _detect_zone_for_hostname(config_item_dns.get('hostname'))
+                                if detected_zone_id_dns:
+                                    target_zone_id_for_dns_item = detected_zone_id_dns
+                                    if detected_zone_name_dns and not zone_name_dns_item:
+                                        config_item_dns["zone_name"] = detected_zone_name_dns
+                            if not target_zone_id_for_dns_item:
+                                target_zone_id_for_dns_item = existing_rule.get("zone_id") if existing_rule else None
+                            if not target_zone_id_for_dns_item and current_app.config.get('CF_ZONE_ID'):
+                                target_zone_id_for_dns_item = current_app.config.get('CF_ZONE_ID')
                             if target_zone_id_for_dns_item:
                                 dns_record_id_status = create_cloudflare_dns_record(target_zone_id_for_dns_item, hostname_dns, effective_tunnel_id)
                                 if dns_record_id_status and dns_record_id_status not in ["semaphore_timeout", "existing_record_unconfirmed"]:
                                     logging.info(f"DOCKER_HANDLER: DNS for {hostname_dns} in zone {target_zone_id_for_dns_item} OK (ID/Status: {dns_record_id_status}).")
                                 elif not dns_record_id_status:
                                     logging.error(f"DOCKER_HANDLER: CRITICAL - Failed DNS for {hostname_dns} in zone {target_zone_id_for_dns_item}!")
-                                    if cloudflared_agent_state: cloudflared_agent_state["last_action_status"] = f"Error: Failed DNS for {hostname_dns}."
+                                    if cloudflared_agent_state:
+                                        cloudflared_agent_state["last_action_status"] = f"Error: Failed DNS for {hostname_dns}."
                             else:
-                                logging.error(f"DOCKER_HANDLER: Missing Zone ID for DNS for {hostname_dns} - cannot manage record.")
+                                logging.error(f"DOCKER_HANDLER: No Zone ID for DNS for {hostname_dns} - cannot manage record.")
                     else:
                         logging.error(f"DOCKER_HANDLER: Missing effective Tunnel ID - cannot manage DNS records for {container_name_val}.")
                 else:
@@ -347,7 +423,8 @@ def schedule_container_stop(container_id_val):
     from app import app
     with app.app_context():
         from datetime import datetime, timedelta, timezone
-        if not container_id_val: return
+        if not container_id_val:
+            return
         logging.info(f"Processing stop event for container {container_id_val[:12]}.")
         
         state_changed_after_stop_processing = False
@@ -376,6 +453,7 @@ def schedule_container_stop(container_id_val):
 
             if state_changed_after_stop_processing:
                 save_state()
+                publish_state_event('snapshot_refresh')
 
 def docker_event_listener(stop_event_param): 
     if not docker_client:
@@ -417,25 +495,27 @@ def docker_event_listener(stop_event_param):
                                 container_instance = docker_client.containers.get(cont_id)
                                 container_instance.reload() # Reload to get fresh labels
                                 
-                                if get_label(container_instance.labels, "enable"): 
+                                if get_label(container_instance.labels, "enable"):
                                     logging.debug(f"Container {cont_id[:12]} details retrieved on attempt {attempt+1}.")
-                                    break 
+                                    break
                                 else:
                                     logging.debug(f"Container {cont_id[:12]} found but key 'enable' label missing, retrying ({attempt+1}/3)...")
                             except NotFound:
                                 logging.debug(f"Container {cont_id[:12]} not found on attempt {attempt+1}, retrying...")
                             except APIError as e_get_cont:
                                 logging.error(f"Docker API error getting container {cont_id[:12]} on attempt {attempt+1}: {e_get_cont}")
-                                break 
+                                break
                             except requests.exceptions.ConnectionError as e_conn_cont:
                                 logging.error(f"Docker connection error getting container {cont_id[:12]}: {e_conn_cont}")
                                 raise 
                             except Exception as e_unexp_cont:
                                 logging.error(f"Unexpected error getting container {cont_id[:12]} details: {e_unexp_cont}", exc_info=True)
-                                break 
+                                break
                             
-                            if attempt < 2: time.sleep(0.2 * (attempt + 1)) 
-                            else: logging.warning(f"Failed to get container {cont_id[:12]} details or key 'enable' label after multiple attempts.")
+                            if attempt < 2:
+                                time.sleep(0.2 * (attempt + 1))
+                            else:
+                                logging.warning(f"Failed to get container {cont_id[:12]} details or key 'enable' label after multiple attempts.")
                         
                         if container_instance:
                             try:
@@ -443,7 +523,7 @@ def docker_event_listener(stop_event_param):
                             except Exception as e_proc_start: 
                                 logging.error(f"Error processing start event for {cont_id[:12]}: {e_proc_start}", exc_info=True)
                         
-                    elif action in ["stop", "die", "destroy", "kill"]: 
+                    elif action in ["stop", "die", "destroy", "kill"]:
                         try:
                             schedule_container_stop(cont_id)
                         except Exception as e_proc_stop: 
@@ -452,15 +532,18 @@ def docker_event_listener(stop_event_param):
         except requests.exceptions.ConnectionError as e_conn_stream: 
             error_count += 1
             logging.error(f"Docker listener connection error: {e_conn_stream}. Reconnecting ({error_count}/{max_errors})...")
-            if not stop_event_param.is_set(): stop_event_param.wait(min(30, 2 * error_count)) 
+            if not stop_event_param.is_set():
+                stop_event_param.wait(min(30, 2 * error_count))
         except APIError as e_api_stream:
             error_count += 1
             logging.error(f"Docker listener API error: {e_api_stream}. Reconnecting ({error_count}/{max_errors})...")
-            if not stop_event_param.is_set(): stop_event_param.wait(min(30, 2 * error_count))
+            if not stop_event_param.is_set():
+                stop_event_param.wait(min(30, 2 * error_count))
         except Exception as e_unexp_stream:
             error_count += 1
             logging.error(f"Unexpected error in Docker event listener: {e_unexp_stream}. Reconnecting ({error_count}/{max_errors})...", exc_info=True)
-            if not stop_event_param.is_set(): stop_event_param.wait(min(30, 2 * error_count))
+            if not stop_event_param.is_set():
+                stop_event_param.wait(min(30, 2 * error_count))
 
         if stop_event_param.is_set():
             break 
@@ -468,3 +551,29 @@ def docker_event_listener(stop_event_param):
     if error_count >= max_errors:
         logging.error("Docker event listener stopping after multiple consecutive errors.")
     logging.info("Docker event listener stopped.")
+def _detect_zone_for_hostname(hostname):
+    if not hostname:
+        return None, None
+    try:
+        zones = list_account_zones()
+    except Exception as detection_error:
+        logging.error(f"DOCKER_HANDLER: Failed to retrieve zones for hostname '{hostname}': {detection_error}")
+        return None, None
+    if not zones:
+        return None, None
+    hostname_lower = hostname.lower().lstrip('.')
+    if hostname_lower.startswith('*.'):
+        hostname_lower = hostname_lower[2:]
+    matches = []
+    for zone in zones:
+        zone_name = (zone.get('name') or '').lower()
+        if not zone_name:
+            continue
+        if hostname_lower == zone_name or hostname_lower.endswith(f".{zone_name}"):
+            matches.append(zone)
+    if not matches:
+        return None, None
+    best_length = max(len(zone.get('name') or '') for zone in matches)
+    best_zones = [zone for zone in matches if len(zone.get('name') or '') == best_length]
+    chosen_zone = best_zones[0]
+    return chosen_zone.get('id'), chosen_zone.get('name')

@@ -15,7 +15,6 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 # app/core/cloudflare_api.py
-import copy
 import logging
 import requests
 import json
@@ -23,6 +22,7 @@ import time
 import threading
 from flask import current_app
 from app import config
+from app.core.cache import cache, get_dns_records_cache_key, DNS_RECORDS_CACHE_TIMEOUT, CACHE_ENABLED
 
 zone_id_cache = {}  
 zone_details_by_id_cache = {}  
@@ -31,7 +31,6 @@ _cached_account_email_timestamp = 0
 _cache_lock = threading.Lock()
 
 dns_semaphore = threading.Semaphore(config.MAX_CONCURRENT_DNS_OPS)
-
 
 def cf_api_request(method, endpoint, json_data=None, params=None):
 
@@ -91,23 +90,19 @@ def cf_api_request(method, endpoint, json_data=None, params=None):
     except requests.exceptions.RequestException as e:
         if error_msg is None:
             log_error_msg = f"CF API Request Failed: {method} {url}. Original Exception: {e}"
-            error_msg_for_exception = f"Request Exception: {e}"
 
             if e.response is not None:
                 try:
                     error_data = e.response.json()
                     cf_errors = error_data.get('errors', [])
                     if cf_errors and isinstance(cf_errors, list) and len(cf_errors) > 0 and isinstance(cf_errors[0], dict):
-                        error_msg_for_exception = f"API Error: {cf_errors[0].get('message', 'Unknown error')}"
                         if not hasattr(e, 'cf_error_code'):
                              e.cf_error_code = cf_errors[0].get('code')
                         log_error_msg += f" - API Details: {cf_errors[0].get('message', 'Unknown error')}"
                     else:
-                        error_msg_for_exception = f"HTTP {e.response.status_code} - {e.response.text[:100]}"
                         log_error_msg += f" - HTTP {e.response.status_code} - Response Text (first 100): {e.response.text[:100]}"
                     logging.error(f"CF API Error Response Body: {error_data}")
                 except (ValueError, AttributeError, json.JSONDecodeError):
-                    error_msg_for_exception = f"HTTP {e.response.status_code} - {e.response.text[:100]}"
                     log_error_msg += f" - HTTP {e.response.status_code} - Response Text (first 100): {e.response.text[:100]}"
             logging.error(log_error_msg)
         raise
@@ -319,11 +314,14 @@ def create_cloudflare_dns_record(zone_id, hostname, tunnel_id):
                     updated_id = updated_record.get("id")
                     if updated_id:
                         logging.info(f"Successfully updated DNS record for {hostname} to point to correct tunnel. ID: {updated_id}")
+                        # Invalidate the cache for this tunnel's DNS records in this zone
+                        from app.core.cache import clear_dns_records_cache
+                        clear_dns_records_cache(zone_id=zone_id, tunnel_id=tunnel_id)
                         return updated_id
                     else:
                         logging.error(f"DNS record update API call for {hostname} reported success but response missing ID")
-                        return existing_record_id 
-                except Exception as update_err: 
+                        return existing_record_id
+                except Exception as update_err:
                     logging.error(f"Error updating existing DNS record for {hostname}: {update_err}")
                     return existing_record_id # Return old ID
         
@@ -342,6 +340,9 @@ def create_cloudflare_dns_record(zone_id, hostname, tunnel_id):
             new_record_id = result.get("id")
             if new_record_id:
                 logging.info(f"Successfully created DNS record for {hostname} in zone {zone_id}. New ID: {new_record_id}")
+                # Invalidate the cache for this tunnel's DNS records in this zone
+                from app.core.cache import clear_dns_records_cache
+                clear_dns_records_cache(zone_id=zone_id, tunnel_id=tunnel_id)
                 return new_record_id
             else:
                 logging.error(f"DNS record creation API call for {hostname} reported success but response missing ID: {result}")
@@ -433,7 +434,7 @@ def find_dns_record_id(zone_id, hostname, tunnel_id):
 def delete_cloudflare_dns_record(zone_id, hostname, tunnel_id):
     acquired = False
     try:
-        acquired = dns_semaphore.acquire(timeout=30) 
+        acquired = dns_semaphore.acquire(timeout=30)
         if not acquired:
             logging.error(f"Timed out waiting for DNS semaphore in delete_cloudflare_dns_record for {hostname}")
             return False
@@ -452,6 +453,11 @@ def delete_cloudflare_dns_record(zone_id, hostname, tunnel_id):
         try:
             cf_api_request("DELETE", endpoint)
             logging.info(f"Successfully submitted deletion for DNS record {hostname} (ID: {record_id}) in zone {zone_id}.")
+            
+            # Invalidate the cache for this tunnel's DNS records in this zone
+            from app.core.cache import clear_dns_records_cache
+            clear_dns_records_cache(zone_id=zone_id, tunnel_id=tunnel_id)
+            
             return True
         except requests.exceptions.RequestException as e:
             if e.response is not None and e.response.status_code == 404:
@@ -499,6 +505,44 @@ def get_cloudflare_account_email():
         logging.error(f"Unexpected error fetching Cloudflare account email: {e}", exc_info=True)
         return None
 
+def list_account_zones(force_refresh=False):
+    account_id = current_app.config.get('CF_ACCOUNT_ID')
+    if not account_id:
+        return []
+    cache_key = f"zones:{account_id}"
+    if not force_refresh:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+    endpoint = "/zones"
+    params = {"status": "active", "per_page": 100, "account.id": account_id}
+    zones = []
+    page = 1
+    while True:
+        params["page"] = page
+        try:
+            response_data = cf_api_request("GET", endpoint, params=params)
+            results = response_data.get("result", [])
+            if not isinstance(results, list):
+                break
+            for z in results:
+                zid = z.get("id")
+                name = z.get("name")
+                if zid and name:
+                    zones.append({"id": zid, "name": name})
+            if len(results) < params["per_page"]:
+                break
+            page += 1
+            if page > 20:
+                break
+        except requests.exceptions.RequestException:
+            break
+        except Exception:
+            break
+    zones.sort(key=lambda x: x.get("name", "").lower())
+    cache.set(cache_key, zones, timeout=300)
+    return zones
+
 def get_current_cf_config(tunnel_id_to_query):
     if not tunnel_id_to_query:
         logging.warning("get_current_cf_config: tunnel_id_to_query not provided.")
@@ -534,20 +578,22 @@ def get_current_cf_config(tunnel_id_to_query):
         logging.error(f"Unexpected error fetching config for tunnel {tunnel_id_to_query}: {e}", exc_info=True)
         raise
 
-def get_all_account_cloudflare_tunnels():
+def get_all_account_cloudflare_tunnels(force_refresh=False):
     account_id = current_app.config.get('CF_ACCOUNT_ID')
     api_token = current_app.config.get('CF_API_TOKEN')
-
     if not account_id:
         logging.warning("CF_ACCOUNT_ID is not configured. Cannot list all Cloudflare tunnels.")
         return []
     if not api_token:
         logging.error("Cloudflare API token not configured. Cannot list all account tunnels.")
         return []
-
+    cache_key = f"tunnels:{account_id}"
+    if not force_refresh:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
     endpoint = f"/accounts/{account_id}/cfd_tunnel"
-    params = {"is_deleted": "false", "per_page": 100} 
-    
+    params = {"is_deleted": "false", "per_page": 100}
     logging.info(f"Attempting to list all Cloudflare tunnels for account ID {account_id}")
     all_tunnels = []
     page = 1
@@ -558,43 +604,183 @@ def get_all_account_cloudflare_tunnels():
             tunnels_page = response_data.get("result", [])
             if not isinstance(tunnels_page, list):
                 logging.error(f"Unexpected data format for account tunnels list page {page}: {type(tunnels_page)}. Response: {response_data}")
-                break 
-            
+                break
             all_tunnels.extend(tunnels_page)
-            
-            
             if len(tunnels_page) < params["per_page"]:
                 break
             page += 1
-            if page > 10: 
+            if page > 10:
                 logging.warning("Exceeded 10 pages fetching tunnels. Assuming all fetched or API issue.")
                 break
         except requests.exceptions.RequestException as e:
             logging.error(f"API error listing Cloudflare tunnels (page {page}): {e}")
-            
-            return [] 
+            return []
         except Exception as e:
             logging.error(f"Unexpected error listing Cloudflare tunnels (page {page}): {e}", exc_info=True)
             return []
-
     logging.info(f"Successfully retrieved {len(all_tunnels)} Cloudflare tunnels from the account (any status).")
-    
-    
-    desired_statuses = {"healthy", "degraded", "down", "inactive", "pending"} 
+    desired_statuses = {"healthy", "degraded", "down", "inactive", "pending"}
     filtered_tunnels = [
         tunnel for tunnel in all_tunnels if tunnel.get("status", "").lower() in desired_statuses
     ]
-    
+    filtered_tunnels.sort(key=lambda t: t.get("name", "").lower())
+    cache.set(cache_key, filtered_tunnels, timeout=120)
     logging.info(f"Returning {len(filtered_tunnels)} tunnels after client-side status check for relevant statuses.")
-    filtered_tunnels.sort(key=lambda t: t.get("name", "").lower()) 
     return filtered_tunnels
 
+def get_tunnel_name_by_id(tunnel_id):
+    """
+    Get the name of a tunnel by its ID.
+    Returns the tunnel name if found, None otherwise.
+    """
+    if not tunnel_id:
+        return None
+
+    try:
+        tunnels = get_all_account_cloudflare_tunnels()
+        for tunnel in tunnels or []:
+            if tunnel.get("id") == tunnel_id:
+                return tunnel.get("name")
+    except Exception as e:
+        logging.warning(f"Error looking up tunnel name for ID {tunnel_id}: {e}")
+
+    return None
+
+def get_tunnel_configuration(tunnel_id):
+    """
+    Get the current ingress configuration for a tunnel.
+    Returns the tunnel's ingress rules and configuration.
+    """
+    if not tunnel_id:
+        return None
+
+    try:
+        url = f"https://api.cloudflare.com/client/v4/accounts/{config.CF_ACCOUNT_ID}/cfd_tunnel/{tunnel_id}/configurations"
+        response = requests.get(url, headers=config.CF_HEADERS, timeout=15)
+        response.raise_for_status()
+
+        data = response.json()
+        if not data.get("success", False):
+            logging.error(f"Cloudflare API error getting tunnel config for {tunnel_id}: {data.get('errors', [])}")
+            return None
+
+        result = data.get("result")
+        if not result:
+            logging.warning(f"No configuration found for tunnel {tunnel_id}")
+            return None
+
+        config_data = result.get("config", {})
+        ingress_rules = config_data.get("ingress", [])
+
+        logging.info(f"Retrieved tunnel configuration for {tunnel_id}: {len(ingress_rules)} ingress rules")
+        return {
+            "tunnel_id": tunnel_id,
+            "ingress": ingress_rules,
+            "config": config_data,
+            "version": result.get("version"),
+            "created_at": result.get("created_at")
+        }
+
+    except Exception as e:
+        logging.error(f"Error getting tunnel configuration for {tunnel_id}: {e}")
+        return None
+
+def parse_tunnel_rules_for_migration(tunnel_config):
+    """
+    Parse tunnel configuration into DockFlare rule format for migration.
+    """
+    if not tunnel_config or not tunnel_config.get("ingress"):
+        return []
+
+    rules = []
+    ingress_rules = tunnel_config["ingress"]
+
+    for rule in ingress_rules:
+        hostname = rule.get("hostname")
+        service = rule.get("service")
+        path = rule.get("path")
+
+        # Skip catch-all rules (no hostname)
+        if not hostname or not service:
+            continue
+
+        # Skip http_status rules
+        if service.startswith("http_status:"):
+            continue
+
+        # Convert to DockFlare rule format
+        rule_data = {
+            "hostname": hostname,
+            "path": path,
+            "service": service,
+            "status": "active",
+            "source": "tunnel_import",
+            "container_id": None,
+            "zone_id": None,
+            "no_tls_verify": False,
+            "origin_server_name": rule.get("originRequest", {}).get("httpHostHeader"),
+            "http_host_header": rule.get("originRequest", {}).get("httpHostHeader"),
+            "access_app_id": None,
+            "access_policy_type": None,
+            "access_app_config_hash": None,
+            "access_policy_ui_override": False,
+            "rule_ui_override": False,
+            "access_group_id": None,
+            "tunnel_id": tunnel_config["tunnel_id"],
+            "tunnel_name": None
+        }
+
+        rules.append(rule_data)
+
+    logging.info(f"Parsed {len(rules)} rules from tunnel configuration")
+    return rules
+
+def delete_tunnel_via_api(tunnel_id):
+    """
+    Delete a Cloudflare tunnel by ID.
+    """
+    if not tunnel_id:
+        logging.warning("delete_tunnel_via_api: tunnel_id not provided.")
+        return False
+
+    account_id = current_app.config.get('CF_ACCOUNT_ID')
+    if not account_id:
+        logging.error("CF_ACCOUNT_ID not configured. Cannot delete tunnel.")
+        return False
+
+    logging.info(f"Deleting tunnel {tunnel_id} via API on account {account_id}")
+    endpoint = f"/accounts/{account_id}/cfd_tunnel/{tunnel_id}"
+
+    try:
+        cf_api_request("DELETE", endpoint)
+        logging.info(f"Successfully deleted tunnel {tunnel_id}")
+        return True
+    except requests.exceptions.RequestException as e:
+        if e.response is not None and e.response.status_code == 404:
+            logging.warning(f"Tunnel {tunnel_id} not found during delete attempt (404). Treating as success.")
+            return True
+        logging.error(f"API error deleting tunnel {tunnel_id}: {e}")
+        return False
+    except Exception as e:
+        logging.error(f"Unexpected error deleting tunnel {tunnel_id}: {e}", exc_info=True)
+        return False
+
 def get_dns_records_for_tunnel(zone_id, tunnel_id):
+    """
+    Get all DNS records for a specific tunnel in a zone.
+    Uses Redis cache if available.
+    """
     if not zone_id or not tunnel_id:
         logging.warning("get_dns_records_for_tunnel: Missing zone_id or tunnel_id.")
         return []
 
-    
+    if CACHE_ENABLED:
+        cache_key = get_dns_records_cache_key(zone_id, tunnel_id)
+        cached_records = cache.get(cache_key)
+        if cached_records is not None:
+            logging.info(f"Using cached DNS records for tunnel {tunnel_id} in zone {zone_id}")
+            return cached_records
+
     zone_details = get_zone_details_by_id(zone_id)
     zone_name_for_display = zone_details.get("name") if zone_details else zone_id
 
@@ -609,7 +795,7 @@ def get_dns_records_for_tunnel(zone_id, tunnel_id):
     while True:
         params["page"] = page
         try:
-            response_data = cf_api_request("GET", endpoint, params=params) 
+            response_data = cf_api_request("GET", endpoint, params=params)
             dns_records_page = response_data.get("result", [])
             
             if not isinstance(dns_records_page, list):
@@ -618,26 +804,34 @@ def get_dns_records_for_tunnel(zone_id, tunnel_id):
 
             processed_page_records = []
             for record in dns_records_page:
-                if record.get("name"): 
+                if record.get("name"):
                     processed_page_records.append({
-                        "name": record.get("name"), 
-                        "id": record.get("id"), 
-                        "zone_id": zone_id, 
-                        "zone_name": zone_name_for_display 
+                        "name": record.get("name"),
+                        "id": record.get("id"),
+                        "zone_id": zone_id,
+                        "zone_name": zone_name_for_display
                     })
             all_records_for_tunnel_in_zone.extend(processed_page_records)
 
-            if len(dns_records_page) < params["per_page"]: 
+            if len(dns_records_page) < params["per_page"]:
                 break
             page += 1
-            if page > 10: # Safety break
+            if page > 10:
                 logging.warning(f"Exceeded 10 pages fetching DNS records for tunnel {tunnel_id} in zone {zone_name_for_display}.")
                 break
         except requests.exceptions.RequestException as e:
             logging.error(f"API error fetching DNS records for tunnel {tunnel_id} in zone {zone_name_for_display} (page {page}): {e}")
-            return [] 
+            return []
         except Exception as e:
             logging.error(f"Unexpected error fetching DNS records for tunnel {tunnel_id} in zone {zone_name_for_display} (page {page}): {e}", exc_info=True)
             return []
-            
+        
+    if CACHE_ENABLED:
+        cache.set(
+            cache_key,
+            all_records_for_tunnel_in_zone,
+            timeout=DNS_RECORDS_CACHE_TIMEOUT
+        )
+        logging.info(f"Cached {len(all_records_for_tunnel_in_zone)} DNS records for tunnel {tunnel_id} in zone {zone_id} for {DNS_RECORDS_CACHE_TIMEOUT} seconds")
+    
     return all_records_for_tunnel_in_zone

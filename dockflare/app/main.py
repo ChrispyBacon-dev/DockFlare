@@ -14,16 +14,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 # app/main.py
-import copy
 import logging 
 import threading
 import time
 import sys
 import os
 import json
+import secrets
 from cryptography.fernet import Fernet
 
-from app import app, docker_client, tunnel_state, cloudflared_agent_state, config, log_queue
+from app import app, docker_client, tunnel_state, cloudflared_agent_state, config
 
 from app.core.state_manager import load_state
 from app.core.tunnel_manager import (
@@ -38,6 +38,18 @@ stop_event = threading.Event()
 background_threads_list = []
 agent_status_updater_thread = None
 main_initialization_thread = None
+
+
+def _restart_if_requested():
+    data_path = os.path.dirname(config.STATE_FILE_PATH)
+    flag_path = os.path.join(data_path, 'restore-restart.flag')
+    if os.path.exists(flag_path):
+        try:
+            os.remove(flag_path)
+        except OSError as err:
+            logging.error("Failed to remove restart flag %s: %s", flag_path, err, exc_info=True)
+        logging.info("RESTORE: Restart flag detected. Exiting process for container restart.")
+        sys.exit(0)
 
 def run_all_background_tasks():
     global background_threads_list, agent_status_updater_thread 
@@ -202,35 +214,22 @@ def main_application_entrypoint():
     if os.path.exists(config_file) and os.path.exists(key_file):
         logging.info("Configuration file found. Loading settings.")
         try:
-            with open(key_file, 'rb') as f:
-                key = f.read()
+            from app.web import config_loader
 
-            fernet = Fernet(key)
+            config_data, fernet = config_loader.load_encrypted_config_with_cipher()
+            if config_data is None or fernet is None:
+                raise ValueError("Configuration could not be decrypted")
 
-            with open(config_file, 'rb') as f:
-                encrypted_data = f.read()
+            master_key_env = os.getenv('DOCKFLARE_API_KEY')
+            master_key_existing = config_data.get('master_api_key')
+            if not master_key_env and not master_key_existing:
+                master_key_existing = secrets.token_urlsafe(40)
+                config_data['master_api_key'] = master_key_existing
+                updated_payload = fernet.encrypt(json.dumps(config_data).encode('utf-8'))
+                with open(config_loader.config_file_path(), 'wb') as f:
+                    f.write(updated_payload)
 
-            decrypted_data = fernet.decrypt(encrypted_data)
-            config_data = json.loads(decrypted_data)
-            
-            app.config['CF_API_TOKEN'] = config_data.get('cf_api_token')
-            app.config['CF_ACCOUNT_ID'] = config_data.get('cf_account_id')
-            app.config['TUNNEL_NAME'] = config_data.get('tunnel_name')
-            app.config['CF_ZONE_ID'] = config_data.get('cf_zone_id')
-            app.config['CLOUDFLARED_CONTAINER_NAME'] = f"cloudflared-agent-{app.config.get('TUNNEL_NAME')}"
-
-            tunnel_dns_scan_zone_names_str = config_data.get('tunnel_dns_scan_zone_names', '')
-            app.config['TUNNEL_DNS_SCAN_ZONE_NAMES'] = [name.strip() for name in tunnel_dns_scan_zone_names_str.split(',') if name.strip()]
-
-            app.config['GRACE_PERIOD_SECONDS'] = int(config_data.get('grace_period_seconds', 28800))
-            app.config['DOCKFLARE_USERNAME'] = config_data.get('username')
-            app.config['DOCKFLARE_PASSWORD_HASH'] = config_data.get('password')
-            app.config['DISABLE_PASSWORD_LOGIN'] = config_data.get('disable_password_login', False)
-
-            if app.config['CF_API_TOKEN']:
-                config.CF_HEADERS['Authorization'] = f"Bearer {app.config['CF_API_TOKEN']}"
-
-            app.is_configured = True
+            config_loader.apply_config_to_app(app, config_data)
             logging.info("DockFlare is configured and in Operational Mode.")
         except Exception as e:
             logging.error(f"Failed to load or decrypt configuration: {e}. Starting in Pre-Flight mode.", exc_info=True)
@@ -241,7 +240,13 @@ def main_application_entrypoint():
         if os.getenv('CF_API_TOKEN'):
             logging.info("Found CF_API_TOKEN environment variable. Activating migration import flow.")
             app.import_from_env = True
+        master_key_env = os.getenv('DOCKFLARE_API_KEY')
+        if master_key_env:
+            app.config['MASTER_API_KEY'] = master_key_env
+            config.MASTER_API_KEY = master_key_env
     # === DockFlare Config Check & Pre-Flight Setup ===
+
+    _restart_if_requested()
 
     load_state()
     logging.info("Initial state loading from file complete.")

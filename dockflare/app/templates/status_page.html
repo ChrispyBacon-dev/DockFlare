@@ -15,19 +15,43 @@
 
     <div id="reconciliation-status" class="mb-8"></div>
     <div id="reconciliation-status-message" class="text-sm opacity-75 mb-1"></div>
+    
+    {% if cache_status is defined and cache_status is not none %}
+    <div class="flex items-center gap-2 mb-4">
+        <div class="badge badge-sm {% if cache_status.connected %}badge-success{% else %}badge-warning{% endif %} gap-1">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 00-3.7-3.7 48.678 48.678 0 00-7.324 0 4.006 4.006 0 00-3.7 3.7c-.017.22-.032.441-.046.662M19.5 12l3-3m-3 3l-3-3m-12 3c0 1.232.046 2.453.138 3.662a4.006 4.006 0 003.7 3.7 48.678 48.678 0 007.324 0 4.006 4.006 0 003.7-3.7c.017-.22.032-.441.046-.662M4.5 12l3 3m-3-3l-3 3" />
+            </svg>
+            Cache: {% if cache_status.connected %}Connected{% else %}Fallback{% endif %}
+        </div>
+        <span class="text-xs opacity-75">
+            {% if cache_status.connected %}
+                Redis cache active
+            {% else %}
+                Using in-memory cache
+            {% endif %}
+            ({{ cache_status.dns_records_count|default(0) }} DNS records cached)
+            {% if cache_status.error is defined and cache_status.error %}
+                <span class="text-error">(Error: {{ cache_status.error }})</span>
+            {% endif %}
+        </span>
+    </div>
+    {% endif %}
 
     <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
          <div class="card-body">
-            <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
-                Managed Ingress Rules
-                <button class="btn btn-ghost btn-xs ml-2" title="Click the Cloudflare icon to open this hostname in Cloudflare Zero Trust (Tunnels → Public Hostnames). Click the access-policy icon to edit the Access App.">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="10" class="opacity-30"/><path d="M12 8h.01" stroke-linecap="round" stroke-linejoin="round"/><path d="M11 12h1v4h1" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </button>
+            <div class="flex flex-col sm:flex-row items-center justify-between border-b border-base-300 pb-3 mb-6">
+                <h2 class="card-title text-2xl sm:text-3xl">
+                    Managed Ingress Rules
+                    <button class="btn btn-ghost btn-xs ml-2" title="Click the Cloudflare icon to open this hostname in Cloudflare Zero Trust (Tunnels → Public Hostnames). Click the access-policy icon to edit the Access App.">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="10" class="opacity-30"/><path d="M12 8h.01" stroke-linecap="round" stroke-linejoin="round"/><path d="M11 12h1v4h1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                </h2>
                 <button class="btn btn-sm btn-primary ml-auto" onclick="document.getElementById('add_manual_rule_modal').showModal()">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
                     Add Manual Rule
                 </button>
-            </h2>
+            </div>
 
             {% if agent_state.last_action_status %}
                 {% set is_error = 'Error:' in agent_state.last_action_status %}
@@ -47,11 +71,80 @@
             {% endif %}
 
             {% if rules and rules.items() %}
+                                
+                <div class="collapse bg-base-200/60 rounded-lg mb-4">
+                    <input type="checkbox" id="filter-toggle" /> 
+                    <div class="collapse-title text-sm font-medium flex items-center justify-between">
+                        <div>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 inline-block mr-2 align-middle">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.572a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" />
+                            </svg>
+                            Filter & Sort Options
+                        </div>
+                        <span id="filter-stats" class="text-sm opacity-75 font-normal"></span>
+                    </div>
+                    <div class="collapse-content">
+                        <div class="flex flex-row flex-wrap items-end gap-4 pt-4">
+                
+                            <div class="form-control w-full sm:w-auto">
+                                <label for="source-filter" class="label py-0 pb-1"><span class="label-text text-xs font-semibold opacity-70">Source</span></label>
+                                <select id="source-filter" class="select select-bordered select-sm w-full">
+                                    <option value="all">All Sources</option>
+                                    <option value="docker">Local Docker</option>
+                                    <option value="manual">Manual Rules</option>
+                                </select>
+                            </div>
+
+                            <div class="form-control w-full sm:w-auto">
+                                <label for="status-filter" class="label py-0 pb-1"><span class="label-text text-xs font-semibold opacity-70">Status</span></label>
+                                <select id="status-filter" class="select select-bordered select-sm w-full">
+                                    <option value="all">All Status</option>
+                                    <option value="active">Active</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="failed">Failed</option>
+                                    <option value="pending_deletion">Pending Deletion</option>
+                                </select>
+                            </div>
+                
+                            <div class="form-control w-full sm:w-auto">
+                                <label for="tunnel-filter" class="label py-0 pb-1"><span class="label-text text-xs font-semibold opacity-70">Tunnel</span></label>
+                                <select id="tunnel-filter" class="select select-bordered select-sm w-full">
+                                    <option value="all">All Tunnels</option>
+                                </select>
+                            </div>
+
+                            <div class="form-control w-full sm:w-auto">
+                                <label for="sort-select" class="label py-0 pb-1"><span class="label-text text-xs font-semibold opacity-70">Sort by</span></label>
+                                <select id="sort-select" class="select select-bordered select-sm w-full">
+                                    <option value="hostname">Hostname A-Z</option>
+                                    <option value="hostname-desc">Hostname Z-A</option>
+                                    <option value="status">Status</option>
+                                    <option value="source">Source</option>
+                                    <option value="tunnel">Tunnel</option>
+                                </select>
+                            </div>
+
+                            <div class="form-control w-full sm:w-auto">
+                                 <label for="search-input" class="label py-0 pb-1"><span class="label-text text-xs font-semibold opacity-70">Search Hostname</span></label>
+                                <div class="relative">
+                                    <span class="absolute inset-y-0 left-0 flex items-center pl-3">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                        </svg>
+                                    </span>
+                                    <input type="text" id="search-input" placeholder="Search..." class="input input-bordered input-sm w-full pl-9" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="overflow-x-auto -mx-6 sm:-mx-8 pb-24">
                     <table class="table table-zebra table-sm w-full">
                         <thead>
                             <tr>
                                 <th class="p-3 w-auto">Status</th>
+                                <th class="p-3">Tunnel Name</th>
                                 <th class="p-3 w-1/4">Hostname</th> 
                                 <th class="p-3 w-1/6">Path</th>
                                 <th class="p-3 w-1/5">Service Target</th>
@@ -64,16 +157,27 @@
                         </thead>
                         <tbody>
                             {% for hostname, details in rules.items()|sort %}
-                                <tr> 
-                                    <td class="p-3 whitespace-nowrap">
+                                <tr data-rule-key="{{ hostname }}" data-rule-status="{{ details.status }}" data-rule-source="{{ details.source }}">
+                                    <td class="p-3 whitespace-nowrap" data-role="status-cell">
                                         {% if details.source == 'manual' %}
-                                            <span class="badge badge-info badge-sm">Manual</span>                                               
+                                            <span class="badge badge-info badge-sm status-badge">Manual</span>
                                         {% else %}
                                             {% set status_badge_color = 'badge-warning' if 'pending' in details.status else 'badge-success' %}
-                                            <span class="badge {{ status_badge_color }} badge-sm"> 
+                                            <span class="badge {{ status_badge_color }} badge-sm status-badge">
                                                 {{ details.status.replace('_',' ') }}
                                             </span>
                                         {% endif %}
+                                    </td>
+                                    <td class="p-3 whitespace-nowrap align-top" data-role="tunnel-name" data-tunnel-name="{{ details.tunnel_name or '' }}">
+                                        <div class="flex flex-col">
+                                            <span class="text-sm opacity-90">{{ details.tunnel_name or 'N/A' }}</span>
+                                            <span class="text-xs opacity-60 mt-1">Zone: {{ details.zone_name or 'Unknown' }}</span>
+                                            {% if details.source == 'agent' and details.agent_id %}
+                                                {% set agent_info = agents.get(details.agent_id) %}
+                                                {% set agent_display_name = agent_info.display_name if agent_info else details.agent_id[:8] %}
+                                                <span class="text-xs opacity-60 mt-1" data-role="agent-name">Agent: {{ agent_display_name }}</span>
+                                            {% endif %}
+                                        </div>
                                     </td>
                                     <td class="p-3 whitespace-nowrap">
                                     {% set display_hostname = details.hostname if details.hostname else hostname.split('|')[0] %}
@@ -160,6 +264,9 @@
                                         {% if details.access_policy_ui_override and details.source != 'manual' %}
                                             <span class="badge badge-warning badge-xs ml-2 animate-pulse" title="This policy is managed by the UI and overrides container labels.">UI Override</span>
                                         {% endif %}
+                                        {% if details.rule_ui_override and details.source == 'docker' %}
+                                            <span class="badge badge-error badge-xs ml-2 animate-pulse" title="This Docker rule has been overridden via UI and no longer reflects container labels.">Rule UI Override</span>
+                                        {% endif %}
                                     </td>
                                     <td class="p-3 whitespace-nowrap text-sm policy-actions-cell" style="min-width: 180px;">
                                         <div class="flex items-center space-x-1 sm:space-x-2">
@@ -174,16 +281,23 @@
                                                 <button type="submit" class="btn btn-xs btn-warning btn-outline" title="Revert to Label/Default Policy">Revert</button>
                                             </form>
                                             {% endif %}
+                                            {% if details.rule_ui_override and details.source == 'docker' %}
+                                            <form action="{{ url_for('web.ui_revert_docker_rule_route') }}" method="POST" onsubmit="return confirm('Revert rule for {{ display_hostname }} to be managed by Docker labels?');" class="protocol-aware-form inline-block">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                                <input type="hidden" name="rule_key" value="{{ hostname }}">
+                                                <button type="submit" class="btn btn-xs btn-error btn-outline" title="Revert to Docker Label Control">Revert to Labels</button>
+                                            </form>
+                                            {% endif %}
                                         </div>
                                     </td>
-                                    <td class="p-3 whitespace-nowrap text-sm opacity-70">
+                                    <td class="p-3 whitespace-nowrap text-sm opacity-70" data-role="expires-cell">
                                         {% if details.status=='pending_deletion' and details.delete_at %}
                                             <div data-delete-at="{{ details.delete_at.isoformat() }}">
-                                                <span class="absolute-time-display"></span> 
+                                                <span class="absolute-time-display"></span>
                                                 <span class="countdown-timer block text-xs opacity-80"></span>
                                             </div>
-                                        {% else %} 
-                                            N/A 
+                                        {% else %}
+                                            <span class="text-xs opacity-60">N/A</span>
                                         {% endif %}
                                     </td>
                                     <td class="p-3 whitespace-nowrap text-sm" style="min-width: 120px;">
@@ -214,11 +328,22 @@
 
     <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
          <div class="card-body">
-             <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-4">
-                Real-time Activity Logs
-             </h2>
-            <div class="mockup-code text-xs max-h-96 overflow-y-hidden">
-                <pre id="log-output" aria-live="polite" class="h-full overflow-y-scroll p-4">Connecting to log stream...</pre>
+             <div class="collapse collapse-arrow border border-base-300 rounded-box">
+                <input type="checkbox" id="logs-toggle" />
+                <div class="collapse-title text-xl font-medium">
+                    Real-time Activity Logs
+                    <span class="text-sm font-normal opacity-70 ml-2">(Click to enable - may impact performance)</span>
+                </div>
+                <div class="collapse-content">
+                    <div class="mockup-code text-xs max-h-96 overflow-y-hidden mt-4">
+                        <pre id="log-output" aria-live="polite" class="h-full overflow-y-scroll p-4 hidden">Click "Enable Logs" to start streaming...</pre>
+                    </div>
+                    <div class="mt-4 flex gap-2">
+                        <button id="enable-logs-btn" class="btn btn-primary btn-sm">Enable Logs</button>
+                        <button id="disable-logs-btn" class="btn btn-error btn-sm hidden">Disable Logs</button>
+                        <button id="clear-logs-btn" class="btn btn-ghost btn-sm">Clear</button>
+                    </div>
+                </div>
             </div>
         </div>
     </section>
@@ -229,29 +354,48 @@
                 <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
             </form>
             <h3 class="font-bold text-lg mb-6">Add New Manual Ingress Rule</h3>
-            <form action="{{ url_for('web.ui_add_manual_rule_route') }}" method="POST" class="protocol-aware-form flex flex-col flex-grow min-h-0">
+            <form id="add_manual_rule_form" action="{{ url_for('web.ui_add_manual_rule_route') }}" method="POST" class="protocol-aware-form flex flex-col flex-grow min-h-0">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" id="manual_zone_id" name="manual_zone_id" />
                 <div class="flex-grow overflow-y-auto space-y-6 p-1">
                     <div>
                         <h4 class="text-md font-semibold mb-2">Public Hostname</h4>
                         <div class="grid grid-cols-1 md:grid-cols-7 gap-4 items-start">
                             <div class="md:col-span-2">
                                 <label class="label" for="manual_subdomain"><span class="label-text">Subdomain</span></label>
-                                <input type="text" id="manual_subdomain" name="manual_subdomain" placeholder="(optional) subdomain" class="input input-bordered w-full" />
+                                <input type="text" id="manual_subdomain" name="manual_subdomain" placeholder="(optional) subdomain" class="input input-bordered w-full" autocomplete="off" />
                             </div>
                             <div class="md:col-span-3">
                                 <label class="label" for="manual_domain_name"><span class="label-text">Domain (Required)</span></label>
-                                <input type="text" id="manual_domain_name" name="manual_domain_name" placeholder="example.com" class="input input-bordered w-full" required />
-                                <div class="text-xs opacity-60 mt-1">This will be combined with the subdomain to form the full hostname.</div>
+                                <input type="text" id="manual_domain_name" name="manual_domain_name" placeholder="example.com" class="input input-bordered w-full" autocomplete="off" required />
+                                <div class="text-xs opacity-60 mt-1">Combined with subdomain to build the public hostname.</div>
                             </div>
                             <div class="md:col-span-2">
                                 <label class="label" for="manual_path_display"><span class="label-text">Path</span></label>
                                 <div class="join w-full">
                                     <span class="join-item btn btn-disabled normal-case pointer-events-none bg-base-200 border-base-300 !min-h-[3rem] !h-[3rem] px-3">/</span>
-                                    <input type="text" id="manual_path_display" placeholder="(optional) path" class="input input-bordered join-item w-full" />
+                                    <input type="text" id="manual_path_display" placeholder="(optional) path" class="input input-bordered join-item w-full" autocomplete="off" />
                                 </div>
                                 <input type="hidden" id="manual_path" name="manual_path" />
-                                 <div class="text-xs opacity-60 mt-1">If blank, rule applies to the root. User types "app", submitted as "/app".</div>
+                                <div class="text-xs opacity-60 mt-1">Leave blank for root. "app" becomes "/app".</div>
+                            </div>
+                        </div>
+                        <div class="mt-4">
+                            <label class="label" for="manual_tunnel_id"><span class="label-text">Tunnel (Required)</span></label>
+                            <select id="manual_tunnel_id" name="manual_tunnel_id" class="select select-bordered w-full" data-default-tunnel-id="{{ default_tunnel_id or '' }}" required>
+                                <option value="" disabled selected>Select a tunnel...</option>
+                            </select>
+                            <div class="text-xs opacity-60 mt-1">Choose which Cloudflare Tunnel will serve this hostname.</div>
+                        </div>
+                        <div class="mt-4 p-3 rounded-lg bg-base-200/60" id="manual_zone_container">
+                            <div class="flex items-center justify-between">
+                                <span class="text-sm font-semibold">Zone Detection</span>
+                                <span class="badge badge-outline badge-sm hidden" id="manual_zone_status_badge"></span>
+                            </div>
+                            <p class="text-xs opacity-80 mt-2" id="manual_zone_message">Enter a hostname to auto-detect the Cloudflare zone. Select a zone if multiple matches are found.</p>
+                            <div class="hidden mt-3" id="manual_zone_selector_wrapper">
+                                <label class="label" for="manual_zone_selector"><span class="label-text">Select Zone</span></label>
+                                <select id="manual_zone_selector" class="select select-bordered w-full"></select>
                             </div>
                         </div>
                     </div>
@@ -365,8 +509,9 @@
                         </div>
                     </div>
                 </div>
+                <div id="manual_rule_feedback" class="hidden alert mt-4"></div>
                 <div class="modal-action mt-8 pt-4 border-t border-base-300">
-                  <button type="submit" class="btn btn-primary">Add Rule</button>
+                  <button type="submit" class="btn btn-primary" id="manual_rule_submit_btn">Add Rule</button>
                 </div>
             </form>
         </div>
@@ -382,17 +527,17 @@
             <form action="{{ url_for('web.ui_edit_manual_rule_route') }}" method="POST" class="protocol-aware-form flex flex-col flex-grow min-h-0" id="edit_manual_rule_form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="flex-grow overflow-y-auto space-y-6 p-1">
-                    <input type="hidden" name="original_rule_key" id="edit_original_rule_key" />
+                    <input type="hidden" name="edit_rule_key" id="edit_original_rule_key" />
                     <div>
                         <h4 class="text-md font-semibold mb-2">Public Hostname</h4>
                         <div class="grid grid-cols-1 md:grid-cols-7 gap-4 items-start">
                             <div class="md:col-span-2">
                                 <label class="label" for="edit_manual_subdomain"><span class="label-text">Subdomain</span></label>
-                                <input type="text" id="edit_manual_subdomain" name="manual_subdomain" placeholder="(optional) subdomain" class="input input-bordered w-full" />
+                                <input type="text" id="edit_manual_subdomain" name="edit_subdomain" placeholder="(optional) subdomain" class="input input-bordered w-full" />
                             </div>
                             <div class="md:col-span-3">
                                 <label class="label" for="edit_manual_domain_name"><span class="label-text">Domain (Required)</span></label>
-                                <input type="text" id="edit_manual_domain_name" name="manual_domain_name" placeholder="example.com" class="input input-bordered w-full" required />
+                                <input type="text" id="edit_manual_domain_name" name="edit_domain_name" placeholder="example.com" class="input input-bordered w-full" required />
                             </div>
                             <div class="md:col-span-2">
                                 <label class="label" for="edit_manual_path_display"><span class="label-text">Path</span></label>
@@ -400,16 +545,27 @@
                                     <span class="join-item btn btn-disabled normal-case pointer-events-none bg-base-200 border-base-300 !min-h-[3rem] !h-[3rem] px-3">/</span>
                                     <input type="text" id="edit_manual_path_display" placeholder="(optional) path" class="input input-bordered join-item w-full" />
                                 </div>
-                                <input type="hidden" id="edit_manual_path" name="manual_path" />
+                                <input type="hidden" id="edit_manual_path" name="edit_path" />
                             </div>
                         </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                            <div class="rounded-lg bg-base-200/60 p-3">
+                                <p class="text-sm font-semibold">Tunnel</p>
+                                <p class="text-sm mt-1" id="edit_rule_tunnel_value">—</p>
+                            </div>
+                            <div class="rounded-lg bg-base-200/60 p-3">
+                                <p class="text-sm font-semibold">Zone</p>
+                                <p class="text-sm mt-1" id="edit_rule_zone_value">—</p>
+                            </div>
+                        </div>
+                        <div class="alert alert-info hidden mt-4" id="edit_rule_agent_hint">Managed by Agent; tunnel is not editable.</div>
                     </div>
                     <div>
                         <h4 class="text-md font-semibold mb-2">Service</h4>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                             <div>
                                 <label class="label" for="edit_manual_service_type"><span class="label-text">Type (Required)</span></label>
-                                <select name="manual_service_type" id="edit_manual_service_type" class="select select-bordered w-full" required>
+                                <select name="edit_service_type" id="edit_manual_service_type" class="select select-bordered w-full" required>
                                     <option value="" disabled>Select...</option>
                                     <option value="http">HTTP</option>
                                     <option value="https">HTTPS</option>
@@ -424,7 +580,7 @@
                                 <label class="label" for="edit_manual_service_address">
                                     <span class="label-text" id="edit_manual_service_address_label">URL or Status Code</span>
                                 </label>
-                                <input type="text" id="edit_manual_service_address" name="manual_service_address" placeholder="host:port or status code" class="input input-bordered w-full" />
+                                <input type="text" id="edit_manual_service_address" name="edit_service_address" placeholder="host:port or status code" class="input input-bordered w-full" />
                             </div>
                         </div>
                     </div>
@@ -436,7 +592,7 @@
                                 <label class="label" for="edit_manual_access_group">
                                     <span class="label-text font-medium">1. Assign Access Group(s) (Recommended)</span>
                                 </label>
-                                <select name="manual_access_groups" id="edit_manual_access_group" multiple>
+                                <select name="edit_access_groups" id="edit_manual_access_group" multiple>
                                     {% if access_groups %}
                                         {% for group_id, details in access_groups.items()|sort %}
                                             <option value="{{ group_id }}">{{ details.display_name }} (ID: {{ group_id }})</option>
@@ -453,7 +609,7 @@
                                     <label class="label" for="edit_manual_access_policy_type">
                                         <span class="label-text font-medium">2. Configure Manually</span>
                                     </label>
-                                    <select name="manual_access_policy_type" id="edit_manual_access_policy_type" class="select select-bordered w-full policy-type-select">
+                                    <select name="edit_access_policy_type" id="edit_manual_access_policy_type" class="select select-bordered w-full policy-type-select">
                                         <option value="none">None (Public - No App)</option>
                                         <option value="bypass">Bypass (Public App)</option>
                                         <option value="authenticate_email">Authenticate by Email</option>
@@ -462,7 +618,7 @@
                                 </div>
                                 <div class="auth-email-field hidden">
                                     <label class="label" for="edit_manual_auth_email"><span class="label-text">Allowed Email(s) or Domain(s)</span></label>
-                                    <input type="text" id="edit_manual_auth_email" name="manual_auth_email" placeholder="user@example.com, @domain.com" class="input input-bordered w-full" />
+                                    <input type="text" id="edit_manual_auth_email" name="edit_auth_email" placeholder="user@example.com, @domain.com" class="input input-bordered w-full" />
                                 </div>
                             </div>
                         </div>
@@ -471,23 +627,23 @@
                     <div class="space-y-4 pt-4 border-t border-base-300 mt-6">
                         <div class="form-control">
                             <label class="label" for="edit_manual_zone_name_override"><span class="label-text">Cloudflare Zone Name (Override/Specific)</span></label>
-                            <input type="text" id="edit_manual_zone_name_override" name="manual_zone_name_override" placeholder="yourdomain.com (if different from Domain Name)" class="input input-bordered w-full" />
+                            <input type="text" id="edit_manual_zone_name_override" name="edit_zone_name_override" placeholder="yourdomain.com (if different from Domain Name)" class="input input-bordered w-full" />
                         </div>
                         <div id="edit_manual_no_tls_verify_div" class="form-control">
                           <label class="label cursor-pointer justify-start gap-2">
-                            <input type="checkbox" name="manual_no_tls_verify" id="edit_manual_no_tls_verify" class="checkbox checkbox-sm" />
+                            <input type="checkbox" name="edit_no_tls_verify" id="edit_manual_no_tls_verify" class="checkbox checkbox-sm" />
                             <span class="label-text">Disable TLS Verification</span>
                           </label>
                         </div>
                         <div class="form-control" id="edit_manual_origin_server_name_div">
                             <label class="label" for="edit_manual_origin_server_name"><span class="label-text">Origin Server Name (SNI)</span></label>
-                            <input type="text" id="edit_manual_origin_server_name" name="manual_origin_server_name" placeholder="e.g., internal.service.local" class="input input-bordered w-full" />
+                            <input type="text" id="edit_manual_origin_server_name" name="edit_origin_server_name" placeholder="e.g., internal.service.local" class="input input-bordered w-full" />
                         </div>
                         <div class="form-control">
                             <label class="label" for="edit_manual_http_host_header">
                                 <span class="label-text">HTTP Host Header (Optional)</span>
                             </label>
-                            <input type="text" id="edit_manual_http_host_header" name="manual_http_host_header"
+                            <input type="text" id="edit_manual_http_host_header" name="edit_http_host_header"
                                    placeholder="e.g., api.example.com"
                                    class="input input-bordered w-full" />
                             <label class="label">
@@ -503,4 +659,178 @@
         </div>
         <form method="dialog" class="modal-backdrop"><button>close</button></form>
     </dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const sourceFilter = document.getElementById('source-filter');
+    const statusFilter = document.getElementById('status-filter');
+    const tunnelFilter = document.getElementById('tunnel-filter');
+    const sortSelect = document.getElementById('sort-select');
+    const searchInput = document.getElementById('search-input');
+    const filterStats = document.getElementById('filter-stats');
+    const tableBody = document.querySelector('tbody');
+
+    let allRows = [];
+    let filteredRows = [];
+
+    function initializeFilters() {
+        if (!tableBody) return;
+
+        allRows = Array.from(tableBody.querySelectorAll('tr'));
+
+        const tunnels = new Set();
+        const agents = new Set();
+
+        allRows.forEach(row => {
+            const tunnelCell = row.querySelector('[data-role="tunnel-name"]');
+            if (tunnelCell) {
+                const tunnelName = tunnelCell.dataset.tunnelName;
+                if (tunnelName && tunnelName.trim()) {
+                    tunnels.add(tunnelName.trim());
+                }
+            }
+
+            const source = row.dataset.ruleSource;
+            if (source === 'agent') {
+                const agentCell = row.querySelector('[data-role="agent-name"]');
+                if (agentCell && agentCell.textContent.trim()) {
+                    // Extract just the agent name part (remove "Agent: " prefix)
+                    const fullText = agentCell.textContent.trim();
+                    const agentName = fullText.startsWith('Agent: ') ? fullText.substring(7) : fullText;
+                    agents.add(agentName);
+                }
+            }
+        });
+
+        tunnels.forEach(tunnel => {
+            const option = document.createElement('option');
+            option.value = tunnel;
+            option.textContent = tunnel;
+            tunnelFilter.appendChild(option);
+        });
+
+        agents.forEach(agent => {
+            const option = document.createElement('option');
+            option.value = `agent:${agent}`;
+            option.textContent = `Agent: ${agent}`;
+            sourceFilter.appendChild(option);
+        });
+
+        applyFilters();
+    }
+
+    function applyFilters() {
+        if (!tableBody) return;
+
+        const sourceValue = sourceFilter.value;
+        const statusValue = statusFilter.value;
+        const tunnelValue = tunnelFilter.value;
+        const searchValue = searchInput.value.toLowerCase();
+
+        filteredRows = allRows.filter(row => {
+            const source = row.dataset.ruleSource;
+            const status = row.dataset.ruleStatus;
+
+            const hostnameCell = row.querySelector('td:nth-child(3)');
+            const hostname = hostnameCell ? hostnameCell.textContent.toLowerCase() : '';
+
+            const tunnelCell = row.querySelector('[data-role="tunnel-name"]');
+            const tunnel = tunnelCell ? (tunnelCell.dataset.tunnelName || '').trim() : '';
+
+            let sourceMatch = true;
+            if (sourceValue !== 'all') {
+                if (sourceValue === 'docker') {
+                    sourceMatch = source === 'docker';
+                } else if (sourceValue === 'manual') {
+                    sourceMatch = source === 'manual';
+                } else if (sourceValue.startsWith('agent:')) {
+                    const agentName = sourceValue.substring(6);
+                    const agentCell = row.querySelector('[data-role="agent-name"]');
+                    if (agentCell) {
+                        const fullText = agentCell.textContent.trim();
+                        const cellAgentName = fullText.startsWith('Agent: ') ? fullText.substring(7) : fullText;
+                        sourceMatch = source === 'agent' && cellAgentName === agentName;
+                    } else {
+                        sourceMatch = false;
+                    }
+                }
+            }
+
+            const statusMatch = statusValue === 'all' || status === statusValue;
+            const tunnelMatch = tunnelValue === 'all' || tunnel === tunnelValue;
+            const searchMatch = searchValue === '' || hostname.includes(searchValue);
+
+            return sourceMatch && statusMatch && tunnelMatch && searchMatch;
+        });
+
+        applySorting();
+        updateDisplay();
+        updateStats();
+    }
+
+    function applySorting() {
+        const sortValue = sortSelect.value;
+
+        filteredRows.sort((a, b) => {
+            let aVal, bVal;
+
+            switch (sortValue) {
+                case 'hostname':
+                    aVal = a.querySelector('td:nth-child(3)')?.textContent || '';
+                    bVal = b.querySelector('td:nth-child(3)')?.textContent || '';
+                    return aVal.localeCompare(bVal);
+
+                case 'hostname-desc':
+                    aVal = a.querySelector('td:nth-child(3)')?.textContent || '';
+                    bVal = b.querySelector('td:nth-child(3)')?.textContent || '';
+                    return bVal.localeCompare(aVal);
+
+                case 'status':
+                    aVal = a.dataset.ruleStatus || '';
+                    bVal = b.dataset.ruleStatus || '';
+                    return aVal.localeCompare(bVal);
+
+                case 'source':
+                    aVal = a.dataset.ruleSource || '';
+                    bVal = b.dataset.ruleSource || '';
+                    return aVal.localeCompare(bVal);
+
+                case 'tunnel':
+                    aVal = a.querySelector('[data-role="tunnel-name"]')?.dataset?.tunnelName || '';
+                    bVal = b.querySelector('[data-role="tunnel-name"]')?.dataset?.tunnelName || '';
+                    return aVal.localeCompare(bVal);
+
+                default:
+                    return 0;
+            }
+        });
+    }
+
+    function updateDisplay() {
+        // Clear the table body
+        tableBody.innerHTML = '';
+
+        // Add the filtered and sorted rows back
+        filteredRows.forEach(row => {
+            tableBody.appendChild(row);
+        });
+    }
+
+    function updateStats() {
+        const total = allRows.length;
+        const visible = filteredRows.length;
+        filterStats.textContent = `Showing ${visible} of ${total} rules`;
+    }
+
+    sourceFilter.addEventListener('change', applyFilters);
+    statusFilter.addEventListener('change', applyFilters);
+    tunnelFilter.addEventListener('change', applyFilters);
+    sortSelect.addEventListener('change', applyFilters);
+    searchInput.addEventListener('input', applyFilters);
+
+    initializeFilters();
+});
+</script>
 {% endblock %}

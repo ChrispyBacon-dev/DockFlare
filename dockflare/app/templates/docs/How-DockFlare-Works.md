@@ -17,6 +17,17 @@ The core workflow can be broken down into a few key steps:
 
 4.  **Automatic Cleanup**: When a managed container is stopped or removed, DockFlare automatically triggers a cleanup process. It removes the corresponding ingress rule from the Cloudflare Tunnel and, if no other service is using the hostname, deletes the DNS record and the Access Application. This prevents stale records and keeps your Cloudflare configuration clean.
 
+
+## Components at a Glance
+
+| Component | Responsibility |
+| --- | --- |
+| DockFlare Master | Hosts the UI and API, watches Docker events, and orchestrates Cloudflare tunnels, DNS, and Access policies. Runs rootless and only talks to Docker via the socket proxy. |
+| Docker Socket Proxy | `tecnativa/docker-socket-proxy` sidecar that exposes the minimal Docker API surface (`containers`, `events`, etc.) to the master. Prevents the master from binding the raw Docker socket. |
+| Redis | Caching, queues, log streaming, and agent heartbeat/backchannel. Lives on the private `dockflare-internal` network. |
+| DockFlare Agents (optional) | Remote workers that mirror the master’s behaviour on other hosts, streaming Docker events back and managing their own `cloudflared`. |
+| cloudflared | Maintains the tunnel connection to Cloudflare for either the master or each agent. |
+
 ## Layered Configuration Model
 
 DockFlare uses a flexible, layered approach to configuration, giving you both automation and fine-grained control:

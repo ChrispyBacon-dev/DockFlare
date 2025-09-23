@@ -18,6 +18,7 @@ import logging
 import queue
 import sys
 import os
+import json
 
 from flask import Flask
 from flask_wtf.csrf import CSRFProtect
@@ -25,14 +26,15 @@ from flask_login import LoginManager
 from .core.user import User
 import docker
 from docker.errors import APIError
-
 from . import config
+from .core.cache import init_app as init_cache
 
 tunnel_state = { "name": config.TUNNEL_NAME, "id": None, "token": None, "status_message": "Initializing...", "error": None }
 cloudflared_agent_state = { "container_status": "unknown", "last_action_status": None }
 
 log_queue = queue.Queue(maxsize=config.MAX_LOG_QUEUE_SIZE)
-log_formatter = logging.Formatter('%(asctime)s [%(levelname)s] [%(threadName)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+state_update_queue = queue.Queue(maxsize=50) 
+log_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', datefmt='%H:%M:%S')
 
 class QueueLogHandler(logging.Handler):
     def __init__(self, log_queue_instance):
@@ -65,6 +67,17 @@ queue_handler.setLevel(logging.INFO)
 root_logger.addHandler(queue_handler)
 
 
+def publish_state_event(event_type, data=None):
+    message = json.dumps({
+        "type": event_type,
+        "data": data or {}
+    })
+    try:
+        state_update_queue.put_nowait(message)
+    except queue.Full:
+        logging.warning("State event queue full. Dropping event: %s", event_type)
+
+
 docker_client = None
 try:
     docker_client = docker.from_env(timeout=10)
@@ -81,6 +94,7 @@ def create_app():
     app_instance = Flask(__name__)
     app_instance.secret_key = os.urandom(24)
     app_instance.config['PREFERRED_URL_SCHEME'] = 'http'
+    app_instance.config['APP_VERSION'] = config.APP_VERSION
 
     # Initialize CSRF Protection
     csrf = CSRFProtect(app_instance)
@@ -90,6 +104,27 @@ def create_app():
     login_manager.init_app(app_instance)
     login_manager.login_view = 'auth.login'
     login_manager.login_message_category = "info"
+
+    @login_manager.unauthorized_handler
+    def unauthorized():
+        """Handle unauthorized access - return JSON for API requests, redirect for web requests."""
+        from flask import request, jsonify, redirect, url_for
+        # Check if this is an API request
+        if request.path.startswith('/api/'):
+            return jsonify({"status": "error", "message": "authentication_required"}), 401
+        # For web requests, redirect to login page
+        return redirect(url_for('auth.login'))
+
+    # Custom user loader that exempts API routes from authentication checks
+    @login_manager.request_loader
+    def load_user_from_request(request):
+        """Load user from request - bypass authentication for API endpoints"""
+        # For API v2 endpoints, don't require Flask-Login authentication
+        if request.endpoint and request.endpoint.startswith('api_v2.'):
+            # Create a dummy user to satisfy Flask-Login for API endpoints
+            from app.core.user import User
+            return User('api_user')
+        return None
 
     @login_manager.user_loader
     def load_user(user_id):
@@ -115,6 +150,10 @@ def create_app():
         "start_time": 0,
         "status": "Not started"
     }
+
+    # Initialize cache
+    init_cache(app_instance)
+    logging.info("Cache initialized.")
 
     with app_instance.app_context():
         from .web import routes as web_routes

@@ -14,7 +14,12 @@ Replace `<your-server-ip>` with the IP address of the server where DockFlare is 
 
 ## First-Time Setup
 
-The first time you access the web UI, you will be guided by the **Pre-Flight Setup Wizard**. This wizard will help you with the initial configuration of DockFlare, including setting up a password for the web UI.
+The first time you access the web UI, you will be guided by the **Pre-Flight Setup Wizard**. This wizard helps you:
+
+1.  Restore from an existing DockFlare backup archive (`dockflare_backup_*.zip`). If you choose this option, the system imports your encrypted configuration, state, and agent keys, then automatically restarts the container to apply them.
+2.  Create an administrator account and password for the web UI.
+3.  Provide your Cloudflare Account ID, Zone ID (optional), and API token.
+4.  Confirm tunnel settings and finish the onboarding steps.
 
 ## Logging In
 

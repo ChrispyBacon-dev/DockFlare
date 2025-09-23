@@ -6,6 +6,136 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+## [v3.0.0] - 2025-09-23
+
+### Added
+
+#### **Multi-Host Management with DockFlare Agent (Beta)**
+- **Lightweight agent deployment** on remote Docker hosts with secure API key authentication
+- **Secure registration and enrollment** process via master UI with encrypted agent key store
+- **Command polling architecture** with configurable intervals and Redis-backed queues
+- **Real-time heartbeat monitoring** with 30-second intervals and automatic timeout detection
+- **Automatic tunnel configuration** and container discovery on remote hosts
+- **Migration assistant** for importing existing tunnel rules and resolving conflicts
+- **Agent repository**: [DockFlare-Agent-prd](https://github.com/ChrispyBacon-dev/DockFlare-Agent-prd)
+
+#### **Centralized Agents Management UI**
+- **Professional agent dashboard** with API key generation and management
+- **Real-time LED status strips** for visual heartbeat monitoring (replaces text-based timestamps)
+  - 15-dot LED strips with 2-second resolution showing 30-second heartbeat window
+  - Color-coded states: Green (healthy), Yellow (warning), Red (critical), Grey (offline)
+  - Animated LED extinguishing as heartbeat window expires
+- **Shortened Agent IDs** (8 characters + hover tooltip) for better readability
+- **Dropdown action menus** for cleaner interface (enroll, rename, migrate, redeploy, remove)
+- **Agent enrollment** with existing or new tunnel assignment
+- **Bulk agent operations** and tunnel reassignment capabilities
+- **Migration conflict resolution** interface for handling rule conflicts
+
+#### **Redis-Powered Architecture**
+- **Redis requirement** for caching, command queues, and event bus
+- **Agent heartbeat storage** and real-time monitoring
+- **Command/event distribution** system for multi-host coordination
+- **Foundation for future horizontal scaling** and performance improvements
+
+#### **Enhanced Security Framework**
+- **Non-root container execution** (runs as user 65532:65532) with init container for permissions
+- **Master API key reveal-on-demand** with CSRF protection and secure token handling
+- **Encrypted agent key store** with secure credential management and rotation
+- **Locked-down setup wizard** with restore-from-backup option
+- **Docker socket proxy integration** (tecnativa/docker-socket-proxy) for reduced attack surface
+
+#### **Comprehensive Backup & Restore System**
+- **Complete instance backup** including encrypted credentials and agent keys
+- **Timestamped backup archives** with full configuration preservation (.zip format)
+- **UI-based restore functionality** for disaster recovery scenarios
+- **Setup wizard integration** for fresh installations with backup import
+
+#### **Remote Manual Rules Management**
+- **Create manual ingress rules** from master UI for any enrolled agent
+- **Apply rules to any enrolled tunnel** regardless of host location
+- **Cross-host tunnel management** capabilities with centralized control
+
+#### **Improved Tunnel Management**
+- **"All Cloudflare Tunnels on Account" panel** with one-click delete functionality
+- **Simplified stale tunnel cleanup** process across multiple hosts
+- **Enhanced tunnel status monitoring** with real-time updates
+
+#### **Automatic Zone Detection**
+- **Intelligent Cloudflare zone detection** from hostname labels
+- **Fallback to default zone** when detection fails
+- **Improved service discovery** for label-driven configurations
+
+#### **Documentation Overhaul**
+- **New Quick Start Guide** for Docker Compose v3 setup with Redis
+- **Comprehensive Multi-Server & Agent** deployment guide
+- **Security Architecture** documentation with threat model
+- **Backup & Restore** operational guide with best practices
+- **Updated API documentation** for agent integration
+
+### Changed
+
+#### **Breaking Changes**
+- **Redis is now required** - DockFlare will not start without `REDIS_URL` environment variable
+- **New `docker-compose.yml` structure** with Redis, socket proxy, init container, and volume changes
+- **Embedded cloudflared limited** to master host only (remote hosts use DockFlare Agent)
+
+#### **UI/UX Improvements**
+- **Professional LED heartbeat indicators** replacing static text timestamps
+- **Enhanced agent table layout** with improved usability and responsive design
+- **Modernized dropdown interfaces** throughout the application
+- **Streamlined action menus** with icon-based navigation
+
+#### **Architecture Changes**
+- **Master API key security** with reveal-on-demand modal instead of embedded display
+- **Setup wizard hardening** with route locking after initial configuration
+- **Docker socket proxy** integration for enhanced security posture
+
+### Security
+
+- **Hardened API endpoints** requiring master key for admin routes and agent API keys for polling
+- **CSRF-protected key reveal** so master key is not embedded in UI source code
+- **Encrypted agent credentials** with secure key rotation capabilities
+- **Non-root container execution** significantly reducing attack surface
+- **Socket proxy isolation** preventing direct Docker socket access
+
+### Fixed
+
+- **Improved error handling** for agent communication failures and network issues
+- **Enhanced tunnel status detection** and reporting across multiple hosts
+- **Better handling of disconnected agents** with automatic cleanup procedures
+- **Cloudflare API reliability** improvements for multi-host scenarios
+
+### Known Issues
+
+- **Cloudflared version detection** currently shows hardcoded version (2025.9.0) while automatic detection is being fixed
+- **DockFlare Agent is in beta** - performance with high-volume event streams may require tuning of `POLL_INTERVAL` settings
+- **Redis is critical component** - monitor health in single-node setups as agent communication depends on it
+- **Agent repository automated builds** coming soon for simplified deployment
+
+### Migration Notes
+
+#### **Upgrade Process**
+1. **Create full backup** via Settings → Backup & Restore before upgrading
+2. **Update docker-compose.yml** to v3 structure with Redis and socket proxy components
+3. **Create external network**: `docker network create cloudflare-net`
+4. **Pull new image** and restart: `docker compose up -d`
+5. **Review Agents page** to begin multi-host enrollment process
+6. **Deploy agents** on remote hosts using generated API keys from dashboard
+7. **Use restore option** in setup wizard for fresh installations
+
+#### **Technical Requirements**
+- **Minimum Docker Compose version**: 3.8
+- **Redis version**: 7-alpine (included in new compose stack)
+- **Socket proxy**: tecnativa/docker-socket-proxy:v0.4.1
+- **Container user**: 65532:65532 (non-root execution)
+- **External network**: cloudflare-net (must be created manually)
+
+#### **Agent Deployment**
+- **Agent heartbeat interval**: 30 seconds (configurable via `HEARTBEAT_INTERVAL`)
+- **LED status indicators**: 15-dot strips with 2-second resolution
+- **Command polling**: configurable via `POLL_INTERVAL` (default: 5 seconds)
+- **Automatic tunnel management**: full lifecycle from enrollment to cleanup
+
 ## [v2.1.7] - 2025-08-30
 
 ### New

@@ -1,7 +1,6 @@
 import os
 import re
 import markdown
-import pymdownx
 from flask import Blueprint, render_template, current_app, abort
 from flask_login import login_required
 
@@ -36,7 +35,7 @@ def parse_docs_nav():
             else:
                 match = link_regex.search(item_text)
                 if match:
-                    link_item = {'name': match.group(1), 'link': match.group(2), 'is_category': False}
+                    link_item = {'name': match.group(1), 'link': match.group(2)}
                     nav_structure.append(link_item)
         
         

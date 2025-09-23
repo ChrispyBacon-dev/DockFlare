@@ -14,7 +14,7 @@ This page lists some of the common issues that users may encounter and how to re
 2.  **Look for Errors:** Look for any error messages. Common causes include:
     *   An invalid `docker-compose.yml` file (e.g., incorrect syntax, volume mounting issues).
     *   Problems with the Docker daemon itself.
-    *   Permission issues with the Docker socket (`/var/run/docker.sock`).
+    *   Connectivity or permission issues with the docker-socket-proxy service or the `DOCKER_HOST` setting.
 
 ---
 

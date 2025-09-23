@@ -59,3 +59,7 @@ wtforms==3.2.1
 Markdown==3.6
 pymdown-extensions==10.16.1
 Pygments==2.19.2
+
+# Redis Caching
+redis==4.5.1
+flask-caching==2.1.0

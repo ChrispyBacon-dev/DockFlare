@@ -37,7 +37,7 @@ For more details, see the [Access Policy Best Practices & Examples](Access-Polic
 The Settings page contains various administrative and configuration options:
 
 *   **Cloudflare Tunnels:** This section lists all the Cloudflare Tunnels found on your account, their status, and their connected `cloudflared` agents. You can also view all CNAME DNS records pointing to any of your tunnels.
-*   **Backup & Restore:** Allows you to download a backup of your `state.json` file and restore it.
+*   **Backup & Restore:** Download a full DockFlare backup archive (`.zip`) containing encrypted config, agent keys, and state, or upload a previously exported archive to restore the instance.
 *   **Security:**
     *   **Change Password:** Change your password for the Web UI.
     *   **Disable Password Login:** For advanced use cases where you place DockFlare behind another authentication proxy.

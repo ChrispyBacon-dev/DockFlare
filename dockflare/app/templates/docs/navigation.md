@@ -13,6 +13,7 @@ This documentation provides comprehensive information for DockFlare. Whether you
     *   [Accessing the Web UI](Accessing-the-Web-UI.md)
 *   **Core Concepts**
     *   [How DockFlare Works](How-DockFlare-Works.md)
+    *   [DockFlare Agent & Multi-Server Architecture](Multi-Server-Agent.md)
     *   [Access Policy Best Practices](Access-Policy-Best-Practices.md)
     *   [Internal vs External `cloudflared`](Internal-vs-External-cloudflared.md)
     *   [State-Persistence](State-Persistence.md)
@@ -25,12 +26,14 @@ This documentation provides comprehensive information for DockFlare. Whether you
     *   [Managing DNS Zones](Managing-DNS-Zones.md)
     *   [Understanding Graceful Deletion](Understanding-Graceful-Deletion.md)
     *   [Using the Web UI](Using-the-Web-UI.md)
+    *   [Backup & Restore](Backup-and-Restore.md)
 *   **Advanced Topics**
     *   [External `cloudflared` Mode](External-cloudflared-Mode.md)
     *   [Switching Between Modes](Switching-Between-Modes.md)
     *   [Monitoring with Prometheus & Grafana](Monitoring-with-Prometheus-&-Grafana.md)
     *   [Performance Tuning](Performance-Tuning.md)
     *   [Content Security Policy (CSP)](Content-Security-Policy.md)
+    *   [Security Architecture & Hardening](Security-Architecture.md)
 *   **Troubleshooting**
     *   [Common Issues](Common-Issues.md)
     *   [Debugging & Logs](Debugging-&-Logs.md)

@@ -6,7 +6,7 @@
         <h2 class="text-xl font-bold">Final Step: Create Admin User</h2>
         <p class="py-4 text-gray-500">Your settings have been imported. Please create an administrator account to complete the migration.</p>
     {% else %}
-        <h2 class="text-xl font-bold">Step 1: Create Admin User</h2>
+        <h2 class="text-xl font-bold">Create Admin User</h2>
         <p class="py-4 text-gray-500">Create a secure administrator account to access the DockFlare web interface. All your data, including your password, will be encrypted to ensure it remains safe and confidential.</p>
     {% endif %}
 </div>
@@ -58,4 +58,11 @@
 
 {% block step_indicator %}
     {% include 'setup/_steps.html' with context %}
+    {% if show_restore_option %}
+    <div class="mt-6 text-center">
+        <a href="{{ url_for('setup.restore_from_backup') }}" class="btn btn-outline btn-primary">
+            Coming from another DockFlare instance? Restore from backup
+        </a>
+    </div>
+    {% endif %}
 {% endblock %}

@@ -32,33 +32,24 @@ RUN echo "DEBUG: Details of /usr/src/app/app/static AFTER npm run build:css:" &&
 RUN echo "DEBUG: Contents of /usr/src/app/app/static AFTER npm run build:css:" && ls -Alp /usr/src/app/app/static || echo "/usr/src/app/app/static NOT FOUND after build"
 RUN echo "DEBUG: Specifically checking for /usr/src/app/app/static/css/output.css AFTER npm run build:css:"
 RUN ls -l /usr/src/app/app/static/css/output.css || echo "/usr/src/app/app/static/css/output.css NOT FOUND after build"
+
 FROM python:3.13-slim AS runtime
+ARG DOCKFLARE_UID=65532
+ARG DOCKFLARE_GID=65532
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 WORKDIR /app
-ENV CLOUDFLARED_VERSION="2024.1.5"
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && ARCH=$(dpkg --print-architecture) && \
-    if [ "$ARCH" = "amd64" ]; then \
-        CLOUDFLARED_ARCH="linux-amd64"; \
-    elif [ "$ARCH" = "arm64" ]; then \
-        CLOUDFLARED_ARCH="linux-arm64"; \
-    else \
-        echo "Unsupported architecture: $ARCH" && exit 1; \
-    fi && \
-    wget -q "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-${CLOUDFLARED_ARCH}.deb" && \
-    dpkg -i "cloudflared-${CLOUDFLARED_ARCH}.deb" && \
-    rm "cloudflared-${CLOUDFLARED_ARCH}.deb" && \
-    cloudflared --version && \
-    mkdir -p /root/.cloudflared
-
+RUN apt-get update && apt-get install -y --no-install-recommends wget ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN mkdir -p /app/static/css
 COPY --from=frontend-builder /usr/src/app/app/static/css/output.css /app/static/css/output.css
 COPY ./app /app
+RUN addgroup --system --gid ${DOCKFLARE_GID} dockflare \
+    && adduser --system --uid ${DOCKFLARE_UID} --ingroup dockflare dockflare \
+    && mkdir -p /app/data \
+    && chown -R dockflare:dockflare /app
+USER dockflare:dockflare
 ENV PYTHONPATH=/
 EXPOSE 5000
 CMD ["python", "main.py"]

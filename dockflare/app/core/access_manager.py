@@ -15,18 +15,16 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 # app/core/access_manager.py
-import copy
 import logging
 import json
 import hashlib
-import requests 
+import requests
 import time
 from flask import current_app
-from app import config
 from app.core import cloudflare_api
 from app.core.state_manager import access_groups
 
-_ACCOUNT_EMAIL_CACHE_TTL = 3600 
+_ACCOUNT_EMAIL_CACHE_TTL = 3600
 _cached_account_email = None
 _cached_account_email_timestamp = 0
 
@@ -40,21 +38,21 @@ def _build_access_app_payload(hostname, name, session_duration, app_launcher_vis
         "self_hosted_domains": self_hosted_domains,
         "auto_redirect_to_identity": auto_redirect_to_identity,
     }
-    if access_policies is not None: 
+    if access_policies is not None:
         payload["policies"] = access_policies
     if allowed_idps is not None:
         payload["allowed_idps"] = allowed_idps
-    
+
     return payload
 
 def check_for_tld_access_policy(zone_name):
     if not zone_name:
         logging.warning("check_for_tld_access_policy called with no zone_name.")
         return False
-    
+
     tld_hostname = f"*.{zone_name}"
     logging.info(f"Checking for existing Access Policy for wildcard TLD: {tld_hostname}")
-    
+
     try:
         existing_app = find_cloudflare_access_application_by_hostname(tld_hostname)
         if existing_app and existing_app.get("id"):
@@ -69,15 +67,15 @@ def check_for_tld_access_policy(zone_name):
 
 def get_cloudflare_account_email():
     global _cached_account_email, _cached_account_email_timestamp
-    
-    current_time = time.time() 
+
+    current_time = time.time()
     if _cached_account_email and (current_time - _cached_account_email_timestamp < _ACCOUNT_EMAIL_CACHE_TTL):
         logging.debug(f"Returning cached Cloudflare account email: {_cached_account_email}")
         return _cached_account_email
 
     logging.info("Fetching Cloudflare account email from API.")
     try:
-        response_data = cloudflare_api.cf_api_request("GET", "/user") 
+        response_data = cloudflare_api.cf_api_request("GET", "/user")
         if response_data and response_data.get("success"):
             email = response_data.get("result", {}).get("email")
             if email:
@@ -110,10 +108,10 @@ def find_cloudflare_access_application_by_hostname(hostname):
                 if app.get("domain") == hostname:
                     logging.info(f"Found Access Application ID '{app.get('id')}' for hostname '{hostname}' via direct domain query.")
                     return app
-        
+
         logging.info(f"No exact match for '{hostname}' via domain query. Falling back to listing all Access Applications.")
-        
-        all_apps_response = cloudflare_api.cf_api_request("GET", endpoint, params={"per_page": 100}) 
+
+        all_apps_response = cloudflare_api.cf_api_request("GET", endpoint, params={"per_page": 100})
         all_apps = all_apps_response.get("result", [])
         if all_apps and isinstance(all_apps, list):
             for app in all_apps:
@@ -123,12 +121,12 @@ def find_cloudflare_access_application_by_hostname(hostname):
                 if hostname in app.get("self_hosted_domains", []):
                     logging.info(f"Found Access Application ID '{app.get('id')}' for hostname '{hostname}' (in self_hosted_domains) via full list scan.")
                     return app
-                    
+
         logging.info(f"Access Application for hostname '{hostname}' not found after extensive search.")
         return None
     except requests.exceptions.RequestException as e:
         logging.error(f"API error finding Cloudflare Access Application for '{hostname}': {e}")
-        return None 
+        return None
     except Exception as e:
         logging.error(f"Unexpected error finding Cloudflare Access Application for '{hostname}': {e}", exc_info=True)
         return None
@@ -160,16 +158,17 @@ def get_cloudflare_access_application(app_uuid):
     endpoint = f"/accounts/{account_id}/access/apps/{app_uuid}"
     try:
         response_data = cloudflare_api.cf_api_request("GET", endpoint)
-        app_data = response_data.get("result")
-        if app_data: 
-            logging.info(f"Successfully retrieved Access Application details for ID '{app_uuid}'")
-            return app_data
-        elif response_data.get("success"): 
-            logging.warning(f"Successfully called API for Access App ID '{app_uuid}', but no result data found. Response: {response_data}")
-            return None
-        else: 
-            logging.error(f"API call failed or returned success=false for Access App ID '{app_uuid}'. Response: {response_data}")
-            return None
+        if response_data and response_data.get("success"):
+            app_data = response_data.get("result")
+            if app_data:
+                logging.info(f"Successfully retrieved Access Application details for ID '{app_uuid}'")
+                return app_data
+            elif response_data.get("success"):
+                logging.warning(f"Successfully called API for Access App ID '{app_uuid}', but no result data found. Response: {response_data}")
+                return None
+            else:
+                logging.error(f"API call failed or returned success=false for Access App ID '{app_uuid}'. Response: {response_data}")
+                return None
     except requests.exceptions.RequestException as e:
         if hasattr(e, 'response') and e.response is not None and e.response.status_code == 404:
             logging.warning(f"Cloudflare Access Application with ID '{app_uuid}' not found (404).")
@@ -193,7 +192,7 @@ def update_cloudflare_access_application(app_uuid, hostname, name, session_durat
             return app_data
         else:
             logging.error(f"Access Application update for '{app_uuid}' API call successful but no ID in response: {app_data}")
-            return None 
+            return None
     except requests.exceptions.RequestException as e:
         logging.error(f"API error updating Access Application '{app_uuid}': {e}")
         return None
@@ -272,7 +271,6 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
         logging.info(f"Processing Access Groups {desired_access_group_ids} for {hostname}.")
         policy_source_type = "group"
         cf_access_policies = []
-        
    
         first_group_id = desired_access_group_ids[0]
         first_group_def = access_groups.get(first_group_id)
@@ -345,8 +343,10 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
         desired_allowed_idps = [idp.strip() for idp in desired_allowed_idps_str.split(',')] if desired_allowed_idps_str else None
 
         if desired_custom_rules_str:
-            try: cf_access_policies = json.loads(desired_custom_rules_str)
-            except json.JSONDecodeError: logging.error(f"Error parsing 'custom_rules' JSON for {hostname}")
+            try:
+                cf_access_policies = json.loads(desired_custom_rules_str)
+            except json.JSONDecodeError:
+                logging.error(f"Error parsing 'custom_rules' JSON for {hostname}")
         
         if not cf_access_policies:
             if policy_source_type == "bypass":
