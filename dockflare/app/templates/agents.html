@@ -339,12 +339,167 @@
     }
   };
   
-  
-  
+
+  const fetchData = async () => {
+    try {
+      const agentsData = await apiCall('/api/v2/agents');
+      if (agentsData) {
+        renderAgentsTable(agentsData.agents);
+        renderApiKeysTable(agentsData.api_keys);
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      agentsTableBody.innerHTML = '<tr><td colspan="10" class="text-center p-4 text-error">Failed to load agents data.</td></tr>';
+      apiKeysTableBody.innerHTML = '<tr><td colspan="4" class="text-center p-4 text-error">Failed to load API keys data.</td></tr>';
+    }
+  };
+
+  const refreshData = () => {
+    fetchData();
+  };
+
+  setInterval(refreshData, 5000);
+
   document.addEventListener('DOMContentLoaded', () => {
-    
-    fetchData(); 
-    
+
+    fetchData();
+
+    document.getElementById('btn-generate-key').addEventListener('click', () => {
+      document.getElementById('modal-generate-key').showModal();
+    });
+
+    document.getElementById('btn-force-reconcile').addEventListener('click', async () => {
+      const result = await apiCall('/api/v2/agents/reconcile', 'POST');
+      if (result) {
+        alert('Reconciliation triggered successfully!');
+        fetchData();
+      }
+    });
+
+    document.getElementById('form-generate-key').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+      const owner = formData.get('owner');
+      const result = await apiCall('/api/v2/agents/generate-key', 'POST', { owner });
+      if (result && result.api_key) {
+        document.getElementById('generated-key-text').textContent = result.api_key;
+        document.getElementById('generated-key-container').classList.remove('hidden');
+        fetchData();
+      }
+    });
+
+    document.getElementById('btn-copy-key').addEventListener('click', (e) => {
+      const keyText = document.getElementById('generated-key-text').textContent;
+      copyToClipboard(keyText, e.target);
+    });
+
+    document.addEventListener('click', async (e) => {
+      if (e.target.classList.contains('btn-enroll')) {
+        const agentId = e.target.getAttribute('data-agent-id');
+        document.getElementById('enroll-agent-id').value = agentId;
+        document.getElementById('modal-enroll-agent').showModal();
+
+        const tunnelsData = await apiCall('/api/v2/tunnels');
+        const tunnelSelect = document.getElementById('enroll-tunnel-select');
+        tunnelSelect.innerHTML = '<option disabled selected>Select a tunnel...</option>';
+        if (tunnelsData && tunnelsData.tunnels) {
+          Object.entries(tunnelsData.tunnels).forEach(([tunnelId, tunnel]) => {
+            const option = document.createElement('option');
+            option.value = tunnel.name;
+            option.textContent = `${tunnel.name} (${tunnelId.substring(0, 8)})`;
+            tunnelSelect.appendChild(option);
+          });
+        }
+      }
+
+      if (e.target.classList.contains('btn-rename-agent')) {
+        const agentId = e.target.getAttribute('data-agent-id');
+        document.getElementById('rename-agent-id').value = agentId;
+        document.getElementById('modal-rename-agent').showModal();
+      }
+
+      if (e.target.classList.contains('btn-revoke-key')) {
+        if (confirm('Are you sure you want to revoke this API key?')) {
+          const keyId = e.target.getAttribute('data-key-id');
+          const result = await apiCall('/api/v2/agents/revoke-key', 'POST', { key_id: keyId });
+          if (result) {
+            fetchData();
+          }
+        }
+      }
+
+      if (e.target.classList.contains('btn-remove')) {
+        if (confirm('Are you sure you want to remove this agent?')) {
+          const agentId = e.target.getAttribute('data-agent-id');
+          const result = await apiCall(`/api/v2/agents/${agentId}/remove`, 'POST');
+          if (result) {
+            fetchData();
+          }
+        }
+      }
+
+      if (e.target.classList.contains('btn-trigger-migration')) {
+        const agentId = e.target.getAttribute('data-agent-id');
+        const result = await apiCall(`/api/v2/agents/${agentId}/trigger-migration`, 'POST');
+        if (result) {
+          fetchData();
+        }
+      }
+
+      if (e.target.classList.contains('btn-redeploy-tunnel')) {
+        if (confirm('Are you sure you want to redeploy the tunnel for this agent?')) {
+          const agentId = e.target.getAttribute('data-agent-id');
+          const result = await apiCall(`/api/v2/agents/${agentId}/redeploy-tunnel`, 'POST');
+          if (result) {
+            fetchData();
+          }
+        }
+      }
+
+      if (e.target.classList.contains('btn-roll-key')) {
+        if (confirm('Are you sure you want to roll the API key for this agent? The old key will be revoked.')) {
+          const agentId = e.target.getAttribute('data-agent-id');
+          const result = await apiCall(`/agents/${agentId}/roll-key`, 'POST');
+          if (result) {
+            fetchData();
+          }
+        }
+      }
+    });
+
+    document.getElementById('form-enroll-agent').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+      const agentId = formData.get('agent_id');
+      const tunnelName = document.getElementById('enroll-tunnel-select').value !== 'Select a tunnel...'
+        ? document.getElementById('enroll-tunnel-select').value
+        : document.getElementById('enroll-new-tunnel-name').value;
+
+      if (!tunnelName) {
+        alert('Please select an existing tunnel or provide a name for a new tunnel.');
+        return;
+      }
+
+      const result = await apiCall(`/api/v2/agents/${agentId}/enroll`, 'POST', { tunnel_name: tunnelName });
+      if (result) {
+        document.getElementById('modal-enroll-agent').close();
+        fetchData();
+      }
+    });
+
+    document.getElementById('form-rename-agent').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+      const agentId = formData.get('agent_id');
+      const displayName = formData.get('display_name');
+
+      const result = await apiCall(`/api/v2/agents/${agentId}/rename`, 'POST', { display_name: displayName });
+      if (result) {
+        document.getElementById('modal-rename-agent').close();
+        fetchData();
+      }
+    });
+
   });
 </script>
 {% endblock %}
