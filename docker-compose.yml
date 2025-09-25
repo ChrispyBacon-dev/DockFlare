@@ -30,7 +30,7 @@ services:
     restart: "no"
 
   dockflare:
-    image: alplat/dockflare:unstable
+    image: alplat/dockflare:stable
     container_name: dockflare
     restart: unless-stopped
     ports:
