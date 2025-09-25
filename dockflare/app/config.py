@@ -108,3 +108,5 @@ AGENT_KEY_STORAGE_PATH = os.getenv('AGENT_KEY_STORAGE_PATH', None)
 
 # Polling interval (seconds) recommended for agents to poll the Master for commands
 AGENT_COMMAND_POLL_INTERVAL = int(os.getenv('AGENT_COMMAND_POLL_INTERVAL', 5))
+
+REDIS_DB_INDEX = int(os.getenv('REDIS_DB_INDEX', 0))

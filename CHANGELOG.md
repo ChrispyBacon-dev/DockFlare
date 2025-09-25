@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Enhanced migration service compatibility** with backwards compatible label checking across all migration functions
 - **Improved container matching logic** for more accurate auto-import and conflict detection
 
+#### **Redis Database Configuration Enhancement**
+- **Added `REDIS_DB_INDEX` environment variable** - allows specifying Redis database index (0-15) for better isolation when sharing Redis across multiple Docker containers
+- **Enhanced Redis URL parsing** - dynamically constructs Redis connection URL with specified database index
+- **Maintains full backward compatibility** - existing docker-compose files continue to work without changes, defaults to database 0
+
 #### **Dependencies Security Update**
 - **Updated Redis client** from 4.5.1 to 4.5.5 to address security vulnerabilities (CVE-2023-28859, CVE-2023-28858)
 

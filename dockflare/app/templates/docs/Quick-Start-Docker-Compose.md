@@ -47,6 +47,7 @@ services:
       - dockflare_data:/app/data
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - REDIS_DB_INDEX=0  # Optional: specify Redis database index (0-15) for isolation from other containers
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
     depends_on:
       docker-socket-proxy:

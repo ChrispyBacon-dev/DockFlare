@@ -29,13 +29,21 @@ cache_config = {
 
 redis_url = os.getenv("REDIS_URL")
 if redis_url:
+    redis_db_index = config.REDIS_DB_INDEX
+
+    if '/' in redis_url:
+        base_url = redis_url.rsplit('/', 1)[0]
+        final_redis_url = f"{base_url}/{redis_db_index}"
+    else:
+        final_redis_url = f"{redis_url}/{redis_db_index}"
+
     cache_config = {
         "CACHE_TYPE": "RedisCache",
-        "CACHE_REDIS_URL": redis_url,
+        "CACHE_REDIS_URL": final_redis_url,
         "CACHE_DEFAULT_TIMEOUT": 300,
         "CACHE_KEY_PREFIX": "dockflare_"
     }
-    logging.info(f"Redis caching enabled with URL: {redis_url}")
+    logging.info(f"Redis caching enabled with URL: {final_redis_url}")
 else:
     logging.warning("Redis URL not provided. Using in-memory caching instead.")
 
@@ -55,30 +63,11 @@ def init_app(app):
         schedule_periodic_cache_refresh()
 
 def get_dns_records_cache_key(zone_id, tunnel_id):
-    """
-    Generate a cache key for DNS records.
-    
-    This function creates a consistent cache key format for DNS records
-    based on the zone ID and tunnel ID. This ensures that we can
-    properly retrieve and invalidate cached DNS records.
-    
-    Args:
-        zone_id (str): The Cloudflare zone ID
-        tunnel_id (str): The Cloudflare tunnel ID
-        
-    Returns:
-        str: A formatted cache key string
-    """
+
     return f"dns_records:{zone_id}:{tunnel_id}"
 
 def clear_dns_records_cache(zone_id=None, tunnel_id=None):
-    """Clear DNS records cache
-    
-    If zone_id and tunnel_id are provided, clear only that specific cache.
-    If only zone_id is provided, clear all caches for that zone.
-    If only tunnel_id is provided, clear all caches for that tunnel.
-    If neither is provided, clear all DNS record caches.
-    """
+
     if not CACHE_ENABLED:
         return
         
@@ -100,11 +89,7 @@ def clear_dns_records_cache(zone_id=None, tunnel_id=None):
         logging.debug("Cleared all DNS records caches")
 
 def _delete_keys_by_pattern(pattern):
-    """Delete all keys matching a pattern
     
-    This is a helper function for cache invalidation.
-    It uses the Redis SCAN command to find keys matching a pattern and deletes them.
-    """
     if not CACHE_ENABLED:
         return
         
@@ -127,11 +112,7 @@ def _delete_keys_by_pattern(pattern):
         logging.error(f"Error deleting keys by pattern {pattern}: {e}", exc_info=True)
 
 def clear_zone_caches(zone_id=None):
-    """Clear all caches related to zones
     
-    If zone_id is provided, clear only caches for that zone.
-    Otherwise, clear all zone-related caches.
-    """
     if not CACHE_ENABLED:
         return
         
@@ -145,12 +126,12 @@ def clear_zone_caches(zone_id=None):
         logging.debug("Cleared all zone caches")
 
 def schedule_periodic_cache_refresh():
-    """Schedule periodic cache refresh for critical data"""
+    
     if not CACHE_ENABLED:
         return
         
     def refresh_critical_caches():
-        """Refresh critical caches periodically"""
+    
         while True:
             try:
                 logging.info("Performing periodic refresh of critical caches")
@@ -169,15 +150,7 @@ def schedule_periodic_cache_refresh():
     logging.info("Started periodic cache refresh thread")
 
 def get_cache_stats():
-    """
-    Get statistics about the cache
-    
-    Returns:
-        dict: A dictionary containing cache statistics:
-            - connected: True if connected to Redis, False if using in-memory cache
-            - dns_records_count: Number of DNS records in the cache
-    """
-    
+        
     stats = {
         'connected': False,
         'dns_records_count': 0

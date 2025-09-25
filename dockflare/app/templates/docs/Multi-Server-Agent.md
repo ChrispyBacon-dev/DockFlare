@@ -30,7 +30,7 @@ The master and Redis typically run together, while agents run next to workloads 
 
 ## Prerequisites
 
-* DockFlare Master ≥ v3.0 with Redis configured (`REDIS_URL` set).
+* DockFlare Master ≥ v3.0 with Redis configured (`REDIS_URL` set). Optionally specify `REDIS_DB_INDEX` to isolate data from other containers using the same Redis instance.
 * Cloudflare API token with Tunnel + Access permissions (same as previous versions).
 * Docker runtime on every host you plan to manage.
 * (Optional) Dedicated network segment or VPN between master and agents if you do not expose the master publicly.

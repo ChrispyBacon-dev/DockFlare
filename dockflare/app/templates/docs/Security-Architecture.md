@@ -45,7 +45,7 @@ This document explains how DockFlare secures both the Master node and enrolled A
 | Area | Recommendation |
 | --- | --- |
 | Docker Volumes | Persist `/app/data` (encrypted config, keys, state). Persist `/app/logs` if file logging is enabled, and ensure host mounts are writable by UID/GID 65532 or your overridden build args. |
-| Redis | Run `redis:7-alpine` alongside DockFlare on a private network (`dockflare-internal`) or point `REDIS_URL` to a hardened instance (auth/TLS). Avoid exposing Redis publicly. |
+| Redis | Run `redis:7-alpine` alongside DockFlare on a private network (`dockflare-internal`) or point `REDIS_URL` to a hardened instance (auth/TLS). Avoid exposing Redis publicly. Use `REDIS_DB_INDEX` to isolate DockFlare data from other containers sharing the same Redis instance. |
 | Backups | Download the `.zip` regularly and store it with `dockflare.key`. Both files are required to decrypt the configuration on restore. |
 | Agents | Treat API keys like credentials. Deploy them with the socket proxy so only required Docker endpoints are exposed, and remember the container runs as the unprivileged `dockflare` user (UID/GID 65532); align host permissions or rebuild with matching `DOCKFLARE_UID/DOCKFLARE_GID`. |
 | Reverse Proxy | Place DockFlare behind Cloudflare Access or another trusted IdP. If you disable password login, ensure upstream authentication is always enforced. |
