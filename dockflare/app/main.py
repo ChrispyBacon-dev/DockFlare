@@ -231,6 +231,30 @@ def main_application_entrypoint():
                     f.write(updated_payload)
 
             config_loader.apply_config_to_app(app, config_data)
+
+            from app import oauth
+            def register_oauth_providers(flask_app, oauth_instance):
+                providers = flask_app.config.get('OAUTH_PROVIDERS', [])
+                for provider in providers:
+                    if not provider.get('enabled'):
+                        continue
+
+                    try:
+                        client_id = fernet.decrypt(provider['client_id'].encode()).decode()
+                        client_secret = fernet.decrypt(provider['client_secret'].encode()).decode()
+                    except Exception:
+                        logging.error(f"Could not decrypt credentials for provider {provider['name']}. Skipping.")
+                        continue
+
+                    oauth_instance.register(
+                        name=provider['id'],
+                        client_id=client_id,
+                        client_secret=client_secret,
+                        server_metadata_url=f"https://accounts.google.com/.well-known/openid-configuration",
+                        client_kwargs={'scope': 'openid email profile'}
+                    )
+
+            register_oauth_providers(app, oauth)
             logging.info("DockFlare is configured and in Operational Mode.")
         except Exception as e:
             logging.error(f"Failed to load or decrypt configuration: {e}. Starting in Pre-Flight mode.", exc_info=True)

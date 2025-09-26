@@ -92,6 +92,20 @@ def apply_config_to_app(flask_app, config_data: Dict) -> None:
     flask_app.config['DISABLE_PASSWORD_LOGIN'] = config_data.get('disable_password_login', False)
     flask_app.config['MASTER_API_KEY'] = effective_master_key
 
+    auth_settings = config_data.get('auth_settings', {})
+    password_login_enabled = auth_settings.get('password_login_enabled', True)
+    flask_app.config['DISABLE_PASSWORD_LOGIN'] = not password_login_enabled
+
+    flask_app.config['OAUTH_PROVIDERS'] = config_data.get('auth_providers', [])
+    flask_app.config['OAUTH_AUTHORIZED_USERS'] = [
+        user['email'] for user in config_data.get('authorized_users', [])
+    ]
+
+    flask_app.config['OAUTH_AUDIT_ENABLED'] = config_data.get('oauth_audit_enabled', True)
+    oauth_settings = config_data.get('oauth_settings', {})
+    flask_app.config['OAUTH_SESSION_TIMEOUT'] = oauth_settings.get('session_timeout', 86400)
+    flask_app.config['OAUTH_MAX_LOGIN_ATTEMPTS'] = oauth_settings.get('max_login_attempts', 5)
+
     config.CF_API_TOKEN = flask_app.config['CF_API_TOKEN']
     config.CF_ACCOUNT_ID = flask_app.config['CF_ACCOUNT_ID']
     config.CF_ZONE_ID = flask_app.config['CF_ZONE_ID']

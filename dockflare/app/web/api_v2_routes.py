@@ -23,6 +23,7 @@ from datetime import datetime, timezone, timedelta
 import secrets
 import uuid
 from flask import Blueprint, jsonify, request, current_app, url_for
+from flask_login import login_required
 
 from app import config, docker_client, tunnel_state, cloudflared_agent_state, publish_state_event
 from app.core.state_manager import (
@@ -1963,3 +1964,200 @@ def debug_info_api():
     except Exception as e:
         logging.error(f"Error in /api/v2/debug-info route: {e}", exc_info=True)
         return jsonify({"status": "error", "message": "An internal error occurred."}), 500
+
+def _save_encrypted_config(config_data, fernet_cipher):
+    try:
+        from app.web.config_loader import config_file_path
+        import json
+        encrypted_payload = fernet_cipher.encrypt(json.dumps(config_data).encode('utf-8'))
+        with open(config_file_path(), 'wb') as f:
+            f.write(encrypted_payload)
+        return True
+    except Exception as e:
+        logging.error(f"Failed to save encrypted config: {e}", exc_info=True)
+        return False
+
+@api_v2_bp.route('/auth/settings', methods=['GET', 'PUT'])
+@login_required
+def manage_auth_settings():
+    from app.web.config_loader import load_encrypted_config_with_cipher
+    config_data, fernet = load_encrypted_config_with_cipher()
+    if config_data is None:
+        return jsonify({"error": "config_not_loaded"}), 500
+
+    if request.method == 'GET':
+        auth_settings = config_data.get('auth_settings', {})
+        providers = config_data.get('auth_providers', [])
+        users = config_data.get('authorized_users', [])
+
+        for p in providers:
+            p.pop('client_id', None)
+            p.pop('client_secret', None)
+
+        return jsonify({
+            "settings": auth_settings,
+            "providers": providers,
+            "users": users
+        })
+
+    if request.method == 'PUT':
+        data = request.get_json()
+
+        if 'auth_settings' in data:
+            config_data['auth_settings'] = data['auth_settings']
+
+        if 'oauth_settings' in data:
+            config_data['oauth_settings'] = data['oauth_settings']
+
+        if not _save_encrypted_config(config_data, fernet):
+            return jsonify({"error": "failed_to_save_config"}), 500
+
+        return jsonify({"status": "success", "message": "Settings saved. A restart may be required."})
+
+@api_v2_bp.route('/auth/providers', methods=['GET', 'POST'])
+@login_required
+def manage_auth_providers():
+    from app.web.config_loader import load_encrypted_config_with_cipher
+    config_data, fernet = load_encrypted_config_with_cipher()
+    if config_data is None:
+        return jsonify({"error": "config_not_loaded"}), 500
+
+    if request.method == 'GET':
+        providers = config_data.get('auth_providers', [])
+        for p in providers:
+            p.pop('client_id', None)
+            p.pop('client_secret', None)
+        return jsonify({"providers": providers})
+
+    if request.method == 'POST':
+        data = request.get_json()
+        required_fields = ['id', 'name', 'type', 'client_id', 'client_secret']
+
+        if not all(field in data for field in required_fields):
+            return jsonify({"error": "missing_required_fields"}), 400
+
+        if not config_data.get('auth_providers'):
+            config_data['auth_providers'] = []
+
+        existing_ids = [p['id'] for p in config_data['auth_providers']]
+        if data['id'] in existing_ids:
+            return jsonify({"error": "provider_id_exists"}), 400
+
+        encrypted_client_id = fernet.encrypt(data['client_id'].encode()).decode()
+        encrypted_client_secret = fernet.encrypt(data['client_secret'].encode()).decode()
+
+        new_provider = {
+            'id': data['id'],
+            'name': data['name'],
+            'type': data['type'],
+            'client_id': encrypted_client_id,
+            'client_secret': encrypted_client_secret,
+            'enabled': data.get('enabled', True)
+        }
+
+        config_data['auth_providers'].append(new_provider)
+
+        if not _save_encrypted_config(config_data, fernet):
+            return jsonify({"error": "failed_to_save_config"}), 500
+
+        return jsonify({"status": "success", "message": "Provider added successfully."})
+
+@api_v2_bp.route('/auth/providers/<provider_id>', methods=['PUT', 'DELETE'])
+@login_required
+def manage_auth_provider(provider_id):
+    from app.web.config_loader import load_encrypted_config_with_cipher
+    config_data, fernet = load_encrypted_config_with_cipher()
+    if config_data is None:
+        return jsonify({"error": "config_not_loaded"}), 500
+
+    providers = config_data.get('auth_providers', [])
+    provider_index = next((i for i, p in enumerate(providers) if p['id'] == provider_id), None)
+
+    if provider_index is None:
+        return jsonify({"error": "provider_not_found"}), 404
+
+    if request.method == 'PUT':
+        data = request.get_json()
+        provider = providers[provider_index]
+
+        if 'name' in data:
+            provider['name'] = data['name']
+        if 'enabled' in data:
+            provider['enabled'] = data['enabled']
+        if 'client_id' in data:
+            provider['client_id'] = fernet.encrypt(data['client_id'].encode()).decode()
+        if 'client_secret' in data:
+            provider['client_secret'] = fernet.encrypt(data['client_secret'].encode()).decode()
+
+        if not _save_encrypted_config(config_data, fernet):
+            return jsonify({"error": "failed_to_save_config"}), 500
+
+        return jsonify({"status": "success", "message": "Provider updated successfully."})
+
+    if request.method == 'DELETE':
+        del providers[provider_index]
+
+        if not _save_encrypted_config(config_data, fernet):
+            return jsonify({"error": "failed_to_save_config"}), 500
+
+        return jsonify({"status": "success", "message": "Provider deleted successfully."})
+
+@api_v2_bp.route('/auth/users', methods=['GET', 'POST'])
+@login_required
+def manage_auth_users():
+    from app.web.config_loader import load_encrypted_config_with_cipher
+    from datetime import datetime
+    config_data, fernet = load_encrypted_config_with_cipher()
+    if config_data is None:
+        return jsonify({"error": "config_not_loaded"}), 500
+
+    if request.method == 'GET':
+        users = config_data.get('authorized_users', [])
+        return jsonify({"users": users})
+
+    if request.method == 'POST':
+        data = request.get_json()
+
+        if 'email' not in data:
+            return jsonify({"error": "email_required"}), 400
+
+        if not config_data.get('authorized_users'):
+            config_data['authorized_users'] = []
+
+        existing_emails = [u['email'] for u in config_data['authorized_users']]
+        if data['email'] in existing_emails:
+            return jsonify({"error": "user_exists"}), 400
+
+        new_user = {
+            'email': data['email'],
+            'name': data.get('name', ''),
+            'added_date': datetime.utcnow().isoformat()
+        }
+
+        config_data['authorized_users'].append(new_user)
+
+        if not _save_encrypted_config(config_data, fernet):
+            return jsonify({"error": "failed_to_save_config"}), 500
+
+        return jsonify({"status": "success", "message": "User added successfully."})
+
+@api_v2_bp.route('/auth/users/<user_email>', methods=['DELETE'])
+@login_required
+def manage_auth_user(user_email):
+    from app.web.config_loader import load_encrypted_config_with_cipher
+    config_data, fernet = load_encrypted_config_with_cipher()
+    if config_data is None:
+        return jsonify({"error": "config_not_loaded"}), 500
+
+    users = config_data.get('authorized_users', [])
+    user_index = next((i for i, u in enumerate(users) if u['email'] == user_email), None)
+
+    if user_index is None:
+        return jsonify({"error": "user_not_found"}), 404
+
+    del users[user_index]
+
+    if not _save_encrypted_config(config_data, fernet):
+        return jsonify({"error": "failed_to_save_config"}), 500
+
+    return jsonify({"status": "success", "message": "User deleted successfully."})

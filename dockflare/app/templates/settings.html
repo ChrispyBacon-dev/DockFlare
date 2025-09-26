@@ -17,6 +17,7 @@
                 <li><a href="{{ url_for('web.settings_page') }}#cloudflare-tunnels">All Cloudflare Tunnels</a></li>
                 <li><a href="{{ url_for('web.settings_page') }}#backup-restore">Backup & Restore</a></li>
                 <li><a href="{{ url_for('web.settings_page') }}#security">Security</a></li>
+                <li><a href="{{ url_for('web.settings_page') }}#security" class="pl-8 text-sm">OAuth Authentication</a></li>
                 <li><a href="{{ url_for('web.settings_page') }}#tunnel-agent-status">Tunnel & Agent Status</a></li>
             </ul>
             <div class="mt-4 px-2">
@@ -339,6 +340,77 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- OAuth Authentication Section -->
+                <div class="mt-8">
+                    <h3 class="font-semibold text-lg mb-4">OAuth Authentication</h3>
+                    <p class="text-sm opacity-70 mb-4">Configure OAuth providers to allow users to log in with third-party services like Google, GitHub, or Microsoft.</p>
+
+                    <!-- OAuth Settings Card -->
+                    <div class="card bg-base-200 mb-6">
+                        <div class="card-body">
+                            <h4 class="card-title text-md">OAuth Settings</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="form-control">
+                                    <label class="label" for="oauth_session_timeout">
+                                        <span class="label-text">Session Timeout (seconds)</span>
+                                    </label>
+                                    {{ security_settings_form.oauth_session_timeout(class="input input-bordered input-sm", **{'id': 'oauth_session_timeout'}) }}
+                                </div>
+                                <div class="form-control">
+                                    <label class="label cursor-pointer p-0">
+                                        <span class="label-text">{{ security_settings_form.oauth_audit_enabled.label.text }}</span>
+                                        {{ security_settings_form.oauth_audit_enabled(class="toggle toggle-primary toggle-sm") }}
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- OAuth Providers Section -->
+                    <div class="mb-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h4 class="text-md font-semibold">OAuth Providers</h4>
+                            <button class="btn btn-primary btn-sm" onclick="showAddProviderModal()">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                                </svg>
+                                Add Provider
+                            </button>
+                        </div>
+                        <div role="alert" class="alert alert-warning text-sm mb-4">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                            <span><strong>Security:</strong> OAuth providers you configure here will be trusted to authenticate users. Only add providers you control or fully trust.</span>
+                        </div>
+                        <div id="provider-list" class="space-y-3">
+                            <div class="text-center text-sm opacity-60 py-8">
+                                No OAuth providers configured. Click "Add Provider" to get started.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Authorized Users Section -->
+                    <div class="mb-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h4 class="text-md font-semibold">Authorized Users</h4>
+                            <button class="btn btn-secondary btn-sm" onclick="showAddUserModal()">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                </svg>
+                                Add User
+                            </button>
+                        </div>
+                        <p class="text-sm opacity-70 mb-4">Only users with email addresses listed here will be allowed to authenticate via OAuth.</p>
+                        <div id="user-list" class="space-y-3">
+                            <div class="text-center text-sm opacity-60 py-8">
+                                No authorized users configured. Click "Add User" to authorize email addresses.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="mt-8">
                     <h3 class="font-semibold text-lg mb-2">Password Reset</h3>
                     <div role="alert" class="alert alert-info text-sm">
@@ -639,5 +711,342 @@
     console.debug('Version check script error', e);
   }
 })();
+
+(function() {
+  let authData = null;
+
+  async function loadAuthSettings() {
+    try {
+      const response = await fetch('/api/v2/auth/settings', {
+        headers: {
+          'Authorization': `Bearer ${window.masterApiKey || ''}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        authData = await response.json();
+        renderProviders();
+        renderUsers();
+      } else {
+        console.error('Failed to load auth settings');
+      }
+    } catch (error) {
+      console.error('Error loading auth settings:', error);
+    }
+  }
+
+  function renderProviders() {
+    const providerList = document.getElementById('provider-list');
+    if (!authData || !authData.providers || authData.providers.length === 0) {
+      providerList.innerHTML = '<div class="text-center text-sm opacity-60 py-8">No OAuth providers configured. Click "Add Provider" to get started.</div>';
+      return;
+    }
+
+    providerList.innerHTML = authData.providers.map(provider => `
+      <div class="card bg-base-100 border">
+        <div class="card-body p-4">
+          <div class="flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+              <div class="badge badge-${provider.enabled ? 'success' : 'warning'}">${provider.enabled ? 'Enabled' : 'Disabled'}</div>
+              <div>
+                <h5 class="font-semibold">${escapeHtml(provider.name)}</h5>
+                <p class="text-sm opacity-70">${escapeHtml(provider.type)} · ID: ${escapeHtml(provider.id)}</p>
+              </div>
+            </div>
+            <div class="flex space-x-2">
+              <button class="btn btn-sm btn-outline" onclick="editProvider('${escapeHtml(provider.id)}')">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              </button>
+              <button class="btn btn-sm btn-error" onclick="deleteProvider('${escapeHtml(provider.id)}')">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function renderUsers() {
+    const userList = document.getElementById('user-list');
+    if (!authData || !authData.users || authData.users.length === 0) {
+      userList.innerHTML = '<div class="text-center text-sm opacity-60 py-8">No authorized users configured. Click "Add User" to authorize email addresses.</div>';
+      return;
+    }
+
+    userList.innerHTML = authData.users.map(user => `
+      <div class="card bg-base-100 border">
+        <div class="card-body p-4">
+          <div class="flex justify-between items-center">
+            <div>
+              <h5 class="font-semibold">${escapeHtml(user.email)}</h5>
+              ${user.name ? `<p class="text-sm opacity-70">${escapeHtml(user.name)}</p>` : ''}
+              ${user.added_date ? `<p class="text-xs opacity-50">Added: ${new Date(user.added_date).toLocaleDateString()}</p>` : ''}
+            </div>
+            <button class="btn btn-sm btn-error" onclick="deleteUser('${escapeHtml(user.email)}')">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function escapeHtml(unsafe) {
+    return unsafe
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;");
+  }
+
+  window.showAddProviderModal = function() {
+    document.getElementById('addProviderModal').showModal();
+  };
+
+  window.showAddUserModal = function() {
+    document.getElementById('addUserModal').showModal();
+  };
+
+  window.addProvider = async function() {
+    const form = document.getElementById('addProviderForm');
+    const formData = new FormData(form);
+
+    const providerData = {
+      id: formData.get('provider_id'),
+      name: formData.get('provider_name'),
+      type: formData.get('provider_type'),
+      client_id: formData.get('client_id'),
+      client_secret: formData.get('client_secret'),
+      enabled: formData.get('enabled') === 'on'
+    };
+
+    try {
+      const response = await fetch('/api/v2/auth/providers', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${window.masterApiKey || ''}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(providerData)
+      });
+
+      if (response.ok) {
+        document.getElementById('addProviderModal').close();
+        form.reset();
+        await loadAuthSettings();
+        showToast('Provider added successfully!', 'success');
+      } else {
+        const error = await response.json();
+        showToast(error.message || 'Failed to add provider', 'error');
+      }
+    } catch (error) {
+      showToast('Error adding provider', 'error');
+    }
+  };
+
+  window.addUser = async function() {
+    const form = document.getElementById('addUserForm');
+    const formData = new FormData(form);
+
+    const userData = {
+      email: formData.get('user_email'),
+      name: formData.get('user_name')
+    };
+
+    try {
+      const response = await fetch('/api/v2/auth/users', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${window.masterApiKey || ''}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(userData)
+      });
+
+      if (response.ok) {
+        document.getElementById('addUserModal').close();
+        form.reset();
+        await loadAuthSettings();
+        showToast('User added successfully!', 'success');
+      } else {
+        const error = await response.json();
+        showToast(error.message || 'Failed to add user', 'error');
+      }
+    } catch (error) {
+      showToast('Error adding user', 'error');
+    }
+  };
+
+  window.deleteProvider = async function(providerId) {
+    if (!confirm('Are you sure you want to delete this OAuth provider?')) return;
+
+    try {
+      const response = await fetch(`/api/v2/auth/providers/${providerId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${window.masterApiKey || ''}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        await loadAuthSettings();
+        showToast('Provider deleted successfully!', 'success');
+      } else {
+        showToast('Failed to delete provider', 'error');
+      }
+    } catch (error) {
+      showToast('Error deleting provider', 'error');
+    }
+  };
+
+  window.deleteUser = async function(userEmail) {
+    if (!confirm('Are you sure you want to remove this authorized user?')) return;
+
+    try {
+      const response = await fetch(`/api/v2/auth/users/${encodeURIComponent(userEmail)}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${window.masterApiKey || ''}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        await loadAuthSettings();
+        showToast('User removed successfully!', 'success');
+      } else {
+        showToast('Failed to remove user', 'error');
+      }
+    } catch (error) {
+      showToast('Error removing user', 'error');
+    }
+  };
+
+  function showToast(message, type) {
+    const toast = document.createElement('div');
+    toast.className = `toast toast-top toast-end`;
+    toast.innerHTML = `
+      <div class="alert alert-${type}">
+        <span>${message}</span>
+      </div>
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    if (window.masterApiKey) {
+      loadAuthSettings();
+    }
+  });
+})();
 </script>
+
+<!-- Add Provider Modal -->
+<dialog id="addProviderModal" class="modal">
+  <div class="modal-box">
+    <h3 class="font-bold text-lg">Add OAuth Provider</h3>
+    <form id="addProviderForm" class="space-y-4 mt-4">
+      <div class="form-control">
+        <label class="label">
+          <span class="label-text">Provider Type</span>
+        </label>
+        <select name="provider_type" class="select select-bordered" required>
+          <option value="">Select Provider Type</option>
+          <option value="google">Google</option>
+          <option value="github">GitHub</option>
+          <option value="microsoft">Microsoft</option>
+        </select>
+      </div>
+
+      <div class="form-control">
+        <label class="label">
+          <span class="label-text">Provider ID</span>
+        </label>
+        <input name="provider_id" type="text" placeholder="e.g. google, github-corp" class="input input-bordered" required />
+        <label class="label">
+          <span class="label-text-alt">Unique identifier for this provider</span>
+        </label>
+      </div>
+
+      <div class="form-control">
+        <label class="label">
+          <span class="label-text">Display Name</span>
+        </label>
+        <input name="provider_name" type="text" placeholder="e.g. Google, GitHub Corporate" class="input input-bordered" required />
+      </div>
+
+      <div class="form-control">
+        <label class="label">
+          <span class="label-text">Client ID</span>
+        </label>
+        <input name="client_id" type="text" placeholder="OAuth Client ID" class="input input-bordered" required />
+      </div>
+
+      <div class="form-control">
+        <label class="label">
+          <span class="label-text">Client Secret</span>
+        </label>
+        <input name="client_secret" type="password" placeholder="OAuth Client Secret" class="input input-bordered" required />
+      </div>
+
+      <div class="form-control">
+        <label class="label cursor-pointer">
+          <span class="label-text">Enable Provider</span>
+          <input name="enabled" type="checkbox" class="toggle" checked />
+        </label>
+      </div>
+    </form>
+
+    <div class="modal-action">
+      <form method="dialog">
+        <button class="btn">Cancel</button>
+      </form>
+      <button class="btn btn-primary" onclick="addProvider()">Add Provider</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- Add User Modal -->
+<dialog id="addUserModal" class="modal">
+  <div class="modal-box">
+    <h3 class="font-bold text-lg">Add Authorized User</h3>
+    <form id="addUserForm" class="space-y-4 mt-4">
+      <div class="form-control">
+        <label class="label">
+          <span class="label-text">Email Address</span>
+        </label>
+        <input name="user_email" type="email" placeholder="user@example.com" class="input input-bordered" required />
+        <label class="label">
+          <span class="label-text-alt">This email must match exactly with the OAuth provider</span>
+        </label>
+      </div>
+
+      <div class="form-control">
+        <label class="label">
+          <span class="label-text">Display Name (Optional)</span>
+        </label>
+        <input name="user_name" type="text" placeholder="John Doe" class="input input-bordered" />
+      </div>
+    </form>
+
+    <div class="modal-action">
+      <form method="dialog">
+        <button class="btn">Cancel</button>
+      </form>
+      <button class="btn btn-primary" onclick="addUser()">Add User</button>
+    </div>
+  </div>
+</dialog>
+
 {% endblock %}

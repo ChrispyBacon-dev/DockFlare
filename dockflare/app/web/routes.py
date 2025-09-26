@@ -31,7 +31,7 @@ from flask import (
     Blueprint, render_template, jsonify, redirect, url_for, request, Response,
     current_app, session, flash
 )
-from flask_login import current_user, login_required, login_user
+from flask_login import current_user, login_required, login_user, logout_user
 from app.core.user import User
 
 from app import config, docker_client, tunnel_state, cloudflared_agent_state, log_queue, state_update_queue, publish_state_event
@@ -169,17 +169,20 @@ def gating_logic():
 
     if hasattr(current_app, 'login_manager'):
         if current_app.config.get('DISABLE_PASSWORD_LOGIN'):
-            if not current_user.is_authenticated:
+            oauth_providers = current_app.config.get('OAUTH_PROVIDERS', [])
+            if oauth_providers and not current_user.is_authenticated:
+                return redirect(url_for('web.login'))
+            elif not oauth_providers and not current_user.is_authenticated:
                 login_user(User("anonymous"))
             return
 
         if not current_user.is_authenticated:
             exempt_endpoints = ['static', 'web.ping', 'web.cloudflare_ping_route', 'setup.step_import_env']
-            if request.endpoint and not request.endpoint.startswith('auth.') and request.endpoint not in exempt_endpoints:
+            oauth_endpoints = ['web.login_provider', 'web.auth_callback', 'web.login']
+            if request.endpoint and not request.endpoint.startswith('auth.') and request.endpoint not in exempt_endpoints and request.endpoint not in oauth_endpoints:
                 try:
-                    return redirect(url_for('auth.login'))
+                    return redirect(url_for('web.login'))
                 except Exception:
-
                     pass
 
 @bp.before_app_request
@@ -221,12 +224,14 @@ def add_security_headers_bp(response):
 
 @bp.context_processor
 def inject_protocol_bp():
-
     preferred_scheme = current_app.config.get('PREFERRED_URL_SCHEME', 'http')
     base_url = f"{preferred_scheme}://{request.host}"
     master_key_value = None
+    oauth_enabled = bool(current_app.config.get('OAUTH_PROVIDERS', []))
+
     if current_user.is_authenticated:
         master_key_value = current_app.config.get('MASTER_API_KEY')
+
     return {
         'protocol': preferred_scheme,
         'is_https': preferred_scheme == 'https',
@@ -234,7 +239,9 @@ def inject_protocol_bp():
         'host': request.host,
         'request_scheme': request.scheme,
         'app_version': config.APP_VERSION,
-        'master_api_key': master_key_value
+        'master_api_key': master_key_value,
+        'oauth_enabled': oauth_enabled,
+        'current_user_auth_method': getattr(current_user, 'auth_method', None) if current_user.is_authenticated else None
     }
 
 @bp.route('/')
@@ -1809,3 +1816,118 @@ def restore_state_backup():
         cloudflared_agent_state["last_action_status"] = "Error: Restore failed. The file may be corrupt or invalid. Check logs."
 
     return redirect(url_for('web.settings_page'))
+
+@bp.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('web.status_page'))
+
+    from .forms import LoginForm
+    form = LoginForm()
+    password_login_enabled = not current_app.config.get('DISABLE_PASSWORD_LOGIN', False)
+
+    if password_login_enabled and form.validate_on_submit():
+        username = form.username.data
+        password = form.password.data
+        stored_username = current_app.config.get('DOCKFLARE_USERNAME')
+        stored_hash = current_app.config.get('DOCKFLARE_PASSWORD_HASH')
+
+        from werkzeug.security import check_password_hash
+        if (username == stored_username and stored_hash and
+            check_password_hash(stored_hash, password)):
+            user = User(stored_username, auth_method='password')
+            login_user(user)
+            next_page = request.args.get('next')
+            if next_page and is_safe_url(next_page):
+                return redirect(next_page)
+            return redirect(url_for('web.status_page'))
+        else:
+            flash('Invalid username or password.', 'error')
+
+    oauth_providers = [
+        p for p in current_app.config.get('OAUTH_PROVIDERS', []) if p.get('enabled')
+    ]
+
+    return render_template(
+        'login.html',
+        title="Login",
+        form=form,
+        password_login_enabled=password_login_enabled,
+        oauth_providers=oauth_providers
+    )
+
+@bp.route('/login/<provider_id>')
+def login_provider(provider_id):
+    import secrets
+    state_token = secrets.token_urlsafe(32)
+    session['oauth_state'] = state_token
+
+    from app import oauth
+    callback_url = url_for('web.auth_callback', provider_id=provider_id, _external=True)
+    return oauth.create_client(provider_id).authorize_redirect(callback_url, state=state_token)
+
+@bp.route('/auth/<provider_id>/callback')
+def auth_callback(provider_id):
+    received_state = request.args.get('state')
+    expected_state = session.pop('oauth_state', None)
+
+    if not received_state or not expected_state or received_state != expected_state:
+        flash('Invalid authentication state. Please try again.', 'error')
+        return redirect(url_for('web.login'))
+
+    from app import oauth
+    client = oauth.create_client(provider_id)
+    try:
+        token = client.authorize_access_token()
+        userinfo = client.userinfo()
+    except Exception as e:
+        logging.error(f"OAuth callback error for provider {provider_id}: {e}", exc_info=True)
+        flash('Authentication failed.', 'error')
+        return redirect(url_for('web.login'))
+
+    user_email = userinfo.get('email')
+    if not user_email:
+        flash('Could not retrieve email from provider. Cannot log in.', 'error')
+        return redirect(url_for('web.login'))
+
+    authorized_emails = current_app.config.get('OAUTH_AUTHORIZED_USERS', [])
+    if user_email not in authorized_emails:
+        flash(f'Access denied for user {user_email}.', 'error')
+        return redirect(url_for('web.login'))
+
+    user = User(user_email, auth_method='oauth')
+    login_user(user)
+
+    logging.info(f"OAUTH_SUCCESS: User {user_email} authenticated via {provider_id} from {request.remote_addr}")
+
+    next_page = request.args.get('next')
+    if next_page and is_safe_url(next_page):
+        return redirect(next_page)
+    return redirect(url_for('web.status_page'))
+
+@bp.route('/logout')
+@login_required
+def logout():
+    auth_method = getattr(current_user, 'auth_method', 'password')
+    logout_user()
+
+    if auth_method == 'oauth':
+        flash('You have been logged out of DockFlare. You may still be logged into your OAuth provider.', 'info')
+    else:
+        flash('You have been logged out.', 'success')
+
+    if current_app.config.get('DISABLE_PASSWORD_LOGIN'):
+        oauth_providers = current_app.config.get('OAUTH_PROVIDERS', [])
+        if oauth_providers:
+            return redirect(url_for('web.login'))
+        else:
+            return redirect(url_for('web.status_page'))
+
+    return redirect(url_for('web.login'))
+
+def is_safe_url(target):
+    from urllib.parse import urlparse, urljoin
+    from flask import request
+    ref_url = urlparse(request.host_url)
+    test_url = urlparse(urljoin(request.host_url, target))
+    return test_url.scheme in ('http', 'https') and ref_url.netloc == test_url.netloc

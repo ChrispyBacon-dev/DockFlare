@@ -45,6 +45,15 @@ class SecuritySettingsForm(FlaskForm):
     disable_password_login = BooleanField(
         'Disable Password Login'
     )
+    oauth_session_timeout = IntegerField(
+        'OAuth Session Timeout (seconds)',
+        default=86400,
+        validators=[Optional()]
+    )
+    oauth_audit_enabled = BooleanField(
+        'Enable OAuth Audit Logging',
+        default=True
+    )
     submit_security_settings = SubmitField('Save Security Settings')
 
 class ChangePasswordForm(FlaskForm):
@@ -69,6 +78,18 @@ class ChangePasswordForm(FlaskForm):
     )
     submit = SubmitField('Change Password')
 
+
+class LoginForm(FlaskForm):
+    """Form for the main login page."""
+    username = StringField(
+        'Username',
+        validators=[DataRequired(message="Username is required.")]
+    )
+    password = PasswordField(
+        'Password',
+        validators=[DataRequired(message="Password is required.")]
+    )
+    submit = SubmitField('Login')
 
 class CloudflareCredentialsForm(FlaskForm):
     """Form for updating Cloudflare API credentials."""

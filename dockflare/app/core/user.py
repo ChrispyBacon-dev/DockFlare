@@ -16,7 +16,23 @@
 #
 # dockflare/app/core/user.py
 from flask_login import UserMixin
+from datetime import datetime
+from flask import current_app
+
 class User(UserMixin):
-    
-    def __init__(self, username):
+    def __init__(self, username, auth_method='password', session_data=None):
         self.id = username
+        self.auth_method = auth_method
+        self.session_data = session_data or {}
+        self.login_time = datetime.utcnow()
+
+    @property
+    def is_oauth_user(self):
+        return self.auth_method == 'oauth'
+
+    def is_session_valid(self, max_age_seconds=None):
+        if max_age_seconds is None:
+            max_age_seconds = current_app.config.get('OAUTH_SESSION_TIMEOUT', 86400)
+
+        age = (datetime.utcnow() - self.login_time).total_seconds()
+        return age < max_age_seconds

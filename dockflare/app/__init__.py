@@ -24,6 +24,7 @@ import json
 from flask import Flask
 from flask_wtf.csrf import CSRFProtect
 from flask_login import LoginManager
+from authlib.integrations.flask_client import OAuth
 from .core.user import User
 import docker
 from docker.errors import APIError
@@ -36,6 +37,8 @@ cloudflared_agent_state = { "container_status": "unknown", "last_action_status":
 log_queue = queue.Queue(maxsize=config.MAX_LOG_QUEUE_SIZE)
 state_update_queue = queue.Queue(maxsize=50) 
 log_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', datefmt='%H:%M:%S')
+
+oauth = None
 
 class QueueLogHandler(logging.Handler):
     def __init__(self, log_queue_instance):
@@ -96,6 +99,9 @@ def create_app():
     app_instance.secret_key = os.urandom(24)
     app_instance.config['PREFERRED_URL_SCHEME'] = 'http'
     app_instance.config['APP_VERSION'] = config.APP_VERSION
+    app_instance.config['SESSION_COOKIE_HTTPONLY'] = True
+    app_instance.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    app_instance.config['PERMANENT_SESSION_LIFETIME'] = 86400
 
     # Initialize CSRF Protection
     csrf = CSRFProtect(app_instance)
@@ -103,18 +109,27 @@ def create_app():
     # Initialize Flask-Login
     login_manager = LoginManager()
     login_manager.init_app(app_instance)
-    login_manager.login_view = 'auth.login'
+    login_manager.login_view = 'web.login'
     login_manager.login_message_category = "info"
+
+    # Initialize OAuth
+    global oauth
+    oauth = OAuth()
+    oauth.init_app(app_instance)
 
     @login_manager.unauthorized_handler
     def unauthorized():
-        """Handle unauthorized access - return JSON for API requests, redirect for web requests."""
         from flask import request, jsonify, redirect, url_for
-        # Check if this is an API request
         if request.path.startswith('/api/'):
             return jsonify({"status": "error", "message": "authentication_required"}), 401
-        # For web requests, redirect to login page
-        return redirect(url_for('auth.login'))
+
+        oauth_providers = app_instance.config.get('OAUTH_PROVIDERS', [])
+        if oauth_providers and not app_instance.config.get('DISABLE_PASSWORD_LOGIN', False):
+            return redirect(url_for('web.login'))
+        elif oauth_providers:
+            return redirect(url_for('web.login'))
+        else:
+            return redirect(url_for('auth.login'))
 
     # Custom user loader that exempts API routes from authentication checks
     @login_manager.request_loader
@@ -129,13 +144,16 @@ def create_app():
 
     @login_manager.user_loader
     def load_user(user_id):
-        """Load user from the config for session management."""
         if not app_instance.is_configured:
             return None
 
         stored_username = app_instance.config.get('DOCKFLARE_USERNAME')
+        authorized_oauth_users = app_instance.config.get('OAUTH_AUTHORIZED_USERS', [])
+
         if user_id == stored_username:
-            return User(user_id)
+            return User(user_id, auth_method='password')
+        elif user_id in authorized_oauth_users:
+            return User(user_id, auth_method='oauth')
         return None
 
     @app_instance.context_processor
@@ -159,6 +177,7 @@ def create_app():
     with app_instance.app_context():
         from .web import routes as web_routes
         app_instance.register_blueprint(web_routes.bp)
+        csrf.exempt(web_routes.auth_callback)
         logging.info("Web blueprint registered.")
 
         from .web.api_v2_routes import api_v2_bp

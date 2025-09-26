@@ -19,16 +19,50 @@
                     {% endfor %}
                 {% endif %}
             {% endwith %}
+
+            {% if oauth_providers %}
+            <div class="flex flex-col w-full border-opacity-50">
+                {% for provider in oauth_providers %}
+                    <a href="{{ url_for('web.login_provider', provider_id=provider.id) }}" class="btn btn-outline mb-2">
+                        Login with {{ provider.name }}
+                    </a>
+                {% endfor %}
+                {% if password_login_enabled %}
+                <div class="divider">OR</div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            {% if password_login_enabled %}
             <form method="POST" action="{{ url_for('web.login') }}">
-                {% if config.DOCKFLARE_PASSWORD and config.SECRET_KEY %}{{ form.hidden_tag() }}{% endif %}
+                {% if form %}{{ form.hidden_tag() }}{% endif %}
                 <div class="form-control">
-                    {{ form.password.label(class="label") }}
-                    {{ form.password(class="input input-bordered", placeholder="password") }}
+                    {% if form %}
+                        {{ form.username.label(class="label") }}
+                        {{ form.username(class="input input-bordered", placeholder="Username") }}
+                    {% else %}
+                        <label class="label">Username</label>
+                        <input type="text" name="username" class="input input-bordered" placeholder="Username" required>
+                    {% endif %}
+                </div>
+                <div class="form-control">
+                    {% if form %}
+                        {{ form.password.label(class="label") }}
+                        {{ form.password(class="input input-bordered", placeholder="Password") }}
+                    {% else %}
+                        <label class="label">Password</label>
+                        <input type="password" name="password" class="input input-bordered" placeholder="Password" required>
+                    {% endif %}
                 </div>
                 <div class="form-control mt-6">
-                    {{ form.submit(class="btn btn-primary") }}
+                    {% if form %}
+                        {{ form.submit(class="btn btn-primary") }}
+                    {% else %}
+                        <input type="submit" value="Login" class="btn btn-primary">
+                    {% endif %}
                 </div>
             </form>
+            {% endif %}
         </div>
     </div>
 </body>

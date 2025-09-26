@@ -30,17 +30,18 @@ services:
     restart: "no"
 
   dockflare:
-    image: alplat/dockflare:stable
+    build: ./dockflare
+    #image: alplat/dockflare:stable
     container_name: dockflare
     restart: unless-stopped
     ports:
-      - "5000:5000"
-    #labels: 
+      - "5001:5000"
+    labels: 
       # -- Cloudflare Tunnel Configuration (via DockFlare) OPTIONAL -- 
-      #- dockflare.enable=true
-      #- dockflare.hostname=dockflare.domain.tld
-      #- dockflare.service=http://dockflare:5000
-      #- dockflare.access.policy=default_tld
+      - dockflare.enable=true
+      - dockflare.hostname=df.dataverse.icu
+      - dockflare.service=http://dockflare:5000
+      - dockflare.access.policy=bypass
     volumes:
       - dockflare_data:/app/data
     environment:

@@ -82,6 +82,7 @@ $RECYCLE.BIN/
 *~
 .directory
 .env
+.docs
 data/state.json
 *.tmp
 *.bak
