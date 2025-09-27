@@ -1635,23 +1635,27 @@ def ui_delete_manual_rule_route(rule_key_from_url):
 
 def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_list=None):
     policies = []
-    allow_include_rules = []
+    email_rules = []
+    ip_rules = []
 
     if email_str and email_str.strip():
         email_parts = [part.strip() for part in email_str.split(',') if part.strip()]
         for part in email_parts:
             if part.startswith('@'):
-                allow_include_rules.append({"email_domain": {"domain": part[1:]}})
+                email_rules.append({"email_domain": {"domain": part[1:]}})
             else:
-                allow_include_rules.append({"email": {"email": part}})
+                email_rules.append({"email": {"email": part}})
 
     if ip_ranges_str and ip_ranges_str.strip():
         ip_parts = [part.strip() for part in ip_ranges_str.split(',') if part.strip()]
         for ip in ip_parts:
-            allow_include_rules.append({"ip": {"ip": ip}})
+            ip_rules.append({"ip": {"ip": ip}})
 
-    if allow_include_rules:
-        policies.append({"name": "Allow defined users and IPs", "decision": "allow", "include": allow_include_rules})
+    if ip_rules:
+        policies.append({"name": "Bypass for defined IPs", "decision": "bypass", "include": ip_rules})
+
+    if email_rules:
+        policies.append({"name": "Allow defined users", "decision": "allow", "include": email_rules})
 
     if countries_list:
         country_rules = [{"geo": {"country_code": country.upper()}} for country in countries_list]
@@ -1662,7 +1666,7 @@ def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_l
             "include": [{"everyone": {}}],
             "exclude": country_rules
         })
-    elif allow_include_rules:
+    elif ip_rules or email_rules:
         
         policies.append({"name": "Default Deny", "decision": "deny", "include": [{"everyone": {}}]})
     else:
