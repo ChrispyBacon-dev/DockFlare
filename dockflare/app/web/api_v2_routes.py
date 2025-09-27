@@ -2159,6 +2159,10 @@ def manage_auth_users():
         if not _save_encrypted_config(config_data, fernet):
             return jsonify({"error": "failed_to_save_config"}), 500
 
+        current_app.config['OAUTH_AUTHORIZED_USERS'] = [
+            user['email'] for user in config_data.get('authorized_users', [])
+        ]
+
         return jsonify({"status": "success", "message": "User added successfully."})
 
 @api_v2_bp.route('/auth/users/<user_email>', methods=['DELETE'])
@@ -2179,5 +2183,9 @@ def manage_auth_user(user_email):
 
     if not _save_encrypted_config(config_data, fernet):
         return jsonify({"error": "failed_to_save_config"}), 500
+
+    current_app.config['OAUTH_AUTHORIZED_USERS'] = [
+        user['email'] for user in config_data.get('authorized_users', [])
+    ]
 
     return jsonify({"status": "success", "message": "User deleted successfully."})

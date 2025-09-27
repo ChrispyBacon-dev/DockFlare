@@ -51,3 +51,51 @@ Here is a quick guide to configuring Google as an OAuth provider.
     *   **Client Secret:** `(Your Client Secret from Google)`
 
 Save the provider in DockFlare, and you will be able to log in with your Google account.
+
+---
+
+### Configuring DockFlare with OAuth and Access Policies
+
+When using OAuth authentication, you may want to protect your main DockFlare interface with access policies while ensuring OAuth callbacks work properly. This is especially important if you have IP restrictions or other access controls on your DockFlare instance.
+
+#### **Best Practice: Bypass Policy for OAuth Callbacks**
+
+Use indexed labels to create separate rules for your main interface and OAuth callback paths:
+
+```yaml
+services:
+  dockflare:
+    image: alplat/dockflare:stable
+    labels:
+      # Main DockFlare interface with access policy
+      - "dockflare.enable=true"
+      - "dockflare.hostname=dockflare.example.com"
+      - "dockflare.service=http://dockflare:5000"
+      - "dockflare.access.group=team"  # your custom access policy
+
+      # OAuth callback paths with bypass policy (required for OAuth to work)
+      - "dockflare.0.hostname=dockflare.example.com"
+      - "dockflare.0.path=/auth/google/callback"
+      - "dockflare.0.service=http://dockflare:5000"
+      - "dockflare.0.access.policy=bypass"
+
+      # Add additional callback paths for other providers if needed
+      - "dockflare.1.hostname=dockflare.example.com"
+      - "dockflare.1.path=/auth/github/callback"
+      - "dockflare.1.service=http://dockflare:5000"
+      - "dockflare.1.access.policy=bypass"
+```
+
+#### **Why This Configuration is Needed**
+
+- **Main Interface Protection**: Your DockFlare dashboard remains protected by your chosen access policy
+- **OAuth Functionality**: OAuth callbacks can reach DockFlare without authentication barriers
+- **Security**: Only specific callback paths are bypassed, not the entire application
+- **Flexibility**: Works with any combination of access policies (IP-based, authentication-based, etc.)
+
+#### **Important Notes**
+
+1. **Path Matching**: The callback path must exactly match what your OAuth provider expects
+2. **Multiple Providers**: Add a separate indexed rule for each OAuth provider you configure
+3. **No Wildcards**: Avoid using wildcard paths for security reasons - be specific with callback URLs
+4. **Testing**: After configuration, test both protected access (main interface) and OAuth login flows

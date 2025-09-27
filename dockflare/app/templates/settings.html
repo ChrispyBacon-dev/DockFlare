@@ -962,6 +962,11 @@
       enabled: formData.get('enabled') === 'on'
     };
 
+    const issuerUrl = formData.get('issuer_url');
+    if (issuerUrl) {
+      providerData.issuer_url = issuerUrl;
+    }
+
     try {
       const response = await fetch('/api/v2/auth/providers', {
         method: 'POST',
