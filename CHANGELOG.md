@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+## [v3.0.2] - 2025-09-27
+
+### Fixed
+- **IP Whitelist Access Policies:** Corrected an issue where IP-based access policies were not working as expected. The system now correctly creates a `bypass` rule for IP whitelists and a separate `allow` rule for email-based authentication, ensuring whitelisted IPs can access services without an additional authentication step. (raised by @durzo #216)
+
+---
 ## [v3.0.1] - 2025-09-26
 
 ### Added
