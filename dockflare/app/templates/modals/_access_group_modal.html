@@ -1,5 +1,5 @@
 <dialog id="access_group_modal" class="modal">
-    <div class="modal-box w-11/12 max-w-3xl bg-base-100/70 dark:bg-neutral/70 backdrop-blur-md shadow-xl">
+    <div class="modal-box w-11/12 max-w-5xl bg-base-100/70 dark:bg-neutral/70 backdrop-blur-md shadow-xl">
         <form method="dialog">
             <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
         </form>
@@ -26,24 +26,82 @@
                 <h4 class="text-md font-semibold mb-2">Policy Rules</h4>
                 <div class="form-control">
                     <label class="label" for="group_emails"><span class="label-text">Allowed Emails or Domains</span></label>
-                    <textarea id="group_emails" name="emails" class="textarea textarea-bordered h-24" placeholder="me@example.com, myfriend@example.com, @mycompany.com"></textarea>
+                    <textarea id="group_emails" name="emails" class="textarea textarea-bordered h-12 resize-y" placeholder="me@example.com, myfriend@example.com, @mycompany.com"></textarea>
                     <div class="label"><span class="label-text-alt">Comma-separated. To allow anyone from a domain, use <code class="text-xs">@domain.com</code>.</span></div>
                 </div>
                 <div class="form-control">
                     <label class="label" for="group_ip_ranges"><span class="label-text">Allowed IP Ranges</span></label>
-                    <textarea id="group_ip_ranges" name="ip_ranges" class="textarea textarea-bordered h-24" placeholder="192.168.1.0/24, 2001:db8::/32"></textarea>
+                    <textarea id="group_ip_ranges" name="ip_ranges" class="textarea textarea-bordered h-12 resize-y" placeholder="192.168.1.0/24, 2001:db8::/32"></textarea>
                     <div class="label"><span class="label-text-alt">Comma-separated list of IP ranges in CIDR format.</span></div>
                 </div>
                 <div class="form-control">
                     <label class="label" for="group_countries">
                         <span class="label-text">Blocked Countries</span>
+                        <span class="label-text-alt" id="country-selection-counter">0 of 195 countries selected</span>
                     </label>
-                    <select id="group_countries" name="countries" multiple="multiple" class="input input-bordered w-full">
-                        {% for country in countries %}
-                            <option value="{{ country.abbreviation }}">{{ country.country }}</option>
-                        {% endfor %}
-                    </select>
-                    <div class="label"><span id="country_policy_help_text" class="label-text-alt">Selected countries will be blocked. All other countries will be allowed.</span></div>
+
+                    <div class="flex flex-wrap gap-2 mb-3">
+                        <button type="button" class="btn btn-xs btn-outline" id="select-all-countries">
+                            Select All
+                        </button>
+                        <button type="button" class="btn btn-xs btn-outline" id="select-none-countries">
+                            Select None
+                        </button>
+                        <button type="button" class="btn btn-xs btn-outline" id="invert-selection">
+                            Invert Selection
+                        </button>
+                        <div class="dropdown">
+                            <button type="button" class="btn btn-xs btn-outline" id="templates-dropdown">
+                                Quick Templates ▾
+                            </button>
+                            <ul class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-52 z-50" id="templates-menu" style="display: none;">
+                                <li><a href="#" data-template="block-all-except-us">Block All Except US</a></li>
+                                <li><a href="#" data-template="block-all-except-eu">Block All Except EU</a></li>
+                                <li><a href="#" data-template="block-high-risk">Block High Risk Countries</a></li>
+                                <li><a href="#" data-template="block-non-nato">Block Non-NATO Countries</a></li>
+                            </ul>
+                        </div>
+                        <div class="dropdown">
+                            <button type="button" class="btn btn-xs btn-outline" id="regions-dropdown">
+                                Select by Region ▾
+                            </button>
+                            <ul class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-48 z-50" id="regions-menu" style="display: none;">
+                                <li><a href="#" data-region="africa">Africa</a></li>
+                                <li><a href="#" data-region="asia">Asia</a></li>
+                                <li><a href="#" data-region="europe">Europe</a></li>
+                                <li><a href="#" data-region="north-america">North America</a></li>
+                                <li><a href="#" data-region="south-america">South America</a></li>
+                                <li><a href="#" data-region="oceania">Oceania</a></li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="textarea textarea-bordered h-32 resize-y overflow-hidden p-0">
+                        <select id="group_countries" name="countries" multiple="multiple" class="w-full h-full border-0 bg-transparent">
+                            {% for country in countries %}
+                                <option value="{{ country.abbreviation }}" data-region="{{ country.region | default('unknown') | lower }}">{{ country.country }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="label">
+                        <span class="label-text-alt" id="country-policy-help-text">Selected countries will be blocked. All other countries will be allowed.</span>
+                    </div>
+
+                    <div class="mt-2">
+                        <div class="text-xs opacity-70 mb-1">Common scenarios:</div>
+                        <div class="flex flex-wrap gap-1">
+                            <button type="button" class="btn btn-xs btn-ghost" data-quick-action="allow-us-only">
+                                Allow US Only
+                            </button>
+                            <button type="button" class="btn btn-xs btn-ghost" data-quick-action="allow-us-eu">
+                                Allow US + EU
+                            </button>
+                            <button type="button" class="btn btn-xs btn-ghost" data-quick-action="block-high-risk">
+                                Block High Risk
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 

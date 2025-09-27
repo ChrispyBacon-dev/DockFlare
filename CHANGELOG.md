@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+
+
+Of course, my apologies for the misunderstanding. Here is the changelog with a new, cleanly formatted entry for the hotfix on September 27th, while keeping the September 26th entry separate as you requested.
+
+---
+## [v3.0.1] (Hotfixes) - 2025-09-27
+
+### Added
+- **Enhanced Country Selection UX**
+    - **Bulk Selection Controls:** Added "Select All," "Select None," and "Invert Selection" buttons for more efficient country management.
+    - **Quick Templates:** Implemented one-click presets such as "Block All Except US," "Block All Except EU," and "Block High Risk Countries."
+    - **Regional Selection:** Users can now select entire continents (e.g., Africa, Asia, Europe) with a single click.
+    - **Visual Feedback:** A dynamic counter now shows "X of 245 countries selected" to provide immediate feedback.
+
+### Fixed
+- **Tedious Manual Selection:** Resolved an issue where "Allow US Only" required manually selecting over 194 countries; it now requires only one click (resolves #240).
+- **IP Whitelist Access Policies:** Corrected a bug where IP-based access policies were not functioning as intended. DockFlare now properly creates a `bypass` rule for whitelisted IPs.
+- **Access Policy Updates:** Addressed a failure where updating an Access Policy on an existing ingress rule would result in an "application already exists" error.
+- **API Error Logging:** The severity of the log message for a `403 Forbidden` error during user email fetches has been reduced, as this is expected behavior with a scoped API token (related to issues #216, #217 raised by @durzo).
+- **OAuth Provider Visibility:** Fixed the login screen to respect disabled providers immediately after changes through the API or UI, keeping password-disable overrides intact.
+
+---
 ## [v3.0.1] - 2025-09-26
 
 ### Added

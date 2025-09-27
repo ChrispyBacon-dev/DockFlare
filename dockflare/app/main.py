@@ -236,7 +236,7 @@ def main_application_entrypoint():
             def register_oauth_providers(flask_app, oauth_instance):
                 providers = flask_app.config.get('OAUTH_PROVIDERS', [])
                 for provider in providers:
-                    if not provider.get('enabled'):
+                    if not provider.get('enabled', True):
                         continue
 
                     try:

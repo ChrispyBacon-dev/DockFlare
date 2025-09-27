@@ -131,6 +131,14 @@ def create_app():
     @login_manager.unauthorized_handler
     def unauthorized():
         from flask import request, jsonify, redirect, url_for
+
+        if app_instance.config.get('DISABLE_PASSWORD_LOGIN', False):
+            from flask_login import login_user
+            from app.core.user import User
+            user = User('anonymous', auth_method='disabled')
+            login_user(user)
+            return redirect(request.url)
+
         if request.path.startswith('/api/'):
             return jsonify({"status": "error", "message": "authentication_required"}), 401
 

@@ -169,11 +169,13 @@ def gating_logic():
 
     if hasattr(current_app, 'login_manager'):
         if current_app.config.get('DISABLE_PASSWORD_LOGIN'):
+            logging.info(f"DISABLE_PASSWORD_LOGIN is True, checking authentication bypass")
             oauth_providers = current_app.config.get('OAUTH_PROVIDERS', [])
-            if oauth_providers and not current_user.is_authenticated:
-                return redirect(url_for('web.login'))
-            elif not oauth_providers and not current_user.is_authenticated:
-                login_user(User("anonymous"))
+            enabled_oauth_providers = [p for p in oauth_providers if p.get('enabled', True)]
+            logging.info(f"OAuth providers: {len(oauth_providers)}, Enabled: {len(enabled_oauth_providers)}")
+            if not current_user.is_authenticated:
+                logging.info("Bypassing authentication - logging in anonymous user")
+                login_user(User("anonymous", auth_method='disabled'))
             return
 
         if not current_user.is_authenticated:
@@ -551,6 +553,9 @@ def settings_page():
                 config_data = json.loads(decrypted_data)
 
                 config_data['disable_password_login'] = security_settings_form.disable_password_login.data
+                auth_settings = config_data.get('auth_settings') or {}
+                auth_settings['password_login_enabled'] = not config_data['disable_password_login']
+                config_data['auth_settings'] = auth_settings
 
                 encrypted_payload = fernet.encrypt(json.dumps(config_data).encode('utf-8'))
                 with open(config_file, 'wb') as f:
@@ -1296,9 +1301,15 @@ def ui_add_manual_rule_route():
                 ]
                 cf_access_policies.append({"name": "UI Deny Fallback", "decision": "deny", "include": [{"everyone": {}}]})
             
-            app_result = create_cloudflare_access_application(
-                full_hostname, f"DockFlare-{full_hostname}", "24h", False, [full_hostname], cf_access_policies, None, False
-            )
+            existing_app = find_cloudflare_access_application_by_hostname(full_hostname)
+            if existing_app:
+                app_result = update_cloudflare_access_application(
+                    existing_app['id'], full_hostname, f"DockFlare-{full_hostname}", "24h", False, [full_hostname], cf_access_policies, None, False
+                )
+            else:
+                app_result = create_cloudflare_access_application(
+                    full_hostname, f"DockFlare-{full_hostname}", "24h", False, [full_hostname], cf_access_policies, None, False
+                )
             if app_result:
                 access_app_id = app_result.get('id')
                 access_policy_type = manual_access_policy_type
@@ -1524,9 +1535,15 @@ def ui_edit_manual_rule_route():
                     {"name": "UI Deny Fallback", "decision": "deny", "include": [{"everyone": {}}]}
                 ]
             if cf_access_policies:
-                app_result = create_cloudflare_access_application(
-                    full_hostname, f"DockFlare-{full_hostname}", "24h", False, [full_hostname], cf_access_policies, None, False
-                )
+                existing_app = find_cloudflare_access_application_by_hostname(full_hostname)
+                if existing_app:
+                    app_result = update_cloudflare_access_application(
+                        existing_app['id'], full_hostname, f"DockFlare-{full_hostname}", "24h", False, [full_hostname], cf_access_policies, None, False
+                    )
+                else:
+                    app_result = create_cloudflare_access_application(
+                        full_hostname, f"DockFlare-{full_hostname}", "24h", False, [full_hostname], cf_access_policies, None, False
+                    )
                 if app_result:
                     access_app_id = app_result.get('id')
                     access_policy_type = manual_access_policy_type
@@ -1635,23 +1652,27 @@ def ui_delete_manual_rule_route(rule_key_from_url):
 
 def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_list=None):
     policies = []
-    allow_include_rules = []
+    email_rules = []
+    ip_rules = []
 
     if email_str and email_str.strip():
         email_parts = [part.strip() for part in email_str.split(',') if part.strip()]
         for part in email_parts:
             if part.startswith('@'):
-                allow_include_rules.append({"email_domain": {"domain": part[1:]}})
+                email_rules.append({"email_domain": {"domain": part[1:]}})
             else:
-                allow_include_rules.append({"email": {"email": part}})
+                email_rules.append({"email": {"email": part}})
 
     if ip_ranges_str and ip_ranges_str.strip():
         ip_parts = [part.strip() for part in ip_ranges_str.split(',') if part.strip()]
         for ip in ip_parts:
-            allow_include_rules.append({"ip": {"ip": ip}})
+            ip_rules.append({"ip": {"ip": ip}})
 
-    if allow_include_rules:
-        policies.append({"name": "Allow defined users and IPs", "decision": "allow", "include": allow_include_rules})
+    if ip_rules:
+        policies.append({"name": "Bypass for defined IPs", "decision": "bypass", "include": ip_rules})
+
+    if email_rules:
+        policies.append({"name": "Allow defined users", "decision": "allow", "include": email_rules})
 
     if countries_list:
         country_rules = [{"geo": {"country_code": country.upper()}} for country in countries_list]
@@ -1662,7 +1683,7 @@ def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_l
             "include": [{"everyone": {}}],
             "exclude": country_rules
         })
-    elif allow_include_rules:
+    elif ip_rules or email_rules:
         
         policies.append({"name": "Default Deny", "decision": "deny", "include": [{"everyone": {}}]})
     else:
@@ -1845,7 +1866,7 @@ def login():
             flash('Invalid username or password.', 'error')
 
     oauth_providers = [
-        p for p in current_app.config.get('OAUTH_PROVIDERS', []) if p.get('enabled')
+        p for p in current_app.config.get('OAUTH_PROVIDERS', []) if p.get('enabled', True)
     ]
 
     return render_template(
@@ -1920,11 +1941,7 @@ def logout():
     flash('You have been logged out.', 'success')
 
     if current_app.config.get('DISABLE_PASSWORD_LOGIN'):
-        oauth_providers = current_app.config.get('OAUTH_PROVIDERS', [])
-        if oauth_providers:
-            return redirect(url_for('web.login'))
-        else:
-            return redirect(url_for('web.status_page'))
+        return redirect(url_for('web.status_page'))
 
     return redirect(url_for('web.login'))
 

@@ -89,12 +89,17 @@ def apply_config_to_app(flask_app, config_data: Dict) -> None:
     flask_app.config['GRACE_PERIOD_SECONDS'] = int(config_data.get('grace_period_seconds', 28800))
     flask_app.config['DOCKFLARE_USERNAME'] = config_data.get('username')
     flask_app.config['DOCKFLARE_PASSWORD_HASH'] = config_data.get('password')
-    flask_app.config['DISABLE_PASSWORD_LOGIN'] = config_data.get('disable_password_login', False)
+    disable_password_login_legacy = config_data.get('disable_password_login')
     flask_app.config['MASTER_API_KEY'] = effective_master_key
 
     auth_settings = config_data.get('auth_settings', {})
-    password_login_enabled = auth_settings.get('password_login_enabled', True)
-    flask_app.config['DISABLE_PASSWORD_LOGIN'] = not password_login_enabled
+    password_login_enabled = auth_settings.get('password_login_enabled')
+    if password_login_enabled is not None:
+        flask_app.config['DISABLE_PASSWORD_LOGIN'] = not bool(password_login_enabled)
+    elif disable_password_login_legacy is not None:
+        flask_app.config['DISABLE_PASSWORD_LOGIN'] = bool(disable_password_login_legacy)
+    else:
+        flask_app.config['DISABLE_PASSWORD_LOGIN'] = False
 
     flask_app.config['OAUTH_PROVIDERS'] = config_data.get('auth_providers', [])
     flask_app.config['OAUTH_AUTHORIZED_USERS'] = [

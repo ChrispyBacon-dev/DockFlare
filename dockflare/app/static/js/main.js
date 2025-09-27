@@ -69,11 +69,7 @@ function initializeAllTomSelects() {
         manualTunnelTomSelect = new TomSelect(manualTunnelSelect, singleSelectOptions);
     }
 
-    // Initialize select on the Access Policies page (Access Group modal)
-    const countrySelect = document.getElementById('group_countries');
-    if (countrySelect) {
-        new TomSelect(countrySelect, countrySelectOptions);
-    }
+    // Note: country selector is now initialized in access_policies.html with enhanced features
 }
 
 const themeManager = (function() {
@@ -1061,6 +1057,9 @@ function openCreateAccessGroupModal() {
     if (countrySelect && countrySelect.tomselect) {
         countrySelect.tomselect.clear();
         countrySelect.tomselect.sync();
+        if (window.enhancedCountrySelector && window.enhancedCountrySelector.updateSelectionCounter) {
+            window.enhancedCountrySelector.updateSelectionCounter();
+        }
     }
     
     modal.showModal();
@@ -1130,7 +1129,10 @@ function openEditAccessGroupModal(groupId, details) {
     const countrySelect = document.getElementById('group_countries');
     if (countrySelect && countrySelect.tomselect) {
         countrySelect.tomselect.setValue(selectedCountries);
-    } else if (countrySelect) { // Fallback for when TomSelect isn't initialized
+        if (window.enhancedCountrySelector && window.enhancedCountrySelector.updateSelectionCounter) {
+            window.enhancedCountrySelector.updateSelectionCounter();
+        }
+    } else if (countrySelect) {
         Array.from(countrySelect.options).forEach(option => {
             option.selected = selectedCountries.includes(option.value);
         });
@@ -1307,8 +1309,25 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         };
 
+        const clearAccessGroupOnPolicyChange = () => {
+            if (select.value && select.value !== 'none') {
+                const accessGroupSelect = container.querySelector('#manual_access_group, #edit_manual_access_group');
+                if (accessGroupSelect) {
+                    if (accessGroupSelect.tomselect) {
+                        accessGroupSelect.tomselect.clear();
+                    } else {
+                        accessGroupSelect.value = '';
+                    }
+                    accessGroupSelect.dispatchEvent(new Event('change'));
+                }
+            }
+        };
+
         // Add the event listener for user interactions
-        select.addEventListener('change', toggleEmailField);
+        select.addEventListener('change', () => {
+            toggleEmailField();
+            clearAccessGroupOnPolicyChange();
+        });
     
     });
 

@@ -2018,12 +2018,17 @@ def manage_auth_settings():
 
         if 'auth_settings' in data:
             config_data['auth_settings'] = data['auth_settings']
+            if 'password_login_enabled' in data['auth_settings']:
+                config_data['disable_password_login'] = not bool(data['auth_settings']['password_login_enabled'])
 
         if 'oauth_settings' in data:
             config_data['oauth_settings'] = data['oauth_settings']
 
         if not _save_encrypted_config(config_data, fernet):
             return jsonify({"error": "failed_to_save_config"}), 500
+
+        from app.web import config_loader
+        config_loader.apply_config_to_app(current_app, config_data)
 
         return jsonify({"status": "success", "message": "Settings saved. A restart may be required."})
 
@@ -2078,6 +2083,9 @@ def manage_auth_providers():
         if not _save_encrypted_config(config_data, fernet):
             return jsonify({"error": "failed_to_save_config"}), 500
 
+        from app.web import config_loader
+        config_loader.apply_config_to_app(current_app, config_data)
+
         return jsonify({"status": "success", "message": "Provider added successfully."})
 
 @api_v2_bp.route('/auth/providers/<provider_id>', methods=['PUT', 'DELETE'])
@@ -2112,6 +2120,9 @@ def manage_auth_provider(provider_id):
         if not _save_encrypted_config(config_data, fernet):
             return jsonify({"error": "failed_to_save_config"}), 500
 
+        from app.web import config_loader
+        config_loader.apply_config_to_app(current_app, config_data)
+
         return jsonify({"status": "success", "message": "Provider updated successfully."})
 
     if request.method == 'DELETE':
@@ -2119,6 +2130,9 @@ def manage_auth_provider(provider_id):
 
         if not _save_encrypted_config(config_data, fernet):
             return jsonify({"error": "failed_to_save_config"}), 500
+
+        from app.web import config_loader
+        config_loader.apply_config_to_app(current_app, config_data)
 
         return jsonify({"status": "success", "message": "Provider deleted successfully."})
 

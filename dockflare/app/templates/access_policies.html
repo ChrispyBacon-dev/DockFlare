@@ -82,11 +82,9 @@
 {% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Initialize TomSelect for the country selector in the modal, if it exists.
-        // The main logic for populating the modal and handling events is in main.js.
         const countrySelectEl = document.getElementById('group_countries');
         if (countrySelectEl) {
-            new TomSelect(countrySelectEl, {
+            const tomSelect = new TomSelect(countrySelectEl, {
                  plugins: {
                      'checkbox_options': {},
                      'remove_button': {
@@ -97,8 +95,195 @@
                  sortField: {
                      field: "text",
                      direction: "asc"
+                 },
+                 placeholder: "Search and select countries to block...",
+                 maxOptions: null,
+                 render: {
+                     item: function(data, escape) {
+                         return '<div class="item">' + escape(data.text) + '</div>';
+                     }
                  }
             });
+
+            const parentContainer = countrySelectEl.closest('.textarea');
+            if (parentContainer) {
+                const controlWrapper = tomSelect.control;
+                controlWrapper.style.height = '100%';
+                controlWrapper.style.maxHeight = 'none';
+                controlWrapper.style.border = 'none';
+                controlWrapper.style.background = 'transparent';
+
+                const observer = new ResizeObserver(() => {
+                    const containerHeight = parentContainer.offsetHeight;
+                    controlWrapper.style.height = containerHeight + 'px';
+                });
+                observer.observe(parentContainer);
+            }
+
+            const countryData = {
+                'africa': ['DZ', 'AO', 'BJ', 'BW', 'BF', 'BI', 'CM', 'CV', 'CF', 'TD', 'KM', 'CG', 'CD', 'CI', 'DJ', 'EG', 'GQ', 'ER', 'ET', 'GA', 'GM', 'GH', 'GN', 'GW', 'KE', 'LS', 'LR', 'LY', 'MG', 'MW', 'ML', 'MR', 'MU', 'MA', 'MZ', 'NA', 'NE', 'NG', 'RW', 'ST', 'SN', 'SC', 'SL', 'SO', 'ZA', 'SS', 'SD', 'SZ', 'TZ', 'TG', 'TN', 'UG', 'ZM', 'ZW'],
+                'asia': ['AF', 'AM', 'AZ', 'BH', 'BD', 'BT', 'BN', 'KH', 'CN', 'CY', 'GE', 'IN', 'ID', 'IR', 'IQ', 'IL', 'JP', 'JO', 'KZ', 'KW', 'KG', 'LA', 'LB', 'MY', 'MV', 'MN', 'MM', 'NP', 'KP', 'OM', 'PK', 'PS', 'PH', 'QA', 'SA', 'SG', 'KR', 'LK', 'SY', 'TJ', 'TH', 'TL', 'TR', 'TM', 'AE', 'UZ', 'VN', 'YE'],
+                'europe': ['AL', 'AD', 'AT', 'BY', 'BE', 'BA', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IS', 'IE', 'IT', 'XK', 'LV', 'LI', 'LT', 'LU', 'MK', 'MT', 'MD', 'MC', 'ME', 'NL', 'NO', 'PL', 'PT', 'RO', 'RU', 'SM', 'RS', 'SK', 'SI', 'ES', 'SE', 'CH', 'UA', 'GB', 'VA'],
+                'north-america': ['AG', 'BS', 'BB', 'BZ', 'CA', 'CR', 'CU', 'DM', 'DO', 'SV', 'GD', 'GT', 'HT', 'HN', 'JM', 'MX', 'NI', 'PA', 'KN', 'LC', 'VC', 'TT', 'US'],
+                'south-america': ['AR', 'BO', 'BR', 'CL', 'CO', 'EC', 'FK', 'GF', 'GY', 'PY', 'PE', 'SR', 'UY', 'VE'],
+                'oceania': ['AU', 'FJ', 'KI', 'MH', 'FM', 'NR', 'NZ', 'PW', 'PG', 'WS', 'SB', 'TO', 'TV', 'VU']
+            };
+
+            const euCountries = ['AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE'];
+            const natoCountries = ['US', 'CA', 'GB', 'FR', 'DE', 'IT', 'ES', 'PL', 'RO', 'NL', 'BE', 'GR', 'PT', 'CZ', 'HU', 'BG', 'SK', 'SI', 'HR', 'AL', 'LT', 'LV', 'EE', 'LU', 'IS', 'NO', 'DK', 'TR', 'ME', 'MK', 'FI', 'SE'];
+            const highRiskCountries = ['AF', 'IR', 'KP', 'SY', 'RU', 'BY', 'MM', 'VE', 'CU', 'SO', 'YE', 'SD', 'LY'];
+
+            function updateSelectionCounter() {
+                const selected = tomSelect.getValue().length;
+                const total = Object.keys(tomSelect.options).length;
+                const counter = document.getElementById('country-selection-counter');
+                const helpText = document.getElementById('country-policy-help-text');
+
+                if (counter) {
+                    counter.textContent = `${selected} of ${total} countries selected`;
+                }
+
+                if (helpText) {
+                    if (selected === 0) {
+                        helpText.innerHTML = 'No countries blocked. <strong>All countries allowed</strong>.';
+                    } else if (selected === total) {
+                        helpText.innerHTML = '<strong>All countries blocked</strong>. No access allowed.';
+                    } else if (selected === total - 1) {
+                        helpText.innerHTML = `Only <strong>1 country allowed</strong>. ${total - 1} countries blocked.`;
+                    } else {
+                        const allowed = total - selected;
+                        helpText.innerHTML = `<strong>${selected} countries blocked</strong>. ${allowed} countries allowed.`;
+                    }
+                }
+            }
+
+            document.getElementById('select-all-countries')?.addEventListener('click', () => {
+                const allValues = Object.keys(tomSelect.options);
+                tomSelect.setValue(allValues);
+                updateSelectionCounter();
+            });
+
+            document.getElementById('select-none-countries')?.addEventListener('click', () => {
+                tomSelect.clear();
+                updateSelectionCounter();
+            });
+
+            document.getElementById('invert-selection')?.addEventListener('click', () => {
+                const allValues = Object.keys(tomSelect.options);
+                const currentValues = tomSelect.getValue();
+                const invertedValues = allValues.filter(val => !currentValues.includes(val));
+                tomSelect.setValue(invertedValues);
+                updateSelectionCounter();
+            });
+
+            const templatesDropdown = document.getElementById('templates-dropdown');
+            const templatesMenu = document.getElementById('templates-menu');
+            const regionsDropdown = document.getElementById('regions-dropdown');
+            const regionsMenu = document.getElementById('regions-menu');
+
+            templatesDropdown?.addEventListener('click', (e) => {
+                e.preventDefault();
+                templatesMenu.style.display = templatesMenu.style.display === 'none' ? 'block' : 'none';
+                regionsMenu.style.display = 'none';
+            });
+
+            regionsDropdown?.addEventListener('click', (e) => {
+                e.preventDefault();
+                regionsMenu.style.display = regionsMenu.style.display === 'none' ? 'block' : 'none';
+                templatesMenu.style.display = 'none';
+            });
+
+            document.addEventListener('click', (e) => {
+                if (!templatesDropdown?.contains(e.target) && !templatesMenu?.contains(e.target)) {
+                    templatesMenu.style.display = 'none';
+                }
+                if (!regionsDropdown?.contains(e.target) && !regionsMenu?.contains(e.target)) {
+                    regionsMenu.style.display = 'none';
+                }
+            });
+
+            const templates = {
+                'block-all-except-us': () => {
+                    const allValues = Object.keys(tomSelect.options);
+                    const blockValues = allValues.filter(val => val !== 'US');
+                    tomSelect.setValue(blockValues);
+                },
+                'block-all-except-eu': () => {
+                    const allValues = Object.keys(tomSelect.options);
+                    const blockValues = allValues.filter(val => !euCountries.includes(val));
+                    tomSelect.setValue(blockValues);
+                },
+                'block-high-risk': () => {
+                    tomSelect.setValue(highRiskCountries);
+                },
+                'block-non-nato': () => {
+                    const allValues = Object.keys(tomSelect.options);
+                    const blockValues = allValues.filter(val => !natoCountries.includes(val));
+                    tomSelect.setValue(blockValues);
+                }
+            };
+
+            document.querySelectorAll('[data-template]').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const template = e.target.dataset.template;
+                    if (templates[template]) {
+                        templates[template]();
+                        updateSelectionCounter();
+                        templatesMenu.style.display = 'none';
+                    }
+                });
+            });
+
+            document.querySelectorAll('[data-region]').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const region = e.target.dataset.region;
+                    if (countryData[region]) {
+                        const currentValues = tomSelect.getValue();
+                        const newValues = [...new Set([...currentValues, ...countryData[region]])];
+                        tomSelect.setValue(newValues);
+                        updateSelectionCounter();
+                        regionsMenu.style.display = 'none';
+                    }
+                });
+            });
+
+            const quickActions = {
+                'allow-us-only': () => {
+                    const allValues = Object.keys(tomSelect.options);
+                    const blockValues = allValues.filter(val => val !== 'US');
+                    tomSelect.setValue(blockValues);
+                },
+                'allow-us-eu': () => {
+                    const allowedCountries = ['US', ...euCountries];
+                    const allValues = Object.keys(tomSelect.options);
+                    const blockValues = allValues.filter(val => !allowedCountries.includes(val));
+                    tomSelect.setValue(blockValues);
+                },
+                'block-high-risk': () => {
+                    tomSelect.setValue(highRiskCountries);
+                }
+            };
+
+            document.querySelectorAll('[data-quick-action]').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const action = e.target.dataset.quickAction;
+                    if (quickActions[action]) {
+                        quickActions[action]();
+                        updateSelectionCounter();
+                    }
+                });
+            });
+
+            tomSelect.on('change', updateSelectionCounter);
+            updateSelectionCounter();
+
+            window.enhancedCountrySelector = {
+                tomSelect: tomSelect,
+                updateSelectionCounter: updateSelectionCounter
+            };
         }
     });
 </script>
