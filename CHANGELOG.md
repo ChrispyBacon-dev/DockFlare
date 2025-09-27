@@ -6,10 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
-## [v3.0.2] - 2025-09-27
+
+## [v3.0.1] (Hotfixes) - 2025-09-27
 
 ### Fixed
-- **IP Whitelist Access Policies:** Corrected an issue where IP-based access policies were not working as expected. The system now correctly creates a `bypass` rule for IP whitelists and a separate `allow` rule for email-based authentication, ensuring whitelisted IPs can access services without an additional authentication step. (raised by @durzo #216)
+- **IP Whitelist Access Policies:** Corrected an issue where IP-based access policies were not working as expected. DockFlare now correctly creates a `bypass` rule for IP whitelists and a separate `allow` rule for email-based authentication, ensuring whitelisted IPs can access services without an additional authentication step.
+- **Access Policy Updates:** Fixed a bug where updating an existing ingress rule's Access Policy would fail with an "application already exists" error. DockFlare now correctly updates the existing Cloudflare Access application instead of trying to create a new one.
+- **API Error Logging:** Reduced the severity of the log message for a `403 Forbidden` error when fetching a user's email. This is an expected and non-critical error when using a scoped API token.
+(raised by @durzo issue tracker #216 #217)
 
 ---
 ## [v3.0.1] - 2025-09-26

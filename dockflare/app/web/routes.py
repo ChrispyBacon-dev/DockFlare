@@ -1296,14 +1296,23 @@ def ui_add_manual_rule_route():
                 ]
                 cf_access_policies.append({"name": "UI Deny Fallback", "decision": "deny", "include": [{"everyone": {}}]})
             
-            app_result = create_cloudflare_access_application(
-                full_hostname, f"DockFlare-{full_hostname}", "24h", False, [full_hostname], cf_access_policies, None, False
-            )
-            if app_result:
-                access_app_id = app_result.get('id')
-                access_policy_type = manual_access_policy_type
-            else:
-                cloudflared_agent_state["last_action_status"] = "Error: Failed to create Access App for manual policy."
+            if cf_access_policies:
+                app_result = None
+                existing_app = find_cloudflare_access_application_by_hostname(full_hostname)
+                if existing_app:
+                    app_result = update_cloudflare_access_application(
+                        existing_app['id'], full_hostname, f"DockFlare-{full_hostname}", "24h", False, [full_hostname], cf_access_policies, None, False
+                    )
+                else:
+                    app_result = create_cloudflare_access_application(
+                        full_hostname, f"DockFlare-{full_hostname}", "24h", False, [full_hostname], cf_access_policies, None, False
+                    )
+
+                if app_result:
+                    access_app_id = app_result.get('id')
+                    access_policy_type = manual_access_policy_type
+                else:
+                    cloudflared_agent_state["last_action_status"] = "Error: Failed to create/update Access App for manual policy."
 
     with state_lock:
         existing_rule = managed_rules.get(key_for_managed_rules)
@@ -1524,9 +1533,17 @@ def ui_edit_manual_rule_route():
                     {"name": "UI Deny Fallback", "decision": "deny", "include": [{"everyone": {}}]}
                 ]
             if cf_access_policies:
-                app_result = create_cloudflare_access_application(
-                    full_hostname, f"DockFlare-{full_hostname}", "24h", False, [full_hostname], cf_access_policies, None, False
-                )
+                app_result = None
+                existing_app = find_cloudflare_access_application_by_hostname(full_hostname)
+                if existing_app:
+                    app_result = update_cloudflare_access_application(
+                        existing_app['id'], full_hostname, f"DockFlare-{full_hostname}", "24h", False, [full_hostname], cf_access_policies, None, False
+                    )
+                else:
+                    app_result = create_cloudflare_access_application(
+                        full_hostname, f"DockFlare-{full_hostname}", "24h", False, [full_hostname], cf_access_policies, None, False
+                    )
+
                 if app_result:
                     access_app_id = app_result.get('id')
                     access_policy_type = manual_access_policy_type

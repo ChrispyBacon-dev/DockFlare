@@ -90,7 +90,10 @@ def get_cloudflare_account_email():
             logging.warning(f"Failed to fetch Cloudflare account email, API call unsuccessful. Response: {response_data}")
             return None
     except requests.exceptions.RequestException as e:
-        logging.error(f"API error fetching Cloudflare account email: {e}")
+        if hasattr(e, 'response') and e.response is not None and e.response.status_code == 403:
+            logging.info("Could not fetch Cloudflare account email due to permissions. This is expected if using a scoped API token without User.Read permissions. The TLD policy feature will be disabled.")
+        else:
+            logging.error(f"API error fetching Cloudflare account email: {e}")
         return None
     except Exception as e:
         logging.error(f"Unexpected error fetching Cloudflare account email: {e}", exc_info=True)
