@@ -29,8 +29,9 @@ from app import config, docker_client, tunnel_state, cloudflared_agent_state, pu
 from app.core.state_manager import (
     managed_rules, state_lock, save_state,
     add_agent, get_agent, update_agent, list_agents, remove_agent, add_agent_key, revoke_agent_key, find_agent_id_by_key, list_agent_keys, get_agent_key_info,
-    get_services_snapshot
+    get_services_snapshot, cleanup_expired_revoked_keys, get_revoked_keys_summary
 )
+from app.core import agent_key_store
 from app.core.tunnel_manager import (
     start_cloudflared_container,
     stop_cloudflared_container,
@@ -977,6 +978,92 @@ def agents_revoke_key():
         return jsonify({"status": "success", "message": "Key revoked.", "affected_agents": affected_agents}), 200
     else:
         return jsonify({"status": "error", "message": "Key not found."}), 404
+
+@api_v2_bp.route('/agents/keys/<key_id>', methods=['DELETE'])
+def delete_agent_key_permanently(key_id):
+    """
+    Admin endpoint to permanently delete a revoked agent API key.
+    Only revoked keys can be permanently deleted.
+    """
+    if not key_id:
+        return jsonify({"status": "error", "message": "Missing key ID"}), 400
+
+    # Get key info to validate it exists and is revoked
+    key_info = get_agent_key_info(key_id)
+    if not key_info:
+        return jsonify({"status": "error", "message": "Key not found"}), 404
+
+    # Security: Only allow deletion of revoked keys
+    if key_info.get("status") != "revoked":
+        return jsonify({"status": "error", "message": "Can only permanently delete revoked keys"}), 400
+
+    # Audit logging before deletion
+    owner = key_info.get("owner", "unknown")
+    revoked_at = key_info.get("revoked_at", "unknown")
+    logging.info(f"ADMIN: Permanently deleting revoked key {key_id[:8]}... (owner: {owner}, revoked: {revoked_at})")
+
+    # Perform the permanent deletion
+    agent_key_store.remove_key(key_id)
+
+    return jsonify({
+        "status": "success",
+        "message": "Key permanently deleted",
+        "deleted_key": key_id[:8] + "...",
+        "owner": owner
+    }), 200
+
+@api_v2_bp.route('/agents/keys/revoked', methods=['DELETE'])
+def delete_all_revoked_keys():
+    """
+    Admin endpoint to permanently delete all revoked agent API keys.
+    """
+    all_keys = list_agent_keys()
+    revoked_keys = {k: v for k, v in all_keys.items() if v.get("status") == "revoked"}
+
+    if not revoked_keys:
+        return jsonify({"status": "success", "message": "No revoked keys to delete"}), 200
+
+    deleted_count = 0
+    deleted_keys = []
+
+    for key_id, key_info in revoked_keys.items():
+        try:
+            owner = key_info.get("owner", "unknown")
+            revoked_at = key_info.get("revoked_at", "unknown")
+            logging.info(f"ADMIN: Bulk deleting revoked key {key_id[:8]}... (owner: {owner}, revoked: {revoked_at})")
+
+            agent_key_store.remove_key(key_id)
+            deleted_keys.append({"key": key_id[:8] + "...", "owner": owner})
+            deleted_count += 1
+        except Exception as e:
+            logging.error(f"Failed to delete revoked key {key_id[:8]}: {e}")
+
+    logging.info(f"ADMIN: Bulk deleted {deleted_count} revoked keys")
+
+    return jsonify({
+        "status": "success",
+        "message": f"Permanently deleted {deleted_count} revoked keys",
+        "deleted_count": deleted_count,
+        "deleted_keys": deleted_keys
+    }), 200
+
+@api_v2_bp.route('/agents/keys/cleanup', methods=['POST'])
+def trigger_key_cleanup():
+    """
+    Admin endpoint to manually trigger cleanup of expired revoked keys.
+    """
+    data = request.get_json() or {}
+    retention_days = data.get('retention_days', 30)
+
+    if not isinstance(retention_days, int) or retention_days < 1:
+        return jsonify({"status": "error", "message": "retention_days must be a positive integer"}), 400
+
+    try:
+        result = cleanup_expired_revoked_keys(retention_days)
+        return jsonify(result), 200
+    except Exception as e:
+        logging.error(f"Manual cleanup failed: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": f"Cleanup failed: {str(e)}"}), 500
 
 @api_v2_bp.route('/agents', methods=['GET'])
 def agents_list_api():

@@ -20,7 +20,7 @@ import os
 import logging 
 
 # --- DockFlare Version ---
-APP_VERSION = "v3.0.1"
+APP_VERSION = "v3.0.2"
 # --- web: https://dockflare.app ---
 # --- github: https://github.com/ChrispyBacon-dev/DockFlare ---
 

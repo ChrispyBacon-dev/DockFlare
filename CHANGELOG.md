@@ -7,10 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v3.0.2] - 2025-09-30
 
-Of course, my apologies for the misunderstanding. Here is the changelog with a new, cleanly formatted entry for the hotfix on September 27th, while keeping the September 26th entry separate as you requested.
+### Added
+- **Enhanced API Key Management**
+    - **Revoked Key Visibility:** Revoked API keys are now displayed in a separate "Revoked Keys" section with full key visibility for verification and audit purposes.
+    - **Permanent Deletion:** Added "Delete Permanently" functionality for individual revoked keys and "Clear All" for bulk removal.
+    - **Auto-Cleanup System:** Implemented automatic cleanup of revoked keys after 30 days with manual trigger option.
+    - **Improved UX:** Revoked keys are visually distinguished (grayed out, full key shown) with countdown to auto-deletion.
+    - **Copy Functionality:** Users can copy full revoked API keys for record-keeping before permanent deletion.
+
+### Fixed
+- **API Key Revocation Display Bug:** Fixed issue where revoked API keys remained visible in the frontend as if they were active, even though backend authentication correctly rejected them.
 
 ---
+
 ## [v3.0.1] (Hotfixes) - 2025-09-27
 
 ### Added

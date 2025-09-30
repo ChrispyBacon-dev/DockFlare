@@ -323,6 +323,110 @@ def list_agent_keys():
     """Return a shallow copy of the agent key metadata from the encrypted store."""
     return agent_key_store.list_keys()
 
+def cleanup_expired_revoked_keys(retention_days=30):
+    """
+    Auto-cleanup revoked keys older than retention_days.
+    Returns dict with cleanup results.
+    """
+    if retention_days <= 0:
+        return {"status": "skipped", "message": "Auto-cleanup disabled"}
+
+    all_keys = agent_key_store.list_keys()
+    now = datetime.utcnow().replace(tzinfo=timezone.utc)
+
+    expired_keys = []
+    cleaned_count = 0
+
+    for key_id, key_info in all_keys.items():
+        if key_info.get("status") != "revoked":
+            continue
+
+        revoked_at_str = key_info.get("revoked_at")
+        if not revoked_at_str:
+            continue
+
+        try:
+            # Parse revocation timestamp
+            if revoked_at_str.endswith('Z'):
+                revoked_at = datetime.fromisoformat(revoked_at_str.replace('Z', '+00:00'))
+            else:
+                revoked_at = datetime.fromisoformat(revoked_at_str)
+            revoked_at = revoked_at.replace(tzinfo=timezone.utc) if revoked_at.tzinfo is None else revoked_at.astimezone(timezone.utc)
+
+            # Check if key is expired
+            days_since_revoked = (now - revoked_at).days
+            if days_since_revoked >= retention_days:
+                owner = key_info.get("owner", "unknown")
+                expired_keys.append({
+                    "key_id": key_id,
+                    "owner": owner,
+                    "revoked_at": revoked_at_str,
+                    "days_old": days_since_revoked
+                })
+
+                # Remove the expired key
+                agent_key_store.remove_key(key_id)
+                cleaned_count += 1
+                logging.info(f"AUTO_CLEANUP: Removed expired revoked key {key_id[:8]}... (owner: {owner}, revoked {days_since_revoked} days ago)")
+
+        except Exception as e:
+            logging.warning(f"AUTO_CLEANUP: Failed to process revoked key {key_id[:8]}: {e}")
+
+    result = {
+        "status": "completed",
+        "cleaned_count": cleaned_count,
+        "retention_days": retention_days,
+        "expired_keys": expired_keys
+    }
+
+    if cleaned_count > 0:
+        logging.info(f"AUTO_CLEANUP: Removed {cleaned_count} expired revoked keys (retention: {retention_days} days)")
+
+    return result
+
+def get_revoked_keys_summary():
+    """
+    Get summary information about revoked keys for display.
+    Returns dict with revoked key counts and aging info.
+    """
+    all_keys = agent_key_store.list_keys()
+    now = datetime.utcnow().replace(tzinfo=timezone.utc)
+
+    revoked_keys = []
+    for key_id, key_info in all_keys.items():
+        if key_info.get("status") != "revoked":
+            continue
+
+        revoked_at_str = key_info.get("revoked_at")
+        days_until_cleanup = None
+
+        if revoked_at_str:
+            try:
+                if revoked_at_str.endswith('Z'):
+                    revoked_at = datetime.fromisoformat(revoked_at_str.replace('Z', '+00:00'))
+                else:
+                    revoked_at = datetime.fromisoformat(revoked_at_str)
+                revoked_at = revoked_at.replace(tzinfo=timezone.utc) if revoked_at.tzinfo is None else revoked_at.astimezone(timezone.utc)
+
+                # Calculate days until auto-cleanup (assuming 30 day retention)
+                days_since_revoked = (now - revoked_at).days
+                days_until_cleanup = max(0, 30 - days_since_revoked)
+
+            except Exception:
+                pass
+
+        revoked_keys.append({
+            "key_id": key_id,
+            "owner": key_info.get("owner", "unknown"),
+            "revoked_at": revoked_at_str,
+            "days_until_cleanup": days_until_cleanup
+        })
+
+    return {
+        "revoked_count": len(revoked_keys),
+        "revoked_keys": revoked_keys
+    }
+
 def get_agent_rules(agent_id):
     """Return all active rules for a specific agent."""
     with state_lock:

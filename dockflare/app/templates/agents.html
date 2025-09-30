@@ -44,9 +44,10 @@
 </section>
 
 
+<!-- Active API Keys Section -->
 <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
   <div class="card-body">
-    <h2 class="card-title text-xl border-b border-base-300 pb-3 mb-6">API Keys</h2>
+    <h2 class="card-title text-xl border-b border-base-300 pb-3 mb-6">Active API Keys</h2>
     <div class="overflow-x-auto">
       <table class="table table-zebra table-sm w-full">
         <thead>
@@ -54,13 +55,60 @@
             <th class="p-3">Key (Partial)</th>
             <th class="p-3">Owner</th>
             <th class="p-3">Created At</th>
+            <th class="p-3">Status</th>
             <th class="p-3">Actions</th>
           </tr>
         </thead>
-        <tbody id="api-keys-table-body">
+        <tbody id="active-keys-table-body">
 
         </tbody>
       </table>
+    </div>
+  </div>
+</section>
+
+<!-- Revoked API Keys Section -->
+<section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+  <div class="card-body">
+    <div class="flex flex-col sm:flex-row items-center justify-between border-b border-base-300 pb-3 mb-6">
+      <h2 class="card-title text-xl">Revoked Keys <span id="revoked-count-badge" class="badge badge-ghost badge-sm ml-2">0</span></h2>
+      <div class="flex items-center gap-2 mt-4 sm:mt-0">
+        <button id="btn-cleanup-expired" class="btn btn-ghost btn-sm" title="Remove keys revoked >30 days ago">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Auto Cleanup
+        </button>
+        <button id="btn-clear-all-revoked" class="btn btn-warning btn-sm">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+          </svg>
+          Clear All
+        </button>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="table table-zebra table-sm w-full">
+        <thead>
+          <tr>
+            <th class="p-3">Full API Key</th>
+            <th class="p-3">Owner</th>
+            <th class="p-3">Revoked At</th>
+            <th class="p-3">Auto-Delete</th>
+            <th class="p-3">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="revoked-keys-table-body">
+
+        </tbody>
+      </table>
+      <div id="no-revoked-keys" class="text-center p-8 text-base-content/60 hidden">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-12 h-12 mx-auto mb-4 opacity-30">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <p class="text-lg font-medium">No revoked keys</p>
+        <p class="text-sm">Revoked API keys will appear here for cleanup</p>
+      </div>
     </div>
   </div>
 </section>
@@ -421,9 +469,12 @@
     });
   };
 
-  
+
   const agentsTableBody = document.getElementById('agents-table-body');
-  const apiKeysTableBody = document.getElementById('api-keys-table-body');
+  const activeKeysTableBody = document.getElementById('active-keys-table-body');
+  const revokedKeysTableBody = document.getElementById('revoked-keys-table-body');
+  const revokedCountBadge = document.getElementById('revoked-count-badge');
+  const noRevokedKeysMessage = document.getElementById('no-revoked-keys');
 
   
   const renderAgentsTable = (agents) => {
@@ -545,24 +596,118 @@
 
   
   const renderApiKeysTable = (apiKeys) => {
-    apiKeysTableBody.innerHTML = '';
-    if (Object.keys(apiKeys).length === 0) {
-      apiKeysTableBody.innerHTML = '<tr><td colspan="4" class="text-center p-4">No API keys have been generated.</td></tr>';
+    // Separate active and revoked keys
+    const activeKeys = {};
+    const revokedKeys = {};
+
+    for (const [keyId, meta] of Object.entries(apiKeys)) {
+      if (meta.status === 'revoked') {
+        revokedKeys[keyId] = meta;
+      } else {
+        activeKeys[keyId] = meta;
+      }
+    }
+
+    // Render active keys
+    renderActiveKeysTable(activeKeys);
+
+    // Render revoked keys
+    renderRevokedKeysTable(revokedKeys);
+
+    // Update revoked count badge
+    const revokedCount = Object.keys(revokedKeys).length;
+    revokedCountBadge.textContent = revokedCount;
+    revokedCountBadge.className = revokedCount > 0 ? 'badge badge-warning badge-sm ml-2' : 'badge badge-ghost badge-sm ml-2';
+  };
+
+  const renderActiveKeysTable = (activeKeys) => {
+    activeKeysTableBody.innerHTML = '';
+    if (Object.keys(activeKeys).length === 0) {
+      activeKeysTableBody.innerHTML = '<tr><td colspan="5" class="text-center p-4">No active API keys.</td></tr>';
       return;
     }
-    for (const [keyId, meta] of Object.entries(apiKeys)) {
+
+    for (const [keyId, meta] of Object.entries(activeKeys)) {
       const owner = meta.owner || '<i>N/A</i>';
       const createdAt = meta.created_at ? new Date(meta.created_at).toLocaleString() : '<i>N/A</i>';
+      const lastUsed = meta.last_used_at ? new Date(meta.last_used_at).toLocaleString() : 'Never used';
+
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td class="p-3 whitespace-nowrap font-mono break-all">${keyId.substring(0, 8)}...</td>
         <td class="p-3 whitespace-nowrap">${owner}</td>
         <td class="p-3 whitespace-nowrap">${createdAt}</td>
         <td class="p-3 whitespace-nowrap">
+          <span class="badge badge-success badge-sm">Active</span>
+          <br><small class="text-xs opacity-60">${lastUsed}</small>
+        </td>
+        <td class="p-3 whitespace-nowrap">
           <button class="btn btn-xs btn-error btn-revoke-key" data-key-id="${keyId}">Revoke</button>
         </td>
       `;
-      apiKeysTableBody.appendChild(tr);
+      activeKeysTableBody.appendChild(tr);
+    }
+  };
+
+  const renderRevokedKeysTable = (revokedKeys) => {
+    revokedKeysTableBody.innerHTML = '';
+    const revokedCount = Object.keys(revokedKeys).length;
+
+    if (revokedCount === 0) {
+      noRevokedKeysMessage.classList.remove('hidden');
+      return;
+    } else {
+      noRevokedKeysMessage.classList.add('hidden');
+    }
+
+    for (const [keyId, meta] of Object.entries(revokedKeys)) {
+      const owner = meta.owner || '<i>N/A</i>';
+      const revokedAt = meta.revoked_at ? new Date(meta.revoked_at).toLocaleString() : '<i>N/A</i>';
+
+      // Calculate days until auto-cleanup (assuming 30 days retention)
+      let autoDeleteInfo = 'Unknown';
+      if (meta.revoked_at) {
+        try {
+          const revokedDate = new Date(meta.revoked_at);
+          const now = new Date();
+          const daysSinceRevoked = Math.floor((now - revokedDate) / (1000 * 60 * 60 * 24));
+          const daysUntilCleanup = Math.max(0, 30 - daysSinceRevoked);
+
+          if (daysUntilCleanup === 0) {
+            autoDeleteInfo = '<span class="text-warning">Ready for cleanup</span>';
+          } else {
+            autoDeleteInfo = `${daysUntilCleanup} days`;
+          }
+        } catch (e) {
+          autoDeleteInfo = 'Error';
+        }
+      }
+
+      const tr = document.createElement('tr');
+      tr.className = 'opacity-60 italic';
+      tr.innerHTML = `
+        <td class="p-3 font-mono break-all text-sm">
+          <div class="bg-base-200 p-2 rounded border-2 border-dashed">
+            <span class="text-xs opacity-75">Full Key:</span><br>
+            <code class="text-xs">${keyId}</code>
+            <button class="btn btn-xs btn-ghost ml-2 btn-copy-revoked-key" data-key="${keyId}">Copy</button>
+          </div>
+        </td>
+        <td class="p-3 whitespace-nowrap line-through">${owner}</td>
+        <td class="p-3 whitespace-nowrap">
+          <span class="badge badge-error badge-sm">Revoked</span>
+          <br><small class="text-xs">${revokedAt}</small>
+        </td>
+        <td class="p-3 whitespace-nowrap">
+          ${autoDeleteInfo}
+        </td>
+        <td class="p-3 whitespace-nowrap">
+          <button class="btn btn-xs btn-error btn-delete-key-permanently" data-key-id="${keyId}">
+            Delete Permanently
+          </button>
+        </td>
+      `;
+      revokedKeysTableBody.appendChild(tr);
     }
   };
   
@@ -786,7 +931,8 @@
       }
     });
 
-    apiKeysTableBody.addEventListener('click', async (e) => {
+    // Event listeners for active keys table
+    activeKeysTableBody.addEventListener('click', async (e) => {
       if (e.target.classList.contains('btn-revoke-key')) {
         const keyId = e.target.getAttribute('data-key-id');
         if (confirm(`Are you sure you want to revoke API key "${keyId.substring(0, 8)}..."? This action is irreversible.`)) {
@@ -795,6 +941,67 @@
             alert('API key revoked successfully.');
             fetchData();
           }
+        }
+      }
+    });
+
+    // Event listeners for revoked keys table
+    revokedKeysTableBody.addEventListener('click', async (e) => {
+      if (e.target.classList.contains('btn-delete-key-permanently')) {
+        const keyId = e.target.getAttribute('data-key-id');
+        if (confirm(`Are you sure you want to permanently delete this revoked API key? This cannot be undone.\n\nKey: ${keyId.substring(0, 8)}...`)) {
+          try {
+            const success = await apiCall(`/api/v2/agents/keys/${keyId}`, 'DELETE');
+            if (success) {
+              alert('API key permanently deleted.');
+              fetchData();
+            }
+          } catch (error) {
+            alert('Failed to delete API key. Please try again.');
+          }
+        }
+      } else if (e.target.classList.contains('btn-copy-revoked-key')) {
+        const keyText = e.target.getAttribute('data-key');
+        copyToClipboard(keyText, e.target);
+      }
+    });
+
+    // Clear all revoked keys button
+    document.getElementById('btn-clear-all-revoked').addEventListener('click', async () => {
+      const revokedCount = document.querySelectorAll('#revoked-keys-table-body tr').length;
+      if (revokedCount === 0) {
+        alert('No revoked keys to clear.');
+        return;
+      }
+
+      if (confirm(`Are you sure you want to permanently delete all ${revokedCount} revoked API keys? This cannot be undone.`)) {
+        try {
+          const result = await apiCall('/api/v2/agents/keys/revoked', 'DELETE');
+          if (result) {
+            alert(`Successfully deleted ${result.deleted_count} revoked keys.`);
+            fetchData();
+          }
+        } catch (error) {
+          alert('Failed to clear revoked keys. Please try again.');
+        }
+      }
+    });
+
+    // Auto cleanup button
+    document.getElementById('btn-cleanup-expired').addEventListener('click', async () => {
+      if (confirm('This will permanently delete revoked API keys older than 30 days. Continue?')) {
+        try {
+          const result = await apiCall('/api/v2/agents/keys/cleanup', 'POST', { retention_days: 30 });
+          if (result) {
+            if (result.cleaned_count > 0) {
+              alert(`Auto-cleanup completed: ${result.cleaned_count} expired keys removed.`);
+              fetchData();
+            } else {
+              alert('No expired keys found to clean up.');
+            }
+          }
+        } catch (error) {
+          alert('Auto-cleanup failed. Please try again.');
         }
       }
     });
