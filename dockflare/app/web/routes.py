@@ -1680,8 +1680,7 @@ def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_l
         policies.append({
             "name": "Block selected countries",
             "decision": "block",
-            "include": [{"everyone": {}}],
-            "exclude": country_rules
+            "include": country_rules
         })
     elif ip_rules or email_rules:
         
