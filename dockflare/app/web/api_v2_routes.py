@@ -27,7 +27,7 @@ from flask_login import login_required
 
 from app import config, docker_client, tunnel_state, cloudflared_agent_state, publish_state_event
 from app.core.state_manager import (
-    managed_rules, state_lock, save_state,
+    managed_rules, access_groups, state_lock, save_state,
     add_agent, get_agent, update_agent, list_agents, remove_agent, add_agent_key, revoke_agent_key, find_agent_id_by_key, list_agent_keys, get_agent_key_info,
     get_services_snapshot, cleanup_expired_revoked_keys, get_revoked_keys_summary
 )
@@ -463,11 +463,11 @@ def create_manual_rule_api():
     if access_groups_input is None:
         access_groups_input = data.get('access_group_id')
     if isinstance(access_groups_input, str):
-        access_groups = [access_groups_input.strip()] if access_groups_input.strip() else []
+        access_group_ids_list = [access_groups_input.strip()] if access_groups_input.strip() else []
     elif isinstance(access_groups_input, list):
-        access_groups = [str(item).strip() for item in access_groups_input if str(item).strip()]
+        access_group_ids_list = [str(item).strip() for item in access_groups_input if str(item).strip()]
     else:
-        access_groups = []
+        access_group_ids_list = []
     state_changed = False
     previous_tunnel_id = None
     master_tunnel_id = get_effective_tunnel_id()
@@ -486,7 +486,7 @@ def create_manual_rule_api():
                 "zone_name": zone_name,
                 "tunnel_id": tunnel_id,
                 "tunnel_name": tunnel_name,
-                "access_group_id": access_groups or None
+                "access_group_id": access_group_ids_list or None
             }
             for key, val in new_values.items():
                 if existing.get(key) != val:
@@ -513,12 +513,108 @@ def create_manual_rule_api():
                 "access_policy_ui_override": False,
                 "rule_ui_override": False,
                 "source": "manual",
-                "access_group_id": access_groups or None,
+                "access_group_id": access_group_ids_list or None,
                 "tunnel_id": tunnel_id,
                 "tunnel_name": tunnel_name
             }
             save_state()
             state_changed = True
+
+    if access_group_ids_list:
+        from app import config
+        rule = managed_rules.get(rule_key)
+        if rule:
+            use_reusable = False
+            cf_access_policies_or_ids = []
+            session_duration = "24h"
+            app_launcher_visible = False
+            auto_redirect_to_identity = False
+
+            if config.USE_REUSABLE_POLICIES:
+                use_reusable = True
+                from app.core import reusable_policies
+
+                for group_id in access_group_ids_list:
+                    if group_id in access_groups:
+                        group = access_groups[group_id]
+                        existing_policy_id = group.get("cloudflare_policy_id")
+                        if existing_policy_id:
+                            logging.info(f"API: Using existing reusable policy ID '{existing_policy_id}' for access group '{group_id}'")
+                            cf_access_policies_or_ids.append(existing_policy_id)
+                        else:
+                            policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id, group)
+                            if policy_id:
+                                logging.info(f"API: Synced access group '{group_id}' to reusable policy ID '{policy_id}' for manual rule")
+                                cf_access_policies_or_ids.append(policy_id)
+                            else:
+                                logging.error(f"API: Failed to sync access group '{group_id}' for manual rule - no policy ID returned")
+
+                        group_session = group.get("session_duration", "24h")
+                        if group_session:
+                            session_duration = group_session
+                        app_launcher_visible = group.get("app_launcher_visible", False)
+                        auto_redirect_to_identity = group.get("auto_redirect_to_identity", False)
+                    else:
+                        logging.warning(f"API: Access group '{group_id}' selected but not found in state")
+            else:
+                for group_id in access_group_ids_list:
+                    if group_id in access_groups:
+                        group = access_groups[group_id]
+                        cf_access_policies_or_ids.extend(group.get("policies", []))
+
+                        group_session = group.get("session_duration", "24h")
+                        if group_session:
+                            session_duration = group_session
+                        app_launcher_visible = group.get("app_launcher_visible", False)
+                        auto_redirect_to_identity = group.get("auto_redirect_to_identity", False)
+                    else:
+                        logging.warning(f"API: Access group '{group_id}' selected but not found in state")
+
+            if cf_access_policies_or_ids:
+                try:
+                    existing_access_app_id = rule.get("access_app_id")
+                    if existing_access_app_id:
+                        logging.info(f"API: Updating existing Access Application ID '{existing_access_app_id}' for rule {rule_key}")
+                        from app.core.access_manager import update_cloudflare_access_application
+                        new_access_data = update_cloudflare_access_application(
+                            existing_access_app_id,
+                            hostname,
+                            f"DockFlare-{hostname}",
+                            session_duration,
+                            app_launcher_visible,
+                            [hostname],
+                            cf_access_policies_or_ids,
+                            auto_redirect_to_identity=auto_redirect_to_identity,
+                            use_reusable=use_reusable
+                        )
+                        if new_access_data:
+                            logging.info(f"API: Successfully updated Access Application for {rule_key}")
+                        else:
+                            logging.error(f"API: Failed to update Access Application for {rule_key}")
+                    else:
+                        logging.info(f"API: Creating new Access Application for rule {rule_key}")
+                        from app.core.access_manager import create_cloudflare_access_application
+                        new_access_data = create_cloudflare_access_application(
+                            hostname,
+                            f"DockFlare-{hostname}",
+                            session_duration,
+                            app_launcher_visible,
+                            [hostname],
+                            cf_access_policies_or_ids,
+                            auto_redirect_to_identity=auto_redirect_to_identity,
+                            use_reusable=use_reusable
+                        )
+                        if new_access_data and new_access_data.get('id'):
+                            new_app_id = new_access_data['id']
+                            rule["access_app_id"] = new_app_id
+                            rule["access_policy_type"] = "reusable" if use_reusable else "inline"
+                            save_state()
+                            logging.info(f"API: Created Access Application ID '{new_app_id}' for {rule_key}")
+                        else:
+                            logging.error(f"API: Failed to create Access Application for {rule_key}")
+                except Exception as e:
+                    logging.error(f"API: Error creating/updating Access Application for {rule_key}: {e}", exc_info=True)
+
     if state_changed:
         publish_state_event('snapshot_refresh')
     try:

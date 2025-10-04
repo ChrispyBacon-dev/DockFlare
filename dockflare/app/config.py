@@ -20,7 +20,7 @@ import os
 import logging 
 
 # --- DockFlare Version ---
-APP_VERSION = "v3.0.2"
+APP_VERSION = "v3.0.3"
 # --- web: https://dockflare.app ---
 # --- github: https://github.com/ChrispyBacon-dev/DockFlare ---
 
@@ -110,3 +110,5 @@ AGENT_KEY_STORAGE_PATH = os.getenv('AGENT_KEY_STORAGE_PATH', None)
 AGENT_COMMAND_POLL_INTERVAL = int(os.getenv('AGENT_COMMAND_POLL_INTERVAL', 5))
 
 REDIS_DB_INDEX = int(os.getenv('REDIS_DB_INDEX', 0))
+
+USE_REUSABLE_POLICIES = os.getenv('USE_REUSABLE_POLICIES', 'true').lower() in ['true', '1', 't', 'yes']
