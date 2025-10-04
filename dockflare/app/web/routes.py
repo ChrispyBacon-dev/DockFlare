@@ -441,16 +441,25 @@ def access_policies_page():
     """Renders the Access Policies page."""
     groups_for_template = {}
     used_group_ids = set()
+    group_usage = {}  # Maps group_id -> list of hostnames using it
 
     with state_lock:
         for rule in managed_rules.values():
-            if rule.get('source') == 'docker':
+            # Include both docker and agent-sourced rules
+            if rule.get('source') in ['docker', 'agent']:
+                hostname = rule.get('hostname', 'Unknown')
                 group_id_val = rule.get('access_group_id')
                 if isinstance(group_id_val, list):
                     for gid in group_id_val:
                         used_group_ids.add(gid)
+                        if gid not in group_usage:
+                            group_usage[gid] = []
+                        group_usage[gid].append(hostname)
                 elif group_id_val:
                     used_group_ids.add(group_id_val)
+                    if group_id_val not in group_usage:
+                        group_usage[group_id_val] = []
+                    group_usage[group_id_val].append(hostname)
         groups_for_template = copy.deepcopy(access_groups)
 
     try:
@@ -460,11 +469,15 @@ def access_policies_page():
         countries = []
         flash('Could not load country list for Access Group modal.', 'error')
 
+    cf_account_id = current_app.config.get('CF_ACCOUNT_ID', '')
+
     return render_template(
         'access_policies.html',
         access_groups=groups_for_template,
         used_group_ids=used_group_ids,
-        countries=countries
+        group_usage=group_usage,
+        countries=countries,
+        ACCOUNT_ID_FOR_DISPLAY=cf_account_id if cf_account_id else "Not Configured"
     )
 
 @bp.route('/settings', methods=['GET', 'POST'])

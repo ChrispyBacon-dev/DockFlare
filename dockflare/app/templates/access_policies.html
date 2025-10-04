@@ -49,7 +49,20 @@
                         <tbody>
                             {% for group_id, details in access_groups.items()|sort %}
                                 <tr>
-                                    <td class="p-3 font-medium">{{ details.display_name }}</td>
+                                    <td class="p-3">
+                                        <div class="font-medium">{{ details.display_name }}</div>
+                                        {% if group_id in group_usage %}
+                                            <button class="btn btn-xs btn-ghost gap-1 mt-1 usage-toggle" data-group-id="{{ group_id }}">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
+                                                </svg>
+                                                In use by {{ group_usage[group_id]|length }}
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3 chevron-icon">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                                </svg>
+                                            </button>
+                                        {% endif %}
+                                    </td>
                                     <td class="p-3"><code class="badge badge-ghost">{{ group_id }}</code></td>
                                     <td class="p-3 text-xs opacity-80">
                                         {% if details.policies %}
@@ -66,7 +79,7 @@
                                                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z" />
                                                 </svg>
                                             </label>
-                                            <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
+                                            <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-64">
                                                 <li>
                                                     <a class="edit-access-group-btn" data-group-id="{{ group_id }}" data-group-details="{{ details|tojson|forceescape }}">
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
@@ -75,19 +88,55 @@
                                                         Edit
                                                     </a>
                                                 </li>
+                                                {% if details.cloudflare_policy_id and ACCOUNT_ID_FOR_DISPLAY and ACCOUNT_ID_FOR_DISPLAY != "Not Configured" %}
+                                                <li>
+                                                    <a href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/access/policies/{{ details.cloudflare_policy_id }}/edit" target="_blank" rel="noopener noreferrer">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                                                        </svg>
+                                                        View in Cloudflare
+                                                    </a>
+                                                </li>
+                                                {% endif %}
                                                 <div class="divider my-1"></div>
                                                 <li {{ 'class="disabled"' if group_id in used_group_ids else '' }}>
                                                     <a class="text-error delete-access-group-btn" data-group-id="{{ group_id }}" data-group-name="{{ details.display_name }}" {{ 'title="Cannot delete: group is in use"' if group_id in used_group_ids else '' }}>
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
                                                             <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
                                                         </svg>
-                                                        Delete
+                                                        {% if group_id in used_group_ids %}
+                                                            <span class="opacity-50">Delete (policy is in use)</span>
+                                                        {% else %}
+                                                            Delete
+                                                        {% endif %}
                                                     </a>
                                                 </li>
+                                                {% if group_id in used_group_ids %}
+                                                <div class="divider my-1"></div>
+                                                <li class="menu-title">
+                                                    <span class="text-xs opacity-70">This policy is used by {{ group_usage[group_id]|length }} application(s)</span>
+                                                </li>
+                                                {% endif %}
                                             </ul>
                                         </div>
                                     </td>
                                 </tr>
+                                {% if group_id in group_usage %}
+                                <tr class="usage-details-row" id="usage-{{ group_id }}" style="display: none;">
+                                    <td colspan="5" class="p-0">
+                                        <div class="bg-base-200/50 p-4 border-l-4 border-info">
+                                            <div class="text-sm font-semibold mb-2 opacity-70">
+                                                Used by these applications:
+                                            </div>
+                                            <ul class="list-disc list-inside space-y-1 text-sm opacity-80">
+                                                {% for hostname in group_usage[group_id] %}
+                                                    <li><code class="text-xs">{{ hostname }}</code></li>
+                                                {% endfor %}
+                                            </ul>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endif %}
                             {% endfor %}
                         </tbody>
                     </table>
@@ -125,6 +174,14 @@
 
 .table-container .table {
     overflow: visible !important;
+}
+
+.chevron-icon {
+    transition: transform 0.2s ease;
+}
+
+.usage-details-row td {
+    transition: all 0.3s ease;
 }
 </style>
 
@@ -424,6 +481,24 @@
 
                 document.body.appendChild(form);
                 form.submit();
+            });
+        });
+
+        // Handle usage toggle buttons
+        document.querySelectorAll('.usage-toggle').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const groupId = btn.getAttribute('data-group-id');
+                const usageRow = document.getElementById(`usage-${groupId}`);
+                const chevron = btn.querySelector('.chevron-icon');
+
+                if (usageRow.style.display === 'none') {
+                    usageRow.style.display = 'table-row';
+                    chevron.style.transform = 'rotate(180deg)';
+                } else {
+                    usageRow.style.display = 'none';
+                    chevron.style.transform = 'rotate(0deg)';
+                }
             });
         });
     });
