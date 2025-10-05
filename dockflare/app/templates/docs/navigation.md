@@ -15,6 +15,7 @@ This documentation provides comprehensive information for DockFlare. Whether you
     *   [How DockFlare Works](How-DockFlare-Works.md)
     *   [DockFlare Agent & Multi-Server Architecture](Multi-Server-Agent.md)
     *   [Access Policy Best Practices](Access-Policy-Best-Practices.md)
+    *   [Zone Default Policies](Zone-Default-Policies.md)
     *   [Internal vs External `cloudflared`](Internal-vs-External-cloudflared.md)
     *   [State-Persistence](State-Persistence.md)
 *   **Configuration**

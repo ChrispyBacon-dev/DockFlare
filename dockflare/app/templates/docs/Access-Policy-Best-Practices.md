@@ -97,3 +97,46 @@ This policy keeps your marketing site public while limiting traffic from specifi
 *   **Blocked countries:** `RU`, `CN`, `KP`
 
 The resulting reusable policy issues a Cloudflare `bypass` decision for everyone, excluding the listed countries. Combine it with other groups if you need to layer additional controls (`dockflare.access.groups=public-eu,admin-users`).
+
+---
+
+## Zone Default Policies - Security Best Practice
+
+### What Are Zone Default Policies?
+
+Zone Default Policies are wildcard `*.domain.com` Access Applications that protect ALL subdomains of a DNS zone, including ones you haven't explicitly configured yet.
+
+### Why You Need Them
+
+**The Problem:** If you forget to add an Access policy to a service, it's exposed publicly by default.
+
+**The Solution:** A zone-level wildcard policy acts as a safety net. Even if you forget to configure `forgotten-service.yourdomain.com`, the `*.yourdomain.com` policy will catch it.
+
+### How to Set Them Up
+
+1. Navigate to **Access Policies** page
+2. Scroll to **Zone Default Policies (*.tld Wildcards)** section
+3. Look for zones with "Not Protected" ⚠️ badge
+4. Click **Create Policy**
+5. Select appropriate access group:
+   - **For public domains:** Use `public-default-bypass`
+   - **For internal domains:** Use an authentication policy
+   - **For mixed-use:** Use your most restrictive policy
+
+### Best Practices
+
+- ✅ **Always create zone policies** for production domains
+- ✅ **Use authentication policies** for internal/private zones
+- ✅ **Use public bypass** only for truly public zones
+- ✅ **Review regularly** - check zone protection status monthly
+- ⚠️ **Remember priority** - Specific hostname policies override wildcard policies
+
+### Policy Priority Order
+
+Cloudflare evaluates Access policies in this order:
+
+1. **Exact hostname match** (e.g., `app.example.com`) - Highest priority
+2. **Wildcard match** (e.g., `*.example.com`) - Fallback
+3. **No match** = Public access (no Access App) - Default
+
+This means you can have a restrictive zone default policy and still create specific exceptions for individual services.

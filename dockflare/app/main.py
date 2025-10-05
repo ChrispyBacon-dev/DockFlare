@@ -26,7 +26,7 @@ from cryptography.fernet import Fernet
 
 from app import app, docker_client, tunnel_state, cloudflared_agent_state, config
 
-from app.core.state_manager import load_state
+from app.core.state_manager import load_state, ensure_default_bypass_policy
 from app.core.tunnel_manager import (
     initialize_tunnel,
     update_cloudflared_container_status, 
@@ -302,6 +302,9 @@ def main_application_entrypoint():
 
     load_state()
     logging.info("Initial state loading from file complete.")
+    
+    ensure_default_bypass_policy(flask_app=app)
+    logging.info("Default bypass policy initialization complete.")
 
     if docker_client:
         try:

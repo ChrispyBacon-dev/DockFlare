@@ -42,3 +42,42 @@ DockFlare uses a flexible, layered approach to configuration, giving you both au
     *   **Revert** a service's configuration back to what is defined in its Docker labels, discarding any UI overrides.
 
 This layered model allows you to "set it and forget it" with Docker labels for most services, while still having the power to handle exceptions and complex scenarios through the Web UI.
+
+---
+
+## Access Policy Architecture (v3.0.3+)
+
+### Reusable Policy System
+
+DockFlare now uses a **reusable policy architecture** that aligns with Cloudflare's best practices:
+
+1. **Access Groups** → Sync to → **Cloudflare Reusable Policies**
+2. **Access Applications** → Reference → **Reusable Policy IDs**
+3. **Single source of truth** - update once, applies everywhere
+
+This architecture eliminates policy duplication and allows you to manage policies from either DockFlare or the Cloudflare dashboard with full bi-directional sync.
+
+### System-Managed Policies
+
+DockFlare automatically manages certain policies for consistency:
+
+- **`public-default-bypass`**: Created on startup, used by all bypass rules
+  - Non-deletable system policy
+  - Synced to Cloudflare on first Access Policies page visit
+  - Referenced by all services using "Bypass" access
+  - Prevents duplicate bypass policies in your Cloudflare dashboard
+
+### Zone Default Policies
+
+Zone-level wildcard policies (`*.domain.com`) provide layered security through policy priority:
+
+1. **Specific hostname policy** (e.g., `app.example.com`) - Highest priority
+2. **Zone wildcard policy** (e.g., `*.example.com`) - Fallback
+3. **No policy** = Public access (no Access App) - Default
+
+This ensures forgotten or undocumented services are still protected by the zone-level policy, acting as a security safety net.
+
+**Example:**
+- Zone policy: `*.internal.company.com` → Requires company email authentication
+- Specific service: `public-demo.internal.company.com` → Uses `public-default-bypass`
+- Forgotten service: `test.internal.company.com` → Protected by zone policy (requires auth)

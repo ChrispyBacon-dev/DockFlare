@@ -10,17 +10,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [v3.0.3] - 2025-10-03
 
 ### Added
-- Introduced dual-mode Access Group builder with Public (`bypass`) and Authenticated (`allow`) tabs, tailored helper text, and mode-specific validation.
-- Surfaced contextual colour-coded alerts and consistent dropdown menus across Access Policies and the main dashboard for quicker policy reviews.
+- **Dual-Mode Access Group Builder:** Introduced dedicated Public (`bypass`) and Authenticated (`allow`) tabs with tailored helper text and mode-specific validation.
+- **System-Managed Default Bypass Policy:** Automatic creation of non-deletable `public-default-bypass` reusable policy used across all public/bypass access rules, eliminating duplicate bypass policies in Cloudflare.
+- **Zone Default Policies Section:** New UI section on Access Policies page displaying all DNS zones with their wildcard protection status (`*.domain.com` policies).
+- **Zone Policy Creation Modal:** One-click creation of zone-level wildcard policies with access group selection, providing security safety net for all subdomains.
+- **Visual Protection Indicators:** Green "Protected" and yellow "Not Protected" badges show zone security status at a glance.
+- **Contextual UI Elements:** Colour-coded alerts and consistent dropdown menus across Access Policies and dashboard for quicker policy reviews.
 
 ### Changed
-- Each Access Group now syncs to a reusable Cloudflare Access Policy, enabling one-to-many reuse, bi-directional edits, and automatic migration of legacy inline policies (including `block` → `deny` conversion).
-- Access Policies UI and dashboard now share the same three-dot action menus and Cloudflare dashboard shortcuts for a uniform workflow.
+- **Reusable Policy Architecture:** Each Access Group now syncs to a reusable Cloudflare Access Policy, enabling one-to-many reuse, bi-directional edits, and automatic migration of legacy inline policies (including `block` → `deny` conversion).
+- **Simplified Manual Rule Creation:** Removed "Authenticate by Email" and "Default *.tld" quick-create options from manual rule modals to enforce proper access policy design workflow.
+- **Bypass Rule Implementation:** All rules using "Bypass" option now reference the centralized `public-default-bypass` system policy instead of creating inline policies.
+- **Policy Creation Workflow:** Complex authentication scenarios now require creating an Access Policy first, then applying it to services—enforcing "single source of truth" principle.
+- **Unified UI Style:** Access Policies UI and dashboard now share the same three-dot action menus and Cloudflare dashboard shortcuts for uniform workflow.
+
+### Security
+- **Zone-Level Protection:** Zone Default Policies feature enables protection of all subdomains (including undocumented ones) through `*.domain.com` wildcard policies, preventing accidental exposure.
+- **Default Policy Protection:** System-managed `public-default-bypass` policy cannot be deleted through UI or backend, ensuring critical infrastructure remains intact.
 
 ### Fixed
-- Public Access Groups now issue Cloudflare `bypass` decisions as intended instead of incorrectly falling back to `allow`.
-- Simplified country filtering to remove redundant double-blocking logic when combining geo rules with public mode.
-- Reusable policy synchronisation now preserves all decision types (`bypass`, `allow`, `deny`) when pushing or importing definitions.
+- **Public Access Groups:** Now correctly issue Cloudflare `bypass` decisions as intended instead of incorrectly falling back to `allow`.
+- **Country Filtering:** Simplified country filtering to remove redundant double-blocking logic when combining geo rules with public mode.
+- **Policy Synchronization:** Reusable policy synchronisation now preserves all decision types (`bypass`, `allow`, `deny`) when pushing or importing definitions.
+- **Duplicate Policy Reduction:** Eliminates creation of multiple identical bypass policies—all public services now share one canonical policy.
+- **Policy Consistency:** Ensures consistent public access behavior across all services using the centralized system policy.
 
 ---
 

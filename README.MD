@@ -33,13 +33,15 @@ DockFlare is a powerful, self-hosted ingress controller that simplifies Cloudfla
 
 It enables secure, hassle-free public access to both Dockerized and non-Dockerized applications with minimal direct interaction with Cloudflare, making it the perfect tool for centralizing and streamlining your access management.
 
-### ✨ What's New in DockFlare 3.0.3: Access Modes & Reusable Policies
+### ✨ What's New in DockFlare 3.0.3: Access Modes, Reusable Policies & Zone Security
 
-DockFlare 3.0.3 makes it easier to design access control that matches real-world needs.
+DockFlare 3.0.3 makes it easier to design access control that matches real-world needs, with cleaner policy management and enhanced zone-level security.
 
 - **Two access modes**: Access Groups now offer dedicated Public and Authenticated tabs. Pick `Public` for Cloudflare Access `bypass` (no login, optional geo blocks) or `Authenticated` for `allow` policies that require mail/domain logins.
 - **Reusable Cloudflare policies**: DockFlare syncs every Access Group to a reusable Access Policy, so you can reference the same rules across multiple applications, edit them centrally, and keep the Cloudflare dashboard tidy.
-- **Refined policy builder**: The modal dynamically validates required emails in Authenticated mode, hides irrelevant options for Public mode, and colour-codes the guidance copy to explain each decision.
+- **System-managed default bypass policy**: A single, non-deletable `public-default-bypass` policy is automatically created and reused across all public services, eliminating duplicate bypass policies.
+- **Zone Default Policies (*.tld wildcards)**: New section on the Access Policies page shows which DNS zones have wildcard protection. Create `*.yourdomain.com` policies with one click to ensure all subdomains are protected by default—even ones you forget to configure explicitly.
+- **Simplified UI**: Removed confusing quick-create options ("Email Auth", "Default *.tld") from manual rule creation. Complex policies should be designed on the Access Policies page and then applied to services.
 - **Migration-ready**: Legacy inline policies automatically convert to reusable policies during the next sync, and DockFlare harmonizes Cloudflare `block` decisions with the newer `deny` verb.
 
 ### ✨ What's New in DockFlare 3.0: Multi-Server & Agent Release

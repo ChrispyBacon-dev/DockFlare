@@ -158,10 +158,79 @@ def load_state():
         except Exception as e_load_unexp:
             logging.error(f"LOAD_STATE: Unexpected error loading state: {e_load_unexp}. Starting fresh (already cleared).", exc_info=True)
 
+def ensure_default_bypass_policy(flask_app=None):
+    
+    from app.core import reusable_policies
+
+    default_bypass_id = "public-default-bypass"
+    policy_name = "Default Public Access (Bypass)"
+
+    with state_lock:
+        # Check if policy exists in local state
+        if default_bypass_id not in access_groups:
+            logging.info(f"Creating default bypass access group in state: {default_bypass_id}")
+
+            # Create in Cloudflare first
+            cf_policy_id = None
+            if flask_app:
+                with flask_app.app_context():
+                    try:
+                        cf_policy = reusable_policies.create_reusable_policy(
+                            name=policy_name,
+                            decision="bypass",
+                            include_rules=[{"everyone": {}}]
+                        )
+                        if cf_policy and cf_policy.get("id"):
+                            cf_policy_id = cf_policy["id"]
+                            logging.info(f"Created default bypass policy in Cloudflare with ID: {cf_policy_id}")
+                        else:
+                            logging.warning(f"Failed to create default bypass policy in Cloudflare, will create local reference only")
+                    except Exception as e:
+                        logging.error(f"Error creating default bypass policy in Cloudflare: {e}", exc_info=True)
+
+            # Create local state entry
+            access_groups[default_bypass_id] = {
+                "id": cf_policy_id if cf_policy_id else default_bypass_id,
+                "display_name": policy_name,
+                "session_duration": "24h",
+                "app_launcher_visible": False,
+                "auto_redirect_to_identity": False,
+                "public_mode": True,
+                "policies": [
+                    {
+                        "name": policy_name,
+                        "decision": "bypass",
+                        "include": [{"everyone": {}}]
+                    }
+                ],
+                "system_policy": True,  # Mark as system policy
+                "deletable": False,  # Cannot be deleted via UI
+                "cf_policy_id": cf_policy_id  # Store the actual Cloudflare policy ID
+            }
+            save_state()
+            logging.info(f"Default bypass policy '{default_bypass_id}' created successfully in local state.")
+        else:
+            logging.debug(f"Default bypass policy '{default_bypass_id}' already exists in local state.")
+
+            # Verify it exists in Cloudflare
+            existing_policy = access_groups[default_bypass_id]
+            cf_policy_id = existing_policy.get("cf_policy_id") or existing_policy.get("id")
+
+            if flask_app and cf_policy_id != default_bypass_id:  # Has a real CF ID
+                with flask_app.app_context():
+                    try:
+                        cf_policy = reusable_policies.get_reusable_policy(cf_policy_id)
+                        if cf_policy:
+                            logging.debug(f"Verified default bypass policy exists in Cloudflare: {cf_policy_id}")
+                        else:
+                            logging.warning(f"Default bypass policy not found in Cloudflare, may need recreation")
+                    except Exception as e:
+                        logging.error(f"Error verifying default bypass policy in Cloudflare: {e}")
+
 def save_state():
     global managed_rules, access_groups
     current_thread_name = threading.current_thread().name
-    
+
     with state_lock:
         logging.info(f"SAVE_STATE: Start (RLock acquired). THREAD: {current_thread_name}. Items to save: {len(managed_rules)} rules, {len(access_groups)} access groups.")
         

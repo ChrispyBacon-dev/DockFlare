@@ -25,11 +25,29 @@ The UI gives you full control over your ingress rules.
 
 ## Access Policies Page
 
-This page is the central location for managing your reusable **Access Groups**. From here, you can:
+This page is the central location for managing your reusable **Access Groups** and securing your DNS zones with wildcard policies.
+
+### Advanced Access Policies
+
+From the Access Groups section, you can:
 *   **Create** new Access Groups using the two-tab modal (Authenticated vs Public). Guidance banners update per tab so you understand when DockFlare will emit a Cloudflare `allow` or `bypass` decision.
 *   **Edit** existing Access Groups. The modal enforces mode-specific validation (emails required for Authenticated) and keeps Geo/IP settings visible for both modes.
-*   **Delete** Access Groups that are no longer in use. DockFlare keeps track of the linked reusable Cloudflare policy and removes it when you drop the group.
+*   **Delete** Access Groups that are no longer in use (system policies like `public-default-bypass` cannot be deleted).
+*   **Sync from Cloudflare** to import existing DockFlare reusable policies from your account.
 *   Use the action menu beside each entry to open the matching policy directly in the Cloudflare dashboard via the Cloudflare icon shortcut.
+
+**Note:** The `public-default-bypass` system policy is automatically created and managed by DockFlare. All services using "Bypass" access reference this single policy, keeping your Cloudflare dashboard clean.
+
+### Zone Default Policies (*.tld Wildcards)
+
+The second section shows **Zone Default Policies** - a security best practice feature that protects all subdomains:
+
+*   **Protection Status:** Visual badges show which DNS zones have wildcard `*.domain.com` policies (Protected 🛡️) and which don't (Not Protected ⚠️).
+*   **Create Zone Policy:** Click "Create Policy" on any unprotected zone to create a wildcard Access Application.
+*   **Select Policy:** Choose which Access Group should protect all subdomains of the zone (can be public bypass, authentication, or any custom policy).
+*   **Security Safety Net:** Even if you forget to add a policy to a specific service, the zone-level wildcard policy will catch it.
+
+**Best Practice:** Create zone default policies for all your domains. For public-facing domains, use the default bypass policy. For internal/private domains, use an authentication policy. This ensures no subdomain is accidentally exposed.
 
 For more details, see the [Access Policy Best Practices & Examples](Access-Policy-Best-Practices.md) guide.
 

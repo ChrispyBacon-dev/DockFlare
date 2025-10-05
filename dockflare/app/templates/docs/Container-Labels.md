@@ -27,6 +27,30 @@ These labels allow you to dynamically create and manage Cloudflare Access applic
 
 **Note:** It is highly recommended to use **Access Groups** (`dockflare.access.group`) for managing policies. DockFlare 3.0.3 synchronises every Access Group to a named reusable Cloudflare Access Policy, giving you one-to-many reuse and bi-directional edits. Using individual labels is best for one-off, unique configurations. If `dockflare.access.group` or `dockflare.access.groups` is used, all other `dockflare.access.*` labels are ignored.
 
+### Important Changes in v3.0.3
+
+#### System Default Bypass Policy
+
+Starting in v3.0.3, when you use `dockflare.access.policy=bypass`, your service will reference the system-managed `public-default-bypass` reusable policy instead of creating an inline policy. This keeps your Cloudflare dashboard clean.
+
+- **Before v3.0.3:** Each bypass rule created a separate inline policy
+- **v3.0.3+:** All bypass rules share one canonical `public-default-bypass` policy
+
+#### Simplified Access Configuration
+
+For complex access scenarios (email/domain authentication, IP whitelisting, etc.), it's now recommended to:
+
+1. Create an Access Group on the **Access Policies** page
+2. Reference it with `dockflare.access.group=your-group-id`
+
+Quick-create options have been removed from the UI to encourage this best-practice workflow.
+
+#### Zone Default Policy Label
+
+The `dockflare.access.policy=default_tld` label still works and will inherit protection from your zone's `*.domain.com` wildcard policy. If no zone policy exists, the service will be public (no Access App).
+
+**Recommendation:** Create zone default policies for all your domains in the UI for better security.
+
 | Label | Description | Example |
 | :--- | :--- | :--- |
 | `dockflare.access.group` | The ID of a single, pre-configured Access Group to apply to this service. The ID can be found on the "Access Policies" page in the DockFlare UI. | `dockflare.access.group=internal-tools-policy` |
