@@ -19,7 +19,7 @@
     {% if cache_status is defined and cache_status is not none %}
     <div class="flex items-center gap-2 mb-4">
         <div class="badge badge-sm {% if cache_status.connected %}badge-success{% else %}badge-warning{% endif %} gap-1">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3">
+            <svg xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 00-3.7-3.7 48.678 48.678 0 00-7.324 0 4.006 4.006 0 00-3.7 3.7c-.017.22-.032.441-.046.662M19.5 12l3-3m-3 3l-3-3m-12 3c0 1.232.046 2.453.138 3.662a4.006 4.006 0 003.7 3.7 48.678 48.678 0 007.324 0 4.006 4.006 0 003.7-3.7c.017-.22.032-.441.046-.662M4.5 12l3 3m-3-3l-3 3" />
             </svg>
             Cache: {% if cache_status.connected %}Connected{% else %}Fallback{% endif %}
@@ -139,18 +139,16 @@
                     </div>
                 </div>
 
-                <div class="overflow-x-auto -mx-6 sm:-mx-8 pb-24">
+                <div class="overflow-x-auto pb-24">
                     <table class="table table-zebra table-sm w-full">
                         <thead>
                             <tr>
                                 <th class="p-3 w-auto">Status</th>
                                 <th class="p-3">Tunnel Name</th>
-                                <th class="p-3 w-1/4">Hostname</th> 
+                                <th class="p-3 w-1/4">Hostname</th>
                                 <th class="p-3 w-1/6">Path</th>
                                 <th class="p-3 w-1/5">Service Target</th>
-                                <th class="p-3 w-auto">Identifier</th>
                                 <th class="p-3 w-1/5">Access Policy</th>
-                                <th class="p-3 w-1/4">Manage Rule</th>
                                 <th class="p-3 w-auto">Expires At</th>
                                 <th class="p-3 w-auto">Actions</th>
                             </tr>
@@ -185,23 +183,6 @@
                                     <a href="https://{{ display_hostname }}{% if display_path %}{{ display_path }}{% endif %}" target="_blank" rel="noopener noreferrer" title="Open https://{{ display_hostname }}{% if display_path %}{{ display_path }}{% endif %}" class="link link-hover link-primary text-sm">
                                        {{ display_hostname }}
                                    </a>
-                                   {# Cloudflare Zero Trust: link to Tunnel -> Public Hostname (uses account id + tunnel id + optional index) #}
-                                   {% set effective_tunnel_id = tunnel_state.get('id') if tunnel_state else None %}
-                                   {% set display_hostname_lc = display_hostname.lower() if display_hostname else None %}
-                                   {% set public_index = public_hostname_indices.get(display_hostname_lc) if public_hostname_indices else None %}
-                                   {% if ACCOUNT_ID_FOR_DISPLAY and effective_tunnel_id and display_hostname %}
-                                       {% if public_index is not none %}
-                                           <a href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/networks/tunnels/{{ effective_tunnel_id }}/public-hostname/{{ display_hostname }}/{{ public_index }}" target="_blank" rel="noopener noreferrer" title="Open Cloudflare: Tunnel public-hostname ({{ display_hostname }})" class="ml-2 inline-block align-middle transition-transform hover:scale-105">
-                                               <img src="{{ url_for('static', filename='images/cloudflare-icon.svg') }}" alt="Cloudflare" class="inline h-4 w-4" />
-                                               <span class="sr-only">Open in Cloudflare Zero Trust (public hostname)</span>
-                                           </a>
-                                       {% else %}
-                                           <a href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/networks/tunnels/{{ effective_tunnel_id }}/public-hostname/{{ display_hostname }}" target="_blank" rel="noopener noreferrer" title="Open Cloudflare: Tunnel public-hostname ({{ display_hostname }})" class="ml-2 inline-block align-middle transition-transform hover:scale-105">
-                                               <img src="{{ url_for('static', filename='images/cloudflare-icon.svg') }}" alt="Cloudflare" class="inline h-4 w-4" />
-                                               <span class="sr-only">Open in Cloudflare Zero Trust (public hostname)</span>
-                                           </a>
-                                       {% endif %}
-                                   {% endif %}
                                    {% if display_hostname and display_hostname.startswith('*.') %}
                                    <span class="badge badge-info badge-xs ml-2">wildcard</span>
                                    {% endif %}
@@ -225,15 +206,6 @@
                                     {% endif %}
                                     </td>
                                     <td class="p-3 whitespace-nowrap"><code class="text-xs opacity-80">{{ details.service }}</code></td>
-                                    <td class="p-3 whitespace-nowrap">
-                                        {% if details.source == 'manual' %}
-                                            <em class="text-xs opacity-70 italic">Manual Rule</em>
-                                        {% elif details.container_id %}
-                                            <code class="text-xs opacity-80" title="{{ details.container_id }}">{{ details.container_id[:12] }}</code>
-                                        {% else %}
-                                            <span class="text-xs opacity-50">N/A</span>
-                                        {% endif %}
-                                    </td>
                                     <td class="p-3 whitespace-nowrap text-sm opacity-80" id="access-policy-display-{{ details.source if details.source else 'docker' }}-{{ hostname | replace('.', '-') }}">
                                         {% if details.access_policy_type == 'group' %}
                                             {% if details.access_group_id is iterable and details.access_group_id is not string %}
@@ -253,42 +225,12 @@
                                             <span class="text-xs opacity-50">N/A</span>
                                         {% endif %}
 
-                                        {% if details.access_app_id and CF_ACCOUNT_ID_CONFIGURED and ACCOUNT_ID_FOR_DISPLAY != "Not Configured" %}
-                                            {% set ap_color = 'text-orange-500' if details.access_policy_type == 'bypass' else ('text-blue-500' if details.access_policy_type in ['authenticate_email','group'] else 'text-gray-400') %}
-                                             <a href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/access/apps/self-hosted/{{ details.access_app_id }}/edit?tab=basic-info" target="_blank" rel="noopener noreferrer" title="Edit Access App in Cloudflare ({{ details.access_policy_type if details.access_policy_type else 'policy' }})" class="link link-hover ml-1 inline-block align-middle {{ ap_color }}">
-                                                <img src="{{ url_for('static', filename='images/cloudflare-icon.svg') }}" alt="Cloudflare" class="inline h-4 w-4" />
-                                                <span class="sr-only">Edit Access App in Cloudflare ({{ details.access_policy_type if details.access_policy_type else 'policy' }})</span>
-                                            </a>
-                                        {% endif %}
-
                                         {% if details.access_policy_ui_override and details.source != 'manual' %}
                                             <span class="badge badge-warning badge-xs ml-2 animate-pulse" title="This policy is managed by the UI and overrides container labels.">UI Override</span>
                                         {% endif %}
                                         {% if details.rule_ui_override and details.source == 'docker' %}
                                             <span class="badge badge-error badge-xs ml-2 animate-pulse" title="This Docker rule has been overridden via UI and no longer reflects container labels.">Rule UI Override</span>
                                         {% endif %}
-                                    </td>
-                                    <td class="p-3 whitespace-nowrap text-sm policy-actions-cell" style="min-width: 180px;">
-                                        <div class="flex items-center space-x-1 sm:space-x-2">
-                                            <button class="btn btn-xs btn-info btn-outline edit-rule-btn" 
-                                                    data-rule-key="{{ hostname }}" 
-                                                    data-rule-details="{{ details|tojson|forceescape }}">
-                                                Edit Rule
-                                            </button>
-                                            {% if details.access_policy_ui_override and details.source != 'manual' %}
-                                            <form action="{{ url_for('web.revert_access_policy_to_labels', hostname=hostname) }}" method="POST" onsubmit="return confirm('Revert policy for {{ display_hostname }} to be managed by labels/defaults?');" class="protocol-aware-form inline-block">
-                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                                <button type="submit" class="btn btn-xs btn-warning btn-outline" title="Revert to Label/Default Policy">Revert</button>
-                                            </form>
-                                            {% endif %}
-                                            {% if details.rule_ui_override and details.source == 'docker' %}
-                                            <form action="{{ url_for('web.ui_revert_docker_rule_route') }}" method="POST" onsubmit="return confirm('Revert rule for {{ display_hostname }} to be managed by Docker labels?');" class="protocol-aware-form inline-block">
-                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                                <input type="hidden" name="rule_key" value="{{ hostname }}">
-                                                <button type="submit" class="btn btn-xs btn-error btn-outline" title="Revert to Docker Label Control">Revert to Labels</button>
-                                            </form>
-                                            {% endif %}
-                                        </div>
                                     </td>
                                     <td class="p-3 whitespace-nowrap text-sm opacity-70" data-role="expires-cell">
                                         {% if details.status=='pending_deletion' and details.delete_at %}
@@ -300,19 +242,79 @@
                                             <span class="text-xs opacity-60">N/A</span>
                                         {% endif %}
                                     </td>
-                                    <td class="p-3 whitespace-nowrap text-sm" style="min-width: 120px;">
-                                        <div class="flex items-center gap-2">
-                                            {% if details.source == 'manual' %}
-                                                <form action="{{ url_for('web.ui_delete_manual_rule_route', rule_key_from_url=hostname) }}" method="post" onsubmit="return confirm('Delete manual rule for {{ display_hostname }}?');" class="protocol-aware-form">
-                                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                                    <button type="submit" class="btn btn-xs btn-error btn-outline">Delete</button>
-                                                </form>
-                                            {% else %}
-                                                <form action="{{ url_for('web.force_delete_rule_route', hostname=hostname) }}" method="post" onsubmit="return confirm('Force delete rule and DNS for {{ display_hostname }} immediately?');" class="protocol-aware-form">
-                                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                                    <button type="submit" class="btn btn-xs btn-error btn-outline">Delete</button>
-                                                </form>
-                                            {% endif %}
+                                    <td class="p-3">
+                                        <div class="dropdown dropdown-end">
+                                            <label tabindex="0" class="btn btn-ghost btn-sm">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z" />
+                                                </svg>
+                                            </label>
+                                            <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-64">
+                                                <li>
+                                                    <a class="edit-rule-btn" data-rule-key="{{ hostname }}" data-rule-details="{{ details|tojson|forceescape }}">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                                                        </svg>
+                                                        Manage Rule
+                                                    </a>
+                                                </li>
+                                                {% set effective_tunnel_id = details.tunnel_id if details.tunnel_id else (tunnel_state.get('id') if tunnel_state else None) %}
+                                                {% set display_hostname_lc = display_hostname.lower() if display_hostname else None %}
+                                                {% set public_index = public_hostname_indices.get(display_hostname_lc) if public_hostname_indices else None %}
+                                                {% if ACCOUNT_ID_FOR_DISPLAY and ACCOUNT_ID_FOR_DISPLAY != "Not Configured" and effective_tunnel_id and display_hostname %}
+                                                <li>
+                                                    {% if public_index is not none %}
+                                                    <a href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/networks/tunnels/{{ effective_tunnel_id }}/public-hostname/{{ display_hostname }}/{{ public_index }}" target="_blank" rel="noopener noreferrer">
+                                                    {% else %}
+                                                    <a href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/networks/tunnels/{{ effective_tunnel_id }}/public-hostname/{{ display_hostname }}" target="_blank" rel="noopener noreferrer">
+                                                    {% endif %}
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                                                        </svg>
+                                                        View CF Tunnel Route
+                                                    </a>
+                                                </li>
+                                                {% endif %}
+                                                {% if details.access_app_id and ACCOUNT_ID_FOR_DISPLAY and ACCOUNT_ID_FOR_DISPLAY != "Not Configured" %}
+                                                <li>
+                                                    <a href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/access/apps/self-hosted/{{ details.access_app_id }}/edit?tab=basic-info" target="_blank" rel="noopener noreferrer">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                                                        </svg>
+                                                        View CF Access Application
+                                                    </a>
+                                                </li>
+                                                {% endif %}
+                                                <div class="divider my-1"></div>
+                                                {% if details.access_policy_ui_override and details.source != 'manual' %}
+                                                <li>
+                                                    <a class="revert-policy-btn" data-hostname="{{ hostname }}" data-display-hostname="{{ display_hostname }}">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+                                                        </svg>
+                                                        Revert Policy to Labels
+                                                    </a>
+                                                </li>
+                                                {% endif %}
+                                                {% if details.rule_ui_override and details.source == 'docker' %}
+                                                <li>
+                                                    <a class="revert-rule-btn" data-rule-key="{{ hostname }}" data-display-hostname="{{ display_hostname }}">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+                                                        </svg>
+                                                        Revert to Docker Labels
+                                                    </a>
+                                                </li>
+                                                {% endif %}
+                                                <li>
+                                                    <a class="text-error delete-rule-btn" data-hostname="{{ hostname }}" data-display-hostname="{{ display_hostname }}" data-source="{{ details.source }}">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                                        </svg>
+                                                        Delete
+                                                    </a>
+                                                </li>
+                                            </ul>
                                         </div>
                                     </td>
                                 </tr>
@@ -455,14 +457,7 @@
                                     <select name="manual_access_policy_type" id="manual_access_policy_type" class="select select-bordered w-full policy-type-select">
                                         <option value="none" selected>None (Public - No App)</option>
                                         <option value="bypass">Bypass (Public App)</option>
-                                        <option value="authenticate_email">Authenticate by Email</option>
-                                        <option value="default_tld">Use Default *.tld Policy</option>
                                     </select>
-                                </div>
-                                <div class="auth-email-field hidden">
-                                    <label class="label" for="manual_auth_email"><span class="label-text">Allowed Email(s) or Domain(s)</span></label>
-                                    <input type="text" id="manual_auth_email" name="manual_auth_email" placeholder="user@example.com, @domain.com" class="input input-bordered w-full" />
-                                    <div class="label"><span class="label-text-alt">Comma-separated. e.g., test@example.com, @another.org</div>
                                 </div>
                             </div>
                         </div>
@@ -612,13 +607,7 @@
                                     <select name="edit_access_policy_type" id="edit_manual_access_policy_type" class="select select-bordered w-full policy-type-select">
                                         <option value="none">None (Public - No App)</option>
                                         <option value="bypass">Bypass (Public App)</option>
-                                        <option value="authenticate_email">Authenticate by Email</option>
-                                        <option value="default_tld">Use Default *.tld Policy</option>
                                     </select>
-                                </div>
-                                <div class="auth-email-field hidden">
-                                    <label class="label" for="edit_manual_auth_email"><span class="label-text">Allowed Email(s) or Domain(s)</span></label>
-                                    <input type="text" id="edit_manual_auth_email" name="edit_auth_email" placeholder="user@example.com, @domain.com" class="input input-bordered w-full" />
                                 </div>
                             </div>
                         </div>
@@ -662,6 +651,20 @@
 {% endblock %}
 
 {% block scripts %}
+<style>
+.overflow-x-auto {
+    overflow: visible !important;
+}
+
+.dropdown-end .dropdown-content {
+    position: absolute !important;
+    right: 0 !important;
+    top: 100% !important;
+    transform: none !important;
+    z-index: 1000 !important;
+}
+</style>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const sourceFilter = document.getElementById('source-filter');
@@ -674,6 +677,52 @@ document.addEventListener('DOMContentLoaded', function() {
 
     let allRows = [];
     let filteredRows = [];
+
+    let stateEventSource = null;
+    let reconnectAttempts = 0;
+    const maxReconnectDelay = 30000;
+    let reloadDebounceTimer = null;
+
+    function connectStateUpdates() {
+        if (stateEventSource) {
+            stateEventSource.close();
+        }
+
+        stateEventSource = new EventSource('/stream-state-updates');
+
+        stateEventSource.onmessage = function(event) {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'snapshot_refresh') {
+                    clearTimeout(reloadDebounceTimer);
+                    reloadDebounceTimer = setTimeout(() => {
+                        window.location.reload();
+                    }, 500);
+                }
+            } catch (e) {
+                console.error('State update parse error:', e);
+            }
+        };
+
+        stateEventSource.onerror = function() {
+            stateEventSource.close();
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), maxReconnectDelay);
+            reconnectAttempts++;
+            setTimeout(connectStateUpdates, delay);
+        };
+
+        stateEventSource.onopen = function() {
+            reconnectAttempts = 0;
+        };
+    }
+
+    connectStateUpdates();
+
+    window.addEventListener('beforeunload', function() {
+        if (stateEventSource) {
+            stateEventSource.close();
+        }
+    });
 
     function initializeFilters() {
         if (!tableBody) return;
@@ -696,7 +745,6 @@ document.addEventListener('DOMContentLoaded', function() {
             if (source === 'agent') {
                 const agentCell = row.querySelector('[data-role="agent-name"]');
                 if (agentCell && agentCell.textContent.trim()) {
-                    // Extract just the agent name part (remove "Agent: " prefix)
                     const fullText = agentCell.textContent.trim();
                     const agentName = fullText.startsWith('Agent: ') ? fullText.substring(7) : fullText;
                     agents.add(agentName);
@@ -809,10 +857,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateDisplay() {
-        // Clear the table body
         tableBody.innerHTML = '';
 
-        // Add the filtered and sorted rows back
         filteredRows.forEach(row => {
             tableBody.appendChild(row);
         });
@@ -821,16 +867,116 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateStats() {
         const total = allRows.length;
         const visible = filteredRows.length;
-        filterStats.textContent = `Showing ${visible} of ${total} rules`;
+        if (filterStats) {
+            filterStats.textContent = `Showing ${visible} of ${total} rules`;
+        }
     }
 
-    sourceFilter.addEventListener('change', applyFilters);
-    statusFilter.addEventListener('change', applyFilters);
-    tunnelFilter.addEventListener('change', applyFilters);
-    sortSelect.addEventListener('change', applyFilters);
-    searchInput.addEventListener('input', applyFilters);
+    if (sourceFilter) sourceFilter.addEventListener('change', applyFilters);
+    if (statusFilter) statusFilter.addEventListener('change', applyFilters);
+    if (tunnelFilter) tunnelFilter.addEventListener('change', applyFilters);
+    if (sortSelect) sortSelect.addEventListener('change', applyFilters);
+    if (searchInput) searchInput.addEventListener('input', applyFilters);
 
     initializeFilters();
+
+    document.querySelectorAll('.delete-rule-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const hostname = btn.getAttribute('data-hostname');
+            const displayHostname = btn.getAttribute('data-display-hostname');
+            const source = btn.getAttribute('data-source');
+
+            const confirmed = confirm(`Force delete rule and DNS for ${displayHostname} immediately?`);
+            if (!confirmed) return;
+
+            const csrfInput = document.querySelector('input[name="csrf_token"]');
+            if (!csrfInput) {
+                console.error('CSRF token not found');
+                return;
+            }
+
+            const form = document.createElement('form');
+            form.method = 'POST';
+            if (source === 'manual') {
+                form.action = `/ui/manual-rules/delete/${encodeURIComponent(hostname)}`;
+            } else {
+                form.action = `/force_delete_rule/${encodeURIComponent(hostname)}`;
+            }
+            form.classList.add('protocol-aware-form');
+
+            const csrfField = document.createElement('input');
+            csrfField.type = 'hidden';
+            csrfField.name = 'csrf_token';
+            csrfField.value = csrfInput.value;
+            form.appendChild(csrfField);
+
+            document.body.appendChild(form);
+            form.submit();
+        });
+    });
+
+    document.querySelectorAll('.revert-policy-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const hostname = btn.getAttribute('data-hostname');
+            const displayHostname = btn.getAttribute('data-display-hostname');
+
+            const confirmed = confirm(`Revert policy for ${displayHostname} to be managed by labels/defaults?`);
+            if (!confirmed) return;
+
+            const csrfInput = document.querySelector('input[name="csrf_token"]');
+            if (!csrfInput) return;
+
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `/revert_access_policy_to_labels/${encodeURIComponent(hostname)}`;
+            form.classList.add('protocol-aware-form');
+
+            const csrfField = document.createElement('input');
+            csrfField.type = 'hidden';
+            csrfField.name = 'csrf_token';
+            csrfField.value = csrfInput.value;
+            form.appendChild(csrfField);
+
+            document.body.appendChild(form);
+            form.submit();
+        });
+    });
+
+    document.querySelectorAll('.revert-rule-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const ruleKey = btn.getAttribute('data-rule-key');
+            const displayHostname = btn.getAttribute('data-display-hostname');
+
+            const confirmed = confirm(`Revert rule for ${displayHostname} to be managed by Docker labels?`);
+            if (!confirmed) return;
+
+            const csrfInput = document.querySelector('input[name="csrf_token"]');
+            if (!csrfInput) return;
+
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/ui/docker-rules/revert';
+            form.classList.add('protocol-aware-form');
+
+            const csrfField = document.createElement('input');
+            csrfField.type = 'hidden';
+            csrfField.name = 'csrf_token';
+            csrfField.value = csrfInput.value;
+            form.appendChild(csrfField);
+
+            const ruleKeyField = document.createElement('input');
+            ruleKeyField.type = 'hidden';
+            ruleKeyField.name = 'rule_key';
+            ruleKeyField.value = ruleKey;
+            form.appendChild(ruleKeyField);
+
+            document.body.appendChild(form);
+            form.submit();
+        });
+    });
 });
 </script>
 {% endblock %}

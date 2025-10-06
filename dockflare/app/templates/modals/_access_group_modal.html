@@ -3,11 +3,36 @@
         <form method="dialog">
             <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
         </form>
-        <h3 id="access_group_modal_title" class="font-bold text-lg mb-6">Create New Access Group</h3>
-        
+        <h3 id="access_group_modal_title" class="font-bold text-lg mb-4">Create New Access Group</h3>
+
         <form id="access_group_form" method="POST" class="space-y-6 protocol-aware-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="original_group_id" id="original_group_id">
+            <input type="hidden" name="public_mode" id="public_mode" value="false">
+            
+            <div role="tablist" class="tabs tabs-boxed mb-6">
+                <a role="tab" class="tab tab-active" id="tab-authenticated" data-mode="authenticated">
+                    Authenticated Access
+                </a>
+                <a role="tab" class="tab" id="tab-public" data-mode="public">
+                    Public Access
+                </a>
+            </div>
+            
+            <div id="mode-description-authenticated" class="alert alert-info mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <div>
+                    <h4 class="font-bold">Authenticated Access</h4>
+                    <div class="text-sm">Requires user authentication via email/domain. Optionally restrict by geography. Use for protected applications.</div>
+                </div>
+            </div>
+            <div id="mode-description-public" class="alert alert-warning mb-4" style="display: none;">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                <div>
+                    <h4 class="font-bold">Public Access (Bypass)</h4>
+                    <div class="text-sm">⚠️ No authentication required. Publicly accessible with optional geographic restrictions. Email authentication is not available in this mode.</div>
+                </div>
+            </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="form-control">
@@ -24,10 +49,22 @@
 
             <div>
                 <h4 class="text-md font-semibold mb-2">Policy Rules</h4>
-                <div class="form-control">
-                    <label class="label" for="group_emails"><span class="label-text">Allowed Emails or Domains</span></label>
+
+                <div class="form-control" id="idp-field-container">
+                    <label class="label" for="group_identity_providers">
+                        <span class="label-text">Identity Providers</span>
+                    </label>
+                    <select id="group_identity_providers" name="identity_providers" multiple="multiple" class="w-full border-0">
+                    </select>
+                    <div class="label"><span class="label-text-alt">Select OAuth/OIDC providers for authentication. <strong class="text-warning">Emails are required when using IdPs.</strong></span></div>
+                </div>
+
+                <div class="form-control" id="email-field-container">
+                    <label class="label" for="group_emails">
+                        <span class="label-text">Allowed Emails or Domains (Required with IdPs)</span>
+                    </label>
                     <textarea id="group_emails" name="emails" class="textarea textarea-bordered h-12 resize-y" placeholder="me@example.com, myfriend@example.com, @mycompany.com"></textarea>
-                    <div class="label"><span class="label-text-alt">Comma-separated. To allow anyone from a domain, use <code class="text-xs">@domain.com</code>.</span></div>
+                    <div class="label"><span class="label-text-alt">Comma-separated. To allow anyone from a domain, use <code class="text-xs">@domain.com</code>. <strong>When using IdPs, you must specify allowed emails to prevent unauthorized access.</strong></span></div>
                 </div>
                 <div class="form-control">
                     <label class="label" for="group_ip_ranges"><span class="label-text">Allowed IP Ranges</span></label>
@@ -104,8 +141,8 @@
                     </div>
                 </div>
             </div>
-
-            <div>
+            
+            <div id="app-settings-container">
                 <h4 class="text-md font-semibold mb-2">Application Settings (Optional)</h4>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="form-control">

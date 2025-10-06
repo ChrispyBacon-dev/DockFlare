@@ -475,35 +475,50 @@ def delete_cloudflare_dns_record(zone_id, hostname, tunnel_id):
 def get_cloudflare_account_email():
     global _cached_account_email, _cached_account_email_timestamp
     current_time = time.time()
-    
-    with _cache_lock: 
+
+    with _cache_lock:
         if _cached_account_email and (current_time - _cached_account_email_timestamp < config.ACCOUNT_EMAIL_CACHE_TTL):
             logging.debug(f"Returning cached Cloudflare account email: {_cached_account_email}")
             return _cached_account_email
 
     logging.info("Fetching Cloudflare account email from API.")
+
     try:
-        response_data = cf_api_request("GET", "/user") 
-        if response_data and response_data.get("success"):
-            email = response_data.get("result", {}).get("email")
-            if email:
-                logging.info(f"Successfully fetched Cloudflare account email: {email}")
-                with _cache_lock: 
-                    _cached_account_email = email
-                    _cached_account_email_timestamp = current_time
-                return email
-            else:
-                logging.warning("Cloudflare account email not found in API response.")
-                return None
-        else:
-            logging.warning(f"Failed to fetch Cloudflare account email, API call unsuccessful. Response: {response_data}")
+        account_id = current_app.config.get('CF_ACCOUNT_ID')
+        if not account_id:
+            logging.error("Cannot fetch account email: CF_ACCOUNT_ID not configured")
             return None
+
+        response_data = cf_api_request("GET", f"/accounts/{account_id}/members")
+        if response_data and response_data.get("success"):
+            members = response_data.get("result", [])
+            for member in members:
+                roles = member.get("roles", [])
+                for role in roles:
+                    if role.get("name") == "Administrator" or role.get("permissions", {}).get("analytics", {}).get("read") or "owner" in role.get("name", "").lower():
+                        email = member.get("user", {}).get("email")
+                        if email:
+                            logging.info(f"Successfully fetched account owner email from /accounts/{account_id}/members: {email}")
+                            with _cache_lock:
+                                _cached_account_email = email
+                                _cached_account_email_timestamp = current_time
+                            return email
+
+            if members and len(members) > 0:
+                email = members[0].get("user", {}).get("email")
+                if email:
+                    logging.info(f"Using first account member email: {email}")
+                    with _cache_lock:
+                        _cached_account_email = email
+                        _cached_account_email_timestamp = current_time
+                    return email
     except requests.exceptions.RequestException as e:
-        logging.error(f"API error fetching Cloudflare account email: {e}")
-        return None
+        logging.error(f"API error fetching account members: {e}")
     except Exception as e:
-        logging.error(f"Unexpected error fetching Cloudflare account email: {e}", exc_info=True)
-        return None
+        logging.error(f"Unexpected error fetching account members: {e}", exc_info=True)
+
+    logging.warning("Could not fetch Cloudflare account email from any available endpoint")
+    return None
 
 def list_account_zones(force_refresh=False):
     account_id = current_app.config.get('CF_ACCOUNT_ID')

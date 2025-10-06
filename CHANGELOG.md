@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v3.0.3] - 2025-10-05
+
+### Added
+- **Identity Provider (IdP) Management:** Complete OAuth/OIDC identity provider management system with support for Google, Google Workspace, Azure AD, Okta, GitHub, and generic OpenID Connect providers.
+  - **IdP Configuration UI:** New dedicated section on Access Policies page for managing identity providers with sync, create, edit, test, and delete operations.
+  - **Friendly Name System:** User-defined friendly names (e.g., `google-main`, `github-dev`) that automatically resolve to Cloudflare UUIDs in labels and policies.
+  - **Cloudflare Sync:** One-click sync from Cloudflare Zero Trust to import existing IdPs with auto-generated friendly names.
+  - **Provider Testing:** Built-in test functionality to verify OAuth configuration before applying to production services.
+  - **System Protection:** System-managed IdPs (like `onetimepin`) are protected from accidental deletion.
+  - **Visual Icons:** Brand-accurate SVG logos for each provider type (Google, Azure, GitHub, Okta, Cloudflare, etc.).
+- **Enhanced Access Group Integration:** Access Groups now support Identity Provider authentication alongside email-based auth.
+  - **Flexible Authentication:** Choose IdP-only, email-only, or combined (IdP + email) authentication modes.
+  - **TomSelect IdP Picker:** Multi-select dropdown with live loading of available identity providers.
+  - **Policy Builder Integration:** IdPs automatically converted to `login_method` rules in Cloudflare Access policies.
+- **Comprehensive Documentation:** New [Identity Providers](Identity-Providers.md) help documentation with step-by-step setup guides for each provider type.
+- **Dual-Mode Access Group Builder:** Introduced dedicated Public (`bypass`) and Authenticated (`allow`) tabs with tailored helper text and mode-specific validation.
+- **System-Managed Default Bypass Policy:** Automatic creation of non-deletable `public-default-bypass` reusable policy used across all public/bypass access rules, eliminating duplicate bypass policies in Cloudflare.
+- **Zone Default Policies Section:** New UI section on Access Policies page displaying all DNS zones with their wildcard protection status (`*.domain.com` policies).
+- **Zone Policy Creation Modal:** One-click creation of zone-level wildcard policies with access group selection, providing security safety net for all subdomains.
+- **Visual Protection Indicators:** Green "Protected" and yellow "Not Protected" badges show zone security status at a glance.
+- **Contextual UI Elements:** Colour-coded alerts and consistent dropdown menus across Access Policies and dashboard for quicker policy reviews.
+
+### Changed
+- **Reusable Policy Architecture:** Each Access Group now syncs to a reusable Cloudflare Access Policy, enabling one-to-many reuse, bi-directional edits, and automatic migration of legacy inline policies (including `block` → `deny` conversion).
+- **Simplified Manual Rule Creation:** Removed "Authenticate by Email" and "Default *.tld" quick-create options from manual rule modals to enforce proper access policy design workflow.
+- **Bypass Rule Implementation:** All rules using "Bypass" option now reference the centralized `public-default-bypass` system policy instead of creating inline policies.
+- **Policy Creation Workflow:** Complex authentication scenarios now require creating an Access Policy first, then applying it to services—enforcing "single source of truth" principle.
+- **Unified UI Style:** Access Policies UI and dashboard now share the same three-dot action menus and Cloudflare dashboard shortcuts for uniform workflow.
+- **Performance Optimization:** Zone Default Policies section now uses lazy-loading via AJAX endpoint (`/api/v2/zone-policies`), reducing Access Policies page load time from 8+ seconds to instant rendering.
+
+### Security
+- **Comprehensive Security Testing:** Conducted white-box penetration testing of all 99 application endpoints before v3.0.3 release.
+  - **100% Pass Rate:** All routes tested for authentication bypass, CSRF protection, injection attacks, and proper authorization
+  - **Authentication Bypass Fix:** Discovered and patched critical vulnerabilities on 8 IdP management endpoints
+  - **Request Loader Hardening:** Modified `request_loader` in `app/__init__.py` to exclude UI endpoints from auto-authentication
+  - **Endpoint Protection:** Added `@login_required` decorators to all IdP and zone policy endpoints
+  - **Security Documentation:** Created comprehensive security audit documentation (see `SECURITY AUDIT/` folder)
+- **Zone-Level Protection:** Zone Default Policies feature enables protection of all subdomains (including undocumented ones) through `*.domain.com` wildcard policies, preventing accidental exposure.
+- **Default Policy Protection:** System-managed `public-default-bypass` policy cannot be deleted through UI or backend, ensuring critical infrastructure remains intact.
+- **IdP Email Requirement:** Identity Provider authentication now requires allowed email addresses to be specified, preventing unauthorized access. Without email restrictions, any user with the selected provider (e.g., any Google account) could access protected services.
+  - **Frontend Validation:** JavaScript validation prevents form submission when IdPs are selected without emails
+  - **Backend Validation:** Server-side validation enforces email requirement and returns clear error messages
+  - **UI Warnings:** Updated help text and labels to clarify security requirements
+- **DISABLE_PASSWORD_LOGIN Warning:** Added comprehensive documentation about Docker network attack vector when password authentication is disabled, strongly recommending local credentials or OAuth instead
+
+### Fixed
+- **Edit Modal JavaScript Error:** Fixed "Cannot set properties of null" error when editing dashboard rules by adding null checks for deprecated form fields.
+- **IdP Modal Close Bug:** Replaced non-existent `showToast()` function calls with standard `alert()` to properly close modals and refresh lists after IdP operations.
+- **Public Access Groups:** Now correctly issue Cloudflare `bypass` decisions as intended instead of incorrectly falling back to `allow`.
+- **Country Filtering:** Simplified country filtering to remove redundant double-blocking logic when combining geo rules with public mode.
+- **Policy Synchronization:** Reusable policy synchronisation now preserves all decision types (`bypass`, `allow`, `deny`) when pushing or importing definitions.
+- **Duplicate Policy Reduction:** Eliminates creation of multiple identical bypass policies—all public services now share one canonical policy.
+- **Policy Consistency:** Ensures consistent public access behavior across all services using the centralized system policy.
+- **Zone Policies Page Load:** Fixed 8+ second page load time by implementing asynchronous zone policy loading via AJAX.
+- **Legacy Access Label Migration:** Implemented automatic migration system for legacy `dockflare.access.policy=bypass` and `dockflare.access.group=bypass` labels to use the centralized `public-default-bypass` system policy.
+  - **Docker Handler Migration:** Converts legacy bypass labels to `public-default-bypass` during container processing with proper string/list handling
+  - **Reconciler Migration:** Ensures consistency during reconciliation by applying same migration logic when re-reading container labels
+  - **Agent Migration:** DockFlare Agent-reported containers also receive migration for consistent behavior across deployment modes
+  - **Access Application Creation:** Containers with bypass labels now correctly create Access Applications with the system bypass reusable policy attached, enabling proper `*.tld` zone protection bypass
+  - **State Persistence:** Migrated values are correctly persisted to state, preventing reconciler from reverting to old label values
+- **Real-Time Dashboard Updates:** Implemented Redis pub/sub broadcasting for instant dashboard updates when containers start or stop, eliminating the need for manual browser refresh.
+  - **Event Broadcasting:** Switched from queue-based (single consumer) to Redis pub/sub (broadcast to all clients) for state change notifications
+  - **Non-Blocking SSE:** SSE endpoint now uses `pubsub.get_message(timeout=30)` instead of blocking `pubsub.listen()` to prevent worker thread exhaustion
+  - **Automatic Refresh:** Dashboard automatically reloads when containers are created, started, or stopped without user interaction
+  - **Multi-Client Support:** All connected browser clients receive real-time updates simultaneously
+- **System Policy Management:** Fixed critical bugs preventing system policies from being created and displayed correctly.
+  - **Identity Provider Key Mismatch:** Fixed IdP storage to use friendly names (e.g., `onetimepin`) instead of Cloudflare UUIDs, enabling proper lookup during policy creation
+  - **Authenticated-Default Policy Creation:** Resolved race condition where IdP lookup occurred outside state lock, causing policy creation to fail on fresh installations
+  - **Missing Policies Array:** Added migration to recreate empty or missing policies arrays in existing access groups
+  - **System Policy Visibility:** Removed `hide_from_ui` flag from system policies (`public-default-bypass`, `authenticated-default`) - now visible with orange "System" badge
+  - **System Policy Detection:** Import/sync correctly identifies system policies and marks them as non-deletable with proper display names instead of UUIDs
+- **External Policy Management:** Implemented comprehensive system for managing Cloudflare Access Policies created outside DockFlare.
+  - **Sync Modal UI:** Replaced environment variable with user-friendly modal offering "DockFlare- prefix only" (default) or "Sync all policies" options
+  - **Visual Organization:** Policies now display color-coded badges: Blue (DockFlare-managed), Purple (External), Orange (System)
+  - **Policy Filtering:** Added dropdown filter to view specific policy types (All, DockFlare-Managed, External, System)
+  - **Protection Dialogs:** Warning confirmations when deleting/editing external policies to prevent unintended changes to non-DockFlare services
+  - **Policy Renaming Tip:** Documentation shows users how to rename external policies to `DockFlare-` prefix for better organization
+- **Performance Optimization:** Implemented Redis caching to eliminate slow Cloudflare API calls causing 5-15 second page load delays.
+  - **Zone Policies Cache:** 5-minute TTL cache for `/api/v2/zone-policies` endpoint (used by Access Policies page)
+  - **TLD Policy Check Cache:** 5-minute TTL cache for `check_for_tld_access_policy()` (used by Dashboard)
+  - **Cache Invalidation:** Both caches automatically cleared when zone policies are created/modified
+  - **Worker Queue Fix:** Eliminated waitress "Task queue depth" warnings by preventing API call pileup
+  - **Sub-Second Load Times:** First load builds cache (~5s), subsequent loads <1 second from Redis
+
+---
+
 ## [v3.0.2] - 2025-09-30
 
 ### Added

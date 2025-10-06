@@ -83,6 +83,8 @@ services:
       - "dockflare.enable=true"
       - "dockflare.hostname=nginx.example.com"
       - "dockflare.service=http://nginx-webserver:80"
+      # Optional: Apply public access with zone protection bypass
+      - "dockflare.access.group=public-default-bypass"
 
   redis:
     image: redis:7-alpine
@@ -113,6 +115,7 @@ networks:
 *   `dockflare.enable=true`: This tells DockFlare to manage this container.
 *   `dockflare.hostname=nginx.example.com`: This is the public URL where your service will be available. DockFlare will create a DNS record for this hostname in your Cloudflare account.
 *   `dockflare.service=http://nginx-webserver:80`: This tells Cloudflare Tunnel where to send the traffic. It's the internal address of the NGINX container. Note that we are using the service name (`nginx-webserver`) as the hostname, which is possible because both containers are on the same Docker network.
+*   `dockflare.access.group=public-default-bypass`: (Optional) Uses the system bypass policy to ensure public access even if a zone-level `*.example.com` protection policy exists. This is important when you have wildcard policies protecting your domain but need specific services to remain public.
 
 ### 3. Deploy the Service
 

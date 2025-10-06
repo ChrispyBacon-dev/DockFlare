@@ -216,11 +216,20 @@ function initializeEditRuleModal() {
                     accessGroupSelect.dispatchEvent(new Event('change'));
                 }
 
-                modal.querySelector('#edit_manual_auth_email').value = details.auth_email || '';
-                modal.querySelector('#edit_manual_zone_name_override').value = '';
-                modal.querySelector('#edit_manual_no_tls_verify').checked = details.no_tls_verify || false;
-                modal.querySelector('#edit_manual_origin_server_name').value = details.origin_server_name || '';
-                modal.querySelector('#edit_manual_http_host_header').value = details.http_host_header || '';
+                const authEmailField = modal.querySelector('#edit_manual_auth_email');
+                if (authEmailField) authEmailField.value = details.auth_email || '';
+
+                const zoneOverrideField = modal.querySelector('#edit_manual_zone_name_override');
+                if (zoneOverrideField) zoneOverrideField.value = '';
+
+                const noTlsVerifyField = modal.querySelector('#edit_manual_no_tls_verify');
+                if (noTlsVerifyField) noTlsVerifyField.checked = details.no_tls_verify || false;
+
+                const originServerNameField = modal.querySelector('#edit_manual_origin_server_name');
+                if (originServerNameField) originServerNameField.value = details.origin_server_name || '';
+
+                const httpHostHeaderField = modal.querySelector('#edit_manual_http_host_header');
+                if (httpHostHeaderField) httpHostHeaderField.value = details.http_host_header || '';
 
                 const tunnelDisplay = modal.querySelector('#edit_rule_tunnel_value');
                 const zoneDisplay = modal.querySelector('#edit_rule_zone_value');
@@ -1052,7 +1061,7 @@ function openCreateAccessGroupModal() {
     title.textContent = 'Create New Access Group';
     groupIdInput.disabled = false;
     document.getElementById('original_group_id').value = '';
-    
+
     const countrySelect = document.getElementById('group_countries');
     if (countrySelect && countrySelect.tomselect) {
         countrySelect.tomselect.clear();
@@ -1061,7 +1070,11 @@ function openCreateAccessGroupModal() {
             window.enhancedCountrySelector.updateSelectionCounter();
         }
     }
-    
+
+    if (window.idpTomSelect) {
+        window.idpTomSelect.clear();
+    }
+
     modal.showModal();
 }
 
@@ -1088,6 +1101,7 @@ function openEditAccessGroupModal(groupId, details) {
     let emailText = '';
     let ipRangeText = '';
     let selectedCountries = [];
+    let selectedIdps = [];
 
     if (details.policies && Array.isArray(details.policies)) {
         const emails = [];
@@ -1100,21 +1114,22 @@ function openEditAccessGroupModal(groupId, details) {
         );
 
         if (blockPolicy) {
-            
+
             blockPolicy.exclude.forEach(rule => {
                 if (rule.geo && rule.geo.country_code) {
                     selectedCountries.push(rule.geo.country_code);
                 }
             });
         }
-        
-        
+
+
         details.policies.forEach(policy => {
             if (policy.include) {
                 policy.include.forEach(rule => {
                     if (rule.email && rule.email.email) emails.push(rule.email.email);
                     else if (rule.email_domain && rule.email_domain.domain) emails.push(`@${rule.email_domain.domain}`);
                     else if (rule.ip && rule.ip.ip) ipRanges.push(rule.ip.ip);
+                    else if (rule['login_method'] && rule['login_method'].id) selectedIdps.push(rule['login_method'].id);
                 });
             }
         });
@@ -1136,6 +1151,10 @@ function openEditAccessGroupModal(groupId, details) {
         Array.from(countrySelect.options).forEach(option => {
             option.selected = selectedCountries.includes(option.value);
         });
+    }
+
+    if (window.idpTomSelect && selectedIdps.length > 0) {
+        window.idpTomSelect.setValue(selectedIdps);
     }
 
     modal.showModal();
@@ -1441,6 +1460,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
     startServerPing();
 
+    if (document.getElementById('idp-table-container')) {
+        loadIdentityProviders();
+
+        document.getElementById('sync-idps-btn')?.addEventListener('click', syncIdentityProviders);
+        document.getElementById('create-idp-btn')?.addEventListener('click', () => {
+            showIdPModal('create');
+        });
+
+        document.getElementById('idp-form')?.addEventListener('submit', handleIdPFormSubmit);
+        document.getElementById('idp-type')?.addEventListener('change', updateIdPFormFields);
+    }
+
     // Universal Cleanup
     window.addEventListener('beforeunload', function() {
         if (activeLogSource) activeLogSource.close();
@@ -1448,3 +1479,359 @@ document.addEventListener('DOMContentLoaded', function() {
         if (pingInterval) clearInterval(pingInterval);
     });
 });
+
+let idpTypes = {};
+
+async function loadIdentityProviders() {
+    try {
+        const [typesResponse, idpsResponse] = await Promise.all([
+            fetch('/api/v2/idp/types'),
+            fetch('/api/v2/idp/list')
+        ]);
+
+        if (typesResponse.ok) {
+            const typesData = await typesResponse.json();
+            idpTypes = typesData.types || {};
+        }
+
+        if (idpsResponse.ok) {
+            const data = await idpsResponse.json();
+            renderIdPTable(data.identity_providers || {});
+        } else {
+            document.getElementById('idp-table-container').innerHTML =
+                '<p class="text-center text-error py-8">Failed to load identity providers</p>';
+        }
+    } catch (error) {
+        console.error('Error loading IdPs:', error);
+        document.getElementById('idp-table-container').innerHTML =
+            '<p class="text-center text-error py-8">Error loading identity providers</p>';
+    }
+}
+
+function renderIdPTable(idps) {
+    const container = document.getElementById('idp-table-container');
+
+    if (!idps || Object.keys(idps).length === 0) {
+        container.innerHTML = '<p class="text-center opacity-70 py-8">No identity providers configured. Click "Add Provider" to get started.</p>';
+        return;
+    }
+
+    const typeIcons = {
+        'google': '<svg class="w-6 h-6" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>',
+        'google-apps': '<svg class="w-6 h-6" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>',
+        'azureAD': '<svg class="w-6 h-6" viewBox="0 0 24 24"><path fill="#00A4EF" d="M0 0h11.377v11.372H0z"/><path fill="#FFB900" d="M12.623 0H24v11.372H12.623z"/><path fill="#7FBA00" d="M0 12.628h11.377V24H0z"/><path fill="#F25022" d="M12.623 12.628H24V24H12.623z"/></svg>',
+        'okta': '<svg class="w-6 h-6" viewBox="0 0 24 24"><path fill="#007DC1" d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm0 18c-3.314 0-6-2.686-6-6s2.686-6 6-6 6 2.686 6 6-2.686 6-6 6z"/></svg>',
+        'github': '<svg class="w-6 h-6" viewBox="0 0 24 24"><path fill="currentColor" d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>',
+        'oidc': '<svg class="w-6 h-6" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>',
+        'onetimepin': '<svg class="w-6 h-6" viewBox="0 0 32 32"><path d="M8.16 23h21.177v-5.86l-4.023-2.307-.694-.3-16.46.113z" fill="#fff"/><path d="M22.012 22.222c.197-.675.122-1.294-.206-1.754-.3-.422-.807-.666-1.416-.694l-11.545-.15c-.075 0-.14-.038-.178-.094s-.047-.13-.028-.206c.038-.113.15-.197.272-.206l11.648-.15c1.38-.066 2.88-1.182 3.404-2.55l.666-1.735a.38.38 0 0 0 .02-.225c-.75-3.395-3.78-5.927-7.4-5.927-3.34 0-6.17 2.157-7.184 5.15-.657-.488-1.5-.75-2.392-.666-1.604.16-2.9 1.444-3.048 3.048a3.58 3.58 0 0 0 .084 1.191A4.84 4.84 0 0 0 0 22.1c0 .234.02.47.047.703.02.113.113.197.225.197H21.58a.29.29 0 0 0 .272-.206l.16-.572z" fill="#f38020"/><path d="M25.688 14.803l-.32.01c-.075 0-.14.056-.17.13l-.45 1.566c-.197.675-.122 1.294.206 1.754.3.422.807.666 1.416.694l2.457.15c.075 0 .14.038.178.094s.047.14.028.206c-.038.113-.15.197-.272.206l-2.56.15c-1.388.066-2.88 1.182-3.404 2.55l-.188.478c-.038.094.028.188.13.188h8.797a.23.23 0 0 0 .225-.169A6.41 6.41 0 0 0 32 21.106a6.32 6.32 0 0 0-6.312-6.302" fill="#faae40"/></svg>'
+    };
+
+    let tableHTML = `
+        <table class="table table-zebra table-sm policy-table w-full">
+            <colgroup>
+                <col class="col-primary">
+                <col class="col-secondary">
+                <col class="col-tertiary">
+                <col class="col-status">
+                <col class="col-actions">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th class="p-3">Provider</th>
+                    <th class="p-3">Cloudflare ID</th>
+                    <th class="p-3">Connector</th>
+                    <th class="p-3">Status</th>
+                    <th class="p-3 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody>`;
+
+    for (const [friendlyName, idpData] of Object.entries(idps)) {
+        const icon = typeIcons[idpData.type] || '<svg class="w-6 h-6" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>';
+        const isSystem = idpData.system_managed || false;
+        const statusBadge = isSystem ?
+            '<span class="badge badge-ghost badge-sm">System</span>' :
+            '<span class="badge badge-success badge-sm">Active</span>';
+
+        tableHTML += `
+            <tr>
+                <td class="p-3">
+                    <div class="flex items-center gap-3">
+                        <span class="inline-flex items-center justify-center">${icon}</span>
+                        <div class="font-medium">${idpData.name}</div>
+                    </div>
+                </td>
+                <td class="p-3 text-xs opacity-70">
+                    ${idpData.cloudflare_id ? `<span class="tooltip" data-tip="${idpData.cloudflare_id}"><code>${idpData.cloudflare_id.slice(0, 8)}...</code></span>` : '-'}
+                </td>
+                <td class="p-3 text-sm opacity-80">${idpData.type}</td>
+                <td class="p-3">${statusBadge}</td>
+                <td class="p-3 text-right">
+                    <div class="dropdown dropdown-end">
+                        <label tabindex="0" class="btn btn-ghost btn-sm">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z" />
+                            </svg>
+                        </label>
+                        <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">`;
+
+        if (!isSystem) {
+            tableHTML += `
+                            <li><a onclick="showIdPModal('edit', '${friendlyName}')">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                                </svg>
+                                Edit
+                            </a></li>`;
+        }
+
+        if (idpData.cloudflare_id) {
+            tableHTML += `
+                            <li><a onclick="testIdP('${idpData.cloudflare_id}')">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                Test IdP
+                            </a></li>`;
+        }
+
+        if (!isSystem) {
+            tableHTML += `
+                            <li><a onclick="deleteIdP('${friendlyName}')" class="text-error">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                                </svg>
+                                Delete
+                            </a></li>`;
+        }
+
+        tableHTML += `
+                        </ul>
+                    </div>
+                </td>
+            </tr>`;
+    }
+
+    tableHTML += `
+            </tbody>
+        </table>`;
+
+    container.innerHTML = tableHTML;
+}
+
+async function syncIdentityProviders() {
+    const btn = document.getElementById('sync-idps-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Syncing...';
+
+    try {
+        const response = await fetch('/api/v2/idp/sync', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            await loadIdentityProviders();
+        } else {
+            alert('Error: ' + (data.error || 'Failed to sync identity providers'));
+        }
+    } catch (error) {
+        console.error('Error syncing IdPs:', error);
+        alert('Error syncing identity providers. Check console for details.');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg> Sync from Cloudflare';
+    }
+}
+
+function showIdPModal(mode, friendlyName = null) {
+    const modal = document.getElementById('idp-modal');
+    const form = document.getElementById('idp-form');
+    const title = document.getElementById('idp-modal-title');
+    const submitBtn = document.getElementById('idp-submit-btn');
+
+    document.getElementById('idp-mode').value = mode;
+
+    form.reset();
+    document.getElementById('idp-config-fields').innerHTML = '<div class="alert alert-warning"><svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg><span>Select a provider type to configure credentials</span></div>';
+
+    if (mode === 'create') {
+        title.textContent = 'Add Identity Provider';
+        submitBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Create Provider';
+        document.getElementById('idp-friendly-name').disabled = false;
+    } else if (mode === 'edit' && friendlyName) {
+        title.textContent = 'Edit Identity Provider';
+        submitBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Update Provider';
+        document.getElementById('idp-friendly-name').disabled = true;
+        document.getElementById('idp-edit-name').value = friendlyName;
+
+        fetch(`/api/v2/idp/${friendlyName}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.success && data.identity_provider) {
+                    const idp = data.identity_provider;
+                    document.getElementById('idp-friendly-name').value = friendlyName;
+                    document.getElementById('idp-display-name').value = idp.name || '';
+                    document.getElementById('idp-type').value = idp.type || '';
+                    updateIdPFormFields();
+                }
+            });
+    }
+
+    modal.showModal();
+}
+
+function updateIdPFormFields() {
+    const type = document.getElementById('idp-type').value;
+    const container = document.getElementById('idp-config-fields');
+    const redirectInfo = document.getElementById('redirect-url-info');
+
+    if (!type || !idpTypes[type]) {
+        container.innerHTML = '<div class="alert alert-warning"><svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg><span>Select a provider type to configure credentials</span></div>';
+        redirectInfo.classList.add('hidden');
+        return;
+    }
+
+    const typeConfig = idpTypes[type];
+    let fieldsHTML = '';
+
+    for (const [fieldName, fieldConfig] of Object.entries(typeConfig.fields)) {
+        const required = fieldConfig.required ? '<span class="label-text-alt text-error">*</span>' : '';
+        const inputType = fieldConfig.type === 'password' ? 'password' : 'text';
+        const placeholder = fieldConfig.placeholder || '';
+
+        fieldsHTML += `
+            <div class="form-control">
+                <label class="label">
+                    <span class="label-text font-semibold">${fieldConfig.label}</span>
+                    ${required}
+                </label>
+                <input type="${inputType}"
+                       id="idp-config-${fieldName}"
+                       name="${fieldName}"
+                       placeholder="${placeholder}"
+                       class="input input-bordered w-full"
+                       ${fieldConfig.required ? 'required' : ''}>
+            </div>`;
+    }
+
+    container.innerHTML = fieldsHTML;
+
+    redirectInfo.classList.remove('hidden');
+    document.getElementById('redirect-url-display').textContent = 'https://[your-team].cloudflareaccess.com/cdn-cgi/access/callback';
+}
+
+async function handleIdPFormSubmit(e) {
+    e.preventDefault();
+
+    const mode = document.getElementById('idp-mode').value;
+    const friendlyName = document.getElementById('idp-friendly-name').value.trim();
+    const displayName = document.getElementById('idp-display-name').value.trim();
+    const type = document.getElementById('idp-type').value;
+
+    const config = {};
+    const configFields = document.querySelectorAll('#idp-config-fields input');
+    configFields.forEach(input => {
+        if (input.name && input.value) {
+            config[input.name] = input.value;
+        }
+    });
+
+    const submitBtn = document.getElementById('idp-submit-btn');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Saving...';
+
+    try {
+        let response;
+        if (mode === 'create') {
+            response = await fetch('/api/v2/idp/create', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    friendly_name: friendlyName,
+                    name: displayName,
+                    type: type,
+                    config: config
+                })
+            });
+        } else {
+            const editName = document.getElementById('idp-edit-name').value;
+            response = await fetch(`/api/v2/idp/${editName}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    name: displayName,
+                    config: config
+                })
+            });
+        }
+
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('idp-modal').close();
+            await loadIdentityProviders();
+
+            if (data.test_url && mode === 'create') {
+                if (confirm('Identity provider created successfully!\n\nWould you like to test this identity provider now?')) {
+                    window.open(data.test_url, '_blank');
+                }
+            }
+        } else {
+            alert('Error: ' + (data.error || 'Failed to save identity provider'));
+        }
+    } catch (error) {
+        console.error('Error saving IdP:', error);
+        alert('Error saving identity provider. Check console for details.');
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = mode === 'create' ?
+            '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Create Provider' :
+            '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Update Provider';
+    }
+}
+
+async function testIdP(idpId) {
+    try {
+        const response = await fetch('/api/v2/idp/list');
+        const data = await response.json();
+
+        if (data.success) {
+            for (const idp of Object.values(data.identity_providers)) {
+                if (idp.cloudflare_id === idpId) {
+                    const testUrl = `https://dataverse.cloudflareaccess.com/cdn-cgi/access/test-idp/${idpId}`;
+                    window.open(testUrl, '_blank');
+                    return;
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error testing IdP:', error);
+        alert('Error opening test URL. Check console for details.');
+    }
+}
+
+async function deleteIdP(friendlyName) {
+    if (!confirm(`Are you sure you want to delete the identity provider "${friendlyName}"? This will remove it from both DockFlare and Cloudflare.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/v2/idp/${friendlyName}`, {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            await loadIdentityProviders();
+        } else {
+            alert('Error: ' + (data.error || 'Failed to delete identity provider'));
+        }
+    } catch (error) {
+        console.error('Error deleting IdP:', error);
+        alert('Error deleting identity provider. Check console for details.');
+    }
+}

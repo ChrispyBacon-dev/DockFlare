@@ -27,6 +27,37 @@ After the initial setup, you will be presented with a login screen every time yo
 
 ## Disabling Password Login
 
-For advanced use cases, such as placing the DockFlare dashboard behind another authentication proxy (like Cloudflare Access), you can disable the built-in password login. This option is available in the **Settings** page under the **Security** section.
+DockFlare includes a "Disable Password Login" setting intended for advanced deployments where DockFlare itself is protected by an external authentication layer (like Cloudflare Access). **We strongly advise against using this feature** for most deployments.
 
-**Warning:** Disabling password login will make your DockFlare dashboard publicly accessible. Only do this if you have another authentication method in place.
+### Why this setting exists
+
+If you run DockFlare behind Cloudflare Access or another authentication proxy that enforces SSO before reaching the application, you can disable DockFlare's built-in password login to avoid double authentication.
+
+### Security risks when enabled
+
+- ⚠️ **All API endpoints become accessible without authentication** when this setting is enabled
+- ⚠️ **Docker network exposure:** Even if DockFlare is behind Cloudflare Access on the public internet, containers on the same Docker network can bypass external authentication and access DockFlare's API directly
+- ⚠️ **No authentication enforcement:** The application assumes external authentication is handling security
+
+### Attack vector example
+
+```
+Internet → Cloudflare Access (Protected) → DockFlare ✅
+         ↓
+Docker Network → Other Container → DockFlare API (Unprotected) ❌
+```
+
+Even when DockFlare is protected by Cloudflare Access from the internet, any container running on the same Docker network can bypass that protection and directly access DockFlare's API endpoints without authentication.
+
+### Recommended approach
+
+Instead of disabling password authentication, use one of these secure options:
+
+1. **Local DockFlare credentials** - Simple password authentication built into DockFlare
+2. **OAuth/OIDC providers** - Configure Google, GitHub, Azure AD, or other identity providers for easy single sign-on without sacrificing security (see [OAuth Provider Setup](OAuth-Provider-Setup.md))
+
+Both options provide proper authentication while maintaining the convenience of SSO. The OAuth option gives you the single sign-on experience without the security risks of disabled authentication.
+
+### Bottom line
+
+Unless you have a very specific, well-understood security architecture with network isolation, keep password login enabled and use OAuth for convenience.

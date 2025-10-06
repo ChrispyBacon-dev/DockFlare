@@ -5,6 +5,8 @@ services:
     image: tecnativa/docker-socket-proxy:v0.4.1
     container_name: docker-socket-proxy
     restart: unless-stopped
+    logging:
+      driver: "none"  # Minimize the logs, remove for verbose
     environment:
       - DOCKER_HOST=unix:///var/run/docker.sock
       - CONTAINERS=1
@@ -30,12 +32,12 @@ services:
     restart: "no"
 
   dockflare:
-    #build: ./dockflare
-    image: alplat/dockflare:stable
+    build: ./dockflare
+    #image: alplat/dockflare:stable
     container_name: dockflare
     restart: unless-stopped
     ports:
-      - "5000:5000"
+      - "5001:5000"
     #labels:
       # -- Cloudflare Tunnel Configuration (via DockFlare) OPTIONAL --
       # Main DockFlare interface with access policy
@@ -62,6 +64,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - REDIS_DB_INDEX=0  # Optional: specify Redis database index (0-15) for isolation from other containers
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
+      - LOG_LEVEL=DEBUG
     depends_on:
       docker-socket-proxy:
         condition: service_started
@@ -78,6 +81,8 @@ services:
     container_name: dockflare-redis
     restart: unless-stopped
     command: ["redis-server", "--save", "", "--appendonly", "no"]
+    logging:
+      driver: "none"  # less logs, remove for verbose / more logs
     volumes:
       - dockflare_redis:/data
     networks:

@@ -11,7 +11,7 @@ The first page you see after logging in is the main dashboard. This is your cent
     *   **Service:** The internal destination URL.
     *   **Source:** Indicates if the rule is from `Docker` or was created `Manually` in the UI.
     *   **Status:** Shows if the rule is `active`, `pending_deletion`, or has a `UI Override`.
-    *   **Access:** Displays the Access Policy applied to the rule (e.g., `Public`, `Authenticate`, or the name of an Access Group).
+    *   **Access:** Displays the applied Access Group and mode badge. Expect to see `Public` or `Authenticated` labels, cascaded group names, and quick links to the Cloudflare dashboard when reusable policies sync.
     *   **Manage Rule:** This button allows you to edit any rule.
 *   **Real-time Logs:** Below the table, you'll find a real-time log viewer that streams logs from the DockFlare backend, which is invaluable for debugging.
 
@@ -25,10 +25,29 @@ The UI gives you full control over your ingress rules.
 
 ## Access Policies Page
 
-This page is the central location for managing your reusable **Access Groups**. From here, you can:
-*   **Create** new Access Groups with complex rules (e.g., based on email, IP, or country).
-*   **Edit** existing Access Groups.
-*   **Delete** Access Groups that are no longer in use.
+This page is the central location for managing your reusable **Access Groups** and securing your DNS zones with wildcard policies.
+
+### Advanced Access Policies
+
+From the Access Groups section, you can:
+*   **Create** new Access Groups using the two-tab modal (Authenticated vs Public). Guidance banners update per tab so you understand when DockFlare will emit a Cloudflare `allow` or `bypass` decision.
+*   **Edit** existing Access Groups. The modal enforces mode-specific validation (emails required for Authenticated) and keeps Geo/IP settings visible for both modes.
+*   **Delete** Access Groups that are no longer in use (system policies like `public-default-bypass` cannot be deleted).
+*   **Sync from Cloudflare** to import existing DockFlare reusable policies from your account.
+*   Use the action menu beside each entry to open the matching policy directly in the Cloudflare dashboard via the Cloudflare icon shortcut.
+
+**Note:** The `public-default-bypass` system policy is automatically created and managed by DockFlare. All services using "Bypass" access reference this single policy, keeping your Cloudflare dashboard clean.
+
+### Zone Default Policies (*.tld Wildcards)
+
+The second section shows **Zone Default Policies** - a security best practice feature that protects all subdomains:
+
+*   **Protection Status:** Visual badges show which DNS zones have wildcard `*.domain.com` policies (Protected 🛡️) and which don't (Not Protected ⚠️).
+*   **Create Zone Policy:** Click "Create Policy" on any unprotected zone to create a wildcard Access Application.
+*   **Select Policy:** Choose which Access Group should protect all subdomains of the zone (can be public bypass, authentication, or any custom policy).
+*   **Security Safety Net:** Even if you forget to add a policy to a specific service, the zone-level wildcard policy will catch it.
+
+**Best Practice:** Create zone default policies for all your domains. For public-facing domains, use the default bypass policy. For internal/private domains, use an authentication policy. This ensures no subdomain is accidentally exposed.
 
 For more details, see the [Access Policy Best Practices & Examples](Access-Policy-Best-Practices.md) guide.
 
@@ -40,6 +59,6 @@ The Settings page contains various administrative and configuration options:
 *   **Backup & Restore:** Download a full DockFlare backup archive (`.zip`) containing encrypted config, agent keys, and state, or upload a previously exported archive to restore the instance.
 *   **Security:**
     *   **Change Password:** Change your password for the Web UI.
-    *   **Disable Password Login:** For advanced use cases where you place DockFlare behind another authentication proxy.
+    *   **Disable Password Login:** For advanced use cases where you place DockFlare behind another authentication proxy. **⚠️ Warning:** This creates a security risk due to Docker network exposure - any container on the same Docker network can bypass external authentication and access DockFlare's API directly. We strongly recommend using OAuth/OIDC providers instead for single sign-on convenience without sacrificing security. See [Accessing the Web UI](Accessing-the-Web-UI.md#disabling-password-login) for full security implications.
 *   **Cloudflare Credentials:** Allows you to update your Cloudflare Account ID and API Token after the initial setup.
 *   **Core Configuration:** Lets you change settings like the Tunnel Name and Rule Grace Period.

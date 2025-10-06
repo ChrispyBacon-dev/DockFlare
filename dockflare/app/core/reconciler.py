@@ -18,6 +18,7 @@
 import logging
 import time
 import threading
+import copy
 from datetime import datetime, timedelta, timezone
 from app import config, docker_client, tunnel_state, publish_state_event
 from flask import current_app 
@@ -48,13 +49,34 @@ def _get_hostname_configs_from_container(container_obj):
 
     default_access_groups = get_label(labels, "access.groups")
     default_access_group = get_label(labels, "access.group") if not default_access_groups else None
+    default_access_policy_type = get_label(labels, "access.policy")
+
+    if default_access_policy_type == "bypass" and not default_access_group and not default_access_groups:
+        logging.info(f"RECONCILER: Legacy label 'dockflare.access.policy=bypass' detected for {container_name_val}. Migrating to 'dockflare.access.group=public-default-bypass'.")
+        default_access_group = ["public-default-bypass"]
+        default_access_policy_type = None
+    elif default_access_group and not default_access_groups:
+        if isinstance(default_access_group, str) and default_access_group == "bypass":
+            logging.info(f"RECONCILER: Legacy group 'bypass' detected for {container_name_val}. Migrating to 'public-default-bypass'.")
+            default_access_group = "public-default-bypass"
+        elif isinstance(default_access_group, list) and "bypass" in default_access_group:
+            logging.info(f"RECONCILER: Legacy group 'bypass' detected in list for {container_name_val}. Migrating to 'public-default-bypass'.")
+            default_access_group = ["public-default-bypass" if g == "bypass" else g for g in default_access_group]
+    elif default_access_policy_type == "authenticate" and not default_access_group and not default_access_groups:
+        from app.core.cloudflare_api import get_cloudflare_account_email
+        account_email = get_cloudflare_account_email()
+        if account_email:
+            logging.info(f"RECONCILER: Legacy label 'dockflare.access.policy=authenticate' detected for {container_name_val}. Migrating to 'dockflare.access.group=authenticated-default' (restricted to {account_email}).")
+            default_access_group = ["authenticated-default"]
+            default_access_policy_type = None
+        else:
+            logging.warning(f"RECONCILER: Cannot migrate 'dockflare.access.policy=authenticate' for {container_name_val}. Cloudflare account email not available. Skipping access policy creation. Use 'dockflare.access.group=<group>' instead.")
+            default_access_policy_type = None
+
     if default_access_groups:
         default_access_group = [gid.strip() for gid in default_access_groups.split(',')]
     elif default_access_group:
-        default_access_group = [default_access_group.strip()]
-
-
-    default_access_policy_type = get_label(labels, "access.policy")
+        default_access_group = [default_access_group.strip()] if isinstance(default_access_group, str) else default_access_group
     default_access_app_name = get_label(labels, "access.name")
     default_session_duration = get_label(labels, "access.session_duration", "24h")
     default_app_launcher_visible = get_label(labels, "access.app_launcher_visible", "false").lower() in ["true", "1", "t", "yes"]
@@ -354,6 +376,7 @@ def _run_reconciliation_logic():
         current_app.reconciliation_info["processed_items"] = 0 
         processed_reconcile_items = 0
         hostnames_requiring_dns_setup = set()
+        policy_jobs_map = {}
 
         with state_lock:
             now_utc = datetime.now(timezone.utc)
@@ -443,11 +466,8 @@ def _run_reconciliation_logic():
                 
                 hostnames_requiring_dns_setup.add((desired_details["hostname"], target_zone_id, effective_tunnel_id))
                 
-                if existing_rule.get("access_policy_ui_override", False):
-                    pass 
-                else:
-                    if handle_access_policy_from_labels(desired_details, existing_rule, desired_details["hostname"]):
-                        state_changed_locally = True
+                if not existing_rule.get("access_policy_ui_override", False):
+                    policy_jobs_map[rule_key] = copy.deepcopy(desired_details)
             
             rule_keys_in_state_but_not_running = list(current_managed_rule_keys_in_state - set(running_labeled_rules_details.keys()))
             for rule_key_to_check in rule_keys_in_state_but_not_running:
@@ -477,10 +497,18 @@ def _run_reconciliation_logic():
                                 if agent_tunnel_id:
                                     hostnames_requiring_dns_setup.add((rule.get("hostname"), rule.get("zone_id"), agent_tunnel_id))
 
-            if state_changed_locally:
-                current_app.reconciliation_info["status"] = "Saving reconciled state..."
-                save_state()
-                publish_state_event('snapshot_refresh')
+        policy_state_changed = False
+        for rule_key, details in policy_jobs_map.items():
+            if handle_access_policy_from_labels(rule_key, copy.deepcopy(details)):
+                policy_state_changed = True
+
+        if policy_state_changed:
+            state_changed_locally = True
+
+        if state_changed_locally:
+            current_app.reconciliation_info["status"] = "Saving reconciled state..."
+            save_state()
+            publish_state_event('snapshot_refresh')
 
         if time.time() - reconciliation_start_time > max_total_time - 15:
             logging.warning("[Reconcile] Timeout before Tunnel/DNS operations.")

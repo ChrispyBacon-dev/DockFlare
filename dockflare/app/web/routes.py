@@ -282,36 +282,36 @@ def status_page():
     template_agents = {}
 
     with state_lock:
-        for hostname, rule in managed_rules.items():
-            rule_copy = copy.deepcopy(rule)
-            if rule_copy.get("delete_at") and isinstance(rule_copy["delete_at"], datetime):
-                rule_copy["delete_at"] = rule_copy["delete_at"].replace(tzinfo=timezone.utc) if rule_copy["delete_at"].tzinfo is None else rule_copy["delete_at"].astimezone(timezone.utc)
-            rules_for_template[hostname] = rule_copy
+        rules_snapshot = {hostname: copy.deepcopy(rule) for hostname, rule in managed_rules.items()}
         template_tunnel_state = tunnel_state.copy()
         template_agent_state = cloudflared_agent_state.copy()
         template_access_groups = copy.deepcopy(access_groups)
         from app.core.state_manager import list_agents
         template_agents = list_agents()
 
-        initialization_status = {
-            "complete": template_tunnel_state.get("id") is not None or config.EXTERNAL_TUNNEL_ID,
-            "in_progress": not (template_tunnel_state.get("id") or config.EXTERNAL_TUNNEL_ID) and \
-                           template_tunnel_state.get("status_message", "").lower().startswith("init")
-        }
+    for hostname, rule_copy in rules_snapshot.items():
+        if rule_copy.get("delete_at") and isinstance(rule_copy["delete_at"], datetime):
+            rule_copy["delete_at"] = rule_copy["delete_at"].replace(tzinfo=timezone.utc) if rule_copy["delete_at"].tzinfo is None else rule_copy["delete_at"].astimezone(timezone.utc)
+        rules_for_template[hostname] = rule_copy
 
-        cf_zone_id = current_app.config.get('CF_ZONE_ID')
-        if cf_zone_id and docker_client:
+    initialization_status = {
+        "complete": template_tunnel_state.get("id") is not None or config.EXTERNAL_TUNNEL_ID,
+        "in_progress": not (template_tunnel_state.get("id") or config.EXTERNAL_TUNNEL_ID) and \
+                       template_tunnel_state.get("status_message", "").lower().startswith("init")
+    }
 
-            zone_details = get_zone_details_by_id(cf_zone_id)
-            if zone_details and zone_details.get("name"):
-                relevant_zone_name_for_tld_policy_val = zone_details.get("name")
+    cf_zone_id = current_app.config.get('CF_ZONE_ID')
+    if cf_zone_id and docker_client:
+        zone_details = get_zone_details_by_id(cf_zone_id)
+        if zone_details and zone_details.get("name"):
+            relevant_zone_name_for_tld_policy_val = zone_details.get("name")
 
-            if relevant_zone_name_for_tld_policy_val:
-                tld_policy_exists_val = check_for_tld_access_policy(relevant_zone_name_for_tld_policy_val)
-                if not tld_policy_exists_val:
-                    account_email_for_tld_val = get_cloudflare_account_email()
-            else:
-                logging.info("Relevant zone name for TLD policy check (from CF_ZONE_ID) could not be determined.")
+        if relevant_zone_name_for_tld_policy_val:
+            tld_policy_exists_val = check_for_tld_access_policy(relevant_zone_name_for_tld_policy_val)
+            if not tld_policy_exists_val:
+                account_email_for_tld_val = get_cloudflare_account_email()
+        else:
+            logging.info("Relevant zone name for TLD policy check (from CF_ZONE_ID) could not be determined.")
 
     display_token_val = get_display_token_ui(template_tunnel_state.get("token"))
     cf_account_id = current_app.config.get('CF_ACCOUNT_ID')
@@ -439,19 +439,56 @@ from cryptography.fernet import Fernet
 @login_required
 def access_policies_page():
     """Renders the Access Policies page."""
+    from app.core import reusable_policies
+
+    default_bypass_id = "public-default-bypass"
+    if default_bypass_id in access_groups:
+        policy = access_groups[default_bypass_id]
+        cf_policy_id = policy.get("cf_policy_id")
+
+        # If no Cloudflare policy ID, create it now
+        if not cf_policy_id or cf_policy_id == default_bypass_id:
+            try:
+                cf_policy = reusable_policies.create_reusable_policy(
+                    name="DockFlare-Default-Public-Access-Bypass",
+                    decision="bypass",
+                    include_rules=[{"everyone": {}}]
+                )
+                if cf_policy and cf_policy.get("id"):
+                    with state_lock:
+                        access_groups[default_bypass_id]["cf_policy_id"] = cf_policy["id"]
+                        access_groups[default_bypass_id]["id"] = cf_policy["id"]
+                        save_state()
+                    logging.info(f"Synced default bypass policy to Cloudflare with ID: {cf_policy['id']}")
+            except Exception as e:
+                logging.error(f"Failed to sync default bypass policy to Cloudflare: {e}", exc_info=True)
+
     groups_for_template = {}
     used_group_ids = set()
+    group_usage = {}  
 
     with state_lock:
         for rule in managed_rules.values():
-            if rule.get('source') == 'docker':
+            
+            if rule.get('source') in ['docker', 'agent']:
+                hostname = rule.get('hostname', 'Unknown')
                 group_id_val = rule.get('access_group_id')
                 if isinstance(group_id_val, list):
                     for gid in group_id_val:
                         used_group_ids.add(gid)
+                        if gid not in group_usage:
+                            group_usage[gid] = []
+                        group_usage[gid].append(hostname)
                 elif group_id_val:
                     used_group_ids.add(group_id_val)
-        groups_for_template = copy.deepcopy(access_groups)
+                    if group_id_val not in group_usage:
+                        group_usage[group_id_val] = []
+                    group_usage[group_id_val].append(hostname)
+        groups_for_template_raw = copy.deepcopy(access_groups)
+        groups_for_template = {
+            gid: group for gid, group in groups_for_template_raw.items()
+            if not group.get("hide_from_ui", False)
+        }
 
     try:
         with open(os.path.join(current_app.static_folder, 'json', 'countries.json')) as f:
@@ -460,11 +497,15 @@ def access_policies_page():
         countries = []
         flash('Could not load country list for Access Group modal.', 'error')
 
+    cf_account_id = current_app.config.get('CF_ACCOUNT_ID', '')
+
     return render_template(
         'access_policies.html',
         access_groups=groups_for_template,
         used_group_ids=used_group_ids,
-        countries=countries
+        group_usage=group_usage,
+        countries=countries,
+        ACCOUNT_ID_FOR_DISPLAY=cf_account_id if cf_account_id else "Not Configured"
     )
 
 @bp.route('/settings', methods=['GET', 'POST'])
@@ -1073,7 +1114,8 @@ def force_delete_rule_route(hostname):
     return redirect(url_for('web.status_page'))
 
 @bp.route('/stream-logs')
-def stream_logs_route(): 
+@login_required
+def stream_logs_route():
     client_id = f"client-{random.randint(1000, 9999)}"
     logging.info(f"Log stream client {client_id} connected.")
     def event_stream():
@@ -1107,19 +1149,44 @@ def stream_logs_route():
     return response
 
 @bp.route('/stream-state-updates')
+@login_required
 def stream_state_updates_route():
+    from app.core.cache import get_redis_client
+    import select
+    logging.info("SSE_CONNECT: Client connected to /stream-state-updates")
+
     def event_stream():
+        redis_client = get_redis_client()
+        if not redis_client:
+            logging.error("SSE: Redis client not available for pub/sub")
+            yield "data: {\"type\": \"error\", \"message\": \"Redis unavailable\"}\n\n"
+            return
+
+        pubsub = redis_client.pubsub()
         try:
+            pubsub.subscribe('dockflare:state_updates')
+            logging.info("SSE: Subscribed to Redis channel 'dockflare:state_updates'")
+            yield ": connected\n\n"
+
             while True:
-                try:
-                    data = state_update_queue.get(timeout=30)
-                    yield f"data: {data}\n\n"
-                except queue.Empty:
+                message = pubsub.get_message(timeout=30)
+                if message:
+                    if message['type'] == 'message':
+                        data = message['data'].decode('utf-8') if isinstance(message['data'], bytes) else message['data']
+                        logging.info(f"SSE_SEND: Sending event to client: {data[:100]}...")
+                        yield f"data: {data}\n\n"
+                else:
                     yield ": heartbeat\n\n"
         except GeneratorExit:
-            logging.info("State update stream client disconnected.")
-    
-    return Response(event_stream(), mimetype='text/event-stream')
+            logging.info("SSE_DISCONNECT: State update stream client disconnected.")
+        finally:
+            pubsub.unsubscribe('dockflare:state_updates')
+            pubsub.close()
+
+    response = Response(event_stream(), mimetype='text/event-stream')
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['X-Accel-Buffering'] = 'no'
+    return response
 
 @bp.route('/ui/manual-rules/add', methods=['POST'])
 def ui_add_manual_rule_route():
@@ -1238,24 +1305,43 @@ def ui_add_manual_rule_route():
 
     with state_lock:
         if manual_access_group_ids:
-            cf_access_policies = []
+            cf_access_policies_or_ids = []
             desired_session_duration = "24h"
             desired_app_launcher_visible = False
             desired_allowed_idps = None
             desired_auto_redirect = False
-            
+            use_reusable = False
+
             for i, group_id in enumerate(manual_access_group_ids):
                 if group_id in access_groups:
                     group = access_groups[group_id]
-                    if i == 0: 
+                    if i == 0:
                         desired_session_duration = group.get("session_duration", "24h")
                         desired_app_launcher_visible = group.get("app_launcher_visible", False)
                         desired_allowed_idps = group.get("allowed_idps")
                         desired_auto_redirect = group.get("auto_redirect_to_identity", False)
-                    
-                    cf_access_policies.extend(group.get("policies", []))
 
-            if cf_access_policies:
+                    if config.USE_REUSABLE_POLICIES:
+                        use_reusable = True
+                        from app.core import reusable_policies
+
+                        existing_policy_id = group.get("cloudflare_policy_id")
+                        if existing_policy_id:
+                            logging.info(f"Using existing reusable policy ID '{existing_policy_id}' for access group '{group_id}'")
+                            cf_access_policies_or_ids.append(existing_policy_id)
+                        else:
+                            policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id)
+                            if policy_id:
+                                logging.info(f"Synced access group '{group_id}' to reusable policy ID '{policy_id}' for manual rule")
+                                cf_access_policies_or_ids.append(policy_id)
+                            else:
+                                logging.error(f"Failed to sync access group '{group_id}' for manual rule - no policy ID returned")
+                    else:
+                        cf_access_policies_or_ids.extend(group.get("policies", []))
+                else:
+                    logging.warning(f"Access group '{group_id}' selected but not found in state")
+
+            if cf_access_policies_or_ids:
                 access_group_id = manual_access_group_ids
                 access_policy_type = "group"
                 desired_app_name = f"DockFlare-{full_hostname}"
@@ -1265,7 +1351,7 @@ def ui_add_manual_rule_route():
                     app_launcher_visible=desired_app_launcher_visible,
                     allowed_idps_str=json.dumps(desired_allowed_idps, sort_keys=True),
                     auto_redirect_to_identity=desired_auto_redirect,
-                    custom_access_rules_str=json.dumps(cf_access_policies, sort_keys=True),
+                    custom_access_rules_str=json.dumps(cf_access_policies_or_ids, sort_keys=True),
                     group_id=','.join(access_group_id)
                 )
 
@@ -1273,14 +1359,14 @@ def ui_add_manual_rule_route():
                 if existing_app:
                     app_result = update_cloudflare_access_application(
                         existing_app['id'], full_hostname, desired_app_name, desired_session_duration,
-                        desired_app_launcher_visible, [full_hostname], cf_access_policies,
-                        desired_allowed_idps, desired_auto_redirect
+                        desired_app_launcher_visible, [full_hostname], cf_access_policies_or_ids,
+                        desired_allowed_idps, desired_auto_redirect, use_reusable
                     )
                 else:
                     app_result = create_cloudflare_access_application(
                         full_hostname, desired_app_name, desired_session_duration,
-                        desired_app_launcher_visible, [full_hostname], cf_access_policies,
-                        desired_allowed_idps, desired_auto_redirect
+                        desired_app_launcher_visible, [full_hostname], cf_access_policies_or_ids,
+                        desired_allowed_idps, desired_auto_redirect, use_reusable
                     )
 
                 if app_result:
@@ -1289,32 +1375,47 @@ def ui_add_manual_rule_route():
                     cloudflared_agent_state["last_action_status"] = "Error: Failed to create/update Access App for group(s)."
 
         elif manual_access_policy_type and manual_access_policy_type != 'none':
-            cf_access_policies = []
             if manual_access_policy_type == "bypass":
-                cf_access_policies = [{"name": "UI Manual Public Bypass", "decision": "bypass", "include": [{"everyone": {}}]}]
-            elif manual_access_policy_type == "authenticate_email":
-                if not manual_auth_email:
-                    cloudflared_agent_state["last_action_status"] = "Error: Email is required for this policy type."
+                
+                default_bypass_id = "public-default-bypass"
+                if default_bypass_id in access_groups:
+                    default_bypass_group = access_groups[default_bypass_id]
+                    cf_policy_id = default_bypass_group.get("cf_policy_id") or default_bypass_group.get("id")
+
+                    access_group_id = [default_bypass_id]
+                    access_policy_type = "group"
+                    desired_app_name = f"DockFlare-{full_hostname}"
+
+                    access_app_config_hash = generate_access_app_config_hash(
+                        policy_type="group", session_duration="24h",
+                        app_launcher_visible=False,
+                        allowed_idps_str=None,
+                        auto_redirect_to_identity=False,
+                        custom_access_rules_str=json.dumps([cf_policy_id], sort_keys=True),
+                        group_id=default_bypass_id
+                    )
+
+                    existing_app = find_cloudflare_access_application_by_hostname(full_hostname)
+                    if existing_app:
+                        app_result = update_cloudflare_access_application(
+                            existing_app['id'], full_hostname, desired_app_name, "24h",
+                            False, [full_hostname], [cf_policy_id],
+                            None, False, True
+                        )
+                    else:
+                        app_result = create_cloudflare_access_application(
+                            full_hostname, desired_app_name, "24h",
+                            False, [full_hostname], [cf_policy_id],
+                            None, False, True
+                        )
+
+                    if app_result:
+                        access_app_id = app_result.get('id')
+                    else:
+                        cloudflared_agent_state["last_action_status"] = "Error: Failed to create/update Access App with default bypass policy."
+                else:
+                    cloudflared_agent_state["last_action_status"] = "Error: Default bypass policy not found."
                     return redirect(url_for('web.status_page'))
-                cf_access_policies = [
-                    {"name": f"UI Allow Access for {manual_auth_email}", "decision": "allow", "include": [{"email": {"email": manual_auth_email}}]}
-                ]
-                cf_access_policies.append({"name": "UI Deny Fallback", "decision": "deny", "include": [{"everyone": {}}]})
-            
-            existing_app = find_cloudflare_access_application_by_hostname(full_hostname)
-            if existing_app:
-                app_result = update_cloudflare_access_application(
-                    existing_app['id'], full_hostname, f"DockFlare-{full_hostname}", "24h", False, [full_hostname], cf_access_policies, None, False
-                )
-            else:
-                app_result = create_cloudflare_access_application(
-                    full_hostname, f"DockFlare-{full_hostname}", "24h", False, [full_hostname], cf_access_policies, None, False
-                )
-            if app_result:
-                access_app_id = app_result.get('id')
-                access_policy_type = manual_access_policy_type
-            else:
-                cloudflared_agent_state["last_action_status"] = "Error: Failed to create Access App for manual policy."
 
     with state_lock:
         existing_rule = managed_rules.get(key_for_managed_rules)
@@ -1479,11 +1580,12 @@ def ui_edit_manual_rule_route():
 
     try:
         if manual_access_group_ids:
-            cf_access_policies = []
+            cf_access_policies_or_ids = []
             desired_session_duration = "24h"
             desired_app_launcher_visible = False
             desired_allowed_idps = None
             desired_auto_redirect = False
+            use_reusable = False
 
             for i, group_id in enumerate(manual_access_group_ids):
                 if group_id in access_groups:
@@ -1493,9 +1595,28 @@ def ui_edit_manual_rule_route():
                         desired_app_launcher_visible = group.get("app_launcher_visible", False)
                         desired_allowed_idps = group.get("allowed_idps")
                         desired_auto_redirect = group.get("auto_redirect_to_identity", False)
-                    cf_access_policies.extend(group.get("policies", []))
 
-            if cf_access_policies:
+                    if config.USE_REUSABLE_POLICIES:
+                        use_reusable = True
+                        from app.core import reusable_policies
+
+                        existing_policy_id = group.get("cloudflare_policy_id")
+                        if existing_policy_id:
+                            logging.info(f"Using existing reusable policy ID '{existing_policy_id}' for access group '{group_id}' in edit")
+                            cf_access_policies_or_ids.append(existing_policy_id)
+                        else:
+                            policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id)
+                            if policy_id:
+                                logging.info(f"Synced access group '{group_id}' to reusable policy ID '{policy_id}' for manual edit")
+                                cf_access_policies_or_ids.append(policy_id)
+                            else:
+                                logging.error(f"Failed to sync access group '{group_id}' for manual edit - no policy ID returned")
+                    else:
+                        cf_access_policies_or_ids.extend(group.get("policies", []))
+                else:
+                    logging.warning(f"Access group '{group_id}' selected in edit but not found in state")
+
+            if cf_access_policies_or_ids:
                 access_group_id = manual_access_group_ids
                 access_policy_type = "group"
                 desired_app_name = f"DockFlare-{full_hostname}"
@@ -1504,49 +1625,66 @@ def ui_edit_manual_rule_route():
                     app_launcher_visible=desired_app_launcher_visible,
                     allowed_idps_str=json.dumps(desired_allowed_idps, sort_keys=True),
                     auto_redirect_to_identity=desired_auto_redirect,
-                    custom_access_rules_str=json.dumps(cf_access_policies, sort_keys=True),
+                    custom_access_rules_str=json.dumps(cf_access_policies_or_ids, sort_keys=True),
                     group_id=','.join(access_group_id)
                 )
                 existing_app = find_cloudflare_access_application_by_hostname(full_hostname)
                 if existing_app:
                     app_result = update_cloudflare_access_application(
                         existing_app['id'], full_hostname, desired_app_name, desired_session_duration,
-                        desired_app_launcher_visible, [full_hostname], cf_access_policies,
-                        desired_allowed_idps, desired_auto_redirect
+                        desired_app_launcher_visible, [full_hostname], cf_access_policies_or_ids,
+                        desired_allowed_idps, desired_auto_redirect, use_reusable
                     )
                 else:
                     app_result = create_cloudflare_access_application(
                         full_hostname, desired_app_name, desired_session_duration,
-                        desired_app_launcher_visible, [full_hostname], cf_access_policies,
-                        desired_allowed_idps, desired_auto_redirect
+                        desired_app_launcher_visible, [full_hostname], cf_access_policies_or_ids,
+                        desired_allowed_idps, desired_auto_redirect, use_reusable
                     )
                 if app_result:
                     access_app_id = app_result.get('id')
         elif manual_access_policy_type and manual_access_policy_type != 'none':
-            cf_access_policies = []
             if manual_access_policy_type == "bypass":
-                cf_access_policies = [{"name": "UI Manual Public Bypass", "decision": "bypass", "include": [{"everyone": {}}]}]
-            elif manual_access_policy_type == "authenticate_email":
-                if not manual_auth_email:
-                    cloudflared_agent_state["last_action_status"] = "Error: Email required for policy."
-                    return redirect(url_for('web.status_page'))
-                cf_access_policies = [
-                    {"name": f"UI Allow Email {manual_auth_email}", "decision": "allow", "include": [{"email": {"email": manual_auth_email}}]},
-                    {"name": "UI Deny Fallback", "decision": "deny", "include": [{"everyone": {}}]}
-                ]
-            if cf_access_policies:
-                existing_app = find_cloudflare_access_application_by_hostname(full_hostname)
-                if existing_app:
-                    app_result = update_cloudflare_access_application(
-                        existing_app['id'], full_hostname, f"DockFlare-{full_hostname}", "24h", False, [full_hostname], cf_access_policies, None, False
+                # Use the default bypass reusable policy
+                default_bypass_id = "public-default-bypass"
+                if default_bypass_id in access_groups:
+                    default_bypass_group = access_groups[default_bypass_id]
+                    cf_policy_id = default_bypass_group.get("cf_policy_id") or default_bypass_group.get("id")
+
+                    access_group_id = [default_bypass_id]
+                    access_policy_type = "group"
+                    desired_app_name = f"DockFlare-{full_hostname}"
+
+                    access_app_config_hash = generate_access_app_config_hash(
+                        policy_type="group", session_duration="24h",
+                        app_launcher_visible=False,
+                        allowed_idps_str=None,
+                        auto_redirect_to_identity=False,
+                        custom_access_rules_str=json.dumps([cf_policy_id], sort_keys=True),
+                        group_id=default_bypass_id
                     )
+
+                    existing_app = find_cloudflare_access_application_by_hostname(full_hostname)
+                    if existing_app:
+                        app_result = update_cloudflare_access_application(
+                            existing_app['id'], full_hostname, desired_app_name, "24h",
+                            False, [full_hostname], [cf_policy_id],
+                            None, False, True
+                        )
+                    else:
+                        app_result = create_cloudflare_access_application(
+                            full_hostname, desired_app_name, "24h",
+                            False, [full_hostname], [cf_policy_id],
+                            None, False, True
+                        )
+
+                    if app_result:
+                        access_app_id = app_result.get('id')
+                    else:
+                        cloudflared_agent_state["last_action_status"] = "Error: Failed to update Access App with default bypass policy."
                 else:
-                    app_result = create_cloudflare_access_application(
-                        full_hostname, f"DockFlare-{full_hostname}", "24h", False, [full_hostname], cf_access_policies, None, False
-                    )
-                if app_result:
-                    access_app_id = app_result.get('id')
-                    access_policy_type = manual_access_policy_type
+                    cloudflared_agent_state["last_action_status"] = "Error: Default bypass policy not found."
+                    return redirect(url_for('web.status_page'))
     except Exception as e:
         logging.error(f"Error updating access app during manual edit: {e}", exc_info=True)
         cloudflared_agent_state["last_action_status"] = "Error: Failed to update access app."
@@ -1650,10 +1788,12 @@ def ui_delete_manual_rule_route(rule_key_from_url):
 
     return redirect(url_for('web.status_page'))
 
-def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_list=None):
+def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_list=None, idp_list=None, public_mode=False):
+    from app.core.state_manager import get_idp_id_by_name
     policies = []
     email_rules = []
     ip_rules = []
+    idp_rules = []
 
     if email_str and email_str.strip():
         email_parts = [part.strip() for part in email_str.split(',') if part.strip()]
@@ -1663,6 +1803,18 @@ def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_l
             else:
                 email_rules.append({"email": {"email": part}})
 
+    if idp_list:
+        for idp_friendly_name in idp_list:
+            if idp_friendly_name.strip():
+                idp_id = get_idp_id_by_name(idp_friendly_name)
+                if idp_id:
+                    idp_rules.append({"login_method": {"id": idp_id}})
+                else:
+                    logging.warning(f"IdP friendly name '{idp_friendly_name}' not found in state, skipping")
+
+    if idp_rules and not email_rules and not public_mode:
+        raise ValueError("When using Identity Providers, you must specify allowed email addresses to prevent unauthorized access.")
+
     if ip_ranges_str and ip_ranges_str.strip():
         ip_parts = [part.strip() for part in ip_ranges_str.split(',') if part.strip()]
         for ip in ip_parts:
@@ -1671,24 +1823,40 @@ def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_l
     if ip_rules:
         policies.append({"name": "Bypass for defined IPs", "decision": "bypass", "include": ip_rules})
 
-    if email_rules:
-        policies.append({"name": "Allow defined users", "decision": "allow", "include": email_rules})
-
-    if countries_list:
-        country_rules = [{"geo": {"country_code": country.upper()}} for country in countries_list]
-
-        policies.append({
-            "name": "Block selected countries",
-            "decision": "bypass",
-            "include": [{"everyone": {}}],
-            "exclude": country_rules
-        })
-    elif ip_rules or email_rules:
-        
-        policies.append({"name": "Default Deny", "decision": "deny", "include": [{"everyone": {}}]})
+    if public_mode:
+        # PUBLIC MODE: Bypass for everyone except blocked countries
+        if countries_list:
+            blocked_country_rules = [{"geo": {"country_code": country.upper()}} for country in countries_list]
+            policies.append({
+                "name": "Public Access (Bypass) with geo-blocking",
+                "decision": "bypass",
+                "include": [{"everyone": {}}],
+                "exclude": blocked_country_rules
+            })
+        else:
+            # Full public access, no restrictions
+            policies.append({
+                "name": "Public Access (Bypass)",
+                "decision": "bypass",
+                "include": [{"everyone": {}}]
+            })
     else:
-        
-        policies.append({"name": "Default Deny (No rules defined)", "decision": "deny", "include": [{"everyone": {}}]})
+        include_rules = email_rules + idp_rules
+        if include_rules:
+            policy = {
+                "name": "Allow defined users",
+                "decision": "allow",
+                "include": include_rules
+            }
+
+            if countries_list:
+                blocked_country_rules = [{"geo": {"country_code": country.upper()}} for country in countries_list]
+                policy["exclude"] = blocked_country_rules
+
+            policies.append(policy)
+            policies.append({"name": "Default Deny", "decision": "deny", "include": [{"everyone": {}}]})
+        else:
+            policies.append({"name": "Default Deny (No rules defined)", "decision": "deny", "include": [{"everyone": {}}]})
 
     return policies
 
@@ -1706,21 +1874,43 @@ def create_access_group():
         if group_id in access_groups:
             flash(f"Error: Access Group with ID '{group_id}' already exists.", "error")
             return redirect(url_for('web.access_policies_page'))
-        
+
+        public_mode = form.get('public_mode', 'false').lower() == 'true'
+
+        try:
+            policies = _parse_and_build_policy_from_form(
+                form.get('emails', ''),
+                form.get('ip_ranges', ''),
+                request.form.getlist('countries'),
+                request.form.getlist('identity_providers'),
+                public_mode=public_mode
+            )
+        except ValueError as e:
+            flash(f"Error: {str(e)}", "error")
+            return redirect(url_for('web.access_policies_page'))
+
         new_group = {
             "id": group_id,
             "display_name": display_name,
             "session_duration": form.get('session_duration', '24h').strip(),
             "app_launcher_visible": form.get('app_launcher_visible') == 'on',
             "auto_redirect_to_identity": form.get('auto_redirect') == 'on',
-            "policies": _parse_and_build_policy_from_form(
-                form.get('emails', ''),
-                form.get('ip_ranges', ''),
-                request.form.getlist('countries')
-            )
+            "public_mode": public_mode,
+            "policies": policies
         }
         access_groups[group_id] = new_group
         save_state()
+
+        from app import config
+        if config.USE_REUSABLE_POLICIES:
+            from app.core import reusable_policies
+            try:
+                policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id)
+                if policy_id:
+                    logging.info(f"Created reusable policy '{policy_id}' for access group '{group_id}'")
+            except Exception as e:
+                logging.error(f"Failed to sync access group '{group_id}' to reusable policy: {e}", exc_info=True)
+
         publish_state_event('snapshot_refresh')
 
     flash(f"Success: Access Group '{display_name}' created.", "success")
@@ -1740,20 +1930,42 @@ def edit_access_group(group_id):
         return redirect(url_for('web.access_policies_page'))
     
     with state_lock:
+        public_mode = form.get('public_mode', 'false').lower() == 'true'
+
+        try:
+            policies = _parse_and_build_policy_from_form(
+                form.get('emails', ''),
+                form.get('ip_ranges', ''),
+                request.form.getlist('countries'),
+                request.form.getlist('identity_providers'),
+                public_mode=public_mode
+            )
+        except ValueError as e:
+            flash(f"Error: {str(e)}", "error")
+            return redirect(url_for('web.access_policies_page'))
+
         updated_group = {
             "id": group_id,
             "display_name": display_name,
             "session_duration": form.get('session_duration', '24h').strip(),
             "app_launcher_visible": form.get('app_launcher_visible') == 'on',
             "auto_redirect_to_identity": form.get('auto_redirect') == 'on',
-            "policies": _parse_and_build_policy_from_form(
-                form.get('emails', ''),
-                form.get('ip_ranges', ''),
-                request.form.getlist('countries')
-            )
+            "public_mode": public_mode,
+            "policies": policies
         }
         access_groups[group_id] = updated_group
         save_state()
+
+        from app import config
+        if config.USE_REUSABLE_POLICIES:
+            from app.core import reusable_policies
+            try:
+                policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id)
+                if policy_id:
+                    logging.info(f"Updated reusable policy '{policy_id}' for access group '{group_id}'")
+            except Exception as e:
+                logging.error(f"Failed to sync updated access group '{group_id}' to reusable policy: {e}", exc_info=True)
+
         publish_state_event('snapshot_refresh')
 
     flash(f"Success: Access Group '{display_name}' updated. Triggering reconciliation.", "success")
@@ -1767,6 +1979,11 @@ def delete_access_group(group_id):
             flash(f"Error: Access Group with ID '{group_id}' not found.", "error")
             return redirect(url_for('web.access_policies_page'))
 
+        # Check if this is a system policy that cannot be deleted
+        if access_groups[group_id].get('system_policy') or not access_groups[group_id].get('deletable', True):
+            flash(f"Error: Cannot delete system policy '{access_groups[group_id]['display_name']}'.", "error")
+            return redirect(url_for('web.access_policies_page'))
+
         is_in_use = any(
             (isinstance(rule.get('access_group_id'), list) and group_id in rule.get('access_group_id')) or \
             (rule.get('access_group_id') == group_id)
@@ -1778,11 +1995,132 @@ def delete_access_group(group_id):
             return redirect(url_for('web.access_policies_page'))
 
         display_name = access_groups[group_id]['display_name']
-        del access_groups[group_id]
-        save_state()
+
+        from app import config
+        if config.USE_REUSABLE_POLICIES:
+            from app.core import reusable_policies
+            try:
+                reusable_policies.delete_access_group_and_policy(group_id)
+                logging.info(f"Deleted access group '{group_id}' and associated Cloudflare policy")
+            except Exception as e:
+                logging.error(f"Error deleting Cloudflare policy for '{group_id}': {e}", exc_info=True)
+                del access_groups[group_id]
+                save_state()
+        else:
+            del access_groups[group_id]
+            save_state()
+
         publish_state_event('snapshot_refresh')
 
     flash(f"Success: Access Group '{display_name}' has been deleted.", "success")
+    return redirect(url_for('web.access_policies_page'))
+
+@bp.route('/ui/zone-policies/create', methods=['POST'])
+def create_zone_default_policy():
+    """Creates a wildcard *.zone.com Access Application using a selected access group."""
+    zone_name = request.form.get('zone_name', '').strip()
+    zone_id = request.form.get('zone_id', '').strip()
+    access_group_id = request.form.get('access_group_id', '').strip()
+
+    if not zone_name or not access_group_id:
+        flash("Error: Zone name and access policy are required.", "error")
+        return redirect(url_for('web.access_policies_page'))
+
+    with state_lock:
+        if access_group_id not in access_groups:
+            flash(f"Error: Access policy '{access_group_id}' not found.", "error")
+            return redirect(url_for('web.access_policies_page'))
+
+        group = access_groups[access_group_id]
+
+    wildcard_hostname = f"*.{zone_name}"
+
+    try:
+        # Check if it already exists
+        existing = find_cloudflare_access_application_by_hostname(wildcard_hostname)
+        if existing:
+            flash(f"A wildcard policy for '{wildcard_hostname}' already exists.", "warning")
+            return redirect(url_for('web.access_policies_page'))
+
+        # Get the Cloudflare policy ID
+        from app.core import reusable_policies
+        cf_policy_id = group.get("cf_policy_id") or group.get("id")
+
+        # Sync to Cloudflare if needed
+        if not cf_policy_id or cf_policy_id == access_group_id:
+            policy_id = reusable_policies.sync_access_group_to_reusable_policy(access_group_id)
+            if policy_id:
+                cf_policy_id = policy_id
+                with state_lock:
+                    access_groups[access_group_id]["cf_policy_id"] = policy_id
+                    access_groups[access_group_id]["id"] = policy_id
+                    save_state()
+
+        # Create the Access Application
+        app_name = f"Zone Default: {wildcard_hostname}"
+        session_duration = group.get("session_duration", "24h")
+        app_launcher_visible = group.get("app_launcher_visible", False)
+        auto_redirect = group.get("auto_redirect_to_identity", False)
+        allowed_idps = group.get("allowed_idps")
+
+        app_result = create_cloudflare_access_application(
+            wildcard_hostname, app_name, session_duration,
+            app_launcher_visible, [wildcard_hostname], [cf_policy_id],
+            allowed_idps, auto_redirect, True
+        )
+
+        if app_result:
+            flash(f"Success: Created zone default policy for '{wildcard_hostname}'.", "success")
+            logging.info(f"Created zone default policy for {wildcard_hostname} with Access App ID {app_result.get('id')}")
+            
+            try:
+                from app.core.cache import get_redis_client
+                redis_client = get_redis_client()
+                if redis_client:
+                    redis_client.delete("zone_policies_cache")
+                    redis_client.delete(f"tld_policy_check:{zone_name}")
+                    logging.info("Invalidated zone policies and TLD check caches after creating zone policy")
+            except Exception as cache_err:
+                logging.warning(f"Failed to invalidate caches: {cache_err}")
+        else:
+            flash(f"Error: Failed to create Access Application for '{wildcard_hostname}'.", "error")
+
+    except Exception as e:
+        logging.error(f"Error creating zone default policy for {wildcard_hostname}: {e}", exc_info=True)
+        flash(f"Error: Failed to create zone policy. {str(e)}", "error")
+
+    return redirect(url_for('web.access_policies_page'))
+
+@bp.route('/ui/access-groups/sync-from-cloudflare', methods=['POST'])
+def sync_access_groups_from_cloudflare():
+    from app import config
+    if not config.USE_REUSABLE_POLICIES:
+        flash("Error: Reusable policies feature is not enabled.", "error")
+        return redirect(url_for('web.access_policies_page'))
+
+    try:
+        from app.core import reusable_policies
+
+        # Get sync_all parameter from form (defaults to false for backward compatibility)
+        sync_all = request.form.get('sync_all', 'false').lower() in ['true', '1', 't', 'yes']
+
+        result = reusable_policies.import_cloudflare_reusable_policies(sync_all=sync_all)
+
+        imported = result.get("imported", 0)
+        updated = result.get("updated", 0)
+        skipped = result.get("skipped", 0)
+
+        if imported > 0 or updated > 0:
+            publish_state_event('snapshot_refresh')
+            mode_text = "all policies" if sync_all else "DockFlare- prefixed policies"
+            flash(f"Success: Synced {imported} new and {updated} updated access groups from Cloudflare ({mode_text}). {skipped} skipped.", "success")
+        else:
+            flash(f"No new access groups to import. {skipped} existing policies found.", "info")
+
+    except Exception as e:
+        logging.error(f"Error syncing access groups from Cloudflare: {e}", exc_info=True)
+        flash(f"Error: Failed to sync access groups from Cloudflare. Check logs for details.", "error")
+
     return redirect(url_for('web.access_policies_page'))
 
 @bp.route('/backup/download')

@@ -116,8 +116,12 @@ def help_page(page='Home.md'):
     title_match = re.search(r'^#\s+(.*)', md_content, re.MULTILINE)
     title = title_match.group(1) if title_match else page.replace('.md', '').replace('-', ' ')
 
-    return render_template('help.html', 
-                           title=title, 
-                           content=html_content, 
+    cf_account_id = current_app.config.get('CF_ACCOUNT_ID', '')
+    if cf_account_id:
+        html_content = html_content.replace('{{ACCOUNT_ID}}', cf_account_id)
+
+    return render_template('help.html',
+                           title=title,
+                           content=html_content,
                            navigation=navigation,
                            current_page=page)

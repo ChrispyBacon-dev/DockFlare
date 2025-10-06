@@ -118,12 +118,34 @@ def process_container_start(container_obj):
 
             default_access_groups = get_label(labels, "access.groups")
             default_access_group = get_label(labels, "access.group") if not default_access_groups else None
+            default_access_policy_type_label = get_label(labels, "access.policy")
+
+            if default_access_policy_type_label == "bypass" and not default_access_group and not default_access_groups:
+                logging.info(f"DOCKER_HANDLER: Legacy label 'dockflare.access.policy=bypass' detected for {container_name_val}. Migrating to 'dockflare.access.group=public-default-bypass'.")
+                default_access_group = ["public-default-bypass"]
+                default_access_policy_type_label = None
+            elif default_access_group and not default_access_groups:
+                if isinstance(default_access_group, str) and default_access_group == "bypass":
+                    logging.info(f"DOCKER_HANDLER: Legacy group 'bypass' detected for {container_name_val}. Migrating to 'public-default-bypass'.")
+                    default_access_group = "public-default-bypass"
+                elif isinstance(default_access_group, list) and "bypass" in default_access_group:
+                    logging.info(f"DOCKER_HANDLER: Legacy group 'bypass' detected in list for {container_name_val}. Migrating to 'public-default-bypass'.")
+                    default_access_group = ["public-default-bypass" if g == "bypass" else g for g in default_access_group]
+            elif default_access_policy_type_label == "authenticate" and not default_access_group and not default_access_groups:
+                from app.core.cloudflare_api import get_cloudflare_account_email
+                account_email = get_cloudflare_account_email()
+                if account_email:
+                    logging.info(f"DOCKER_HANDLER: Legacy label 'dockflare.access.policy=authenticate' detected for {container_name_val}. Migrating to 'dockflare.access.group=authenticated-default' (restricted to {account_email}).")
+                    default_access_group = ["authenticated-default"]
+                    default_access_policy_type_label = None
+                else:
+                    logging.warning(f"DOCKER_HANDLER: Cannot migrate 'dockflare.access.policy=authenticate' for {container_name_val}. Cloudflare account email not available. Skipping access policy creation. Use 'dockflare.access.group=<group>' instead.")
+                    default_access_policy_type_label = None
+
             if default_access_groups:
                 default_access_group = [gid.strip() for gid in default_access_groups.split(',')]
             elif default_access_group:
-                default_access_group = [default_access_group.strip()]
-
-            default_access_policy_type_label = get_label(labels, "access.policy")
+                default_access_group = [default_access_group.strip()] if isinstance(default_access_group, str) else default_access_group
             default_access_app_name_label = get_label(labels, "access.name")
             default_access_session_duration_label = get_label(labels, "access.session_duration", "24h")
             default_access_app_launcher_visible_label = get_label(labels, "access.app_launcher_visible", "false").lower() in ["true", "1", "t", "yes"]
@@ -175,14 +197,32 @@ def process_container_start(container_obj):
 
                 access_groups_indexed = get_label(labels, f"{index}.access.groups")
                 access_group_indexed = get_label(labels, f"{index}.access.group") if not access_groups_indexed else None
+                access_policy_type_indexed = get_label(labels, f"{index}.access.policy", default_access_policy_type_label)
+
+                if access_policy_type_indexed == "bypass" and not access_group_indexed and not access_groups_indexed:
+                    logging.info(f"DOCKER_HANDLER: Legacy label 'dockflare.{index}.access.policy=bypass' detected for {container_name_val}. Migrating to 'dockflare.{index}.access.group=public-default-bypass'.")
+                    access_group_indexed = ["public-default-bypass"]
+                    access_policy_type_indexed = None
+                elif access_group_indexed and "bypass" in access_group_indexed and not access_groups_indexed:
+                    logging.info(f"DOCKER_HANDLER: Legacy group 'bypass' detected in index {index} for {container_name_val}. Migrating to 'public-default-bypass'.")
+                    access_group_indexed = ["public-default-bypass" if g == "bypass" else g for g in access_group_indexed]
+                elif access_policy_type_indexed == "authenticate" and not access_group_indexed and not access_groups_indexed:
+                    from app.core.cloudflare_api import get_cloudflare_account_email
+                    account_email = get_cloudflare_account_email()
+                    if account_email:
+                        logging.info(f"DOCKER_HANDLER: Legacy label 'dockflare.{index}.access.policy=authenticate' detected for {container_name_val}. Migrating to 'dockflare.{index}.access.group=authenticated-default' (restricted to {account_email}).")
+                        access_group_indexed = ["authenticated-default"]
+                        access_policy_type_indexed = None
+                    else:
+                        logging.warning(f"DOCKER_HANDLER: Cannot migrate 'dockflare.{index}.access.policy=authenticate' for {container_name_val}. Cloudflare account email not available. Skipping access policy creation. Use 'dockflare.{index}.access.group=<group>' instead.")
+                        access_policy_type_indexed = None
+
                 if access_groups_indexed:
                     access_group_indexed = [gid.strip() for gid in access_groups_indexed.split(',')]
                 elif access_group_indexed:
-                    access_group_indexed = [access_group_indexed.strip()]
+                    access_group_indexed = [access_group_indexed.strip()] if isinstance(access_group_indexed, str) else access_group_indexed
                 else:
                     access_group_indexed = default_access_group
-
-                access_policy_type_indexed = get_label(labels, f"{index}.access.policy", default_access_policy_type_label)
                 access_app_name_indexed = get_label(labels, f"{index}.access.name", default_access_app_name_label)
                 access_session_duration_indexed = get_label(labels, f"{index}.access.session_duration", default_access_session_duration_label)
                 acc_launcher_val_idx = get_label(labels, f"{index}.access.app_launcher_visible", str(default_access_app_launcher_visible_label).lower())
@@ -217,6 +257,8 @@ def process_container_start(container_obj):
             
             state_changed_locally_for_this_container = False
             needs_tunnel_config_update_for_this_container = False
+            policy_jobs_map = {}
+            dns_targets = {}
             master_tunnel_id = tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
             master_tunnel_name = tunnel_state.get("name")
 
@@ -320,7 +362,7 @@ def process_container_start(container_obj):
                             needs_tunnel_config_update_for_this_container = True
 
                         if original_existing_rule_for_comparison != existing_rule:
-                             state_changed_locally_for_this_container = True
+                            state_changed_locally_for_this_container = True
                         logging.debug(f"DOCKER_HANDLER_UPD_RULE_POST: For {rule_key}. Rule: {existing_rule}. state_changed: {state_changed_locally_for_this_container}, tunnel_update: {needs_tunnel_config_update_for_this_container}")
 
                     else:
@@ -351,48 +393,50 @@ def process_container_start(container_obj):
                         state_changed_locally_for_this_container = True
                         needs_tunnel_config_update_for_this_container = True
                         logging.debug(f"DOCKER_HANDLER_NEW_RULE_POST: Added {rule_key}. Rule: {existing_rule}")
-                    
-                    if existing_rule:
-                        if existing_rule.get("access_policy_ui_override", False):
-                            logging.info(f"DOCKER_HANDLER: Access policy for {rule_key} is UI-managed. Skipping.")
-                        else:
-                            if handle_access_policy_from_labels(config_item, existing_rule, save_state):
-                                state_changed_locally_for_this_container = True
-                                logging.debug(f"DOCKER_HANDLER_ACCESS_MOD: Access policy for {rule_key} changed. state_changed: {state_changed_locally_for_this_container}.")
+
+                    dns_targets[hostname] = {
+                        "zone_id": target_zone_id,
+                        "zone_name": config_item.get("zone_name")
+                    }
+
+                    if existing_rule.get("access_policy_ui_override", False):
+                        logging.info(f"DOCKER_HANDLER: Access policy for {rule_key} is UI-managed. Skipping.")
+                    else:
+                        policy_jobs_map[rule_key] = copy.deepcopy(config_item)
                 
-            logging.debug(f"DOCKER_HANDLER_END_CONTAINER_LOOP: For {container_name_val}. state_changed={state_changed_locally_for_this_container}, tunnel_update={needs_tunnel_config_update_for_this_container}.")
+            policy_jobs = list(policy_jobs_map.items())
+
+            policy_state_changed = False
+            for rule_key, policy_payload in policy_jobs:
+                if handle_access_policy_from_labels(rule_key, copy.deepcopy(policy_payload)):
+                    policy_state_changed = True
+
+            if policy_state_changed:
+                state_changed_locally_for_this_container = True
+
+            logging.info(f"DOCKER_HANDLER_END_CONTAINER_LOOP: For {container_name_val}. state_changed={state_changed_locally_for_this_container}, tunnel_update={needs_tunnel_config_update_for_this_container}.")
 
             if state_changed_locally_for_this_container:
-                logging.debug(f"DOCKER_HANDLER_PRE_SAVE: For container {container_name_val}.")
                 save_state()
                 publish_state_event('snapshot_refresh')
-            else:
-                logging.info(f"DOCKER_HANDLER: No local state changes for {container_name_val}. Skipping save_state().")
 
             if needs_tunnel_config_update_for_this_container:
                 logging.info(f"DOCKER_HANDLER: Triggering tunnel config update for {container_name_val}.")
                 if update_cloudflare_config():
-                    logging.info(f"DOCKER_HANDLER: Tunnel config update successful for container {container_name_val}.")
+                    logging.info(f"DOCKER_HANDLER: Tunnel config update successful for {container_name_val}.")
                     effective_tunnel_id = tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
                     if effective_tunnel_id:
-                        hostnames_for_dns_check = set(item["hostname"] for item in hostnames_to_process)
-                        for hostname_dns in hostnames_for_dns_check:
-                            config_item_dns = next((item for item in hostnames_to_process if item["hostname"] == hostname_dns), None)
-                            if not config_item_dns:
-                                continue
-
-                            zone_name_dns_item = config_item_dns.get("zone_name")
-                            target_zone_id_for_dns_item = None
-                            if zone_name_dns_item:
+                        for hostname_dns, dns_details in dns_targets.items():
+                            target_zone_id_for_dns_item = dns_details.get("zone_id")
+                            zone_name_dns_item = dns_details.get("zone_name")
+                            if not target_zone_id_for_dns_item and zone_name_dns_item:
                                 target_zone_id_for_dns_item = get_zone_id_from_name(zone_name_dns_item)
-                            if not target_zone_id_for_dns_item and config_item_dns.get('hostname'):
-                                detected_zone_id_dns, detected_zone_name_dns = _detect_zone_for_hostname(config_item_dns.get('hostname'))
+                            if not target_zone_id_for_dns_item:
+                                detected_zone_id_dns, detected_zone_name_dns = _detect_zone_for_hostname(hostname_dns)
                                 if detected_zone_id_dns:
                                     target_zone_id_for_dns_item = detected_zone_id_dns
-                                    if detected_zone_name_dns and not zone_name_dns_item:
-                                        config_item_dns["zone_name"] = detected_zone_name_dns
-                            if not target_zone_id_for_dns_item:
-                                target_zone_id_for_dns_item = existing_rule.get("zone_id") if existing_rule else None
+                                    if not zone_name_dns_item and detected_zone_name_dns:
+                                        dns_targets[hostname_dns]["zone_name"] = detected_zone_name_dns
                             if not target_zone_id_for_dns_item and current_app.config.get('CF_ZONE_ID'):
                                 target_zone_id_for_dns_item = current_app.config.get('CF_ZONE_ID')
                             if target_zone_id_for_dns_item:
@@ -409,6 +453,7 @@ def process_container_start(container_obj):
                         logging.error(f"DOCKER_HANDLER: Missing effective Tunnel ID - cannot manage DNS records for {container_name_val}.")
                 else:
                     logging.error(f"DOCKER_HANDLER: Failed to update Cloudflare tunnel config for {container_name_val}. DNS records not managed.")
+
 
         except NotFound:
             logging.warning(f"DOCKER_HANDLER: Container {container_name_val} ({container_id_val[:12] if container_id_val else 'UnknownID'}) not found.")

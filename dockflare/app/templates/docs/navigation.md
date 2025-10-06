@@ -15,10 +15,12 @@ This documentation provides comprehensive information for DockFlare. Whether you
     *   [How DockFlare Works](How-DockFlare-Works.md)
     *   [DockFlare Agent & Multi-Server Architecture](Multi-Server-Agent.md)
     *   [Access Policy Best Practices](Access-Policy-Best-Practices.md)
+    *   [Zone Default Policies](Zone-Default-Policies.md)
     *   [Internal vs External `cloudflared`](Internal-vs-External-cloudflared.md)
     *   [State-Persistence](State-Persistence.md)
 *   **Configuration**
     *   [Container Labels](Container-Labels.md)
+    *   [Identity Providers](Identity-Providers.md)
     *   [OAuth Provider Setup](OAuth-Provider-Setup.md)
 *   **Usage Guide**
     *   [Basic Usage (Single Domain)](Basic-Usage-Single-Domain.md)

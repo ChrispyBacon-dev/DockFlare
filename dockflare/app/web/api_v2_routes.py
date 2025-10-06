@@ -27,9 +27,10 @@ from flask_login import login_required
 
 from app import config, docker_client, tunnel_state, cloudflared_agent_state, publish_state_event
 from app.core.state_manager import (
-    managed_rules, state_lock, save_state,
+    managed_rules, access_groups, state_lock, save_state,
     add_agent, get_agent, update_agent, list_agents, remove_agent, add_agent_key, revoke_agent_key, find_agent_id_by_key, list_agent_keys, get_agent_key_info,
-    get_services_snapshot, cleanup_expired_revoked_keys, get_revoked_keys_summary
+    get_services_snapshot, cleanup_expired_revoked_keys, get_revoked_keys_summary,
+    save_identity_provider, get_identity_provider, delete_identity_provider, list_identity_providers, get_idp_by_cloudflare_id, get_idp_id_by_name
 )
 from app.core import agent_key_store
 from app.core.tunnel_manager import (
@@ -61,21 +62,31 @@ from app.core.access_manager import (
 from app.core.reconciler import reconcile_state_threaded
 from app.core.docker_handler import is_valid_hostname, is_valid_service
 from app.core.utils import get_rule_key, get_label
-
+#----------------------------------------------------------!
+# UI endpoints are protected by session auth               !
+#----------------------------------------------------------!
 api_v2_bp = Blueprint('api_v2', __name__, url_prefix='/api/v2')
-
+# Nicht vergessen - This is important when adding a new agent endpoint don't forget to update in order to allow as by default all agent endpoints are protected by master api key auth
 _AGENT_ENDPOINT_ALLOWLIST = {
     'api_v2.agents_register',
     'api_v2.agents_get_commands',
     'api_v2.agents_post_events',
 }
-
+# Nicht vergessenn - This is important when adding a new UI endpoint don't forget to update in order to allow as by default all UI endpoints are protected by session auth
 _UI_ENDPOINT_ALLOWLIST = {
     'api_v2.manage_auth_settings',
     'api_v2.manage_auth_providers',
     'api_v2.manage_auth_provider',
     'api_v2.manage_auth_users',
     'api_v2.manage_auth_user',
+    'api_v2.api_get_idp_types',
+    'api_v2.api_list_idps',
+    'api_v2.api_sync_idps',
+    'api_v2.api_create_idp',
+    'api_v2.api_get_idp',
+    'api_v2.api_update_idp',
+    'api_v2.api_delete_idp',
+    'api_v2.get_zone_policies_api',
 }
 
 
@@ -89,8 +100,7 @@ def _enforce_master_api_key():
 
     if endpoint in _AGENT_ENDPOINT_ALLOWLIST:
         return
-
-    # For UI endpoints, rely on Flask-Login's session auth
+    
     if endpoint in _UI_ENDPOINT_ALLOWLIST:
         return
 
@@ -153,7 +163,6 @@ def _ensure_agent_api_key(agent_id, agent_record, token):
 def get_effective_tunnel_id():
     return tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
 
-
 @api_v2_bp.route('/services', methods=['GET'])
 def list_services():
     snapshot = get_services_snapshot()
@@ -196,59 +205,71 @@ def get_overview_data():
         logging.debug(f"Could not build zone lookup map: {zone_list_error}")
 
     with state_lock:
-        state_changed_during_serialization = False
-        for hostname_key, rule_value in managed_rules.items():
-            serialized_rule = serialize_rule(rule_value)
-            tunnel_id_value = serialized_rule.get("tunnel_id")
-            if not tunnel_id_value and rule_value.get("source") == "manual":
-                fallback_tunnel_id = get_effective_tunnel_id()
-                if fallback_tunnel_id:
-                    tunnel_id_value = fallback_tunnel_id
-                    serialized_rule["tunnel_id"] = fallback_tunnel_id
-                    rule_value["tunnel_id"] = fallback_tunnel_id
-                    state_changed_during_serialization = True
-            if tunnel_id_value and (not serialized_rule.get("tunnel_name") or serialized_rule.get("tunnel_name") in (None, "", "N/A")):
-                tunnel_name_lookup = tunnel_names_map.get(tunnel_id_value)
-                if tunnel_name_lookup:
-                    serialized_rule["tunnel_name"] = tunnel_name_lookup
-                elif tunnel_id_value == (tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID):
-                    fallback_name = tunnel_state.get("name")
-                    if fallback_name:
-                        serialized_rule["tunnel_name"] = fallback_name
-                if serialized_rule.get("tunnel_name") and rule_value.get("tunnel_name") != serialized_rule.get("tunnel_name"):
-                    rule_value["tunnel_name"] = serialized_rule["tunnel_name"]
-                    state_changed_during_serialization = True
-            zone_id_value = serialized_rule.get("zone_id")
-            if zone_id_value and not serialized_rule.get("zone_name"):
-                zone_name_lookup = zone_lookup_map.get(zone_id_value)
-                if zone_name_lookup:
-                    serialized_rule["zone_name"] = zone_name_lookup
-                    if rule_value.get("zone_name") != zone_name_lookup:
-                        rule_value["zone_name"] = zone_name_lookup
-                        state_changed_during_serialization = True
-            rules_for_api[hostname_key] = serialized_rule
-        
+        rules_snapshot = {hostname_key: rule_value.copy() for hostname_key, rule_value in managed_rules.items()}
         api_tunnel_state = tunnel_state.copy()
         api_agent_state = cloudflared_agent_state.copy()
 
-        initialization_status_api = {
-            "complete": api_tunnel_state.get("id") is not None or config.EXTERNAL_TUNNEL_ID,
-            "in_progress": not (api_tunnel_state.get("id") or config.EXTERNAL_TUNNEL_ID) and \
-                            api_tunnel_state.get("status_message", "").lower().startswith("init")
-        }
+    initialization_status_api = {
+        "complete": api_tunnel_state.get("id") is not None or config.EXTERNAL_TUNNEL_ID,
+        "in_progress": not (api_tunnel_state.get("id") or config.EXTERNAL_TUNNEL_ID) and \
+                        api_tunnel_state.get("status_message", "").lower().startswith("init")
+    }
 
-        cf_zone_id = current_app.config.get('CF_ZONE_ID')
-        if cf_zone_id and docker_client:
-            zone_details = get_zone_details_by_id(cf_zone_id)
-            if zone_details and zone_details.get("name"):
-                relevant_zone_name_for_tld_policy_api = zone_details.get("name")
-            
-            if relevant_zone_name_for_tld_policy_api:
-                tld_policy_exists_val_api = check_for_tld_access_policy(relevant_zone_name_for_tld_policy_api)
-                if not tld_policy_exists_val_api:
-                    account_email_for_tld_api = get_cloudflare_account_email()
-        if state_changed_during_serialization:
+    state_updates = {}
+    effective_tunnel_id_cache = None
+
+    for hostname_key, rule_snapshot in rules_snapshot.items():
+        serialized_rule = serialize_rule(rule_snapshot)
+        tunnel_id_value = serialized_rule.get("tunnel_id")
+        if not tunnel_id_value and rule_snapshot.get("source") == "manual":
+            if effective_tunnel_id_cache is None:
+                effective_tunnel_id_cache = get_effective_tunnel_id()
+            if effective_tunnel_id_cache:
+                tunnel_id_value = effective_tunnel_id_cache
+                serialized_rule["tunnel_id"] = effective_tunnel_id_cache
+                state_updates.setdefault(hostname_key, {})["tunnel_id"] = effective_tunnel_id_cache
+        if tunnel_id_value:
+            tunnel_name_value = serialized_rule.get("tunnel_name")
+            if not tunnel_name_value or tunnel_name_value in ("", "N/A"):
+                tunnel_name_lookup = tunnel_names_map.get(tunnel_id_value)
+                if not tunnel_name_lookup:
+                    master_tunnel_id = api_tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
+                    if tunnel_id_value == master_tunnel_id:
+                        tunnel_name_lookup = api_tunnel_state.get("name")
+                if tunnel_name_lookup:
+                    serialized_rule["tunnel_name"] = tunnel_name_lookup
+                    state_updates.setdefault(hostname_key, {})["tunnel_name"] = tunnel_name_lookup
+        zone_id_value = serialized_rule.get("zone_id")
+        if zone_id_value and not serialized_rule.get("zone_name"):
+            zone_name_lookup = zone_lookup_map.get(zone_id_value)
+            if zone_name_lookup:
+                serialized_rule["zone_name"] = zone_name_lookup
+                state_updates.setdefault(hostname_key, {})["zone_name"] = zone_name_lookup
+        rules_for_api[hostname_key] = serialized_rule
+
+    if state_updates:
+        state_changed = False
+        with state_lock:
+            for hostname_key, updates in state_updates.items():
+                rule_ref = managed_rules.get(hostname_key)
+                if not rule_ref:
+                    continue
+                for field, value in updates.items():
+                    if rule_ref.get(field) != value:
+                        rule_ref[field] = value
+                        state_changed = True
+        if state_changed:
             save_state()
+
+    cf_zone_id = current_app.config.get('CF_ZONE_ID')
+    if cf_zone_id and docker_client:
+        zone_details = get_zone_details_by_id(cf_zone_id)
+        if zone_details and zone_details.get("name"):
+            relevant_zone_name_for_tld_policy_api = zone_details.get("name")
+        if relevant_zone_name_for_tld_policy_api:
+            tld_policy_exists_val_api = check_for_tld_access_policy(relevant_zone_name_for_tld_policy_api)
+            if not tld_policy_exists_val_api:
+                account_email_for_tld_api = get_cloudflare_account_email()
 
     agents_list_api = list_agents()
     agent_keys_list_api = list_agent_keys()
@@ -283,20 +304,6 @@ def get_overview_data():
                 assigned_tid = processed.get("assigned_tunnel_id")
                 if assigned_tid:
                     ts = tunnel_status_map.get(assigned_tid)
-                    if not ts:
-                        try:
-                            account_id = current_app.config.get('CF_ACCOUNT_ID')
-                            if account_id:
-                                detail = cf_api_request("GET", f"/accounts/{account_id}/cfd_tunnel/{assigned_tid}")
-                                if detail and detail.get("result"):
-                                    res = detail["result"]
-                                    ts = {
-                                        "status": res.get("status") or "unknown",
-                                        "name": res.get("name")
-                                    }
-                                    tunnel_status_map[assigned_tid] = ts
-                        except Exception as _fetch_e:
-                            logging.debug(f"Could not fetch tunnel detail for {assigned_tid}: {_fetch_e}")
                     if ts:
                         existing_ts = processed.get("tunnel_status") or {}
                         if existing_ts.get("version") and "version" not in ts:
@@ -350,6 +357,54 @@ def list_zones_api():
     force_refresh = request.args.get('refresh') == '1'
     zones = list_account_zones(force_refresh=force_refresh)
     return jsonify(zones)
+
+@api_v2_bp.route('/zone-policies', methods=['GET'])
+@login_required
+def get_zone_policies_api():
+    from app.core.access_manager import check_for_tld_access_policy
+    from app.core.cache import get_redis_client
+    import json
+    
+    redis_client = get_redis_client()
+    cache_key = "zone_policies_cache"
+    cache_ttl = 300  # 5 minutes
+
+    if redis_client:
+        try:
+            cached_data = redis_client.get(cache_key)
+            if cached_data:
+                logging.info("Returning zone policies from Redis cache")
+                return jsonify(json.loads(cached_data))
+        except Exception as e:
+            logging.warning(f"Failed to read from Redis cache: {e}")
+
+    zone_policies = []
+    try:
+        zones = list_account_zones()
+        for zone in zones or []:
+            zone_name = zone.get('name')
+            if zone_name:
+                has_policy = check_for_tld_access_policy(zone_name)
+                zone_policies.append({
+                    'zone_name': zone_name,
+                    'zone_id': zone.get('id'),
+                    'has_default_policy': has_policy
+                })
+
+        response_data = {"success": True, "zone_policies": zone_policies}
+
+        # Cache the result
+        if redis_client:
+            try:
+                redis_client.setex(cache_key, cache_ttl, json.dumps(response_data))
+                logging.info(f"Cached zone policies in Redis (TTL: {cache_ttl}s)")
+            except Exception as e:
+                logging.warning(f"Failed to write to Redis cache: {e}")
+
+        return jsonify(response_data)
+    except Exception as e:
+        logging.error(f"Error fetching zone default policies: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
 
 def _auto_detect_zone_match(hostname, zones):
     if not hostname or not zones:
@@ -463,11 +518,11 @@ def create_manual_rule_api():
     if access_groups_input is None:
         access_groups_input = data.get('access_group_id')
     if isinstance(access_groups_input, str):
-        access_groups = [access_groups_input.strip()] if access_groups_input.strip() else []
+        access_group_ids_list = [access_groups_input.strip()] if access_groups_input.strip() else []
     elif isinstance(access_groups_input, list):
-        access_groups = [str(item).strip() for item in access_groups_input if str(item).strip()]
+        access_group_ids_list = [str(item).strip() for item in access_groups_input if str(item).strip()]
     else:
-        access_groups = []
+        access_group_ids_list = []
     state_changed = False
     previous_tunnel_id = None
     master_tunnel_id = get_effective_tunnel_id()
@@ -486,7 +541,7 @@ def create_manual_rule_api():
                 "zone_name": zone_name,
                 "tunnel_id": tunnel_id,
                 "tunnel_name": tunnel_name,
-                "access_group_id": access_groups or None
+                "access_group_id": access_group_ids_list or None
             }
             for key, val in new_values.items():
                 if existing.get(key) != val:
@@ -513,12 +568,108 @@ def create_manual_rule_api():
                 "access_policy_ui_override": False,
                 "rule_ui_override": False,
                 "source": "manual",
-                "access_group_id": access_groups or None,
+                "access_group_id": access_group_ids_list or None,
                 "tunnel_id": tunnel_id,
                 "tunnel_name": tunnel_name
             }
             save_state()
             state_changed = True
+
+    if access_group_ids_list:
+        from app import config
+        rule = managed_rules.get(rule_key)
+        if rule:
+            use_reusable = False
+            cf_access_policies_or_ids = []
+            session_duration = "24h"
+            app_launcher_visible = False
+            auto_redirect_to_identity = False
+
+            if config.USE_REUSABLE_POLICIES:
+                use_reusable = True
+                from app.core import reusable_policies
+
+                for group_id in access_group_ids_list:
+                    if group_id in access_groups:
+                        group = access_groups[group_id]
+                        existing_policy_id = group.get("cloudflare_policy_id")
+                        if existing_policy_id:
+                            logging.info(f"API: Using existing reusable policy ID '{existing_policy_id}' for access group '{group_id}'")
+                            cf_access_policies_or_ids.append(existing_policy_id)
+                        else:
+                            policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id)
+                            if policy_id:
+                                logging.info(f"API: Synced access group '{group_id}' to reusable policy ID '{policy_id}' for manual rule")
+                                cf_access_policies_or_ids.append(policy_id)
+                            else:
+                                logging.error(f"API: Failed to sync access group '{group_id}' for manual rule - no policy ID returned")
+
+                        group_session = group.get("session_duration", "24h")
+                        if group_session:
+                            session_duration = group_session
+                        app_launcher_visible = group.get("app_launcher_visible", False)
+                        auto_redirect_to_identity = group.get("auto_redirect_to_identity", False)
+                    else:
+                        logging.warning(f"API: Access group '{group_id}' selected but not found in state")
+            else:
+                for group_id in access_group_ids_list:
+                    if group_id in access_groups:
+                        group = access_groups[group_id]
+                        cf_access_policies_or_ids.extend(group.get("policies", []))
+
+                        group_session = group.get("session_duration", "24h")
+                        if group_session:
+                            session_duration = group_session
+                        app_launcher_visible = group.get("app_launcher_visible", False)
+                        auto_redirect_to_identity = group.get("auto_redirect_to_identity", False)
+                    else:
+                        logging.warning(f"API: Access group '{group_id}' selected but not found in state")
+
+            if cf_access_policies_or_ids:
+                try:
+                    existing_access_app_id = rule.get("access_app_id")
+                    if existing_access_app_id:
+                        logging.info(f"API: Updating existing Access Application ID '{existing_access_app_id}' for rule {rule_key}")
+                        from app.core.access_manager import update_cloudflare_access_application
+                        new_access_data = update_cloudflare_access_application(
+                            existing_access_app_id,
+                            hostname,
+                            f"DockFlare-{hostname}",
+                            session_duration,
+                            app_launcher_visible,
+                            [hostname],
+                            cf_access_policies_or_ids,
+                            auto_redirect_to_identity=auto_redirect_to_identity,
+                            use_reusable=use_reusable
+                        )
+                        if new_access_data:
+                            logging.info(f"API: Successfully updated Access Application for {rule_key}")
+                        else:
+                            logging.error(f"API: Failed to update Access Application for {rule_key}")
+                    else:
+                        logging.info(f"API: Creating new Access Application for rule {rule_key}")
+                        from app.core.access_manager import create_cloudflare_access_application
+                        new_access_data = create_cloudflare_access_application(
+                            hostname,
+                            f"DockFlare-{hostname}",
+                            session_duration,
+                            app_launcher_visible,
+                            [hostname],
+                            cf_access_policies_or_ids,
+                            auto_redirect_to_identity=auto_redirect_to_identity,
+                            use_reusable=use_reusable
+                        )
+                        if new_access_data and new_access_data.get('id'):
+                            new_app_id = new_access_data['id']
+                            rule["access_app_id"] = new_app_id
+                            rule["access_policy_type"] = "reusable" if use_reusable else "inline"
+                            save_state()
+                            logging.info(f"API: Created Access Application ID '{new_app_id}' for {rule_key}")
+                        else:
+                            logging.error(f"API: Failed to create Access Application for {rule_key}")
+                except Exception as e:
+                    logging.error(f"API: Error creating/updating Access Application for {rule_key}: {e}", exc_info=True)
+
     if state_changed:
         publish_state_event('snapshot_refresh')
     try:
@@ -622,12 +773,34 @@ def process_agent_container_start(payload, agent_id):
 
             default_access_groups = get_label(labels, "access.groups")
             default_access_group = get_label(labels, "access.group") if not default_access_groups else None
+            default_access_policy_type_label = get_label(labels, "access.policy")
+
+            if default_access_policy_type_label == "bypass" and not default_access_group and not default_access_groups:
+                logging.info(f"AGENT_PROCESS: Legacy label 'dockflare.access.policy=bypass' detected for {container_name}. Migrating to 'dockflare.access.group=public-default-bypass'.")
+                default_access_group = ["public-default-bypass"]
+                default_access_policy_type_label = None
+            elif default_access_group and not default_access_groups:
+                if isinstance(default_access_group, str) and default_access_group == "bypass":
+                    logging.info(f"AGENT_PROCESS: Legacy group 'bypass' detected for {container_name}. Migrating to 'public-default-bypass'.")
+                    default_access_group = "public-default-bypass"
+                elif isinstance(default_access_group, list) and "bypass" in default_access_group:
+                    logging.info(f"AGENT_PROCESS: Legacy group 'bypass' detected in list for {container_name}. Migrating to 'public-default-bypass'.")
+                    default_access_group = ["public-default-bypass" if g == "bypass" else g for g in default_access_group]
+            elif default_access_policy_type_label == "authenticate" and not default_access_group and not default_access_groups:
+                from app.core.cloudflare_api import get_cloudflare_account_email
+                account_email = get_cloudflare_account_email()
+                if account_email:
+                    logging.info(f"AGENT_PROCESS: Legacy label 'dockflare.access.policy=authenticate' detected for {container_name}. Migrating to 'dockflare.access.group=authenticated-default' (restricted to {account_email}).")
+                    default_access_group = ["authenticated-default"]
+                    default_access_policy_type_label = None
+                else:
+                    logging.warning(f"AGENT_PROCESS: Cannot migrate 'dockflare.access.policy=authenticate' for {container_name}. Cloudflare account email not available. Skipping access policy creation. Use 'dockflare.access.group=<group>' instead.")
+                    default_access_policy_type_label = None
+
             if default_access_groups:
                 default_access_group = [gid.strip() for gid in default_access_groups.split(',')]
             elif default_access_group:
-                default_access_group = [default_access_group.strip()]
-
-            default_access_policy_type_label = get_label(labels, "access.policy")
+                default_access_group = [default_access_group.strip()] if isinstance(default_access_group, str) else default_access_group
             default_access_app_name_label = get_label(labels, "access.name")
             default_access_session_duration_label = get_label(labels, "access.session_duration", "24h")
             default_access_app_launcher_visible_label = get_label(labels, "access.app_launcher_visible", "false").lower() in ["true", "1", "t", "yes"]
@@ -681,14 +854,32 @@ def process_agent_container_start(payload, agent_id):
 
                 access_groups_indexed = get_label(labels, f"{index}.access.groups")
                 access_group_indexed = get_label(labels, f"{index}.access.group") if not access_groups_indexed else None
+                access_policy_type_indexed = get_label(labels, f"{index}.access.policy", default_access_policy_type_label)
+
+                if access_policy_type_indexed == "bypass" and not access_group_indexed and not access_groups_indexed:
+                    logging.info(f"AGENT_PROCESS: Legacy label 'dockflare.{index}.access.policy=bypass' detected for {container_name}. Migrating to 'dockflare.{index}.access.group=public-default-bypass'.")
+                    access_group_indexed = ["public-default-bypass"]
+                    access_policy_type_indexed = None
+                elif access_group_indexed and "bypass" in access_group_indexed and not access_groups_indexed:
+                    logging.info(f"AGENT_PROCESS: Legacy group 'bypass' detected in index {index} for {container_name}. Migrating to 'public-default-bypass'.")
+                    access_group_indexed = ["public-default-bypass" if g == "bypass" else g for g in access_group_indexed]
+                elif access_policy_type_indexed == "authenticate" and not access_group_indexed and not access_groups_indexed:
+                    from app.core.cloudflare_api import get_cloudflare_account_email
+                    account_email = get_cloudflare_account_email()
+                    if account_email:
+                        logging.info(f"AGENT_PROCESS: Legacy label 'dockflare.{index}.access.policy=authenticate' detected for {container_name}. Migrating to 'dockflare.{index}.access.group=authenticated-default' (restricted to {account_email}).")
+                        access_group_indexed = ["authenticated-default"]
+                        access_policy_type_indexed = None
+                    else:
+                        logging.warning(f"AGENT_PROCESS: Cannot migrate 'dockflare.{index}.access.policy=authenticate' for {container_name}. Cloudflare account email not available. Skipping access policy creation. Use 'dockflare.{index}.access.group=<group>' instead.")
+                        access_policy_type_indexed = None
+
                 if access_groups_indexed:
                     access_group_indexed = [gid.strip() for gid in access_groups_indexed.split(',')]
                 elif access_group_indexed:
-                    access_group_indexed = [access_group_indexed.strip()]
+                    access_group_indexed = [access_group_indexed.strip()] if isinstance(access_group_indexed, str) else access_group_indexed
                 else:
                     access_group_indexed = default_access_group
-
-                access_policy_type_indexed = get_label(labels, f"{index}.access.policy", default_access_policy_type_label)
                 access_app_name_indexed = get_label(labels, f"{index}.access.name", default_access_app_name_label)
                 access_session_duration_indexed = get_label(labels, f"{index}.access.session_duration", default_access_session_duration_label)
                 acc_launcher_val_idx = get_label(labels, f"{index}.access.app_launcher_visible", str(default_access_app_launcher_visible_label).lower())
@@ -733,6 +924,8 @@ def process_agent_container_start(payload, agent_id):
 
             logging.info(f"AGENT_PROCESS: Processing {len(hostnames_to_process)} hostname configs for agent {agent_id}")
 
+            policy_jobs_map = {}
+            dns_targets = {}
             for config_item in hostnames_to_process:
                 hostname = config_item["hostname"]
                 service = config_item["service"]
@@ -835,35 +1028,47 @@ def process_agent_container_start(payload, agent_id):
                             "tunnel_name": assigned_tunnel_name,
                             "tunnel_id": assigned_tunnel_id
                         }
+                        existing_rule = managed_rules[rule_key]
                         state_changed_locally = True
                         needs_tunnel_config_update = True
 
-                    if existing_rule:
-                        if existing_rule.get("access_policy_ui_override", False):
-                            logging.info(f"AGENT_PROCESS: Access policy for {rule_key} is UI-managed. Skipping.")
-                        else:
-                            if handle_access_policy_from_labels(config_item, existing_rule, save_state):
-                                state_changed_locally = True
+                    dns_targets[hostname] = {
+                        "zone_id": target_zone_id,
+                        "zone_name": zone_name_from_item
+                    }
+
+                    if existing_rule.get("access_policy_ui_override", False):
+                        logging.info(f"AGENT_PROCESS: Access policy for {rule_key} is UI-managed. Skipping.")
+                    else:
+                        policy_jobs_map[rule_key] = copy.deepcopy(config_item)
+
+            policy_jobs = list(policy_jobs_map.items())
+
+            policy_state_changed = False
+            for rule_key, policy_payload in policy_jobs:
+                if handle_access_policy_from_labels(rule_key, copy.deepcopy(policy_payload)):
+                    policy_state_changed = True
+
+            if policy_state_changed:
+                state_changed_locally = True
 
             if state_changed_locally:
                 save_state()
                 publish_state_event('snapshot_refresh')
-    
+
             if needs_tunnel_config_update:
                 logging.info(f"AGENT_PROCESS: DNS and tunnel config update needed for agent {agent_id}.")
                 
                 agent_record = get_agent(agent_id)
                 if agent_record and agent_record.get("assigned_tunnel_id"):
                     agent_tunnel_id = agent_record.get("assigned_tunnel_id")
-                                        
-                    for config_item in hostnames_to_process:
-                        hostname = config_item["hostname"]
-                        zone_name_dns_item = config_item.get("zone_name")
-                        target_zone_id_for_dns = get_zone_id_from_name(zone_name_dns_item) if zone_name_dns_item else current_app.config.get('CF_ZONE_ID')
+                    for hostname_dns, dns_details in dns_targets.items():
+                        zone_name_dns_item = dns_details.get("zone_name")
+                        target_zone_id_for_dns = dns_details.get("zone_id") or (get_zone_id_from_name(zone_name_dns_item) if zone_name_dns_item else current_app.config.get('CF_ZONE_ID'))
                         if target_zone_id_for_dns:
-                            create_cloudflare_dns_record(target_zone_id_for_dns, hostname, agent_tunnel_id)
+                            create_cloudflare_dns_record(target_zone_id_for_dns, hostname_dns, agent_tunnel_id)
                         else:
-                            logging.error(f"AGENT_PROCESS: Could not determine Zone ID for DNS record {hostname}")
+                            logging.error(f"AGENT_PROCESS: Could not determine Zone ID for DNS record {hostname_dns}")
     
                     from app.core.state_manager import get_agent_rules
                     agent_rules = get_agent_rules(agent_id)
@@ -1229,8 +1434,7 @@ def agents_post_events(agent_id):
 
     now = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
     update_agent(agent_id, {"last_seen": now, "last_event": payload})
-
-    # Process the event
+    
     event_type = payload.get("type")
     if event_type == "container_start":
         logging.info(f"AGENTS_EVENTS: Processing container_start event for agent {agent_id}")
@@ -2290,3 +2494,213 @@ def manage_auth_user(user_email):
     ]
 
     return jsonify({"status": "success", "message": "User deleted successfully."})
+
+@api_v2_bp.route('/idp/types', methods=['GET'])
+@login_required
+def api_get_idp_types():
+    from app.core import idp_manager
+    try:
+        types = idp_manager.get_supported_idp_types()
+        return jsonify({"success": True, "types": types})
+    except Exception as e:
+        logging.error(f"Error getting IdP types: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@api_v2_bp.route('/idp/list', methods=['GET'])
+@login_required
+def api_list_idps():
+    try:
+        local_idps = list_identity_providers()
+        return jsonify({"success": True, "identity_providers": local_idps})
+    except Exception as e:
+        logging.error(f"Error listing IdPs: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@api_v2_bp.route('/idp/sync', methods=['POST'])
+@login_required
+def api_sync_idps():
+    from app.core import idp_manager
+    from datetime import datetime, timezone
+
+    try:
+        cloudflare_idps = idp_manager.list_identity_providers()
+        synced_count = 0
+
+        for cf_idp in cloudflare_idps:
+            cf_id = cf_idp.get('id')
+            idp_type = cf_idp.get('type')
+            idp_name = cf_idp.get('name', '').strip()
+
+            if not idp_name:
+                idp_name = idp_type.title()
+
+            friendly_name, existing_idp = get_idp_by_cloudflare_id(cf_id)
+
+            if not friendly_name:
+                friendly_name = idp_name.lower().replace(' ', '-')
+                counter = 1
+                base_name = friendly_name
+                while get_identity_provider(friendly_name):
+                    friendly_name = f"{base_name}-{counter}"
+                    counter += 1
+
+            idp_data = {
+                "cloudflare_id": cf_id,
+                "name": idp_name,
+                "type": idp_type,
+                "last_synced": datetime.now(timezone.utc).isoformat(),
+                "system_managed": idp_manager.is_system_managed_idp(idp_type)
+            }
+
+            config = cf_idp.get('config', {})
+            if 'client_id' in config:
+                idp_data['client_id_preview'] = config['client_id'][:20] + '...' if len(config['client_id']) > 20 else config['client_id']
+
+            save_identity_provider(friendly_name, idp_data)
+            synced_count += 1
+
+        logging.info(f"Synced {synced_count} Identity Providers from Cloudflare")
+        return jsonify({"success": True, "synced": synced_count})
+    except Exception as e:
+        logging.error(f"Error syncing IdPs: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@api_v2_bp.route('/idp/create', methods=['POST'])
+@login_required
+def api_create_idp():
+    from app.core import idp_manager
+    from datetime import datetime, timezone
+
+    try:
+        data = request.get_json()
+        friendly_name = data.get('friendly_name', '').strip()
+        name = data.get('name', '').strip()
+        idp_type = data.get('type', '').strip()
+        config = data.get('config', {})
+
+        if not friendly_name or not name or not idp_type:
+            return jsonify({"success": False, "error": "Missing required fields"}), 400
+
+        if get_identity_provider(friendly_name):
+            return jsonify({"success": False, "error": "Friendly name already exists"}), 400
+
+        cf_idp = idp_manager.create_identity_provider(name, idp_type, config)
+
+        if not cf_idp or not cf_idp.get('id'):
+            return jsonify({"success": False, "error": "Failed to create IdP in Cloudflare"}), 500
+
+        idp_data = {
+            "cloudflare_id": cf_idp['id'],
+            "name": name,
+            "type": idp_type,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "last_synced": datetime.now(timezone.utc).isoformat(),
+            "system_managed": False
+        }
+
+        if 'client_id' in config:
+            idp_data['client_id_preview'] = config['client_id'][:20] + '...' if len(config['client_id']) > 20 else config['client_id']
+
+        save_identity_provider(friendly_name, idp_data)
+
+        test_url = idp_manager.build_test_idp_url(cf_idp['id'])
+
+        return jsonify({
+            "success": True,
+            "identity_provider": idp_data,
+            "friendly_name": friendly_name,
+            "test_url": test_url
+        })
+    except Exception as e:
+        logging.error(f"Error creating IdP: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@api_v2_bp.route('/idp/<friendly_name>', methods=['GET'])
+@login_required
+def api_get_idp(friendly_name):
+    from app.core import idp_manager
+
+    try:
+        local_idp = get_identity_provider(friendly_name)
+        if not local_idp:
+            return jsonify({"success": False, "error": "IdP not found"}), 404
+
+        cf_id = local_idp.get('cloudflare_id')
+        test_url = idp_manager.build_test_idp_url(cf_id) if cf_id else None
+
+        return jsonify({
+            "success": True,
+            "identity_provider": local_idp,
+            "friendly_name": friendly_name,
+            "test_url": test_url
+        })
+    except Exception as e:
+        logging.error(f"Error getting IdP: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@api_v2_bp.route('/idp/<friendly_name>', methods=['PUT'])
+@login_required
+def api_update_idp(friendly_name):
+    from app.core import idp_manager
+    from datetime import datetime, timezone
+
+    try:
+        local_idp = get_identity_provider(friendly_name)
+        if not local_idp:
+            return jsonify({"success": False, "error": "IdP not found"}), 404
+
+        if local_idp.get('system_managed'):
+            return jsonify({"success": False, "error": "Cannot update system-managed IdP"}), 403
+
+        data = request.get_json()
+        cf_id = local_idp.get('cloudflare_id')
+        name = data.get('name')
+        config = data.get('config')
+
+        if not name and not config:
+            return jsonify({"success": False, "error": "Nothing to update"}), 400
+
+        cf_idp = idp_manager.update_identity_provider(cf_id, name=name, config=config)
+
+        if not cf_idp:
+            return jsonify({"success": False, "error": "Failed to update IdP in Cloudflare"}), 500
+
+        if name:
+            local_idp['name'] = name
+        if config and 'client_id' in config:
+            local_idp['client_id_preview'] = config['client_id'][:20] + '...' if len(config['client_id']) > 20 else config['client_id']
+
+        local_idp['last_synced'] = datetime.now(timezone.utc).isoformat()
+        save_identity_provider(friendly_name, local_idp)
+
+        return jsonify({"success": True, "identity_provider": local_idp})
+    except Exception as e:
+        logging.error(f"Error updating IdP: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@api_v2_bp.route('/idp/<friendly_name>', methods=['DELETE'])
+@login_required
+def api_delete_idp(friendly_name):
+    from app.core import idp_manager
+
+    try:
+        local_idp = get_identity_provider(friendly_name)
+        if not local_idp:
+            return jsonify({"success": False, "error": "IdP not found"}), 404
+
+        if local_idp.get('system_managed'):
+            return jsonify({"success": False, "error": "Cannot delete system-managed IdP"}), 403
+
+        cf_id = local_idp.get('cloudflare_id')
+
+        try:
+            idp_manager.delete_identity_provider(cf_id)
+        except Exception as e:
+            logging.warning(f"Failed to delete IdP from Cloudflare (may already be deleted): {e}")
+
+        delete_identity_provider(friendly_name)
+
+        return jsonify({"success": True})
+    except Exception as e:
+        logging.error(f"Error deleting IdP: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500

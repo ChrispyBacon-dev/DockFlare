@@ -10,6 +10,7 @@ Before you begin, ensure you have the following:
     *   `Account:Cloudflare Tunnel:Edit`
     *   `Account:Account Settings:Read`
     *   `Account:Access: Apps and Policies:Edit`
+    *   `Account:Access: Organizations, Identity Providers, and Groups:Edit`
     *   `Zone:Zone:Read`
     *   `Zone:DNS:Edit`  
 

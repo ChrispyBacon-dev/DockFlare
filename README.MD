@@ -9,13 +9,9 @@
 <p align="center">
   <em>Go from container to publicly-secured URL in seconds. No manual Cloudflare dashboard configuration required.</em>
 </p>
+
 <p align="center">
-  <a href="https://dockflare.app/podcast" target="_blank" rel="noopener noreferrer">
-    <img src="https://img.shields.io/badge/DockFlare-Podcast-20a6e2?style=for-the-badge&logo=soundcloud" alt="Listen to the DockFlare Podcast">
-  </a>
-</p>
-<p align="center">
-  <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases/tag/v3.0.1"><img src="https://img.shields.io/badge/Release-v3.0.1-blue.svg?style=for-the-badge" alt="Release"></a>
+  <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases/tag/v3.0.3"><img src="https://img.shields.io/badge/Release-v3.0.3-blue.svg?style=for-the-badge" alt="Release"></a>
   <a href="https://hub.docker.com/r/alplat/dockflare"><img src="https://img.shields.io/docker/pulls/alplat/dockflare?style=for-the-badge" alt="Docker Pulls"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Made%20with-Python-1f425f.svg?style=for-the-badge" alt="Python"></a>
   <a href="https://github.com/ChrispyBacon-dev/DockFlare/blob/main/LICENSE.MD"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg?style=for-the-badge" alt="License"></a>
@@ -36,6 +32,20 @@
 DockFlare is a powerful, self-hosted ingress controller that simplifies Cloudflare Tunnel and Zero Trust management. It uses Docker labels for automated configuration while providing a robust web UI for manual service definitions and policy overrides.
 
 It enables secure, hassle-free public access to both Dockerized and non-Dockerized applications with minimal direct interaction with Cloudflare, making it the perfect tool for centralizing and streamlining your access management.
+
+### ✨ What's New in DockFlare 3.0.3: Identity Providers, Access Modes & Zone Security
+
+DockFlare 3.0.3 introduces complete Identity Provider management, cleaner access control design, and enhanced zone-level security.
+
+- **Identity Provider (IdP) Management**: Full OAuth/OIDC identity provider support directly in DockFlare. Manage Google, Azure AD, GitHub, Okta, and generic OpenID Connect providers with friendly names, one-click Cloudflare sync, and built-in testing. IdPs integrate seamlessly with Access Groups and require email restrictions for security.
+- **Two access modes**: Access Groups now offer dedicated Public and Authenticated tabs. Pick `Public` for Cloudflare Access `bypass` (no login, optional geo blocks) or `Authenticated` for `allow` policies that require email/domain logins with optional IdP authentication.
+- **Reusable Cloudflare policies**: DockFlare syncs every Access Group to a reusable Access Policy, so you can reference the same rules across multiple applications, edit them centrally, and keep the Cloudflare dashboard tidy.
+- **System-managed default bypass policy**: A single, non-deletable `public-default-bypass` policy is automatically created and reused across all public services, eliminating duplicate bypass policies.
+- **Legacy label migration**: DockFlare automatically migrates legacy `dockflare.access.policy=bypass` and `dockflare.access.group=bypass` labels to use the centralized system policy. Migration happens transparently during container processing and reconciliation—no manual changes required.
+- **Zone Default Policies (*.tld wildcards)**: New section on the Access Policies page shows which DNS zones have wildcard protection. Create `*.yourdomain.com` policies with one click to ensure all subdomains are protected by default—even ones you forget to configure explicitly.
+- **Performance optimizations**: Access Policies page now lazy-loads zone policies via AJAX for instant page rendering, eliminating the 8+ second wait caused by synchronous API calls.
+- **Simplified UI**: Removed confusing quick-create options ("Email Auth", "Default *.tld") from manual rule creation. Complex policies should be designed on the Access Policies page and then applied to services.
+- **Migration-ready**: Legacy inline policies automatically convert to reusable policies during the next sync, and DockFlare harmonizes Cloudflare `block` decisions with the newer `deny` verb.
 
 ### ✨ What's New in DockFlare 3.0: Multi-Server & Agent Release
 
@@ -68,6 +78,8 @@ Before you begin, ensure you have the following:
     - `Account:Cloudflare Tunnel:Edit`
     - `Account:Account Settings:Read`
     - `Account:Access: Apps and Policies:Edit`
+    - `Account:Access: Organizations, Identity Providers, and Groups:Edit`
+    - `Account:Access:Read`
     - `Zone:Zone:Read`
     - `Zone:DNS:Edit`
 
@@ -76,12 +88,20 @@ Before you begin, ensure you have the following:
 <details>
 <summary>🚀 Quick Start Docker Compose</summary>
 
+Before the first launch, provision the shared network once:
+
+```bash
+docker network create cloudflare-net
+```
+
 1.  **Create `docker-compose.yml`**:
     ```yaml
     version: '3.8'
     services:
       docker-socket-proxy:
         image: tecnativa/docker-socket-proxy:v0.4.1
+        logging:
+          driver: "none"  # Minimize the logs, remove for verbose
         container_name: docker-socket-proxy
         restart: unless-stopped
         environment:
@@ -120,6 +140,7 @@ Before you begin, ensure you have the following:
           - REDIS_URL=redis://redis:6379/0
           - REDIS_DB_INDEX=0  # Optional: specify Redis database index (0-15) for isolation from other containers
           - DOCKER_HOST=tcp://docker-socket-proxy:2375
+          - LOG_LEVEL=ERROR
         depends_on:
           docker-socket-proxy:
             condition: service_started
@@ -177,6 +198,13 @@ DockFlare's power comes from its flexible, layered approach to configuration.
 - **UI for Dynamic Overrides**: The Web UI can override the access policy for any service, whether it was configured by a group or by individual labels. UI changes are persistent and stored in the encrypted `dockflare_config.dat` file.
 - **DNS Zone Auto-Detection**: Starting with v3.0, DockFlare automatically infers the correct Cloudflare zone from each hostname. You only need `dockflare.zonename` when intentionally sending a record to a different zone.
 
+#### Access Group Modes & Policy Reuse
+
+- **Pick the right decision instantly**: Each Access Group now has Public and Authenticated tabs. Public mode issues a Cloudflare `bypass` decision (ideal for blogs and marketing pages) while Authenticated mode creates an `allow` policy that enforces email/domain logins.
+- **Geo controls in both modes**: Apply country-based `exclude` rules no matter which mode you choose, keeping public destinations open while filtering risky regions.
+- **Reusable policies by default**: DockFlare syncs every Access Group to a named reusable policy (`DockFlare-AccessGroup-<id>`) so the same rule set can power multiple applications and stay editable from either DockFlare or the Cloudflare dashboard.
+- **Legacy-safe**: Existing inline policies are upgraded on the next reconciliation and continue to function even if you tweak them directly in Cloudflare.
+
 <details>
 <summary>📝 Labeling Your Containers (Examples)</summary>
 
@@ -212,8 +240,10 @@ services:
 
       # Optional individual labels for a one-off policy
       - "dockflare.access.policy=authenticate"
-      - "dockflare.access.allowed_idps=YOUR_IDP_UUID_HERE"
+      - "dockflare.access.email=user@example.com,@domain.com"
 ```
+
+**Note**: For Identity Provider authentication, create an Access Group in the UI instead of using individual labels. This ensures proper IdP configuration with required email restrictions.
 
 </details>
 

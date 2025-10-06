@@ -15,9 +15,10 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 # dockflare/app/main.py
-import logging 
+import logging
 import threading
 import time
+import datetime
 import sys
 import os
 import json
@@ -26,7 +27,7 @@ from cryptography.fernet import Fernet
 
 from app import app, docker_client, tunnel_state, cloudflared_agent_state, config
 
-from app.core.state_manager import load_state
+from app.core.state_manager import load_state, ensure_default_bypass_policy, ensure_authenticated_default_policy
 from app.core.tunnel_manager import (
     initialize_tunnel,
     update_cloudflared_container_status, 
@@ -114,8 +115,41 @@ def start_core_services():
         logging.error("Docker client unavailable. Critical functionalities will be affected.")
         return
 
-    initialize_tunnel() 
+    initialize_tunnel()
     logging.info(f"Tunnel initialization attempt complete. Status: {tunnel_state.get('status_message')}, Error: {tunnel_state.get('error')}")
+
+    ensure_default_bypass_policy(flask_app=app)
+    logging.info("Bypass policy post-setup initialization complete.")
+
+    from app.core import idp_manager
+    from app.core.state_manager import identity_providers, save_state, state_lock, save_identity_provider
+    logging.info("Syncing identity providers after setup...")
+    try:
+        idps = idp_manager.list_identity_providers()
+        if idps:
+            with state_lock:
+                for idp in idps:
+                    idp_id = idp.get("id")
+                    idp_type = idp.get("type", "unknown")
+                    if idp_id and idp_type:
+                        
+                        friendly_name = idp_type
+                        idp_data = {
+                            "cloudflare_id": idp_id,
+                            "name": idp.get("name", "Unknown"),
+                            "type": idp_type,
+                            "last_synced": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                            "system_managed": idp_manager.is_system_managed_idp(idp_type)
+                        }
+                        
+                        identity_providers[friendly_name] = idp_data
+                save_state()
+            logging.info(f"Synced {len(idps)} identity providers from Cloudflare (keyed by type)")
+    except Exception as e:
+        logging.error(f"Error syncing identity providers: {e}", exc_info=True)
+
+    ensure_authenticated_default_policy(flask_app=app)
+    logging.info("Authenticated policy post-setup initialization complete.")
 
     initial_scan_needed_and_possible = True
     if config.USE_EXTERNAL_CLOUDFLARED:
@@ -302,6 +336,12 @@ def main_application_entrypoint():
 
     load_state()
     logging.info("Initial state loading from file complete.")
+    
+    ensure_default_bypass_policy(flask_app=app)
+    logging.info("Default bypass policy initialization complete.")
+
+    ensure_authenticated_default_policy(flask_app=app)
+    logging.info("Default authenticated policy initialization complete.")
 
     if docker_client:
         try:
@@ -335,15 +375,29 @@ def main_application_entrypoint():
     flask_server_thread = None
     try:
         from waitress import serve
+        waitress_kwargs = {
+            'host': config.WAITRESS_HOST,
+            'port': config.WAITRESS_PORT,
+            'threads': config.WAITRESS_THREADS,
+            'expose_tracebacks': False
+        }
+
+        if config.WAITRESS_CONNECTION_LIMIT:
+            waitress_kwargs['connection_limit'] = config.WAITRESS_CONNECTION_LIMIT
+        if config.WAITRESS_BACKLOG:
+            waitress_kwargs['backlog'] = config.WAITRESS_BACKLOG
+        if config.WAITRESS_CHANNEL_TIMEOUT:
+            waitress_kwargs['channel_timeout'] = config.WAITRESS_CHANNEL_TIMEOUT
+
         flask_server_thread = threading.Thread(
             target=serve,
             args=(app,), 
-            kwargs={'host': '0.0.0.0', 'port': 5000, 'threads': 10, 'expose_tracebacks': False},
+            kwargs=waitress_kwargs,
             daemon=True,
             name="FlaskWaitressServer"
         )
         flask_server_thread.start()
-        logging.info("Flask server started using waitress on 0.0.0.0:5000.")
+        logging.info(f"Flask server started using waitress on {config.WAITRESS_HOST}:{config.WAITRESS_PORT} with {config.WAITRESS_THREADS} threads.")
         
         while not stop_event.is_set():
             if flask_server_thread and not flask_server_thread.is_alive():
@@ -372,7 +426,7 @@ def main_application_entrypoint():
 
     except ImportError:
         logging.warning("Waitress not found. Using Flask development server (NOT FOR PRODUCTION).")
-        app.run(host='0.0.0.0', port=5000, threaded=True, debug=False) 
+        app.run(host=config.WAITRESS_HOST, port=config.WAITRESS_PORT, threaded=True, debug=False) 
     except KeyboardInterrupt:
         logging.info("KeyboardInterrupt received. Shutting down...")
     except Exception as server_startup_err:

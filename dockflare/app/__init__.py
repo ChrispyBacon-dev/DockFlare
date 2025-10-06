@@ -68,7 +68,18 @@ class QueueLogHandler(logging.Handler):
                  print("Log queue still full after attempting to make space, dropping message.", file=sys.stderr)
 
 root_logger = logging.getLogger()
-root_logger.setLevel(logging.INFO)
+
+# Set log level from config
+log_level_str = config.LOG_LEVEL.upper()
+log_level_map = {
+    'DEBUG': logging.DEBUG,
+    'INFO': logging.INFO,
+    'WARNING': logging.WARNING,
+    'ERROR': logging.ERROR,
+    'CRITICAL': logging.CRITICAL
+}
+log_level = log_level_map.get(log_level_str, logging.INFO)
+root_logger.setLevel(log_level)
 
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(log_formatter)
@@ -76,7 +87,7 @@ root_logger.addHandler(console_handler)
 
 queue_handler = QueueLogHandler(log_queue)
 queue_handler.setFormatter(log_formatter)
-queue_handler.setLevel(logging.INFO) 
+queue_handler.setLevel(log_level)
 root_logger.addHandler(queue_handler)
 
 
@@ -86,9 +97,22 @@ def publish_state_event(event_type, data=None):
         "data": data or {}
     })
     try:
+        from .core.cache import get_redis_client
+        redis_client = get_redis_client()
+        if redis_client:
+            try:
+                redis_client.publish('dockflare:state_updates', message)
+                logging.info(f"STATE_EVENT_PUBLISHED: {event_type} via Redis pub/sub")
+                return
+            except Exception as pub_err:
+                logging.error(f"Redis publish failed: {pub_err}, falling back to queue")
+
         state_update_queue.put_nowait(message)
+        logging.info(f"STATE_EVENT_PUBLISHED: {event_type} - Queue size: {state_update_queue.qsize()} (fallback)")
     except queue.Full:
         logging.warning("State event queue full. Dropping event: %s", event_type)
+    except Exception as e:
+        logging.error(f"Failed to publish state event {event_type}: {e}")
 
 
 docker_client = None
@@ -154,14 +178,21 @@ def create_app():
     @login_manager.request_loader
     def load_user_from_request(request):
         """Load user from request - bypass session auth for designated API endpoints."""
-        
+
         if request.path.startswith('/api/v2/auth/'):
             return None
 
         elif request.endpoint and request.endpoint.startswith('api_v2.'):
+            # Check if endpoint is UI-only (should use session auth via @login_required)
+            from app.web.api_v2_routes import _UI_ENDPOINT_ALLOWLIST
+            if request.endpoint in _UI_ENDPOINT_ALLOWLIST:
+                # UI endpoints must use session-based auth, don't auto-authenticate
+                return None
+
+            # API endpoints (not in UI allowlist) can use MASTER_API_KEY
             from app.core.user import User
             return User('api_user')
-            
+
         return None
 
     @login_manager.user_loader

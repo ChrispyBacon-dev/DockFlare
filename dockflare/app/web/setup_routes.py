@@ -270,7 +270,7 @@ def step4_finalize():
 
         session.clear()
         flash('Setup complete! Please log in to continue.', 'success')
-        return redirect(url_for('auth.login'))
+        return redirect(url_for('web.login'))
 
     config_summary = {key: val for key, val in session.items() if key != 'csrf_token' and not key.startswith('_')}
     if 'cf_api_token' in config_summary:

@@ -25,13 +25,46 @@ These labels control the fundamental routing and service definition for a contai
 
 These labels allow you to dynamically create and manage Cloudflare Access applications to secure your services.
 
-**Note:** It is highly recommended to use **Access Groups** (`dockflare.access.group`) for managing policies. Using individual labels is best for one-off, unique configurations. If `dockflare.access.group` or `dockflare.access.groups` is used, all other `dockflare.access.*` labels are ignored.
+**Note:** It is highly recommended to use **Access Groups** (`dockflare.access.group`) for managing policies. DockFlare 3.0.3 synchronises every Access Group to a named reusable Cloudflare Access Policy, giving you one-to-many reuse and bi-directional edits. Using individual labels is best for one-off, unique configurations. If `dockflare.access.group` or `dockflare.access.groups` is used, all other `dockflare.access.*` labels are ignored.
+
+### Important Changes in v3.0.3
+
+#### System Default Bypass Policy
+
+Starting in v3.0.3, when you use `dockflare.access.policy=bypass` or `dockflare.access.group=bypass`, your service will reference the system-managed `public-default-bypass` reusable policy instead of creating an inline policy. This keeps your Cloudflare dashboard clean.
+
+- **Before v3.0.3:** Each bypass rule created a separate inline policy
+- **v3.0.3+:** All bypass rules share one canonical `public-default-bypass` policy
+
+#### Legacy Label Migration
+
+DockFlare automatically migrates legacy bypass labels to use the centralized system policy:
+
+- `dockflare.access.policy=bypass` → Uses `public-default-bypass` system policy
+- `dockflare.access.group=bypass` → Uses `public-default-bypass` system policy
+
+The migration happens transparently during container processing and reconciliation. Your containers will continue to work without any changes required.
+
+#### Simplified Access Configuration
+
+For complex access scenarios (email/domain authentication, IP whitelisting, etc.), it's now recommended to:
+
+1. Create an Access Group on the **Access Policies** page
+2. Reference it with `dockflare.access.group=your-group-id`
+
+Quick-create options have been removed from the UI to encourage this best-practice workflow.
+
+#### Zone Default Policy Label
+
+The `dockflare.access.policy=default_tld` label still works and will inherit protection from your zone's `*.domain.com` wildcard policy. If no zone policy exists, the service will be public (no Access App).
+
+**Recommendation:** Create zone default policies for all your domains in the UI for better security.
 
 | Label | Description | Example |
 | :--- | :--- | :--- |
 | `dockflare.access.group` | The ID of a single, pre-configured Access Group to apply to this service. The ID can be found on the "Access Policies" page in the DockFlare UI. | `dockflare.access.group=internal-tools-policy` |
 | `dockflare.access.groups` | A comma-separated list of Access Group IDs to apply. This allows you to layer multiple policies onto a single service. | `dockflare.access.groups=allow-team-a,allow-admins` |
-| `dockflare.access.policy` | The primary policy type. Can be `bypass` (public), `authenticate` (requires login), or `default_tld` (inherits from a `*.domain.com` policy). If unset, the service will be public. | `dockflare.access.policy=authenticate` |
+| `dockflare.access.policy` | The primary policy type. Can be `bypass` (public), `authenticate` (requires login), or `default_tld` (inherits from a `*.domain.com` policy). If unset, the service will be public. Prefer Access Groups for reusable policies; these labels are for specialised overrides. | `dockflare.access.policy=authenticate` |
 | `dockflare.access.name` | A custom name for the Cloudflare Access Application. Defaults to `DockFlare-{hostname}`. | `dockflare.access.name=My Web App Access` |
 | `dockflare.access.session_duration` | The session duration for authenticated users (e.g., `24h`, `30m`). Defaults to `24h`. | `dockflare.access.session_duration=1h` |
 | `dockflare.access.app_launcher_visible` | If `true`, makes the application visible in the Cloudflare Access App Launcher. | `dockflare.access.app_launcher_visible=true` |

@@ -19,6 +19,7 @@ import logging
 import os
 import time
 import threading
+import redis
 from flask_caching import Cache
 from app import config
 
@@ -53,6 +54,29 @@ DNS_RECORDS_CACHE_TIMEOUT = int(os.getenv("DNS_RECORDS_CACHE_TIMEOUT", "300"))  
 CACHE_REFRESH_INTERVAL = int(os.getenv("CACHE_REFRESH_INTERVAL", "3600"))  # 1 hour default
 ENABLE_PERIODIC_CACHE_REFRESH = os.getenv("ENABLE_PERIODIC_CACHE_REFRESH", "true").lower() == "true"
 CACHE_ENABLED = os.getenv("CACHE_ENABLED", "true").lower() == "true"
+
+_redis_client = None
+
+def get_redis_client():
+    global _redis_client
+    cache_type = cache_config.get("CACHE_TYPE")
+
+    if cache_type == "RedisCache":
+        if _redis_client is None:
+            try:
+                redis_url = cache_config.get("CACHE_REDIS_URL")
+                if not redis_url:
+                    logging.error(f"get_redis_client: CACHE_REDIS_URL not found. cache_config keys: {list(cache_config.keys())}")
+                    return None
+                _redis_client = redis.from_url(redis_url)
+                logging.info(f"Created dedicated Redis client for pub/sub from URL: {redis_url}")
+            except Exception as e:
+                logging.error(f"Failed to create Redis pub/sub client: {e}")
+                return None
+        return _redis_client
+    else:
+        logging.info(f"get_redis_client: Redis not configured (CACHE_TYPE={cache_type}), returning None")
+    return None
 
 def init_app(app):
     """Initialize the cache with the Flask app"""

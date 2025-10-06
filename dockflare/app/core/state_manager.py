@@ -28,12 +28,14 @@ from app.core.utils import get_rule_key
 managed_rules = {}
 access_groups = {}
 agents = {}
+identity_providers = {}
 state_lock = threading.RLock()
 logging.info(
-    "STATE_MANAGER_INIT: managed_rules ID: %s, access_groups ID: %s, agents ID: %s",
+    "STATE_MANAGER_INIT: managed_rules ID: %s, access_groups ID: %s, agents ID: %s, identity_providers ID: %s",
     id(managed_rules),
     id(access_groups),
-    id(agents)
+    id(agents),
+    id(identity_providers)
 )
 
 def _deserialize_datetime(dt_str):
@@ -56,6 +58,7 @@ def load_state():
     with state_lock:
         managed_rules.clear()
         access_groups.clear()
+        identity_providers.clear()
         logging.info(
             "LOAD_STATE: After .clear(), managed_rules ID: %s, len: %s",
             id(managed_rules),
@@ -87,13 +90,16 @@ def load_state():
                 rules_to_load = loaded_data.get("managed_rules", {})
                 groups_to_load = loaded_data.get("access_groups", {})
                 agents_to_load = loaded_data.get("agents", {})
+                idps_to_load = loaded_data.get("identity_providers", {})
             else:
                 logging.info("Loading state from old format (rules only). Will migrate on next save.")
                 rules_to_load = loaded_data
                 agents_to_load = {}
+                idps_to_load = {}
 
             access_groups.update(groups_to_load)
             agents.update(agents_to_load)
+            identity_providers.update(idps_to_load)
             key_count = len(agent_key_store.list_keys())
             logging.info(
                 "LOAD_STATE: Loaded %s access groups, %s agents and %s agent keys (encrypted backing store).",
@@ -158,10 +164,290 @@ def load_state():
         except Exception as e_load_unexp:
             logging.error(f"LOAD_STATE: Unexpected error loading state: {e_load_unexp}. Starting fresh (already cleared).", exc_info=True)
 
+def ensure_default_bypass_policy(flask_app=None):
+    
+    from app.core import reusable_policies
+
+    default_bypass_id = "public-default-bypass"
+    cf_policy_name = "DockFlare-Default-Public-Access-Bypass"
+    display_name = "Public Access (Bypass)"
+
+    with state_lock:
+        # Check if policy exists in local state
+        if default_bypass_id not in access_groups:
+            logging.info(f"Creating default bypass access group in state: {default_bypass_id}")
+
+            # Create in Cloudflare first
+            cf_policy_id = None
+            if flask_app:
+                with flask_app.app_context():
+                    try:
+                        cf_policy = reusable_policies.create_reusable_policy(
+                            name=cf_policy_name,
+                            decision="bypass",
+                            include_rules=[{"everyone": {}}]
+                        )
+                        if cf_policy and cf_policy.get("id"):
+                            cf_policy_id = cf_policy["id"]
+                            logging.info(f"Created default bypass policy in Cloudflare with ID: {cf_policy_id}")
+                        else:
+                            logging.warning(f"Failed to create default bypass policy in Cloudflare, will create local reference only")
+                    except Exception as e:
+                        logging.error(f"Error creating default bypass policy in Cloudflare: {e}", exc_info=True)
+
+            # Create local state entry
+            access_groups[default_bypass_id] = {
+                "id": cf_policy_id if cf_policy_id else default_bypass_id,
+                "display_name": display_name,
+                "session_duration": "24h",
+                "app_launcher_visible": False,
+                "auto_redirect_to_identity": False,
+                "public_mode": True,
+                "policies": [
+                    {
+                        "name": cf_policy_name,
+                        "decision": "bypass",
+                        "include": [{"everyone": {}}]
+                    }
+                ],
+                "system_policy": True,
+                "deletable": False,
+                "cf_policy_id": cf_policy_id
+            }
+            save_state()
+            logging.info(f"Default bypass policy '{default_bypass_id}' created successfully in local state.")
+        else:
+            logging.debug(f"Default bypass policy '{default_bypass_id}' already exists in local state.")
+
+            existing_policy = access_groups[default_bypass_id]
+
+            # Remove hide_from_ui flag if it exists (migration)
+            if existing_policy.get("hide_from_ui"):
+                logging.info(f"Migrating existing bypass policy to show in UI (removing hide_from_ui flag)")
+                del existing_policy["hide_from_ui"]
+                save_state()
+
+            cf_policy_id = existing_policy.get("cf_policy_id") or existing_policy.get("id")
+
+            if flask_app and cf_policy_id != default_bypass_id:  # Has a real CF ID
+                with flask_app.app_context():
+                    try:
+                        cf_policy = reusable_policies.get_reusable_policy(cf_policy_id)
+                        if cf_policy:
+                            logging.debug(f"Verified default bypass policy exists in Cloudflare: {cf_policy_id}")
+                        else:
+                            logging.warning(f"Default bypass policy {cf_policy_id} not found in Cloudflare, searching by name")
+                            existing_by_name = reusable_policies.find_policy_by_name(cf_policy_name)
+                            if existing_by_name:
+                                found_policy_id = existing_by_name.get("id")
+                                logging.info(f"Found existing bypass policy by name with ID: {found_policy_id}")
+                                existing_policy["cloudflare_policy_id"] = found_policy_id
+                                existing_policy["cf_policy_id"] = found_policy_id
+                                save_state()
+                            else:
+                                logging.info(f"No existing bypass policy found, creating new one")
+                                new_policy = reusable_policies.create_reusable_policy(
+                                    name=cf_policy_name,
+                                    decision="bypass",
+                                    include_rules=[{"everyone": {}}]
+                                )
+                                if new_policy and new_policy.get("id"):
+                                    new_cf_policy_id = new_policy["id"]
+                                    logging.info(f"Created bypass policy in Cloudflare with ID: {new_cf_policy_id}")
+                                    existing_policy["cloudflare_policy_id"] = new_cf_policy_id
+                                    existing_policy["cf_policy_id"] = new_cf_policy_id
+                                    save_state()
+                                else:
+                                    logging.error(f"Failed to create bypass policy in Cloudflare")
+                    except Exception as e:
+                        logging.error(f"Error verifying/updating default bypass policy in Cloudflare: {e}")
+
+def ensure_authenticated_default_policy(flask_app=None):
+
+    from app.core import reusable_policies
+    from app.core.cloudflare_api import get_cloudflare_account_email
+
+    authenticated_default_id = "authenticated-default"
+    cf_policy_name = "DockFlare-Default-Authenticated-Access"
+    display_name = "Authenticated Access"
+
+    account_email = None
+    if flask_app:
+        with flask_app.app_context():
+            account_email = get_cloudflare_account_email()
+    else:
+        account_email = get_cloudflare_account_email()
+
+    if not account_email:
+        logging.warning("Cannot create authenticated-default policy: Cloudflare account email not available")
+        return
+
+    with state_lock:
+        onetimepin_idp = identity_providers.get("onetimepin")
+        if not onetimepin_idp or not onetimepin_idp.get("cloudflare_id"):
+            logging.warning("Cannot create authenticated-default policy: One-time PIN IdP not found in state")
+            logging.debug(f"Available IdPs in state: {list(identity_providers.keys())}")
+            return
+
+        onetimepin_cf_id = onetimepin_idp["cloudflare_id"]
+        if authenticated_default_id not in access_groups:
+            logging.info(f"Creating default authenticated access group in state: {authenticated_default_id}")
+
+            cf_policy_id = None
+            if flask_app:
+                with flask_app.app_context():
+                    try:
+                        cf_policy = reusable_policies.create_reusable_policy(
+                            name=cf_policy_name,
+                            decision="allow",
+                            include_rules=[{"login_method": {"id": onetimepin_cf_id}}],
+                            require_rules=[{"email": {"email": account_email}}]
+                        )
+                        if cf_policy and cf_policy.get("id"):
+                            cf_policy_id = cf_policy["id"]
+                            logging.info(f"Created default authenticated policy in Cloudflare with ID: {cf_policy_id}")
+                        else:
+                            logging.warning(f"Failed to create default authenticated policy in Cloudflare, will create local reference only")
+                    except Exception as e:
+                        logging.error(f"Error creating default authenticated policy in Cloudflare: {e}", exc_info=True)
+
+            access_groups[authenticated_default_id] = {
+                "id": cf_policy_id if cf_policy_id else authenticated_default_id,
+                "display_name": "Authenticated Access",
+                "session_duration": "24h",
+                "app_launcher_visible": False,
+                "auto_redirect_to_identity": False,
+                "public_mode": False,
+                "allowed_idps": [onetimepin_cf_id],
+                "policies": [
+                    {
+                        "name": cf_policy_name,
+                        "decision": "allow",
+                        "include": [{"login_method": {"id": onetimepin_cf_id}}],
+                        "require": [{"email": {"email": account_email}}]
+                    }
+                ],
+                "system_policy": True,
+                "deletable": False,
+                "cf_policy_id": cf_policy_id
+            }
+            save_state()
+            logging.info(f"Default authenticated policy '{authenticated_default_id}' created successfully in local state.")
+        else:
+            logging.debug(f"Default authenticated policy '{authenticated_default_id}' already exists in local state.")
+
+            existing_policy = access_groups[authenticated_default_id]
+
+            needs_state_update = False
+            needs_cf_update = False
+
+            # Remove hide_from_ui flag if it exists (migration)
+            if existing_policy.get("hide_from_ui"):
+                logging.info(f"Migrating existing authenticated-default policy to show in UI (removing hide_from_ui flag)")
+                del existing_policy["hide_from_ui"]
+                needs_state_update = True
+            
+            if not existing_policy.get("policies") or len(existing_policy.get("policies", [])) == 0:
+                logging.warning(f"authenticated-default policy missing policies array - recreating it")
+                existing_policy["policies"] = [
+                    {
+                        "name": cf_policy_name,
+                        "decision": "allow",
+                        "include": [{"login_method": {"id": onetimepin_cf_id}}],
+                        "require": [{"email": {"email": account_email}}]
+                    }
+                ]
+                needs_state_update = True
+                needs_cf_update = True
+
+            if existing_policy.get("display_name") != "Authenticated Access":
+                logging.info(f"Updating authenticated-default display name to shorter version")
+                existing_policy["display_name"] = "Authenticated Access"
+                needs_state_update = True
+
+            current_allowed_idps = existing_policy.get("allowed_idps", [])
+            if not current_allowed_idps or current_allowed_idps == ["onetimepin"]:
+                logging.info(f"Migrating existing authenticated-default policy to use correct one-time PIN IdP UUID in allowed_idps")
+                existing_policy["allowed_idps"] = [onetimepin_cf_id]
+                needs_state_update = True
+
+            existing_include = existing_policy.get("policies", [{}])[0].get("include", [])
+            has_correct_login_method = any(
+                rule.get("login_method", {}).get("id") == onetimepin_cf_id
+                for rule in existing_include
+            )
+
+            existing_require = existing_policy.get("policies", [{}])[0].get("require", [])
+            has_email_in_require = any(
+                rule.get("email", {}).get("email") == account_email
+                for rule in existing_require
+            )
+
+            if not has_correct_login_method or not has_email_in_require:
+                logging.info(f"Migrating authenticated-default policy to use include=login_method + require=email structure")
+                if existing_policy.get("policies") and len(existing_policy["policies"]) > 0:
+                    existing_policy["policies"][0]["include"] = [{"login_method": {"id": onetimepin_cf_id}}]
+                    existing_policy["policies"][0]["require"] = [{"email": {"email": account_email}}]
+                    needs_state_update = True
+                    needs_cf_update = True
+
+            if needs_state_update:
+                save_state()
+
+            cf_policy_id = existing_policy.get("cloudflare_policy_id") or existing_policy.get("cf_policy_id") or existing_policy.get("id")
+
+            if flask_app and cf_policy_id != authenticated_default_id:
+                with flask_app.app_context():
+                    try:
+                        cf_policy = reusable_policies.get_reusable_policy(cf_policy_id)
+                        if cf_policy:
+                            logging.debug(f"Verified default authenticated policy exists in Cloudflare: {cf_policy_id}")
+
+                            if needs_cf_update:
+                                logging.info(f"Updating Cloudflare reusable policy {cf_policy_id} with include=login_method + require=email")
+                                updated_policy = reusable_policies.update_reusable_policy(
+                                    cf_policy_id,
+                                    cf_policy_name,
+                                    "allow",
+                                    include_rules=[{"login_method": {"id": onetimepin_cf_id}}],
+                                    require_rules=[{"email": {"email": account_email}}]
+                                )
+                                if updated_policy:
+                                    logging.info(f"Successfully updated Cloudflare policy {cf_policy_id} with correct structure")
+                                else:
+                                    logging.error(f"Failed to update Cloudflare policy {cf_policy_id}")
+                        else:
+                            logging.warning(f"Default authenticated policy {cf_policy_id} not found in Cloudflare, searching by name")
+                            existing_by_name = reusable_policies.find_policy_by_name(cf_policy_name)
+                            if existing_by_name:
+                                found_policy_id = existing_by_name.get("id")
+                                logging.info(f"Found existing authenticated-default policy by name with ID: {found_policy_id}")
+                                existing_policy["cloudflare_policy_id"] = found_policy_id
+                                existing_policy["cf_policy_id"] = found_policy_id
+                                save_state()
+                            else:
+                                logging.info(f"No existing authenticated-default policy found, creating new one")
+                                new_policy = reusable_policies.create_reusable_policy(
+                                    name=cf_policy_name,
+                                    decision="allow",
+                                    include_rules=[{"login_method": {"id": onetimepin_cf_id}}],
+                                    require_rules=[{"email": {"email": account_email}}]
+                                )
+                                if new_policy and new_policy.get("id"):
+                                    new_cf_policy_id = new_policy["id"]
+                                    logging.info(f"Created authenticated-default policy in Cloudflare with ID: {new_cf_policy_id}")
+                                    existing_policy["cloudflare_policy_id"] = new_cf_policy_id
+                                    existing_policy["cf_policy_id"] = new_cf_policy_id
+                                    save_state()
+                                else:
+                                    logging.error(f"Failed to create authenticated-default policy in Cloudflare")
+                    except Exception as e:
+                        logging.error(f"Error verifying/updating default authenticated policy in Cloudflare: {e}")
+
 def save_state():
     global managed_rules, access_groups
     current_thread_name = threading.current_thread().name
-    
+
     with state_lock:
         logging.info(f"SAVE_STATE: Start (RLock acquired). THREAD: {current_thread_name}. Items to save: {len(managed_rules)} rules, {len(access_groups)} access groups.")
         
@@ -169,15 +455,17 @@ def save_state():
     rules_to_iterate = list(managed_rules.items())
     groups_to_iterate = dict(access_groups)
     agents_to_iterate = dict(agents)
-    if not rules_to_iterate and not groups_to_iterate and not agents_to_iterate:
+    idps_to_iterate = dict(identity_providers)
+    if not rules_to_iterate and not groups_to_iterate and not agents_to_iterate and not idps_to_iterate:
         logging.info(f"SAVE_STATE: THREAD: {current_thread_name}. State is empty. Proceeding to write empty state file.")
     else:
         logging.info(
-            "SAVE_STATE: THREAD: %s. Serializing %s rules, %s groups and %s agents.",
+            "SAVE_STATE: THREAD: %s. Serializing %s rules, %s groups, %s agents and %s identity providers.",
             current_thread_name,
             len(rules_to_iterate),
             len(groups_to_iterate),
-            len(agents_to_iterate)
+            len(agents_to_iterate),
+            len(idps_to_iterate)
         )
 
     for rule_key, rule in rules_to_iterate:
@@ -217,10 +505,11 @@ def save_state():
     final_state_to_save = {
         "managed_rules": serializable_rules,
         "access_groups": groups_to_iterate,
-        "agents": agents_to_iterate
+        "agents": agents_to_iterate,
+        "identity_providers": idps_to_iterate
     }
 
-    logging.info(f"SAVE_STATE: THREAD: {current_thread_name}. Prepared final state with {len(serializable_rules)} rules and {len(groups_to_iterate)} groups.")
+    logging.info(f"SAVE_STATE: THREAD: {current_thread_name}. Prepared final state with {len(serializable_rules)} rules, {len(groups_to_iterate)} groups and {len(idps_to_iterate)} identity providers.")
 
     try:
         state_dir = os.path.dirname(config.STATE_FILE_PATH)
@@ -515,3 +804,40 @@ def update_tunnel_names_after_initialization():
             save_state()
 
     return updated_count
+
+def save_identity_provider(friendly_name, idp_data):
+    with state_lock:
+        identity_providers[friendly_name] = idp_data
+        logging.info(f"Saved identity provider '{friendly_name}' to state")
+    save_state()
+
+def get_identity_provider(friendly_name):
+    with state_lock:
+        return identity_providers.get(friendly_name)
+
+def delete_identity_provider(friendly_name):
+    with state_lock:
+        if friendly_name in identity_providers:
+            del identity_providers[friendly_name]
+            logging.info(f"Deleted identity provider '{friendly_name}' from state")
+            save_state()
+            return True
+        return False
+
+def list_identity_providers():
+    with state_lock:
+        return dict(identity_providers)
+
+def get_idp_by_cloudflare_id(cloudflare_id):
+    with state_lock:
+        for friendly_name, idp_data in identity_providers.items():
+            if idp_data.get("cloudflare_id") == cloudflare_id:
+                return friendly_name, idp_data
+        return None, None
+
+def get_idp_id_by_name(friendly_name):
+    with state_lock:
+        idp = identity_providers.get(friendly_name)
+        if idp:
+            return idp.get("cloudflare_id")
+        return None

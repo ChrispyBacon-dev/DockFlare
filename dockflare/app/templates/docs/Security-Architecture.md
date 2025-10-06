@@ -30,9 +30,34 @@ This document explains how DockFlare secures both the Master node and enrolled A
 
 ## 5. Authentication & Authorization
 
-- **Hardened UI Login** – The Pre-Flight wizard forces creation of a UI administrator account. Password login can be disabled only after pairing with an upstream IdP (e.g., Cloudflare Access).
+- **Hardened UI Login** – The Pre-Flight wizard forces creation of a UI administrator account. Password login can be disabled, but **this is strongly discouraged** due to Docker network security implications (see warning below).
 - **Session Management** – Flask-Login sessions are tied to the encrypted configuration. Restoring a backup or rotating credentials invalidates existing sessions automatically.
 - **Agent ACLs** – Each agent record tracks tunnel assignment, heartbeat timestamps, and pending commands. The Master only delivers commands to agents presenting the correct token and enrolled status.
+
+### ⚠️ Important: "Disable Password Login" Security Warning
+
+DockFlare includes a "Disable Password Login" setting intended for advanced deployments where DockFlare itself is protected by an external authentication layer (like Cloudflare Access). **We strongly advise against using this feature** for most deployments.
+
+**Security risks when enabled:**
+- **All API endpoints become accessible without authentication** when this setting is enabled
+- **Docker network exposure:** Even if DockFlare is behind Cloudflare Access on the public internet, containers on the same Docker network can bypass external authentication and access DockFlare's API directly
+- **No authentication enforcement:** The application assumes external authentication is handling security
+
+**Attack vector example:**
+```
+Internet → Cloudflare Access (Protected) → DockFlare ✅
+         ↓
+Docker Network → Other Container → DockFlare API (Unprotected) ❌
+```
+
+**Recommended approach:**
+Instead of disabling password authentication, use one of these secure options:
+1. **Local DockFlare credentials** - Simple password authentication built into DockFlare
+2. **OAuth/OIDC providers** - Configure Google, GitHub, Azure AD, or other identity providers for easy single sign-on without sacrificing security
+
+Both options provide proper authentication while maintaining the convenience of SSO. The OAuth option gives you the single sign-on experience without the security risks of disabled authentication.
+
+**Bottom line:** Unless you have a very specific, well-understood security architecture with network isolation, keep password login enabled and use OAuth for convenience.
 
 ## 6. Audit & Operational Visibility
 

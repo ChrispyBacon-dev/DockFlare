@@ -1,6 +1,8 @@
 ## OAuth Provider Setup
 
-DockFlare allows you to delegate user authentication to external providers using the OpenID Connect (OIDC) standard. This enables single sign-on (SSO) and allows you to integrate with identity providers like Google, Authentik, Okta, and more.
+> **📌 Important:** This guide is for configuring **DockFlare Web UI authentication** (logging into DockFlare itself). If you want to configure OAuth/OIDC for **Cloudflare Access Policies** to protect your services, see [Identity Providers](help/Identity-Providers.md) instead.
+
+DockFlare allows you to delegate user authentication to external providers using the OpenID Connect (OIDC) standard. This enables single sign-on (SSO) for the DockFlare web interface and allows you to integrate with identity providers like Google, Authentik, Okta, and more.
 
 ### Adding a New Provider
 

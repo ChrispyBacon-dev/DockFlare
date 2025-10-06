@@ -134,7 +134,7 @@ networks:
 ### Recommended Hardening
 
 1. Store agent keys in a vault/password manager; rotate regularly.
-2. Enable Cloudflare Access in front of the master UI if you disable password login.
+2. **Do not disable password login** - use OAuth/OIDC providers instead for single sign-on convenience without security risks. If you must disable password login, understand that this creates a Docker network security vulnerability where any container on the same network can bypass external authentication. See [Accessing the Web UI - Disabling Password Login](Accessing-the-Web-UI.md#disabling-password-login) for full security implications.
 3. Use separate tunnels per agent for least-privilege isolation.
 4. Monitor `Agents` page for heartbeat gaps – offline nodes can be removed directly from the UI.
 
