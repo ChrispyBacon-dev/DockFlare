@@ -42,7 +42,7 @@
 
             {% if access_groups and access_groups.items() %}
                 <div class="overflow-x-auto table-container">
-                    <table class="table table-zebra policy-table w-full">
+                    <table class="table table-zebra policy-table w-full" id="access-groups-table">
                         <colgroup>
                             <col class="col-primary">
                             <col class="col-secondary">
@@ -55,23 +55,22 @@
                                 <th class="px-4 py-3">Display Name</th>
                                 <th class="px-4 py-3">Group ID (for label)</th>
                                 <th class="px-4 py-3">Policy Summary</th>
-                                <th class="px-4 py-3">Session</th>
+                                <th class="px-4 py-3">Policy Type</th>
                                 <th class="px-4 py-3 text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for group_id, details in access_groups.items()|sort %}
-                                <tr>
-                                    <td class="px-4 py-3 align-top">
+                                {% set policy_type_label = 'dockflare' %}
+                                {% if details.external_policy %}
+                                    {% set policy_type_label = 'external' %}
+                                {% elif details.system_policy %}
+                                    {% set policy_type_label = 'system' %}
+                                {% endif %}
+                                <tr data-policy-type="{{ policy_type_label }}" data-group-id="{{ group_id }}">
+                                    <td class="px-4 py-3 cell-top">
                                         <div class="font-medium flex items-center gap-2">
                                             {{ details.display_name }}
-                                            {% if details.external_policy %}
-                                                <span class="badge badge-sm badge-secondary">External</span>
-                                            {% elif details.system_policy %}
-                                                <span class="badge badge-sm badge-warning">System</span>
-                                            {% else %}
-                                                <span class="badge badge-sm badge-info">DockFlare</span>
-                                            {% endif %}
                                         </div>
                                         {% if group_id in group_usage %}
                                             <button class="btn btn-xs btn-ghost gap-1 mt-1 usage-toggle" data-group-id="{{ group_id }}">
@@ -85,15 +84,32 @@
                                             </button>
                                         {% endif %}
                                     </td>
-                                    <td class="px-4 py-3 align-top"><code class="badge badge-sm badge-outline">{{ group_id }}</code></td>
-                                    <td class="px-4 py-3 text-xs opacity-80 align-top">
+                                    <td class="px-4 py-3 cell-top"><code class="badge badge-sm badge-outline">{{ group_id }}</code></td>
+                                    <td class="px-4 py-3 text-xs opacity-80 cell-top">
                                         {% if details.policies %}
                                             {{ details.policies | length }} rule(s) defined
                                         {% else %}
                                             <span class="italic opacity-60">No rules</span>
                                         {% endif %}
                                     </td>
-                                    <td class="px-4 py-3 text-xs opacity-70 align-top">{{ details.session_duration | default('24h', true) }}</td>
+                                    <td class="px-4 py-3">
+                                        {% if details.external_policy %}
+                                            <span class="badge badge-sm badge-secondary df-badge">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
+                                                External
+                                            </span>
+                                        {% elif details.system_policy %}
+                                            <span class="badge badge-sm badge-success df-badge">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
+                                                System
+                                            </span>
+                                        {% else %}
+                                            <span class="badge badge-sm badge-warning df-badge">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
+                                                DockFlare
+                                            </span>
+                                        {% endif %}
+                                    </td>
                                     <td class="px-4 py-3 text-right align-top">
                                         <div class="dropdown dropdown-end">
                                             <label tabindex="0" class="btn btn-ghost btn-sm">
@@ -141,7 +157,7 @@
                                     </td>
                                 </tr>
                                 {% if group_id in group_usage %}
-                                <tr class="usage-details-row" id="usage-{{ group_id }}" style="display: none;">
+                                <tr class="usage-details-row" id="usage-{{ group_id }}" data-group-id="{{ group_id }}" style="display: none;">
                                     <td colspan="5" class="p-0">
                                         <div class="bg-base-200/50 p-4 border-l-4 border-info">
                                             <div class="text-sm font-semibold mb-2 opacity-70">
@@ -334,7 +350,7 @@
 
 {% block scripts %}
 <style>
-/* Custom styles for better dropdown behavior and table layout */
+
 .table-container,
 .table-container .table {
     overflow: visible !important;
@@ -356,33 +372,62 @@
     transition: all 0.3s ease-in-out;
 }
 
+:root {
+    --policy-col-primary: 32%;
+    --policy-col-secondary: 24%;
+    --policy-col-tertiary: 20%;
+    --policy-col-status: 12%;
+    --policy-col-actions: 12%;
+}
+
 .policy-table {
     table-layout: fixed;
 }
 
 .policy-table col.col-primary {
-    width: 28%;
+    width: var(--policy-col-primary);
 }
 
 .policy-table col.col-secondary {
-    width: 22%;
+    width: var(--policy-col-secondary);
 }
 
 .policy-table col.col-tertiary {
-    width: 22%;
+    width: var(--policy-col-tertiary);
 }
 
 .policy-table col.col-status {
-    width: 14%;
+    width: var(--policy-col-status);
 }
 
 .policy-table col.col-actions {
-    width: 14%;
+    width: var(--policy-col-actions);
 }
 
 .policy-table th,
 .policy-table td {
-    vertical-align: top;
+    vertical-align: middle;
+    font-size: 0.875rem;
+}
+
+.policy-table .cell-top {
+    vertical-align: top !important;
+}
+
+.policy-table code {
+    font-size: 0.75rem;
+}
+
+.df-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    line-height: 1;
+}
+
+.df-badge svg {
+    width: 0.75rem;
+    height: 0.75rem;
 }
 </style>
 
@@ -847,15 +892,11 @@
                     html += '<td class="px-4 py-3">';
 
                     if (zone.has_default_policy) {
-                        html += '<span class="badge badge-success gap-2">';
-                        html += '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">';
-                        html += '<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />';
-                        html += '</svg>Protected</span>';
+                        html += '<span class="badge badge-sm badge-success df-badge">';
+                        html += '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>Protected</span>';
                     } else {
-                        html += '<span class="badge badge-warning gap-2">';
-                        html += '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">';
-                        html += '<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />';
-                        html += '</svg>Not Protected</span>';
+                        html += '<span class="badge badge-sm badge-warning df-badge">';
+                        html += '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>Not Protected</span>';
                     }
 
                     html += '</td><td class="px-4 py-3 text-right">';
@@ -947,6 +988,7 @@
                 }
             });
         });
+
     });
 </script>
 

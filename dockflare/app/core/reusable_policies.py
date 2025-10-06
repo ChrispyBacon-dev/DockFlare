@@ -292,11 +292,17 @@ def sync_access_group_to_reusable_policy(group_id):
     logging.error(f"Failed to sync access group '{group_id}' to reusable policy")
     return None
 
-def import_cloudflare_reusable_policies(sync_all=None):
-    from app.core.state_manager import access_groups, save_state
-    from app import config
+def _slugify_policy_name(name):
+    if not name:
+        return None
+    import re
+    slug = re.sub(r'[^a-zA-Z0-9]+', '-', name).strip('-')
+    return slug or None
 
-    # Use parameter if provided, otherwise fall back to config
+def import_cloudflare_reusable_policies(sync_all=None):
+    from app.core.state_manager import access_groups, save_state, state_lock
+    from app import config
+    
     if sync_all is None:
         sync_all = config.SYNC_ALL_CLOUDFLARE_POLICIES
 
@@ -340,7 +346,17 @@ def import_cloudflare_reusable_policies(sync_all=None):
             group_id = policy_name.replace("DockFlare-AccessGroup-", "")
             display_name = group_id.replace("-", " ").title()
         else:
-            group_id = policy_id
+            slug = _slugify_policy_name(policy_name)
+            if slug:
+                base_id = slug
+                counter = 1
+                with state_lock:
+                    while base_id in access_groups and access_groups[base_id].get("cloudflare_policy_id") != policy_id:
+                        counter += 1
+                        base_id = f"{slug}-{counter}"
+                group_id = base_id
+            else:
+                group_id = policy_id
             display_name = policy_name
 
         decision = policy.get("decision", "allow")
