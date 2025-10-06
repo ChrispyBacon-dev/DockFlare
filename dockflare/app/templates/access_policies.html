@@ -68,7 +68,7 @@
                                     {% set policy_type_label = 'system' %}
                                 {% endif %}
                                 <tr data-policy-type="{{ policy_type_label }}" data-group-id="{{ group_id }}">
-                                    <td class="px-4 py-3 align-top">
+                                    <td class="px-4 py-3 cell-top">
                                         <div class="font-medium flex items-center gap-2">
                                             {{ details.display_name }}
                                         </div>
@@ -84,28 +84,28 @@
                                             </button>
                                         {% endif %}
                                     </td>
-                                    <td class="px-4 py-3 align-top"><code class="badge badge-sm badge-outline">{{ group_id }}</code></td>
-                                    <td class="px-4 py-3 text-xs opacity-80 align-top">
+                                    <td class="px-4 py-3 cell-top"><code class="badge badge-sm badge-outline">{{ group_id }}</code></td>
+                                    <td class="px-4 py-3 text-xs opacity-80 cell-top">
                                         {% if details.policies %}
                                             {{ details.policies | length }} rule(s) defined
                                         {% else %}
                                             <span class="italic opacity-60">No rules</span>
                                         {% endif %}
                                     </td>
-                                    <td class="px-4 py-3 align-top">
+                                    <td class="px-4 py-3">
                                         {% if details.external_policy %}
-                                            <span class="badge badge-secondary gap-2">
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" /></svg>
+                                            <span class="badge badge-sm badge-secondary df-badge">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
                                                 External
                                             </span>
                                         {% elif details.system_policy %}
-                                            <span class="badge badge-warning gap-2">
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.093.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a6.759 6.759 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.371-.133-.768-.072-1.092.124a6.57 6.57 0 01-.22.128c-.332.184-.582.496-.645.87l-.213 1.281c-.09.542-.56.94-1.11.94h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.221-.128c-.324-.196-.72-.257-1.092-.124l-1.217.456a1.125 1.125 0 01-1.37-.49l-1.296-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.256c.007-.378-.138-.75-.43-.991l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.369-.49l1.217.456c.372.133.769.072 1.093-.124.072-.044.145-.087.219-.128.332-.184.582-.496.644-.87l.214-1.28z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                            <span class="badge badge-sm badge-success df-badge">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
                                                 System
                                             </span>
                                         {% else %}
-                                            <span class="badge badge-info gap-2">
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
+                                            <span class="badge badge-sm badge-warning df-badge">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
                                                 DockFlare
                                             </span>
                                         {% endif %}
@@ -350,7 +350,7 @@
 
 {% block scripts %}
 <style>
-/* Custom styles for better dropdown behavior and table layout */
+
 .table-container,
 .table-container .table {
     overflow: visible !important;
@@ -406,7 +406,28 @@
 
 .policy-table th,
 .policy-table td {
-    vertical-align: top;
+    vertical-align: middle;
+    font-size: 0.875rem;
+}
+
+.policy-table .cell-top {
+    vertical-align: top !important;
+}
+
+.policy-table code {
+    font-size: 0.75rem;
+}
+
+.df-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    line-height: 1;
+}
+
+.df-badge svg {
+    width: 0.75rem;
+    height: 0.75rem;
 }
 </style>
 
@@ -871,15 +892,11 @@
                     html += '<td class="px-4 py-3">';
 
                     if (zone.has_default_policy) {
-                        html += '<span class="badge badge-success gap-2">';
-                        html += '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">';
-                        html += '<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />';
-                        html += '</svg>Protected</span>';
+                        html += '<span class="badge badge-sm badge-success df-badge">';
+                        html += '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>Protected</span>';
                     } else {
-                        html += '<span class="badge badge-warning gap-2">';
-                        html += '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">';
-                        html += '<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />';
-                        html += '</svg>Not Protected</span>';
+                        html += '<span class="badge badge-sm badge-warning df-badge">';
+                        html += '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>Not Protected</span>';
                     }
 
                     html += '</td><td class="px-4 py-3 text-right">';
