@@ -41,7 +41,7 @@ APP_VERSION = "v3.0.3"
 # --- Logging Configuration ---
 # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
 # Set via environment variable LOG_LEVEL (default: INFO)
-LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'WARNING').upper()
 
 MAX_CF_UPDATE_RETRIES = 3
 CF_UPDATE_RETRY_DELAY = 2
