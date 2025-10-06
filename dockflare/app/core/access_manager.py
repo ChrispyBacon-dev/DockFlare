@@ -20,9 +20,10 @@ import json
 import hashlib
 import requests
 import time
+import copy
 from flask import current_app
 from app.core import cloudflare_api
-from app.core.state_manager import access_groups
+from app.core.state_manager import access_groups, managed_rules, state_lock
 
 _ACCOUNT_EMAIL_CACHE_TTL = 3600
 _cached_account_email = None
@@ -55,16 +56,42 @@ def check_for_tld_access_policy(zone_name):
         return False
 
     tld_hostname = f"*.{zone_name}"
+    
+    from app.core.cache import get_redis_client
+    import json
+    redis_client = get_redis_client()
+    cache_key = f"tld_policy_check:{zone_name}"
+    cache_ttl = 300  # 5 minutes
+
+    if redis_client:
+        try:
+            cached_result = redis_client.get(cache_key)
+            if cached_result is not None:
+                result = json.loads(cached_result)
+                logging.debug(f"Returning cached TLD policy check for {tld_hostname}: {result}")
+                return result
+        except Exception as e:
+            logging.warning(f"Failed to read TLD policy cache: {e}")
+
     logging.info(f"Checking for existing Access Policy for wildcard TLD: {tld_hostname}")
 
     try:
         existing_app = find_cloudflare_access_application_by_hostname(tld_hostname)
         if existing_app and existing_app.get("id"):
             logging.info(f"Found existing Access Application ID '{existing_app.get('id')}' for TLD '{tld_hostname}'.")
-            return True
+            result = True
         else:
             logging.info(f"No specific Access Application found for TLD '{tld_hostname}'.")
-            return False
+            result = False
+        
+        if redis_client:
+            try:
+                redis_client.setex(cache_key, cache_ttl, json.dumps(result))
+                logging.debug(f"Cached TLD policy check for {tld_hostname}")
+            except Exception as e:
+                logging.warning(f"Failed to cache TLD policy check: {e}")
+
+        return result
     except Exception as e:
         logging.error(f"Error while checking for TLD access policy for '{tld_hostname}': {e}", exc_info=True)
         return False
@@ -272,14 +299,22 @@ def generate_access_app_config_hash(policy_type, session_duration, app_launcher_
     hasher.update(consistent_config_string.encode('utf-8'))
     return hasher.hexdigest()
 
-def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state, state_manager_save_func):
+def handle_access_policy_from_labels(rule_key, hostname_config_item):
     from app import config
     from app.core import reusable_policies
+
+    with state_lock:
+        rule_reference = managed_rules.get(rule_key)
+        if not rule_reference:
+            return False
+        if rule_reference.get("access_policy_ui_override", False):
+            return False
+        rule_working = copy.deepcopy(rule_reference)
 
     hostname = hostname_config_item["hostname"]
     local_state_changed_by_access_policy = False
 
-    current_access_app_id_from_state = current_rule_in_state.get("access_app_id")
+    current_access_app_id_from_state = rule_working.get("access_app_id")
 
     desired_access_group_ids = hostname_config_item.get("access_group")
 
@@ -298,7 +333,11 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
         policy_source_type = "group"
 
         first_group_id = desired_access_group_ids[0]
-        first_group_def = access_groups.get(first_group_id)
+        first_group_def = None
+        with state_lock:
+            group_entry = access_groups.get(first_group_id)
+            if group_entry:
+                first_group_def = copy.deepcopy(group_entry)
 
         if first_group_def:
             desired_session_duration = first_group_def.get("session_duration", "24h")
@@ -310,21 +349,20 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
             use_reusable = True
             policy_ids = []
             for group_id in desired_access_group_ids:
-                group_definition = access_groups.get(group_id)
-                if group_definition:
-                    policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id, group_definition)
-                    if policy_id:
-                        policy_ids.append(policy_id)
-                    else:
-                        logging.warning(f"Failed to sync access group '{group_id}' to reusable policy for {hostname}")
+                policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id)
+                if policy_id:
+                    policy_ids.append(policy_id)
                 else:
-                    logging.warning(f"Access Group '{group_id}' not found.")
+                    logging.warning(f"Failed to sync access group '{group_id}' to reusable policy for {hostname}")
             cf_access_policies_or_ids = policy_ids
         else:
+            aggregated_policies = []
             for group_id in desired_access_group_ids:
-                group_definition = access_groups.get(group_id)
-                if group_definition and group_definition.get("policies"):
-                    for policy in group_definition.get("policies"):
+                with state_lock:
+                    group_definition = access_groups.get(group_id)
+                    group_copy = copy.deepcopy(group_definition) if group_definition else None
+                if group_copy and group_copy.get("policies"):
+                    for policy in group_copy.get("policies"):
                         is_default_deny = (
                             policy.get("decision") == "deny" and
                             isinstance(policy.get("include"), list) and
@@ -332,10 +370,11 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
                             policy.get("include")[0] == {"everyone": {}}
                         )
                         if not is_default_deny:
-                            cf_access_policies_or_ids.append(policy)
+                            aggregated_policies.append(policy)
                 else:
                     logging.warning(f"Access Group '{group_id}' not found or has no policies.")
 
+            cf_access_policies_or_ids = aggregated_policies
             has_allow_policy = any(p.get('decision') == 'allow' for p in cf_access_policies_or_ids)
             if has_allow_policy:
                 cf_access_policies_or_ids.append({"name": "Default Deny", "decision": "deny", "include": [{"everyone": {}}]})
@@ -351,27 +390,38 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
     else:
         policy_source_type = hostname_config_item.get("access_policy_type")
         if not policy_source_type:
-
             if current_access_app_id_from_state:
                 logging.info(f"No access policy label for {hostname}, but found managed Access App {current_access_app_id_from_state}. Deleting it.")
                 if delete_cloudflare_access_application(current_access_app_id_from_state):
-                    current_rule_in_state.update({"access_app_id": None, "access_policy_type": None, "access_app_config_hash": None, "access_group_id": None})
+                    rule_working.update({"access_app_id": None, "access_policy_type": None, "access_app_config_hash": None, "access_group_id": None})
                     local_state_changed_by_access_policy = True
-            elif current_rule_in_state.get("access_policy_type") or current_rule_in_state.get("access_group_id"):
-                current_rule_in_state.update({"access_app_id": None, "access_policy_type": None, "access_app_config_hash": None, "access_group_id": None})
+            elif rule_working.get("access_policy_type") or rule_working.get("access_group_id"):
+                rule_working.update({"access_app_id": None, "access_policy_type": None, "access_app_config_hash": None, "access_group_id": None})
                 local_state_changed_by_access_policy = True
-            return local_state_changed_by_access_policy
+            if local_state_changed_by_access_policy:
+                with state_lock:
+                    current_rule = managed_rules.get(rule_key)
+                    if current_rule:
+                        current_rule.update({"access_app_id": rule_working.get("access_app_id"), "access_policy_type": rule_working.get("access_policy_type"), "access_app_config_hash": rule_working.get("access_app_config_hash"), "access_group_id": rule_working.get("access_group_id")})
+                return local_state_changed_by_access_policy
+            return False
 
         if policy_source_type == "default_tld":
             if current_access_app_id_from_state:
                 logging.info(f"Label policy for {hostname} is 'default_tld'. Deleting existing Access App {current_access_app_id_from_state}.")
                 if delete_cloudflare_access_application(current_access_app_id_from_state):
-                    current_rule_in_state.update({"access_app_id": None, "access_policy_type": "default_tld", "access_app_config_hash": None, "access_group_id": None})
+                    rule_working.update({"access_app_id": None, "access_policy_type": "default_tld", "access_app_config_hash": None, "access_group_id": None})
                     local_state_changed_by_access_policy = True
-            elif current_rule_in_state.get("access_policy_type") != "default_tld" or current_rule_in_state.get("access_group_id"):
-                current_rule_in_state.update({"access_policy_type": "default_tld", "access_group_id": None, "access_app_config_hash": None})
+            elif rule_working.get("access_policy_type") != "default_tld" or rule_working.get("access_group_id"):
+                rule_working.update({"access_policy_type": "default_tld", "access_group_id": None, "access_app_config_hash": None})
                 local_state_changed_by_access_policy = True
-            return local_state_changed_by_access_policy
+            if local_state_changed_by_access_policy:
+                with state_lock:
+                    current_rule = managed_rules.get(rule_key)
+                    if current_rule:
+                        current_rule.update({"access_app_id": rule_working.get("access_app_id"), "access_policy_type": rule_working.get("access_policy_type"), "access_app_config_hash": rule_working.get("access_app_config_hash"), "access_group_id": rule_working.get("access_group_id")})
+                return True
+            return False
 
         desired_app_name = hostname_config_item.get("access_app_name") or f"DockFlare-{hostname}"
         desired_session_duration = hostname_config_item.get("access_session_duration", "24h")
@@ -386,23 +436,33 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
                 cf_access_policies_or_ids = json.loads(desired_custom_rules_str)
             except json.JSONDecodeError:
                 logging.error(f"Error parsing 'custom_rules' JSON for {hostname}")
-        
+
         if not cf_access_policies_or_ids:
             if policy_source_type == "bypass":
                 logging.warning(f"ACCESS_MANAGER: Unexpected 'bypass' policy type reached access_manager for {hostname}. This should have been migrated to access.group=bypass. Skipping access policy creation.")
                 if current_access_app_id_from_state:
                     logging.info(f"Deleting existing Access App {current_access_app_id_from_state} for {hostname} since bypass should not have an access app.")
                     if delete_cloudflare_access_application(current_access_app_id_from_state):
-                        current_rule_in_state.update({"access_app_id": None, "access_policy_type": None, "access_app_config_hash": None, "access_group_id": None})
+                        rule_working.update({"access_app_id": None, "access_policy_type": None, "access_app_config_hash": None, "access_group_id": None})
                         local_state_changed_by_access_policy = True
+                if local_state_changed_by_access_policy:
+                    with state_lock:
+                        current_rule = managed_rules.get(rule_key)
+                        if current_rule:
+                            current_rule.update({"access_app_id": rule_working.get("access_app_id"), "access_policy_type": rule_working.get("access_policy_type"), "access_app_config_hash": rule_working.get("access_app_config_hash"), "access_group_id": rule_working.get("access_group_id")})
                 return local_state_changed_by_access_policy
             elif policy_source_type == "authenticate":
                 logging.warning(f"ACCESS_MANAGER: Unexpected 'authenticate' policy type reached access_manager for {hostname}. This should have been migrated to access.group=authenticated-default. Skipping access policy creation.")
                 if current_access_app_id_from_state:
                     logging.info(f"Deleting existing Access App {current_access_app_id_from_state} for {hostname} since it should use authenticated-default group.")
                     if delete_cloudflare_access_application(current_access_app_id_from_state):
-                        current_rule_in_state.update({"access_app_id": None, "access_policy_type": None, "access_app_config_hash": None, "access_group_id": None})
+                        rule_working.update({"access_app_id": None, "access_policy_type": None, "access_app_config_hash": None, "access_group_id": None})
                         local_state_changed_by_access_policy = True
+                if local_state_changed_by_access_policy:
+                    with state_lock:
+                        current_rule = managed_rules.get(rule_key)
+                        if current_rule:
+                            current_rule.update({"access_app_id": rule_working.get("access_app_id"), "access_policy_type": rule_working.get("access_policy_type"), "access_app_config_hash": rule_working.get("access_app_config_hash"), "access_group_id": rule_working.get("access_group_id")})
                 return local_state_changed_by_access_policy
 
         new_config_hash = generate_access_app_config_hash(
@@ -410,16 +470,16 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
             desired_allowed_idps_str, desired_auto_redirect, desired_custom_rules_str
         )
 
-    needs_api_action = current_rule_in_state.get("access_app_config_hash") != new_config_hash
+    needs_api_action = rule_working.get("access_app_config_hash") != new_config_hash
 
     if needs_api_action:
-        effective_app_id = current_access_app_id_from_state
+        effective_app_id = rule_working.get("access_app_id")
         if not effective_app_id:
             existing_cf_app = find_cloudflare_access_application_by_hostname(hostname)
             if existing_cf_app and existing_cf_app.get("id"):
                 effective_app_id = existing_cf_app.get("id")
                 logging.info(f"Found existing Access App ID '{effective_app_id}' on Cloudflare for {hostname}. Will update.")
-                current_rule_in_state["access_app_id"] = effective_app_id
+                rule_working["access_app_id"] = effective_app_id
                 local_state_changed_by_access_policy = True
 
         app_result = None
@@ -439,7 +499,7 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
             )
 
         if app_result and app_result.get("id"):
-            current_rule_in_state.update({
+            rule_working.update({
                 "access_app_id": app_result.get("id"),
                 "access_app_config_hash": new_config_hash,
                 "access_group_id": desired_access_group_ids,
@@ -449,4 +509,18 @@ def handle_access_policy_from_labels(hostname_config_item, current_rule_in_state
         else:
             logging.error(f"Failed to create/update Access App for {hostname}.")
 
-    return local_state_changed_by_access_policy
+    if local_state_changed_by_access_policy:
+        updated_fields = {
+            "access_app_id": rule_working.get("access_app_id"),
+            "access_policy_type": rule_working.get("access_policy_type"),
+            "access_app_config_hash": rule_working.get("access_app_config_hash"),
+            "access_group_id": rule_working.get("access_group_id")
+        }
+        with state_lock:
+            current_rule = managed_rules.get(rule_key)
+            if not current_rule:
+                return False
+            current_rule.update(updated_fields)
+        return True
+
+    return False

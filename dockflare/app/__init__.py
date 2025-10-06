@@ -68,7 +68,18 @@ class QueueLogHandler(logging.Handler):
                  print("Log queue still full after attempting to make space, dropping message.", file=sys.stderr)
 
 root_logger = logging.getLogger()
-root_logger.setLevel(logging.INFO)
+
+# Set log level from config
+log_level_str = config.LOG_LEVEL.upper()
+log_level_map = {
+    'DEBUG': logging.DEBUG,
+    'INFO': logging.INFO,
+    'WARNING': logging.WARNING,
+    'ERROR': logging.ERROR,
+    'CRITICAL': logging.CRITICAL
+}
+log_level = log_level_map.get(log_level_str, logging.INFO)
+root_logger.setLevel(log_level)
 
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(log_formatter)
@@ -76,7 +87,7 @@ root_logger.addHandler(console_handler)
 
 queue_handler = QueueLogHandler(log_queue)
 queue_handler.setFormatter(log_formatter)
-queue_handler.setLevel(logging.INFO) 
+queue_handler.setLevel(log_level)
 root_logger.addHandler(queue_handler)
 
 

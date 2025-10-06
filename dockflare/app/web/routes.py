@@ -1330,7 +1330,7 @@ def ui_add_manual_rule_route():
                             logging.info(f"Using existing reusable policy ID '{existing_policy_id}' for access group '{group_id}'")
                             cf_access_policies_or_ids.append(existing_policy_id)
                         else:
-                            policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id, group)
+                            policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id)
                             if policy_id:
                                 logging.info(f"Synced access group '{group_id}' to reusable policy ID '{policy_id}' for manual rule")
                                 cf_access_policies_or_ids.append(policy_id)
@@ -1605,7 +1605,7 @@ def ui_edit_manual_rule_route():
                             logging.info(f"Using existing reusable policy ID '{existing_policy_id}' for access group '{group_id}' in edit")
                             cf_access_policies_or_ids.append(existing_policy_id)
                         else:
-                            policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id, group)
+                            policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id)
                             if policy_id:
                                 logging.info(f"Synced access group '{group_id}' to reusable policy ID '{policy_id}' for manual edit")
                                 cf_access_policies_or_ids.append(policy_id)
@@ -1905,7 +1905,7 @@ def create_access_group():
         if config.USE_REUSABLE_POLICIES:
             from app.core import reusable_policies
             try:
-                policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id, new_group)
+                policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id)
                 if policy_id:
                     logging.info(f"Created reusable policy '{policy_id}' for access group '{group_id}'")
             except Exception as e:
@@ -1960,7 +1960,7 @@ def edit_access_group(group_id):
         if config.USE_REUSABLE_POLICIES:
             from app.core import reusable_policies
             try:
-                policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id, updated_group)
+                policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id)
                 if policy_id:
                     logging.info(f"Updated reusable policy '{policy_id}' for access group '{group_id}'")
             except Exception as e:
@@ -2048,7 +2048,7 @@ def create_zone_default_policy():
 
         # Sync to Cloudflare if needed
         if not cf_policy_id or cf_policy_id == access_group_id:
-            policy_id = reusable_policies.sync_access_group_to_reusable_policy(access_group_id, group)
+            policy_id = reusable_policies.sync_access_group_to_reusable_policy(access_group_id)
             if policy_id:
                 cf_policy_id = policy_id
                 with state_lock:
@@ -2072,6 +2072,16 @@ def create_zone_default_policy():
         if app_result:
             flash(f"Success: Created zone default policy for '{wildcard_hostname}'.", "success")
             logging.info(f"Created zone default policy for {wildcard_hostname} with Access App ID {app_result.get('id')}")
+            
+            try:
+                from app.core.cache import get_redis_client
+                redis_client = get_redis_client()
+                if redis_client:
+                    redis_client.delete("zone_policies_cache")
+                    redis_client.delete(f"tld_policy_check:{zone_name}")
+                    logging.info("Invalidated zone policies and TLD check caches after creating zone policy")
+            except Exception as cache_err:
+                logging.warning(f"Failed to invalidate caches: {cache_err}")
         else:
             flash(f"Error: Failed to create Access Application for '{wildcard_hostname}'.", "error")
 

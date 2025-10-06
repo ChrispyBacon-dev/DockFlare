@@ -72,6 +72,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Non-Blocking SSE:** SSE endpoint now uses `pubsub.get_message(timeout=30)` instead of blocking `pubsub.listen()` to prevent worker thread exhaustion
   - **Automatic Refresh:** Dashboard automatically reloads when containers are created, started, or stopped without user interaction
   - **Multi-Client Support:** All connected browser clients receive real-time updates simultaneously
+- **System Policy Management:** Fixed critical bugs preventing system policies from being created and displayed correctly.
+  - **Identity Provider Key Mismatch:** Fixed IdP storage to use friendly names (e.g., `onetimepin`) instead of Cloudflare UUIDs, enabling proper lookup during policy creation
+  - **Authenticated-Default Policy Creation:** Resolved race condition where IdP lookup occurred outside state lock, causing policy creation to fail on fresh installations
+  - **Missing Policies Array:** Added migration to recreate empty or missing policies arrays in existing access groups
+  - **System Policy Visibility:** Removed `hide_from_ui` flag from system policies (`public-default-bypass`, `authenticated-default`) - now visible with orange "System" badge
+  - **System Policy Detection:** Import/sync correctly identifies system policies and marks them as non-deletable with proper display names instead of UUIDs
+- **External Policy Management:** Implemented comprehensive system for managing Cloudflare Access Policies created outside DockFlare.
+  - **Sync Modal UI:** Replaced environment variable with user-friendly modal offering "DockFlare- prefix only" (default) or "Sync all policies" options
+  - **Visual Organization:** Policies now display color-coded badges: Blue (DockFlare-managed), Purple (External), Orange (System)
+  - **Policy Filtering:** Added dropdown filter to view specific policy types (All, DockFlare-Managed, External, System)
+  - **Protection Dialogs:** Warning confirmations when deleting/editing external policies to prevent unintended changes to non-DockFlare services
+  - **Policy Renaming Tip:** Documentation shows users how to rename external policies to `DockFlare-` prefix for better organization
+- **Performance Optimization:** Implemented Redis caching to eliminate slow Cloudflare API calls causing 5-15 second page load delays.
+  - **Zone Policies Cache:** 5-minute TTL cache for `/api/v2/zone-policies` endpoint (used by Access Policies page)
+  - **TLD Policy Check Cache:** 5-minute TTL cache for `check_for_tld_access_policy()` (used by Dashboard)
+  - **Cache Invalidation:** Both caches automatically cleared when zone policies are created/modified
+  - **Worker Queue Fix:** Eliminated waitress "Task queue depth" warnings by preventing API call pileup
+  - **Sub-Second Load Times:** First load builds cache (~5s), subsequent loads <1 second from Redis
 
 ---
 

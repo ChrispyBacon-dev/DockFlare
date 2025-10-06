@@ -17,6 +17,7 @@
 # dockflare/app/core/reusable_policies.py
 import logging
 import requests
+import copy
 from flask import current_app
 from app.core import cloudflare_api
 
@@ -176,22 +177,24 @@ def find_policy_by_name(name):
     logging.info(f"Reusable policy '{name}' not found")
     return None
 
-def sync_access_group_to_reusable_policy(group_id, group_definition):
-    from app.core.state_manager import access_groups, save_state
+def sync_access_group_to_reusable_policy(group_id):
+    from app.core.state_manager import access_groups, save_state, state_lock
 
-    if not group_definition or not group_definition.get("policies"):
-        logging.warning(f"Access group '{group_id}' has no policies to sync")
-        return None
+    with state_lock:
+        group_definition = access_groups.get(group_id)
+        if not group_definition or not group_definition.get("policies"):
+            logging.warning(f"Access group '{group_id}' has no policies to sync")
+            return None
+        local_definition = copy.deepcopy(group_definition)
 
-    is_system_policy = group_definition.get("system_policy", False)
-    if is_system_policy and group_definition.get("policies"):
-        policy_name = group_definition["policies"][0].get("name", f"DockFlare-AccessGroup-{group_id}")
+    is_system_policy = local_definition.get("system_policy", False)
+    if is_system_policy and local_definition.get("policies"):
+        policy_name = local_definition["policies"][0].get("name", f"DockFlare-AccessGroup-{group_id}")
     else:
         policy_name = f"DockFlare-AccessGroup-{group_id}"
 
-    existing_policy_id = group_definition.get("cloudflare_policy_id")
-
-    policies = group_definition.get("policies", [])
+    existing_policy_id = local_definition.get("cloudflare_policy_id")
+    policies = local_definition.get("policies", [])
     if not policies:
         logging.warning(f"No policies found in access group '{group_id}'")
         return None
@@ -210,14 +213,41 @@ def sync_access_group_to_reusable_policy(group_id, group_definition):
     if existing_policy_id:
         existing_policy = get_reusable_policy(existing_policy_id)
         if existing_policy:
-            policy_data = update_reusable_policy(
-                existing_policy_id,
-                policy_name,
-                decision,
-                include_rules,
-                exclude_rules=exclude_rules,
-                require_rules=require_rules
-            )
+            
+            def normalize_rules(val):
+                return None if (val is None or val == []) else val
+
+            needs_update = False
+            update_reason = []
+            if existing_policy.get("name") != policy_name:
+                needs_update = True
+                update_reason.append(f"name: '{existing_policy.get('name')}' → '{policy_name}'")
+            if existing_policy.get("decision") != decision:
+                needs_update = True
+                update_reason.append(f"decision: '{existing_policy.get('decision')}' → '{decision}'")
+            if normalize_rules(existing_policy.get("include")) != normalize_rules(include_rules):
+                needs_update = True
+                update_reason.append(f"include: {existing_policy.get('include')} → {include_rules}")
+            if normalize_rules(existing_policy.get("exclude")) != normalize_rules(exclude_rules):
+                needs_update = True
+                update_reason.append(f"exclude: {existing_policy.get('exclude')} → {exclude_rules}")
+            if normalize_rules(existing_policy.get("require")) != normalize_rules(require_rules):
+                needs_update = True
+                update_reason.append(f"require: {existing_policy.get('require')} → {require_rules}")
+
+            if needs_update:
+                logging.info(f"Policy '{policy_name}' needs update - syncing to Cloudflare. Changes: {', '.join(update_reason)}")
+                policy_data = update_reusable_policy(
+                    existing_policy_id,
+                    policy_name,
+                    decision,
+                    include_rules,
+                    exclude_rules=exclude_rules,
+                    require_rules=require_rules
+                )
+            else:
+                logging.debug(f"Policy '{policy_name}' already up-to-date - skipping update")
+                policy_data = existing_policy
         else:
             logging.warning(f"Existing policy ID '{existing_policy_id}' not found on Cloudflare. Creating new policy.")
             existing_policy_id = None
@@ -246,9 +276,15 @@ def sync_access_group_to_reusable_policy(group_id, group_definition):
 
     if policy_data and policy_data.get("id"):
         policy_id = policy_data.get("id")
-        if group_definition.get("cloudflare_policy_id") != policy_id:
-            group_definition["cloudflare_policy_id"] = policy_id
-            access_groups[group_id] = group_definition
+        needs_save = False
+        with state_lock:
+            group_definition = access_groups.get(group_id)
+            if group_definition and group_definition.get("cloudflare_policy_id") != policy_id:
+                group_definition = copy.deepcopy(group_definition)
+                group_definition["cloudflare_policy_id"] = policy_id
+                access_groups[group_id] = group_definition
+                needs_save = True
+        if needs_save:
             save_state()
             logging.info(f"Synced access group '{group_id}' to reusable policy ID '{policy_id}'")
         return policy_id

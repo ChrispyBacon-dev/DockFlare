@@ -364,6 +364,22 @@ def list_zones_api():
 @login_required
 def get_zone_policies_api():
     from app.core.access_manager import check_for_tld_access_policy
+    from app.core.cache import get_redis_client
+    import json
+    
+    redis_client = get_redis_client()
+    cache_key = "zone_policies_cache"
+    cache_ttl = 300  # 5 minutes
+
+    if redis_client:
+        try:
+            cached_data = redis_client.get(cache_key)
+            if cached_data:
+                logging.info("Returning zone policies from Redis cache")
+                return jsonify(json.loads(cached_data))
+        except Exception as e:
+            logging.warning(f"Failed to read from Redis cache: {e}")
+
     zone_policies = []
     try:
         zones = list_account_zones()
@@ -376,10 +392,21 @@ def get_zone_policies_api():
                     'zone_id': zone.get('id'),
                     'has_default_policy': has_policy
                 })
+
+        response_data = {"success": True, "zone_policies": zone_policies}
+
+        # Cache the result
+        if redis_client:
+            try:
+                redis_client.setex(cache_key, cache_ttl, json.dumps(response_data))
+                logging.info(f"Cached zone policies in Redis (TTL: {cache_ttl}s)")
+            except Exception as e:
+                logging.warning(f"Failed to write to Redis cache: {e}")
+
+        return jsonify(response_data)
     except Exception as e:
         logging.error(f"Error fetching zone default policies: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
-    return jsonify({"success": True, "zone_policies": zone_policies})
 
 def _auto_detect_zone_match(hostname, zones):
     if not hostname or not zones:
@@ -572,7 +599,7 @@ def create_manual_rule_api():
                             logging.info(f"API: Using existing reusable policy ID '{existing_policy_id}' for access group '{group_id}'")
                             cf_access_policies_or_ids.append(existing_policy_id)
                         else:
-                            policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id, group)
+                            policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id)
                             if policy_id:
                                 logging.info(f"API: Synced access group '{group_id}' to reusable policy ID '{policy_id}' for manual rule")
                                 cf_access_policies_or_ids.append(policy_id)
@@ -899,6 +926,8 @@ def process_agent_container_start(payload, agent_id):
 
             logging.info(f"AGENT_PROCESS: Processing {len(hostnames_to_process)} hostname configs for agent {agent_id}")
 
+            policy_jobs_map = {}
+            dns_targets = {}
             for config_item in hostnames_to_process:
                 hostname = config_item["hostname"]
                 service = config_item["service"]
@@ -1001,35 +1030,47 @@ def process_agent_container_start(payload, agent_id):
                             "tunnel_name": assigned_tunnel_name,
                             "tunnel_id": assigned_tunnel_id
                         }
+                        existing_rule = managed_rules[rule_key]
                         state_changed_locally = True
                         needs_tunnel_config_update = True
 
-                    if existing_rule:
-                        if existing_rule.get("access_policy_ui_override", False):
-                            logging.info(f"AGENT_PROCESS: Access policy for {rule_key} is UI-managed. Skipping.")
-                        else:
-                            if handle_access_policy_from_labels(config_item, existing_rule, save_state):
-                                state_changed_locally = True
+                    dns_targets[hostname] = {
+                        "zone_id": target_zone_id,
+                        "zone_name": zone_name_from_item
+                    }
+
+                    if existing_rule.get("access_policy_ui_override", False):
+                        logging.info(f"AGENT_PROCESS: Access policy for {rule_key} is UI-managed. Skipping.")
+                    else:
+                        policy_jobs_map[rule_key] = copy.deepcopy(config_item)
+
+            policy_jobs = list(policy_jobs_map.items())
+
+            policy_state_changed = False
+            for rule_key, policy_payload in policy_jobs:
+                if handle_access_policy_from_labels(rule_key, copy.deepcopy(policy_payload)):
+                    policy_state_changed = True
+
+            if policy_state_changed:
+                state_changed_locally = True
 
             if state_changed_locally:
                 save_state()
                 publish_state_event('snapshot_refresh')
-    
+
             if needs_tunnel_config_update:
                 logging.info(f"AGENT_PROCESS: DNS and tunnel config update needed for agent {agent_id}.")
                 
                 agent_record = get_agent(agent_id)
                 if agent_record and agent_record.get("assigned_tunnel_id"):
                     agent_tunnel_id = agent_record.get("assigned_tunnel_id")
-                                        
-                    for config_item in hostnames_to_process:
-                        hostname = config_item["hostname"]
-                        zone_name_dns_item = config_item.get("zone_name")
-                        target_zone_id_for_dns = get_zone_id_from_name(zone_name_dns_item) if zone_name_dns_item else current_app.config.get('CF_ZONE_ID')
+                    for hostname_dns, dns_details in dns_targets.items():
+                        zone_name_dns_item = dns_details.get("zone_name")
+                        target_zone_id_for_dns = dns_details.get("zone_id") or (get_zone_id_from_name(zone_name_dns_item) if zone_name_dns_item else current_app.config.get('CF_ZONE_ID'))
                         if target_zone_id_for_dns:
-                            create_cloudflare_dns_record(target_zone_id_for_dns, hostname, agent_tunnel_id)
+                            create_cloudflare_dns_record(target_zone_id_for_dns, hostname_dns, agent_tunnel_id)
                         else:
-                            logging.error(f"AGENT_PROCESS: Could not determine Zone ID for DNS record {hostname}")
+                            logging.error(f"AGENT_PROCESS: Could not determine Zone ID for DNS record {hostname_dns}")
     
                     from app.core.state_manager import get_agent_rules
                     agent_rules = get_agent_rules(agent_id)

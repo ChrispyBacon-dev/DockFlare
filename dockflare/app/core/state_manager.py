@@ -282,14 +282,14 @@ def ensure_authenticated_default_policy(flask_app=None):
         logging.warning("Cannot create authenticated-default policy: Cloudflare account email not available")
         return
 
-    onetimepin_idp = identity_providers.get("onetimepin")
-    if not onetimepin_idp or not onetimepin_idp.get("cloudflare_id"):
-        logging.warning("Cannot create authenticated-default policy: One-time PIN IdP not found in state")
-        return
-
-    onetimepin_cf_id = onetimepin_idp["cloudflare_id"]
-
     with state_lock:
+        onetimepin_idp = identity_providers.get("onetimepin")
+        if not onetimepin_idp or not onetimepin_idp.get("cloudflare_id"):
+            logging.warning("Cannot create authenticated-default policy: One-time PIN IdP not found in state")
+            logging.debug(f"Available IdPs in state: {list(identity_providers.keys())}")
+            return
+
+        onetimepin_cf_id = onetimepin_idp["cloudflare_id"]
         if authenticated_default_id not in access_groups:
             logging.info(f"Creating default authenticated access group in state: {authenticated_default_id}")
 
@@ -346,6 +346,19 @@ def ensure_authenticated_default_policy(flask_app=None):
                 logging.info(f"Migrating existing authenticated-default policy to show in UI (removing hide_from_ui flag)")
                 del existing_policy["hide_from_ui"]
                 needs_state_update = True
+            
+            if not existing_policy.get("policies") or len(existing_policy.get("policies", [])) == 0:
+                logging.warning(f"authenticated-default policy missing policies array - recreating it")
+                existing_policy["policies"] = [
+                    {
+                        "name": cf_policy_name,
+                        "decision": "allow",
+                        "include": [{"login_method": {"id": onetimepin_cf_id}}],
+                        "require": [{"email": {"email": account_email}}]
+                    }
+                ]
+                needs_state_update = True
+                needs_cf_update = True
 
             if existing_policy.get("display_name") != "Authenticated Access":
                 logging.info(f"Updating authenticated-default display name to shorter version")

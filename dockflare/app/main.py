@@ -122,7 +122,7 @@ def start_core_services():
     logging.info("Bypass policy post-setup initialization complete.")
 
     from app.core import idp_manager
-    from app.core.state_manager import identity_providers, save_state, state_lock
+    from app.core.state_manager import identity_providers, save_state, state_lock, save_identity_provider
     logging.info("Syncing identity providers after setup...")
     try:
         idps = idp_manager.list_identity_providers()
@@ -130,16 +130,21 @@ def start_core_services():
             with state_lock:
                 for idp in idps:
                     idp_id = idp.get("id")
-                    if idp_id:
-                        identity_providers[idp_id] = {
+                    idp_type = idp.get("type", "unknown")
+                    if idp_id and idp_type:
+                        
+                        friendly_name = idp_type
+                        idp_data = {
                             "cloudflare_id": idp_id,
                             "name": idp.get("name", "Unknown"),
-                            "type": idp.get("type", "unknown"),
+                            "type": idp_type,
                             "last_synced": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                            "system_managed": idp_manager.is_system_managed_idp(idp.get("type"))
+                            "system_managed": idp_manager.is_system_managed_idp(idp_type)
                         }
+                        
+                        identity_providers[friendly_name] = idp_data
                 save_state()
-            logging.info(f"Synced {len(idps)} identity providers from Cloudflare")
+            logging.info(f"Synced {len(idps)} identity providers from Cloudflare (keyed by type)")
     except Exception as e:
         logging.error(f"Error syncing identity providers: {e}", exc_info=True)
 

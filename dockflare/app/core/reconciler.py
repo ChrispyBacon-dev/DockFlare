@@ -18,6 +18,7 @@
 import logging
 import time
 import threading
+import copy
 from datetime import datetime, timedelta, timezone
 from app import config, docker_client, tunnel_state, publish_state_event
 from flask import current_app 
@@ -375,6 +376,7 @@ def _run_reconciliation_logic():
         current_app.reconciliation_info["processed_items"] = 0 
         processed_reconcile_items = 0
         hostnames_requiring_dns_setup = set()
+        policy_jobs_map = {}
 
         with state_lock:
             now_utc = datetime.now(timezone.utc)
@@ -464,11 +466,8 @@ def _run_reconciliation_logic():
                 
                 hostnames_requiring_dns_setup.add((desired_details["hostname"], target_zone_id, effective_tunnel_id))
                 
-                if existing_rule.get("access_policy_ui_override", False):
-                    pass 
-                else:
-                    if handle_access_policy_from_labels(desired_details, existing_rule, desired_details["hostname"]):
-                        state_changed_locally = True
+                if not existing_rule.get("access_policy_ui_override", False):
+                    policy_jobs_map[rule_key] = copy.deepcopy(desired_details)
             
             rule_keys_in_state_but_not_running = list(current_managed_rule_keys_in_state - set(running_labeled_rules_details.keys()))
             for rule_key_to_check in rule_keys_in_state_but_not_running:
@@ -498,10 +497,18 @@ def _run_reconciliation_logic():
                                 if agent_tunnel_id:
                                     hostnames_requiring_dns_setup.add((rule.get("hostname"), rule.get("zone_id"), agent_tunnel_id))
 
-            if state_changed_locally:
-                current_app.reconciliation_info["status"] = "Saving reconciled state..."
-                save_state()
-                publish_state_event('snapshot_refresh')
+        policy_state_changed = False
+        for rule_key, details in policy_jobs_map.items():
+            if handle_access_policy_from_labels(rule_key, copy.deepcopy(details)):
+                policy_state_changed = True
+
+        if policy_state_changed:
+            state_changed_locally = True
+
+        if state_changed_locally:
+            current_app.reconciliation_info["status"] = "Saving reconciled state..."
+            save_state()
+            publish_state_event('snapshot_refresh')
 
         if time.time() - reconciliation_start_time > max_total_time - 15:
             logging.warning("[Reconcile] Timeout before Tunnel/DNS operations.")
