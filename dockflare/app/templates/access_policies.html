@@ -42,7 +42,7 @@
 
             {% if access_groups and access_groups.items() %}
                 <div class="overflow-x-auto table-container">
-                    <table class="table table-zebra policy-table w-full">
+                    <table class="table table-zebra policy-table w-full" id="access-groups-table">
                         <colgroup>
                             <col class="col-primary">
                             <col class="col-secondary">
@@ -55,23 +55,22 @@
                                 <th class="px-4 py-3">Display Name</th>
                                 <th class="px-4 py-3">Group ID (for label)</th>
                                 <th class="px-4 py-3">Policy Summary</th>
-                                <th class="px-4 py-3">Session</th>
+                                <th class="px-4 py-3">Policy Type</th>
                                 <th class="px-4 py-3 text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for group_id, details in access_groups.items()|sort %}
-                                <tr>
+                                {% set policy_type_label = 'dockflare' %}
+                                {% if details.external_policy %}
+                                    {% set policy_type_label = 'external' %}
+                                {% elif details.system_policy %}
+                                    {% set policy_type_label = 'system' %}
+                                {% endif %}
+                                <tr data-policy-type="{{ policy_type_label }}" data-group-id="{{ group_id }}">
                                     <td class="px-4 py-3 align-top">
                                         <div class="font-medium flex items-center gap-2">
                                             {{ details.display_name }}
-                                            {% if details.external_policy %}
-                                                <span class="badge badge-sm badge-secondary">External</span>
-                                            {% elif details.system_policy %}
-                                                <span class="badge badge-sm badge-warning">System</span>
-                                            {% else %}
-                                                <span class="badge badge-sm badge-info">DockFlare</span>
-                                            {% endif %}
                                         </div>
                                         {% if group_id in group_usage %}
                                             <button class="btn btn-xs btn-ghost gap-1 mt-1 usage-toggle" data-group-id="{{ group_id }}">
@@ -93,7 +92,24 @@
                                             <span class="italic opacity-60">No rules</span>
                                         {% endif %}
                                     </td>
-                                    <td class="px-4 py-3 text-xs opacity-70 align-top">{{ details.session_duration | default('24h', true) }}</td>
+                                    <td class="px-4 py-3 align-top">
+                                        {% if details.external_policy %}
+                                            <span class="badge badge-secondary gap-2">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" /></svg>
+                                                External
+                                            </span>
+                                        {% elif details.system_policy %}
+                                            <span class="badge badge-warning gap-2">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.093.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a6.759 6.759 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.371-.133-.768-.072-1.092.124a6.57 6.57 0 01-.22.128c-.332.184-.582.496-.645.87l-.213 1.281c-.09.542-.56.94-1.11.94h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.221-.128c-.324-.196-.72-.257-1.092-.124l-1.217.456a1.125 1.125 0 01-1.37-.49l-1.296-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.256c.007-.378-.138-.75-.43-.991l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.369-.49l1.217.456c.372.133.769.072 1.093-.124.072-.044.145-.087.219-.128.332-.184.582-.496.644-.87l.214-1.28z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                                System
+                                            </span>
+                                        {% else %}
+                                            <span class="badge badge-info gap-2">
+                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
+                                                DockFlare
+                                            </span>
+                                        {% endif %}
+                                    </td>
                                     <td class="px-4 py-3 text-right align-top">
                                         <div class="dropdown dropdown-end">
                                             <label tabindex="0" class="btn btn-ghost btn-sm">
@@ -141,7 +157,7 @@
                                     </td>
                                 </tr>
                                 {% if group_id in group_usage %}
-                                <tr class="usage-details-row" id="usage-{{ group_id }}" style="display: none;">
+                                <tr class="usage-details-row" id="usage-{{ group_id }}" data-group-id="{{ group_id }}" style="display: none;">
                                     <td colspan="5" class="p-0">
                                         <div class="bg-base-200/50 p-4 border-l-4 border-info">
                                             <div class="text-sm font-semibold mb-2 opacity-70">
@@ -356,28 +372,36 @@
     transition: all 0.3s ease-in-out;
 }
 
+:root {
+    --policy-col-primary: 32%;
+    --policy-col-secondary: 24%;
+    --policy-col-tertiary: 20%;
+    --policy-col-status: 12%;
+    --policy-col-actions: 12%;
+}
+
 .policy-table {
     table-layout: fixed;
 }
 
 .policy-table col.col-primary {
-    width: 28%;
+    width: var(--policy-col-primary);
 }
 
 .policy-table col.col-secondary {
-    width: 22%;
+    width: var(--policy-col-secondary);
 }
 
 .policy-table col.col-tertiary {
-    width: 22%;
+    width: var(--policy-col-tertiary);
 }
 
 .policy-table col.col-status {
-    width: 14%;
+    width: var(--policy-col-status);
 }
 
 .policy-table col.col-actions {
-    width: 14%;
+    width: var(--policy-col-actions);
 }
 
 .policy-table th,
@@ -947,6 +971,7 @@
                 }
             });
         });
+
     });
 </script>
 
