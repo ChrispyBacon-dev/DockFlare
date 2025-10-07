@@ -1378,18 +1378,33 @@ def ui_add_manual_rule_route():
                 )
 
                 existing_app = find_cloudflare_access_application_by_domain(application_domain)
+                app_result = None
+                app_update_failed = False
                 if existing_app:
-                    app_result = update_cloudflare_access_application(
-                        existing_app['id'], application_domain, desired_app_name, desired_session_duration,
-                        desired_app_launcher_visible, [application_domain], cf_access_policies_or_ids,
-                        desired_allowed_idps, desired_auto_redirect, use_reusable
-                    )
-                else:
-                    app_result = create_cloudflare_access_application(
-                        application_domain, desired_app_name, desired_session_duration,
-                        desired_app_launcher_visible, [application_domain], cf_access_policies_or_ids,
-                        desired_allowed_idps, desired_auto_redirect, use_reusable
-                    )
+                    try:
+                        app_result = update_cloudflare_access_application(
+                            existing_app['id'], application_domain, desired_app_name, desired_session_duration,
+                            desired_app_launcher_visible, [application_domain], cf_access_policies_or_ids,
+                            desired_allowed_idps, desired_auto_redirect, use_reusable
+                        )
+                    except Exception as update_error:
+                        error_text = str(update_error)
+                        if "access.api.error.unknown_application" in error_text or "404" in error_text:
+                            logging.warning(f"Manual rule edit: Access App {existing_app['id']} missing in Cloudflare, will recreate.")
+                            app_update_failed = True
+                        else:
+                            logging.error(f"Error updating access app during manual edit: {update_error}", exc_info=True)
+                            raise
+                if not existing_app or app_update_failed or not app_result:
+                    try:
+                        app_result = create_cloudflare_access_application(
+                            application_domain, desired_app_name, desired_session_duration,
+                            desired_app_launcher_visible, [application_domain], cf_access_policies_or_ids,
+                            desired_allowed_idps, desired_auto_redirect, use_reusable
+                        )
+                    except Exception as create_error:
+                        logging.error(f"Error creating access app during manual edit: {create_error}", exc_info=True)
+                        raise
 
                 if app_result:
                     access_app_id = app_result.get('id')
@@ -1420,18 +1435,33 @@ def ui_add_manual_rule_route():
                     )
 
                     existing_app = find_cloudflare_access_application_by_domain(application_domain)
+                    app_result = None
+                    app_update_failed = False
                     if existing_app:
-                        app_result = update_cloudflare_access_application(
-                            existing_app['id'], application_domain, desired_app_name, "24h",
-                            False, [application_domain], [cf_policy_id],
-                            None, False, True
-                        )
-                    else:
-                        app_result = create_cloudflare_access_application(
-                            application_domain, desired_app_name, "24h",
-                            False, [application_domain], [cf_policy_id],
-                            None, False, True
-                        )
+                        try:
+                            app_result = update_cloudflare_access_application(
+                                existing_app['id'], application_domain, desired_app_name, "24h",
+                                False, [application_domain], [cf_policy_id],
+                                None, False, True
+                            )
+                        except Exception as update_error:
+                            error_text = str(update_error)
+                            if "access.api.error.unknown_application" in error_text or "404" in error_text:
+                                logging.warning(f"Manual rule edit (bypass): Access App {existing_app['id']} missing in Cloudflare, will recreate.")
+                                app_update_failed = True
+                            else:
+                                logging.error(f"Error updating access app during manual edit (bypass): {update_error}", exc_info=True)
+                                raise
+                    if not existing_app or app_update_failed or not app_result:
+                        try:
+                            app_result = create_cloudflare_access_application(
+                                application_domain, desired_app_name, "24h",
+                                False, [application_domain], [cf_policy_id],
+                                None, False, True
+                            )
+                        except Exception as create_error:
+                            logging.error(f"Error creating access app during manual edit (bypass): {create_error}", exc_info=True)
+                            raise
 
                     if app_result:
                         access_app_id = app_result.get('id')
