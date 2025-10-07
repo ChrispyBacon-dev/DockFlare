@@ -57,14 +57,14 @@ services:
       # - dockflare.1.hostname=dockflare.example.com
       # - dockflare.1.path=/auth/github/callback
       # - dockflare.1.service=http://dockflare:5000
-      # - dockflare.1.access.policy=bypass
+      # - dockflare.1.access.group=public-default-bypass
     volumes:
       - dockflare_data:/app/data
     environment:
       - REDIS_URL=redis://redis:6379/0
       - REDIS_DB_INDEX=0  # Optional: specify Redis database index (0-15) for isolation from other containers
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
-      - LOG_LEVEL=DEBUG
+      # - LOG_LEVEL=DEBUG # Uncomment for more verbose logging/debugging
     depends_on:
       docker-socket-proxy:
         condition: service_started
