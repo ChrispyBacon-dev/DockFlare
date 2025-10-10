@@ -39,6 +39,15 @@ def cleanup_duplicate_policies(dry_run=True):
     from app import app
     from app.core import reusable_policies
     from app.core.state_manager import access_groups, save_state, state_lock
+    from app.web import config_loader
+    
+    config_data = config_loader.load_encrypted_config()
+    if not config_data:
+        logging.error("Failed to load DockFlare configuration. Ensure the application is configured.")
+        logging.error("Run the web UI setup first: docker exec dockflare python -m app.main")
+        return {"error": "Configuration not found"}
+
+    config_loader.apply_config_to_app(app, config_data)
 
     with app.app_context():
         logging.info("=" * 60)
