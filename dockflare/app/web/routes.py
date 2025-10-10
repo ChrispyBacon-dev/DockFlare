@@ -220,7 +220,7 @@ def add_security_headers_bp(response):
         "style-src": ["'self'", "'unsafe-inline'", "https://rsms.me", "https://cdn.jsdelivr.net"],
         "img-src": ["'self'", "data:", "https://img.shields.io"],
         "font-src": ["'self'", "https://rsms.me"],
-        "connect-src": ["'self'"],
+        "connect-src": ["'self'", "https://cdn.jsdelivr.net"],
         "frame-src": ["'none'"]
     }
     if is_https:
