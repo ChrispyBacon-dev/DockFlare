@@ -177,25 +177,32 @@ def ensure_default_bypass_policy(flask_app=None):
         if default_bypass_id not in access_groups:
             logging.info(f"Creating default bypass access group in state: {default_bypass_id}")
 
-            # Create in Cloudflare first
+            
             cf_policy_id = None
             if flask_app:
                 with flask_app.app_context():
                     try:
-                        cf_policy = reusable_policies.create_reusable_policy(
-                            name=cf_policy_name,
-                            decision="bypass",
-                            include_rules=[{"everyone": {}}]
-                        )
-                        if cf_policy and cf_policy.get("id"):
-                            cf_policy_id = cf_policy["id"]
-                            logging.info(f"Created default bypass policy in Cloudflare with ID: {cf_policy_id}")
+                        
+                        existing_by_name = reusable_policies.find_policy_by_name(cf_policy_name)
+                        if existing_by_name:
+                            cf_policy_id = existing_by_name.get("id")
+                            logging.info(f"Found existing bypass policy in Cloudflare by name with ID: {cf_policy_id}")
                         else:
-                            logging.warning(f"Failed to create default bypass policy in Cloudflare, will create local reference only")
+                            
+                            cf_policy = reusable_policies.create_reusable_policy(
+                                name=cf_policy_name,
+                                decision="bypass",
+                                include_rules=[{"everyone": {}}]
+                            )
+                            if cf_policy and cf_policy.get("id"):
+                                cf_policy_id = cf_policy["id"]
+                                logging.info(f"Created default bypass policy in Cloudflare with ID: {cf_policy_id}")
+                            else:
+                                logging.warning(f"Failed to create default bypass policy in Cloudflare, will create local reference only")
                     except Exception as e:
-                        logging.error(f"Error creating default bypass policy in Cloudflare: {e}", exc_info=True)
+                        logging.error(f"Error checking/creating default bypass policy in Cloudflare: {e}", exc_info=True)
 
-            # Create local state entry
+            
             access_groups[default_bypass_id] = {
                 "id": cf_policy_id if cf_policy_id else default_bypass_id,
                 "display_name": display_name,
@@ -212,7 +219,8 @@ def ensure_default_bypass_policy(flask_app=None):
                 ],
                 "system_policy": True,
                 "deletable": False,
-                "cf_policy_id": cf_policy_id
+                "cf_policy_id": cf_policy_id,
+                "cloudflare_policy_id": cf_policy_id
             }
             save_state()
             logging.info(f"Default bypass policy '{default_bypass_id}' created successfully in local state.")
@@ -221,7 +229,7 @@ def ensure_default_bypass_policy(flask_app=None):
 
             existing_policy = access_groups[default_bypass_id]
 
-            # Remove hide_from_ui flag if it exists (migration)
+            
             if existing_policy.get("hide_from_ui"):
                 logging.info(f"Migrating existing bypass policy to show in UI (removing hide_from_ui flag)")
                 del existing_policy["hide_from_ui"]
@@ -297,19 +305,26 @@ def ensure_authenticated_default_policy(flask_app=None):
             if flask_app:
                 with flask_app.app_context():
                     try:
-                        cf_policy = reusable_policies.create_reusable_policy(
-                            name=cf_policy_name,
-                            decision="allow",
-                            include_rules=[{"login_method": {"id": onetimepin_cf_id}}],
-                            require_rules=[{"email": {"email": account_email}}]
-                        )
-                        if cf_policy and cf_policy.get("id"):
-                            cf_policy_id = cf_policy["id"]
-                            logging.info(f"Created default authenticated policy in Cloudflare with ID: {cf_policy_id}")
+                        
+                        existing_by_name = reusable_policies.find_policy_by_name(cf_policy_name)
+                        if existing_by_name:
+                            cf_policy_id = existing_by_name.get("id")
+                            logging.info(f"Found existing authenticated policy in Cloudflare by name with ID: {cf_policy_id}")
                         else:
-                            logging.warning(f"Failed to create default authenticated policy in Cloudflare, will create local reference only")
+                            
+                            cf_policy = reusable_policies.create_reusable_policy(
+                                name=cf_policy_name,
+                                decision="allow",
+                                include_rules=[{"login_method": {"id": onetimepin_cf_id}}],
+                                require_rules=[{"email": {"email": account_email}}]
+                            )
+                            if cf_policy and cf_policy.get("id"):
+                                cf_policy_id = cf_policy["id"]
+                                logging.info(f"Created default authenticated policy in Cloudflare with ID: {cf_policy_id}")
+                            else:
+                                logging.warning(f"Failed to create default authenticated policy in Cloudflare, will create local reference only")
                     except Exception as e:
-                        logging.error(f"Error creating default authenticated policy in Cloudflare: {e}", exc_info=True)
+                        logging.error(f"Error checking/creating default authenticated policy in Cloudflare: {e}", exc_info=True)
 
             access_groups[authenticated_default_id] = {
                 "id": cf_policy_id if cf_policy_id else authenticated_default_id,
@@ -329,7 +344,8 @@ def ensure_authenticated_default_policy(flask_app=None):
                 ],
                 "system_policy": True,
                 "deletable": False,
-                "cf_policy_id": cf_policy_id
+                "cf_policy_id": cf_policy_id,
+                "cloudflare_policy_id": cf_policy_id
             }
             save_state()
             logging.info(f"Default authenticated policy '{authenticated_default_id}' created successfully in local state.")
@@ -341,7 +357,7 @@ def ensure_authenticated_default_policy(flask_app=None):
             needs_state_update = False
             needs_cf_update = False
 
-            # Remove hide_from_ui flag if it exists (migration)
+            
             if existing_policy.get("hide_from_ui"):
                 logging.info(f"Migrating existing authenticated-default policy to show in UI (removing hide_from_ui flag)")
                 del existing_policy["hide_from_ui"]
