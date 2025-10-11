@@ -48,15 +48,22 @@
 <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
   <div class="card-body">
     <h2 class="card-title text-xl border-b border-base-300 pb-3 mb-6">Active API Keys</h2>
-    <div class="overflow-x-auto">
-      <table class="table table-zebra table-sm w-full">
+    <div class="overflow-x-auto active-keys-table-container">
+      <table class="table table-zebra table-sm w-full api-keys-table">
+        <colgroup>
+          <col class="col-key">
+          <col class="col-owner">
+          <col class="col-created">
+          <col class="col-status">
+          <col class="col-actions">
+        </colgroup>
         <thead>
           <tr>
-            <th class="p-3">Key (Partial)</th>
-            <th class="p-3">Owner</th>
-            <th class="p-3">Created At</th>
-            <th class="p-3">Status</th>
-            <th class="p-3">Actions</th>
+            <th class="px-4 py-3">Key (Partial)</th>
+            <th class="px-4 py-3">Owner</th>
+            <th class="px-4 py-3">Created At</th>
+            <th class="px-4 py-3">Status</th>
+            <th class="px-4 py-3 text-right">Actions</th>
           </tr>
         </thead>
         <tbody id="active-keys-table-body">
@@ -87,15 +94,22 @@
         </button>
       </div>
     </div>
-    <div class="overflow-x-auto">
-      <table class="table table-zebra table-sm w-full">
+    <div class="overflow-x-auto revoked-keys-table-container">
+      <table class="table table-zebra table-sm w-full api-keys-table">
+        <colgroup>
+          <col class="col-key">
+          <col class="col-owner">
+          <col class="col-created">
+          <col class="col-status">
+          <col class="col-actions">
+        </colgroup>
         <thead>
           <tr>
-            <th class="p-3">Full API Key</th>
-            <th class="p-3">Owner</th>
-            <th class="p-3">Revoked At</th>
-            <th class="p-3">Auto-Delete</th>
-            <th class="p-3">Actions</th>
+            <th class="px-4 py-3">Full API Key</th>
+            <th class="px-4 py-3">Owner</th>
+            <th class="px-4 py-3">Revoked At</th>
+            <th class="px-4 py-3">Auto-Delete</th>
+            <th class="px-4 py-3 text-right">Actions</th>
           </tr>
         </thead>
         <tbody id="revoked-keys-table-body">
@@ -197,6 +211,24 @@
   </div>
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
+
+<dialog id="modal-rolled-key" class="modal">
+  <div class="modal-box">
+    <h3 class="font-bold text-lg">API Key Rolled Successfully</h3>
+    <div class="py-4 prose">
+      <p class="text-error">Please copy this key now. You will not be able to see it again.</p>
+      <div class="relative bg-base-200 p-3 rounded-md">
+        <code class="font-mono break-all text-sm" id="rolled-key-text"></code>
+        <button id="btn-copy-rolled-key" class="btn btn-ghost btn-sm absolute top-1 right-1">Copy</button>
+      </div>
+      <p class="text-sm mt-4">Update your DockFlare agent configuration with this new key and restart the agent.</p>
+    </div>
+    <div class="modal-action">
+      <button type="button" class="btn btn-primary" onclick="document.getElementById('modal-rolled-key').close()">Done</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 {% endblock %}
 
 {% block scripts %}
@@ -288,12 +320,58 @@
 }
 
 /* Ensure dropdown container allows overflow */
-.agents-table-container {
+.agents-table-container,
+.active-keys-table-container,
+.revoked-keys-table-container {
   overflow: visible !important;
 }
 
-.agents-table-container .table {
+.agents-table-container .table,
+.active-keys-table-container .table,
+.revoked-keys-table-container .table {
   overflow: visible !important;
+}
+
+/* API Keys table layout with fixed column widths */
+:root {
+  --api-keys-col-key: 25%;
+  --api-keys-col-owner: 20%;
+  --api-keys-col-created: 22%;
+  --api-keys-col-status: 20%;
+  --api-keys-col-actions: 13%;
+}
+
+.api-keys-table {
+  table-layout: fixed;
+}
+
+.api-keys-table col.col-key {
+  width: var(--api-keys-col-key);
+}
+
+.api-keys-table col.col-owner {
+  width: var(--api-keys-col-owner);
+}
+
+.api-keys-table col.col-created {
+  width: var(--api-keys-col-created);
+}
+
+.api-keys-table col.col-status {
+  width: var(--api-keys-col-status);
+}
+
+.api-keys-table col.col-actions {
+  width: var(--api-keys-col-actions);
+}
+
+.api-keys-table th,
+.api-keys-table td {
+  vertical-align: middle;
+}
+
+.api-keys-table .cell-top {
+  vertical-align: top !important;
 }
 
 /* Animations */
@@ -357,13 +435,13 @@
       const res = await fetch(url, options);
       if (!res.ok) {
         const errorData = await res.json();
-        alert(`API Error (${res.status}): ${errorData.message || 'Something went wrong.'}`);
+        await dfAlert(`API Error (${res.status}): ${errorData.message || 'Something went wrong.'}`, 'API Error');
         return null;
       }
       return await res.json();
     } catch (error) {
       console.error('Network or parsing error:', error);
-      alert('An unexpected error occurred. Please check your network connection.');
+      await dfAlert('An unexpected error occurred. Please check your network connection.', 'Error');
       return null;
     }
   }
@@ -464,8 +542,8 @@
       setTimeout(() => {
         buttonElement.innerHTML = 'Copy';
       }, 2000);
-    }, (err) => {
-      alert('Failed to copy text: ' + err);
+    }, async (err) => {
+      await dfAlert('Failed to copy text: ' + err, 'Error');
     });
   };
 
@@ -634,15 +712,31 @@
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td class="p-3 whitespace-nowrap font-mono break-all">${keyId.substring(0, 8)}...</td>
-        <td class="p-3 whitespace-nowrap">${owner}</td>
-        <td class="p-3 whitespace-nowrap">${createdAt}</td>
-        <td class="p-3 whitespace-nowrap">
+        <td class="px-4 py-3 whitespace-nowrap font-mono break-all">${keyId.substring(0, 8)}...</td>
+        <td class="px-4 py-3 whitespace-nowrap">${owner}</td>
+        <td class="px-4 py-3 whitespace-nowrap">${createdAt}</td>
+        <td class="px-4 py-3 whitespace-nowrap">
           <span class="badge badge-success badge-sm">Active</span>
           <br><small class="text-xs opacity-60">${lastUsed}</small>
         </td>
-        <td class="p-3 whitespace-nowrap">
-          <button class="btn btn-xs btn-error btn-revoke-key" data-key-id="${keyId}">Revoke</button>
+        <td class="px-4 py-3 text-right">
+          <div class="dropdown dropdown-end">
+            <label tabindex="0" class="btn btn-ghost btn-sm">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z" />
+              </svg>
+            </label>
+            <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
+              <li>
+                <a class="text-error btn-revoke-key" data-key-id="${keyId}">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                  </svg>
+                  Revoke Key
+                </a>
+              </li>
+            </ul>
+          </div>
         </td>
       `;
       activeKeysTableBody.appendChild(tr);
@@ -686,25 +780,39 @@
       const tr = document.createElement('tr');
       tr.className = 'opacity-60 italic';
       tr.innerHTML = `
-        <td class="p-3 font-mono break-all text-sm">
+        <td class="px-4 py-3 font-mono break-all text-sm">
           <div class="bg-base-200 p-2 rounded border-2 border-dashed">
             <span class="text-xs opacity-75">Full Key:</span><br>
             <code class="text-xs">${keyId}</code>
             <button class="btn btn-xs btn-ghost ml-2 btn-copy-revoked-key" data-key="${keyId}">Copy</button>
           </div>
         </td>
-        <td class="p-3 whitespace-nowrap line-through">${owner}</td>
-        <td class="p-3 whitespace-nowrap">
+        <td class="px-4 py-3 whitespace-nowrap line-through">${owner}</td>
+        <td class="px-4 py-3 whitespace-nowrap">
           <span class="badge badge-error badge-sm">Revoked</span>
           <br><small class="text-xs">${revokedAt}</small>
         </td>
-        <td class="p-3 whitespace-nowrap">
+        <td class="px-4 py-3 whitespace-nowrap">
           ${autoDeleteInfo}
         </td>
-        <td class="p-3 whitespace-nowrap">
-          <button class="btn btn-xs btn-error btn-delete-key-permanently" data-key-id="${keyId}">
-            Delete Permanently
-          </button>
+        <td class="px-4 py-3 text-right">
+          <div class="dropdown dropdown-end">
+            <label tabindex="0" class="btn btn-ghost btn-sm">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z" />
+              </svg>
+            </label>
+            <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
+              <li>
+                <a class="text-error btn-delete-key-permanently" data-key-id="${keyId}">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                  </svg>
+                  Delete Permanently
+                </a>
+              </li>
+            </ul>
+          </div>
         </td>
       `;
       revokedKeysTableBody.appendChild(tr);
@@ -783,10 +891,10 @@
   setInterval(refreshData, 5000);
   setInterval(updateLedStrips, 1000); // Update LED strips every second
 
-  const openRenameModal = (agentId) => {
+  const openRenameModal = async (agentId) => {
     const data = window.lastFetchedData;
     if (!data || !data.agents || !data.agents[agentId]) {
-      alert('Agent data not available. Please refresh the page.');
+      await dfAlert('Agent data not available. Please refresh the page.', 'Error');
       return;
     }
 
@@ -814,6 +922,13 @@
       }
     });
 
+    document.getElementById('btn-copy-rolled-key').addEventListener('click', (e) => {
+      const keyText = document.getElementById('rolled-key-text').textContent;
+      if (keyText) {
+        copyToClipboard(keyText, e.target);
+      }
+    });
+
     document.getElementById('form-generate-key').addEventListener('submit', async (e) => {
       e.preventDefault();
       const owner = document.getElementById('owner-input').value.trim();
@@ -827,10 +942,11 @@
     });
 
     document.getElementById('btn-force-reconcile').addEventListener('click', async () => {
-      if (confirm('This will start a full reconciliation of all services against Cloudflare. This can be useful to fix any drift between DockFlare and Cloudflare. Continue?')) {
+      const confirmed = await dfConfirm('This will start a full reconciliation of all services against Cloudflare. This can be useful to fix any drift between DockFlare and Cloudflare. Continue?', 'Force Reconciliation');
+      if (confirmed) {
         const result = await apiCall('/api/v2/reconcile', 'POST');
         if (result) {
-          alert('Reconciliation process has been started. You can monitor its progress on the Dashboard page.');
+          await dfAlert('Reconciliation process has been started. You can monitor its progress on the Dashboard page.', 'Success');
         }
       }
     });
@@ -864,37 +980,42 @@
         document.getElementById('modal-enroll-agent').showModal();
       } else if (e.target.closest('.btn-remove')) {
         const agentId = e.target.closest('.btn-remove').getAttribute('data-agent-id');
-        if (confirm(`Are you sure you want to remove agent "${agentId}"? This will also delete the associated Cloudflare tunnel and all related resources.`)) {
+        const confirmed = await dfConfirm(`Are you sure you want to remove agent "${agentId}"? This will also delete the associated Cloudflare tunnel and all related resources.`, 'Remove Agent');
+        if (confirmed) {
           const success = await apiCall(`/api/v2/agents/${agentId}/remove`, 'POST');
           if (success) {
-            alert('Agent removed successfully.');
+            await dfAlert('Agent removed successfully.', 'Success');
             fetchData();
           }
         }
       } else if (e.target.closest('.btn-roll-key')) {
         const agentId = e.target.closest('.btn-roll-key').getAttribute('data-agent-id');
-        if (confirm(`Are you sure you want to roll the API key for agent "${agentId}"? The agent will need to be updated with the new key.`)) {
+        const confirmed = await dfConfirm(`Are you sure you want to roll the API key for agent "${agentId}"? The agent will need to be updated with the new key.`, 'Roll API Key');
+        if (confirmed) {
           const result = await apiCall(`/api/v2/agents/${agentId}/roll-key`, 'POST');
           if (result && result.new_key) {
-            alert(`Agent API key rolled successfully. New key: ${result.new_key}\n\nPlease update your agent configuration with this new key. You will not be able to see it again.`);
+            document.getElementById('rolled-key-text').textContent = result.new_key;
+            document.getElementById('modal-rolled-key').showModal();
             fetchData();
           }
         }
       } else if (e.target.closest('.btn-trigger-migration')) {
         const agentId = e.target.closest('.btn-trigger-migration').getAttribute('data-agent-id');
-        if (confirm(`Trigger migration analysis for agent "${agentId}"? This will analyze the assigned tunnel for migration opportunities.`)) {
+        const confirmed = await dfConfirm(`Trigger migration analysis for agent "${agentId}"? This will analyze the assigned tunnel for migration opportunities.`, 'Trigger Migration');
+        if (confirmed) {
           const result = await apiCall(`/api/v2/agents/${agentId}/trigger-migration`, 'POST');
           if (result && result.status === 'success') {
-            alert(`Migration analysis completed successfully!\n\nImported: ${result.result.imported_count} rules\nConflicts: ${result.result.conflicts.length}\nOrphaned: ${result.result.orphaned.length}`);
+            await dfAlert(`Migration analysis completed successfully!\n\nImported: ${result.result.imported_count} rules\nConflicts: ${result.result.conflicts.length}\nOrphaned: ${result.result.orphaned.length}`, 'Migration Complete');
             fetchData();
           }
         }
       } else if (e.target.closest('.btn-redeploy-tunnel')) {
         const agentId = e.target.closest('.btn-redeploy-tunnel').getAttribute('data-agent-id');
-        if (confirm(`Redeploy tunnel container for agent "${agentId}"? This will restart the cloudflared tunnel container.`)) {
+        const confirmed = await dfConfirm(`Redeploy tunnel container for agent "${agentId}"? This will restart the cloudflared tunnel container.`, 'Redeploy Tunnel');
+        if (confirmed) {
           const result = await apiCall(`/api/v2/agents/${agentId}/redeploy-tunnel`, 'POST');
           if (result && result.status === 'success') {
-            alert('Tunnel redeploy command sent successfully. The agent will restart its cloudflared container.');
+            await dfAlert('Tunnel redeploy command queued successfully. The agent will execute the restart on its next poll cycle (within 30 seconds).', 'Success');
             fetchData();
           }
         }
@@ -917,7 +1038,7 @@
       } else if (selectedTunnelName) {
         tunnelIdentifier = selectedTunnelName;
       } else {
-        alert('Please select an existing tunnel or enter a new tunnel name.');
+        await dfAlert('Please select an existing tunnel or enter a new tunnel name.', 'Error');
         return;
       }
 
@@ -925,7 +1046,7 @@
       const success = await apiCall(`/api/v2/agents/${agentId}/enroll`, 'POST', body);
 
       if (success) {
-        alert('Agent enrolled successfully.');
+        await dfAlert('Agent enrolled successfully.', 'Success');
         document.getElementById('modal-enroll-agent').close();
         fetchData();
       }
@@ -933,12 +1054,14 @@
 
     // Event listeners for active keys table
     activeKeysTableBody.addEventListener('click', async (e) => {
-      if (e.target.classList.contains('btn-revoke-key')) {
-        const keyId = e.target.getAttribute('data-key-id');
-        if (confirm(`Are you sure you want to revoke API key "${keyId.substring(0, 8)}..."? This action is irreversible.`)) {
+      const revokeBtn = e.target.closest('.btn-revoke-key');
+      if (revokeBtn) {
+        const keyId = revokeBtn.getAttribute('data-key-id');
+        const confirmed = await dfConfirm(`Are you sure you want to revoke API key "${keyId.substring(0, 8)}..."? This action is irreversible.`, 'Revoke API Key');
+        if (confirmed) {
           const success = await apiCall('/api/v2/agents/revoke-key', 'POST', { key: keyId });
           if (success) {
-            alert('API key revoked successfully.');
+            await dfAlert('API key revoked successfully.', 'Success');
             fetchData();
           }
         }
@@ -947,17 +1070,19 @@
 
     // Event listeners for revoked keys table
     revokedKeysTableBody.addEventListener('click', async (e) => {
-      if (e.target.classList.contains('btn-delete-key-permanently')) {
-        const keyId = e.target.getAttribute('data-key-id');
-        if (confirm(`Are you sure you want to permanently delete this revoked API key? This cannot be undone.\n\nKey: ${keyId.substring(0, 8)}...`)) {
+      const deleteBtn = e.target.closest('.btn-delete-key-permanently');
+      if (deleteBtn) {
+        const keyId = deleteBtn.getAttribute('data-key-id');
+        const confirmed = await dfConfirm(`Are you sure you want to permanently delete this revoked API key? This cannot be undone.\n\nKey: ${keyId.substring(0, 8)}...`, 'Delete API Key');
+        if (confirmed) {
           try {
             const success = await apiCall(`/api/v2/agents/keys/${keyId}`, 'DELETE');
             if (success) {
-              alert('API key permanently deleted.');
+              await dfAlert('API key permanently deleted.', 'Success');
               fetchData();
             }
           } catch (error) {
-            alert('Failed to delete API key. Please try again.');
+            await dfAlert('Failed to delete API key. Please try again.', 'Error');
           }
         }
       } else if (e.target.classList.contains('btn-copy-revoked-key')) {
@@ -970,38 +1095,40 @@
     document.getElementById('btn-clear-all-revoked').addEventListener('click', async () => {
       const revokedCount = document.querySelectorAll('#revoked-keys-table-body tr').length;
       if (revokedCount === 0) {
-        alert('No revoked keys to clear.');
+        await dfAlert('No revoked keys to clear.', 'Info');
         return;
       }
 
-      if (confirm(`Are you sure you want to permanently delete all ${revokedCount} revoked API keys? This cannot be undone.`)) {
+      const confirmed = await dfConfirm(`Are you sure you want to permanently delete all ${revokedCount} revoked API keys? This cannot be undone.`, 'Clear All Revoked Keys');
+      if (confirmed) {
         try {
           const result = await apiCall('/api/v2/agents/keys/revoked', 'DELETE');
           if (result) {
-            alert(`Successfully deleted ${result.deleted_count} revoked keys.`);
+            await dfAlert(`Successfully deleted ${result.deleted_count} revoked keys.`, 'Success');
             fetchData();
           }
         } catch (error) {
-          alert('Failed to clear revoked keys. Please try again.');
+          await dfAlert('Failed to clear revoked keys. Please try again.', 'Error');
         }
       }
     });
 
     // Auto cleanup button
     document.getElementById('btn-cleanup-expired').addEventListener('click', async () => {
-      if (confirm('This will permanently delete revoked API keys older than 30 days. Continue?')) {
+      const confirmed = await dfConfirm('This will permanently delete revoked API keys older than 30 days. Continue?', 'Auto Cleanup');
+      if (confirmed) {
         try {
           const result = await apiCall('/api/v2/agents/keys/cleanup', 'POST', { retention_days: 30 });
           if (result) {
             if (result.cleaned_count > 0) {
-              alert(`Auto-cleanup completed: ${result.cleaned_count} expired keys removed.`);
+              await dfAlert(`Auto-cleanup completed: ${result.cleaned_count} expired keys removed.`, 'Success');
               fetchData();
             } else {
-              alert('No expired keys found to clean up.');
+              await dfAlert('No expired keys found to clean up.', 'Info');
             }
           }
         } catch (error) {
-          alert('Auto-cleanup failed. Please try again.');
+          await dfAlert('Auto-cleanup failed. Please try again.', 'Error');
         }
       }
     });
@@ -1012,20 +1139,20 @@
       const displayName = document.getElementById('rename-display-name').value.trim();
 
       if (!displayName) {
-        alert('Please enter a display name.');
+        await dfAlert('Please enter a display name.', 'Validation Error');
         return;
       }
 
       try {
         const result = await apiCall(`/api/v2/agents/${agentId}/rename`, 'POST', { display_name: displayName });
         if (result && result.status === 'success') {
-          alert('Agent renamed successfully.');
+          await dfAlert('Agent renamed successfully.', 'Success');
           document.getElementById('modal-rename-agent').close();
           fetchData();
         }
       } catch (error) {
         console.error('Rename failed:', error);
-        alert('Failed to rename agent. Please check the logs.');
+        await dfAlert('Failed to rename agent. Please check the logs.', 'Error');
       }
     });
 

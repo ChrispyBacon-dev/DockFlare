@@ -266,7 +266,7 @@
                             <label class="label">
                                 <span class="label-text-alt text-sm">Upload a DockFlare backup archive (`.zip`). Legacy `state.json` files are still accepted but only restore rules/groups.</span>
                             </label>
-                            <button type="submit" class="btn btn-error w-full" onclick="return confirm('Are you sure you want to overwrite your current settings with this backup? This cannot be undone.')">
+                            <button type="submit" class="btn btn-error w-full" onclick="event.preventDefault(); dfConfirm('Are you sure you want to overwrite your current settings with this backup? This cannot be undone.', 'Restore Backup').then(ok => { if(ok) this.closest('form').submit(); })">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                   <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                 </svg>
@@ -530,7 +530,7 @@
           if (!response.ok) {
             const errorPayload = await response.json().catch(() => ({}));
             const msg = errorPayload.message || 'Unable to reveal the master key. Check logs.';
-            alert(`Error: ${msg}`);
+            await dfAlert(`Error: ${msg}`, 'Error');
             return;
           }
 
@@ -543,7 +543,7 @@
           }
         } catch (err) {
           console.error('Failed to fetch master API key:', err);
-          alert('Failed to contact the server.');
+          await dfAlert('Failed to contact the server.', 'Error');
         }
       });
     }
@@ -572,7 +572,7 @@
           setTimeout(() => { copyMasterKeyBtn.textContent = 'Copy'; }, 2000);
         } catch (err) {
           console.error('Clipboard copy failed', err);
-          alert('Could not copy to clipboard.');
+          await dfAlert('Could not copy to clipboard.', 'Error');
         }
       });
     }
@@ -1025,7 +1025,8 @@
   };
 
   window.deleteProvider = async function(providerId) {
-    if (!confirm('Are you sure you want to delete this OAuth provider?')) return;
+    const confirmed = await dfConfirm('Are you sure you want to delete this OAuth provider?', 'Delete Provider');
+    if (!confirmed) return;
 
     try {
       const response = await fetch(`/api/v2/auth/providers/${providerId}`, {
@@ -1048,7 +1049,8 @@
   };
 
   window.deleteUser = async function(userEmail) {
-    if (!confirm('Are you sure you want to remove this authorized user?')) return;
+    const confirmed = await dfConfirm('Are you sure you want to remove this authorized user?', 'Remove User');
+    if (!confirmed) return;
 
     try {
       const response = await fetch(`/api/v2/auth/users/${encodeURIComponent(userEmail)}`, {

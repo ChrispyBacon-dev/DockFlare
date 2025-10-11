@@ -404,6 +404,22 @@ def handle_access_policy_from_labels(rule_key, hostname_config_item):
             if has_allow_policy:
                 cf_access_policies_or_ids.append({"name": "Default Deny", "decision": "deny", "include": [{"everyone": {}}]})
 
+        if not cf_access_policies_or_ids:
+            logging.warning(f"Skipping access app creation for {application_domain}; no policies resolved for groups {desired_access_group_ids}")
+            if current_access_app_id_from_state:
+                if delete_cloudflare_access_application(current_access_app_id_from_state):
+                    rule_working.update({"access_app_id": None, "access_policy_type": None, "access_app_config_hash": None, "access_group_id": None})
+                    local_state_changed_by_access_policy = True
+            elif rule_working.get("access_policy_type") or rule_working.get("access_group_id"):
+                rule_working.update({"access_app_id": None, "access_policy_type": None, "access_app_config_hash": None, "access_group_id": None})
+                local_state_changed_by_access_policy = True
+            if local_state_changed_by_access_policy:
+                with state_lock:
+                    current_rule = managed_rules.get(rule_key)
+                    if current_rule:
+                        current_rule.update({"access_app_id": rule_working.get("access_app_id"), "access_policy_type": rule_working.get("access_policy_type"), "access_app_config_hash": rule_working.get("access_app_config_hash"), "access_group_id": rule_working.get("access_group_id")})
+            return local_state_changed_by_access_policy
+
         new_config_hash = generate_access_app_config_hash(
             policy_type=policy_source_type, session_duration=desired_session_duration,
             app_launcher_visible=desired_app_launcher_visible,
@@ -508,14 +524,25 @@ def handle_access_policy_from_labels(rule_key, hostname_config_item):
                 local_state_changed_by_access_policy = True
 
         app_result = None
+        app_update_failed = False
         if effective_app_id:
             logging.info(f"Updating Access App {effective_app_id} for {application_domain}.")
-            app_result = update_cloudflare_access_application(
-                effective_app_id, application_domain, desired_app_name, desired_session_duration,
-                desired_app_launcher_visible, [application_domain], cf_access_policies_or_ids,
-                desired_allowed_idps, desired_auto_redirect, use_reusable
-            )
-        else:
+            try:
+                app_result = update_cloudflare_access_application(
+                    effective_app_id, application_domain, desired_app_name, desired_session_duration,
+                    desired_app_launcher_visible, [application_domain], cf_access_policies_or_ids,
+                    desired_allowed_idps, desired_auto_redirect, use_reusable
+                )
+            except Exception as update_error:
+                error_text = str(update_error)
+                if "access.api.error.unknown_application" in error_text or "404" in error_text:
+                    logging.info(f"Existing Access App {effective_app_id} not found in Cloudflare (404); will recreate for {application_domain}.")
+                    app_update_failed = True
+                else:
+                    logging.error(f"Error updating access app during reconciliation: {update_error}", exc_info=True)
+                    raise
+
+        if not effective_app_id or app_update_failed or not app_result:
             logging.info(f"Creating new Access App for {application_domain}.")
             app_result = create_cloudflare_access_application(
                 application_domain, desired_app_name, desired_session_duration,

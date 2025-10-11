@@ -290,6 +290,30 @@
         </form>
     </dialog>
 
+    <!-- Geo-fencing without auth confirmation modal -->
+    <dialog id="geo-auth-confirm-modal" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg mb-4">No Authentication Method Selected</h3>
+            <div class="space-y-4">
+                <div class="alert alert-warning">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    <div>
+                        <div class="font-medium">You have selected geo-restrictions but no authentication method (email or identity provider).</div>
+                    </div>
+                </div>
+                <p class="text-sm">Did you want to create a <strong>Public Access rule with geo-restrictions</strong> instead?</p>
+                <ul class="list-disc list-inside text-sm space-y-1 opacity-80">
+                    <li><strong>Public Access mode:</strong> Anyone can access except from blocked countries</li>
+                    <li><strong>Authenticated mode:</strong> Requires email or identity provider selection</li>
+                </ul>
+            </div>
+            <div class="modal-action">
+                <button type="button" class="btn btn-ghost" id="geo-auth-cancel-btn">Cancel - Add Authentication</button>
+                <button type="button" class="btn btn-warning" id="geo-auth-confirm-btn">Switch to Public Access</button>
+            </div>
+        </div>
+    </dialog>
+
     <!-- Sync from Cloudflare Modal -->
     <dialog id="sync-cloudflare-modal" class="modal">
         <div class="modal-box max-w-2xl">
@@ -743,6 +767,8 @@
             }
         }
 
+        window.switchToMode = switchToMode;
+
         tabAuthenticated?.addEventListener('click', (e) => {
             e.preventDefault();
             switchToMode('authenticated');
@@ -755,7 +781,7 @@
 
         
         document.querySelectorAll('.delete-access-group-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
+            btn.addEventListener('click', async (e) => {
                 e.preventDefault();
                 e.stopPropagation();
 
@@ -774,11 +800,14 @@
                 }
 
                 let confirmMsg = `Are you sure you want to delete the Access Group '${groupName}'? This cannot be undone.`;
+                let confirmTitle = 'Delete Access Group';
                 if (isExternal) {
                     confirmMsg = `⚠️ WARNING: This is an EXTERNAL policy not created by DockFlare.\n\nDeleting '${groupName}' may affect services outside of DockFlare.\n\nAre you absolutely sure you want to delete this external policy?`;
+                    confirmTitle = 'Delete External Policy';
                 }
 
-                if (!confirm(confirmMsg)) {
+                const confirmed = await dfConfirm(confirmMsg, confirmTitle);
+                if (!confirmed) {
                     return;
                 }
 
@@ -826,7 +855,15 @@
 
         const accessGroupForm = document.getElementById('access_group_form');
         if (accessGroupForm) {
-            accessGroupForm.addEventListener('submit', function(e) {
+            accessGroupForm.addEventListener('submit', async function(e) {
+                // Sync tom-select values to underlying select elements before form submission
+                if (window.enhancedCountrySelector && window.enhancedCountrySelector.tomSelect) {
+                    window.enhancedCountrySelector.tomSelect.sync();
+                }
+                if (window.idpTomSelect) {
+                    window.idpTomSelect.sync();
+                }
+
                 const publicMode = document.getElementById('public_mode').value;
 
                 if (publicMode === 'false') {
@@ -834,10 +871,19 @@
                     const emailValue = emailField ? emailField.value.trim() : '';
 
                     const selectedIdps = window.idpTomSelect ? window.idpTomSelect.getValue() : [];
+                    const selectedCountries = window.enhancedCountrySelector && window.enhancedCountrySelector.tomSelect
+                        ? window.enhancedCountrySelector.tomSelect.getValue()
+                        : [];
+
+                    if (selectedCountries.length > 0 && !emailValue && selectedIdps.length === 0) {
+                        e.preventDefault();
+                        document.getElementById('geo-auth-confirm-modal').showModal();
+                        return false;
+                    }
 
                     if (selectedIdps.length > 0 && !emailValue) {
                         e.preventDefault();
-                        alert('Security requirement: When using Identity Providers, you must specify allowed email addresses to prevent unauthorized access.');
+                        await dfAlert('Security requirement: When using Identity Providers, you must specify allowed email addresses to prevent unauthorized access.', 'Security Requirement');
                         return false;
                     }
                 }
@@ -966,7 +1012,27 @@
 
         loadZonePolicies();
 
-        // Handle sync from Cloudflare modal
+        const geoAuthConfirmBtn = document.getElementById('geo-auth-confirm-btn');
+        const geoAuthCancelBtn = document.getElementById('geo-auth-cancel-btn');
+        const geoAuthModal = document.getElementById('geo-auth-confirm-modal');
+
+        if (geoAuthConfirmBtn && geoAuthModal) {
+            geoAuthConfirmBtn.addEventListener('click', function() {
+                geoAuthModal.close();
+                document.getElementById('public_mode').value = 'true';
+                switchToMode('public');
+                setTimeout(() => {
+                    accessGroupForm.submit();
+                }, 100);
+            });
+        }
+
+        if (geoAuthCancelBtn && geoAuthModal) {
+            geoAuthCancelBtn.addEventListener('click', function() {
+                geoAuthModal.close();
+            });
+        }
+
         const syncCloudflareBtn = document.getElementById('sync-cloudflare-btn');
         if (syncCloudflareBtn) {
             syncCloudflareBtn.addEventListener('click', function(e) {

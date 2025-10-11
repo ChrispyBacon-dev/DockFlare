@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v3.0.4] - 2025-10-11
+
+### Added
+- **CLI Duplicate Policy Cleanup Tool:** Introduced advanced CLI utility for detecting and removing duplicate reusable policies in Cloudflare accounts (see [CLI_USAGE.md](CLI_USAGE.md)).
+  - **Dry-run mode:** Preview changes before applying with `--dry-run` flag for safe operation
+  - **Smart consolidation:** Automatically keeps oldest policy and deletes newer duplicates
+  - **Application protection:** Updates Access Applications to reference kept policy before deletion to prevent downtime
+  - **State synchronization:** Automatically updates `state.json` with correct policy IDs after cleanup
+  - **Comprehensive reporting:** Detailed output showing policies scanned, duplicates found, and actions taken
+  - **Use case:** Resolves duplicate policies created during multi-instance development or state drift scenarios
+- **Styled Web UI Modals:** Replaced all 53 native browser popup dialogs with custom DaisyUI-themed modals for a consistent user experience.
+  - **26 alert modals (dfAlert):** Success confirmations, error messages, and informational notifications
+  - **27 confirm modals (dfConfirm):** Destructive action confirmations (delete, revoke, revert operations)
+  - **Pages updated:** Agents (32 modals), Dashboard (3 modals), Access Policies (4 modals), Settings (6 modals), Identity Providers (10 modals)
+  - **Consistent styling:** All modals match application theme with smooth transitions, backdrop blur, and proper button styling
+- **Access Policy Sort Option:** Added "Access Policy" sort option to Dashboard Filter & Sort controls, allowing users to group and view ingress rules by their assigned access policies for easier policy auditing and management.
+- **Agents Page UI Enhancements:** Modernized API Keys management interface to match Access Policies page styling.
+  - **Column alignment:** Implemented fixed-width column layout with CSS custom properties for consistent vertical alignment across Active and Revoked API Keys tables
+  - **Dropdown action menus:** Replaced plain action buttons with 3-dot dropdown menus featuring contextual icons
+  - **Overflow protection:** Added overflow visibility CSS to prevent dropdown menus from being cut off by section boundaries
+  - **Consistent padding:** Applied uniform `px-4 py-3` padding throughout tables for visual consistency
+
+### Changed
+- **Default Policy Creation Logic:** Enhanced system policy initialization to prevent duplicate creation during multi-instance deployments.
+  - **Pre-creation checks:** DockFlare now verifies existence of `public-default-bypass` and `authenticated-default` policies before attempting creation
+  - **Prevents duplication:** Eliminates creation of multiple identical DockFlare default system policies when restarting or running multiple DockFlare instances
+  - **Improved reliability:** Reduces Cloudflare API calls and prevents policy sprawl during development and testing cycles
+
+### Fixed
+- **Agent Roll API Key Bug:** Resolved network/parsing error when rolling agent API keys from the Agents page.
+  - **Root cause:** Frontend called non-existent `/api/v2/agents/<id>/roll-key` endpoint (API v2 endpoint was missing)
+  - **Solution:** Created new API v2 endpoint matching frontend expectations with proper JSON response format
+  - **Enhanced UX:** Added custom modal with copy button for new API key (similar to generate key modal) instead of generic alert
+  - **Result:** Users can now securely roll agent keys and copy them directly for immediate use
+- **Agent Redeploy Tunnel Bug:** Fixed critical bug preventing tunnel container redeployment from Agents page.
+  - **Root cause:** Missing `queue_agent_command` function in `state_manager.py` causing immediate 500 error
+  - **Solution:** Implemented complete `queue_agent_command` function with thread-safe state locking and command queuing
+  - **Field name fix:** Corrected `assigned_tunnel_token` field reference (was incorrectly using `tunnel_token`) preventing tunnel configuration retrieval
+  - **User feedback:** Added informative success message explaining 30-second agent polling delay for command execution
+  - **Result:** Agents now successfully receive and execute tunnel restart commands via command queue
+- **Agent Trigger Migration Error:** Improved error messaging when triggering migration fails due to missing container data.
+  - **Root cause:** Generic error message didn't explain why migration failed or how to resolve it
+  - **Solution:** Enhanced error response with actionable guidance directing users to ensure agent is running and wait for next heartbeat
+  - **Typical scenario:** Occurs when agent hasn't reported container data yet (30-second heartbeat interval)
+  - **Result:** Users now understand the issue and know to wait for agent heartbeat before retrying
+- **Access Policy Edit Modal Country Display:** Fixed issue where selected countries were not displayed in the edit modal after creating or editing an access policy.
+  - **Root cause:** Country selections not properly restored when reopening the edit modal for existing policies
+  - **Solution:** Enhanced modal initialization to correctly populate and display previously selected countries
+  - **Result:** Users can now view and modify country restrictions without having to re-select all countries
+- **Access Policy Validation:** Implemented comprehensive validation to prevent creating insecure authenticated access policies.
+  - **Identity Provider without Email Requirement:** Added frontend and backend validation requiring email addresses when Identity Providers are selected
+  - **Security modal prompt:** When geo-restrictions are configured without authentication (no email/IdP), system prompts user to switch to Public Access mode instead
+  - **Prevention of unsafe configurations:** System now prevents creation of policies where "any user with selected IdP" (e.g., any Google account) could access protected services
+  - **Clear error messaging:** Users receive actionable security warnings explaining why email addresses are required with IdP authentication
+  - **Result:** Eliminates accidental creation of overly permissive access policies that could expose services to unauthorized users
+
+### Documentation
+- **CLI Usage Guide:** Created comprehensive [CLI_USAGE.md](CLI_USAGE.md) documenting the duplicate policy cleanup utility with examples, safety features, and best practices for advanced users.
+
+---
+
 ## [v3.0.3] - 2025-10-07
 
 ### Hotfix

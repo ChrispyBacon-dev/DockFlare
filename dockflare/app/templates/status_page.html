@@ -121,6 +121,7 @@
                                     <option value="status">Status</option>
                                     <option value="source">Source</option>
                                     <option value="tunnel">Tunnel</option>
+                                    <option value="access-policy">Access Policy</option>
                                 </select>
                             </div>
 
@@ -850,6 +851,11 @@ document.addEventListener('DOMContentLoaded', function() {
                     bVal = b.querySelector('[data-role="tunnel-name"]')?.dataset?.tunnelName || '';
                     return aVal.localeCompare(bVal);
 
+                case 'access-policy':
+                    aVal = a.querySelector('td:nth-child(6)')?.textContent?.trim() || '';
+                    bVal = b.querySelector('td:nth-child(6)')?.textContent?.trim() || '';
+                    return aVal.localeCompare(bVal);
+
                 default:
                     return 0;
             }
@@ -881,13 +887,13 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeFilters();
 
     document.querySelectorAll('.delete-rule-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', async (e) => {
             e.preventDefault();
             const hostname = btn.getAttribute('data-hostname');
             const displayHostname = btn.getAttribute('data-display-hostname');
             const source = btn.getAttribute('data-source');
 
-            const confirmed = confirm(`Force delete rule and DNS for ${displayHostname} immediately?`);
+            const confirmed = await dfConfirm(`Force delete rule and DNS for ${displayHostname} immediately?`, 'Delete Rule');
             if (!confirmed) return;
 
             const csrfInput = document.querySelector('input[name="csrf_token"]');
@@ -917,12 +923,12 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     document.querySelectorAll('.revert-policy-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', async (e) => {
             e.preventDefault();
             const hostname = btn.getAttribute('data-hostname');
             const displayHostname = btn.getAttribute('data-display-hostname');
 
-            const confirmed = confirm(`Revert policy for ${displayHostname} to be managed by labels/defaults?`);
+            const confirmed = await dfConfirm(`Revert policy for ${displayHostname} to be managed by labels/defaults?`, 'Revert Policy');
             if (!confirmed) return;
 
             const csrfInput = document.querySelector('input[name="csrf_token"]');
@@ -945,12 +951,12 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     document.querySelectorAll('.revert-rule-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', async (e) => {
             e.preventDefault();
             const ruleKey = btn.getAttribute('data-rule-key');
             const displayHostname = btn.getAttribute('data-display-hostname');
 
-            const confirmed = confirm(`Revert rule for ${displayHostname} to be managed by Docker labels?`);
+            const confirmed = await dfConfirm(`Revert rule for ${displayHostname} to be managed by Docker labels?`, 'Revert Rule');
             if (!confirmed) return;
 
             const csrfInput = document.querySelector('input[name="csrf_token"]');

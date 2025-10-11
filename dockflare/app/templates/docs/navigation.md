@@ -41,5 +41,6 @@ This documentation provides comprehensive information for DockFlare. Whether you
     *   [Common Issues](Common-Issues.md)
     *   [Debugging & Logs](Debugging-&-Logs.md)
     *   [Health Checks](Health-Checks.md)
+    *   [CLI Utilities](CLI-Utilities.md)
 *   **[Contributing](Contributing.md)**
 *   **[License](License.md)**

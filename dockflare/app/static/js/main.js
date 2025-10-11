@@ -161,7 +161,7 @@ function initializeEditRuleModal() {
     }
 
     editButtons.forEach(button => {
-        button.addEventListener('click', function() {
+        button.addEventListener('click', async function() {
             try {
                 const ruleKey = this.dataset.ruleKey;
                 const details = JSON.parse(this.dataset.ruleDetails);
@@ -255,7 +255,7 @@ function initializeEditRuleModal() {
                 modal.showModal();
             } catch (e) {
                 console.error("Error populating edit modal:", e);
-                alert("Could not open the edit dialog due to an error. Please check the console.");
+                await dfAlert("Could not open the edit dialog due to an error. Please check the console.", 'Error');
             }
         });
     });
@@ -1078,17 +1078,17 @@ function openCreateAccessGroupModal() {
     modal.showModal();
 }
 
-function openEditAccessGroupModal(groupId, details) {
+async function openEditAccessGroupModal(groupId, details) {
     const modal = document.getElementById('access_group_modal');
     if (!modal) return;
     const form = document.getElementById('access_group_form');
     const title = document.getElementById('access_group_modal_title');
     const groupIdInput = document.getElementById('group_id');
-    
+
     form.reset();
     form.action = `${document.baseURI}ui/access-groups/edit/${encodeURIComponent(groupId)}`;
     title.textContent = `Edit Access Group: ${details.display_name}`;
-    
+
     document.getElementById('original_group_id').value = groupId;
     groupIdInput.value = groupId;
     groupIdInput.disabled = true;
@@ -1098,30 +1098,25 @@ function openEditAccessGroupModal(groupId, details) {
     document.getElementById('group_app_launcher_visible').checked = details.app_launcher_visible || false;
     document.getElementById('group_auto_redirect').checked = details.auto_redirect_to_identity || false;
 
+    const isPublicMode = details.public_mode === true;
+    document.getElementById('public_mode').value = isPublicMode ? 'true' : 'false';
+
+    if (typeof window.switchToMode === 'function') {
+        if (isPublicMode) {
+            window.switchToMode('public');
+        } else {
+            window.switchToMode('authenticated');
+        }
+    }
+
     let emailText = '';
     let ipRangeText = '';
     let selectedCountries = [];
-    let selectedIdps = [];
+    let selectedIdpIds = [];
 
     if (details.policies && Array.isArray(details.policies)) {
         const emails = [];
         const ipRanges = [];
-
-        const blockPolicy = details.policies.find(p =>
-            p.decision === 'bypass' &&
-            p.include && Array.isArray(p.include) && p.include.some(i => i.everyone) &&
-            p.exclude && Array.isArray(p.exclude) && p.exclude.some(e => e.geo)
-        );
-
-        if (blockPolicy) {
-
-            blockPolicy.exclude.forEach(rule => {
-                if (rule.geo && rule.geo.country_code) {
-                    selectedCountries.push(rule.geo.country_code);
-                }
-            });
-        }
-
 
         details.policies.forEach(policy => {
             if (policy.include) {
@@ -1129,13 +1124,22 @@ function openEditAccessGroupModal(groupId, details) {
                     if (rule.email && rule.email.email) emails.push(rule.email.email);
                     else if (rule.email_domain && rule.email_domain.domain) emails.push(`@${rule.email_domain.domain}`);
                     else if (rule.ip && rule.ip.ip) ipRanges.push(rule.ip.ip);
-                    else if (rule['login_method'] && rule['login_method'].id) selectedIdps.push(rule['login_method'].id);
+                    else if (rule['login_method'] && rule['login_method'].id) selectedIdpIds.push(rule['login_method'].id);
+                });
+            }
+
+            if (policy.exclude && Array.isArray(policy.exclude)) {
+                policy.exclude.forEach(rule => {
+                    if (rule.geo && rule.geo.country_code) {
+                        selectedCountries.push(rule.geo.country_code);
+                    }
                 });
             }
         });
 
         emailText = [...new Set(emails)].join(', ');
         ipRangeText = [...new Set(ipRanges)].join(', ');
+        selectedCountries = [...new Set(selectedCountries)];
     }
 
     document.getElementById('group_emails').value = emailText;
@@ -1153,8 +1157,26 @@ function openEditAccessGroupModal(groupId, details) {
         });
     }
 
-    if (window.idpTomSelect && selectedIdps.length > 0) {
-        window.idpTomSelect.setValue(selectedIdps);
+    if (window.idpTomSelect && selectedIdpIds.length > 0) {
+        try {
+            const response = await fetch('/api/v2/idp/list');
+            const data = await response.json();
+
+            if (data.success && data.identity_providers) {
+                const idToFriendlyName = {};
+                for (const [friendlyName, idpData] of Object.entries(data.identity_providers)) {
+                    idToFriendlyName[idpData.cloudflare_id] = friendlyName;
+                }
+
+                const selectedIdpFriendlyNames = selectedIdpIds
+                    .map(id => idToFriendlyName[id])
+                    .filter(name => name);
+
+                window.idpTomSelect.setValue(selectedIdpFriendlyNames);
+            }
+        } catch (err) {
+            console.error('Failed to load IdPs for edit modal:', err);
+        }
     }
 
     modal.showModal();
@@ -1635,11 +1657,11 @@ async function syncIdentityProviders() {
         if (data.success) {
             await loadIdentityProviders();
         } else {
-            alert('Error: ' + (data.error || 'Failed to sync identity providers'));
+            await dfAlert('Error: ' + (data.error || 'Failed to sync identity providers'), 'Sync Error');
         }
     } catch (error) {
         console.error('Error syncing IdPs:', error);
-        alert('Error syncing identity providers. Check console for details.');
+        await dfAlert('Error syncing identity providers. Check console for details.', 'Error');
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg> Sync from Cloudflare';
@@ -1775,16 +1797,17 @@ async function handleIdPFormSubmit(e) {
             await loadIdentityProviders();
 
             if (data.test_url && mode === 'create') {
-                if (confirm('Identity provider created successfully!\n\nWould you like to test this identity provider now?')) {
+                const shouldTest = await dfConfirm('Identity provider created successfully!\n\nWould you like to test this identity provider now?', 'Test Identity Provider');
+                if (shouldTest) {
                     window.open(data.test_url, '_blank');
                 }
             }
         } else {
-            alert('Error: ' + (data.error || 'Failed to save identity provider'));
+            await dfAlert('Error: ' + (data.error || 'Failed to save identity provider'), 'Save Error');
         }
     } catch (error) {
         console.error('Error saving IdP:', error);
-        alert('Error saving identity provider. Check console for details.');
+        await dfAlert('Error saving identity provider. Check console for details.', 'Error');
     } finally {
         submitBtn.disabled = false;
         submitBtn.innerHTML = mode === 'create' ?
@@ -1809,12 +1832,13 @@ async function testIdP(idpId) {
         }
     } catch (error) {
         console.error('Error testing IdP:', error);
-        alert('Error opening test URL. Check console for details.');
+        await dfAlert('Error opening test URL. Check console for details.', 'Error');
     }
 }
 
 async function deleteIdP(friendlyName) {
-    if (!confirm(`Are you sure you want to delete the identity provider "${friendlyName}"? This will remove it from both DockFlare and Cloudflare.`)) {
+    const confirmed = await dfConfirm(`Are you sure you want to delete the identity provider "${friendlyName}"? This will remove it from both DockFlare and Cloudflare.`, 'Delete Identity Provider');
+    if (!confirmed) {
         return;
     }
 
@@ -1828,10 +1852,10 @@ async function deleteIdP(friendlyName) {
         if (data.success) {
             await loadIdentityProviders();
         } else {
-            alert('Error: ' + (data.error || 'Failed to delete identity provider'));
+            await dfAlert('Error: ' + (data.error || 'Failed to delete identity provider'), 'Delete Error');
         }
     } catch (error) {
         console.error('Error deleting IdP:', error);
-        alert('Error deleting identity provider. Check console for details.');
+        await dfAlert('Error deleting identity provider. Check console for details.', 'Error');
     }
 }

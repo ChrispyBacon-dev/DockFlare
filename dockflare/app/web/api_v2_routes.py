@@ -1718,11 +1718,10 @@ def trigger_agent_migration(agent_id):
         assigned_tunnel_id = agent_record.get("assigned_tunnel_id")
         if not assigned_tunnel_id:
             return jsonify({"status": "error", "message": "Agent not assigned to a tunnel."}), 400
-
-        # Use containers from last status report
+        
         containers = agent_record.get("last_containers", [])
         if not containers:
-            return jsonify({"status": "error", "message": "No container data available for agent."}), 400
+            return jsonify({"status": "error", "message": "No container data available. The agent must report container data before migration can be triggered. Please ensure the agent is running and connected, then wait for the next heartbeat (typically 30 seconds)."}), 400
 
         result = TunnelMigrationService.trigger_migration_analysis(
             agent_id, assigned_tunnel_id, containers
@@ -1752,7 +1751,7 @@ def redeploy_agent_tunnel(agent_id):
 
         tunnel_name = agent_record.get("assigned_tunnel_name")
         tunnel_id = agent_record.get("assigned_tunnel_id")
-        tunnel_token = agent_record.get("tunnel_token")
+        tunnel_token = agent_record.get("assigned_tunnel_token")
 
         if not all([tunnel_name, tunnel_id, tunnel_token]):
             return jsonify({"status": "error", "message": "Agent missing tunnel configuration."}), 400
@@ -1774,6 +1773,46 @@ def redeploy_agent_tunnel(agent_id):
     except Exception as e:
         logging.error(f"Failed to queue redeploy command for agent {agent_id}: {e}", exc_info=True)
         return jsonify({"status": "error", "message": f"Failed to queue redeploy command: {str(e)}"}), 500
+
+@api_v2_bp.route('/agents/<agent_id>/roll-key', methods=['POST'])
+def roll_agent_api_key(agent_id):
+    try:
+        from app.core.state_manager import get_agent, update_agent, revoke_agent_key, add_agent_key
+        import secrets
+        from datetime import datetime, timezone
+
+        agent_record = get_agent(agent_id)
+        if not agent_record:
+            return jsonify({"status": "error", "message": "Agent not found."}), 404
+
+        old_api_key = agent_record.get("api_key")
+
+        new_api_key = secrets.token_urlsafe(32)
+
+        success = update_agent(agent_id, {"api_key": new_api_key})
+        if not success:
+            return jsonify({"status": "error", "message": "Failed to update agent with new API key."}), 500
+
+        if old_api_key:
+            revoke_agent_key(old_api_key)
+
+        now_iso = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+        add_agent_key(new_api_key, {
+            "bound_agent_id": agent_id,
+            "created_at": now_iso,
+            "last_used_at": None,
+            "rolled_from": old_api_key[:8] + "..." if old_api_key else None
+        })
+
+        return jsonify({
+            "status": "success",
+            "message": f"API key rolled successfully for agent '{agent_record.get('display_name', agent_id)}'.",
+            "new_key": new_api_key
+        }), 200
+
+    except Exception as e:
+        logging.error(f"Failed to roll API key for agent {agent_id}: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": f"Failed to roll API key: {str(e)}"}), 500
 
 @api_v2_bp.route('/agents/<agent_id>/rename', methods=['POST'])
 def rename_agent(agent_id):

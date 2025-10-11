@@ -119,6 +119,143 @@
     
     {% block modals %}{% endblock %}
 
+    <dialog id="dockflare-alert-modal" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg mb-4" id="dockflare-alert-title">Alert</h3>
+            <p class="py-4 whitespace-pre-wrap" id="dockflare-alert-message"></p>
+            <div class="modal-action">
+                <button type="button" class="btn btn-primary" id="dockflare-alert-ok">OK</button>
+            </div>
+        </div>
+    </dialog>
+
+    <dialog id="dockflare-confirm-modal" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg mb-4" id="dockflare-confirm-title">Confirm</h3>
+            <p class="py-4 whitespace-pre-wrap" id="dockflare-confirm-message"></p>
+            <div class="modal-action">
+                <button type="button" class="btn btn-ghost" id="dockflare-confirm-cancel">Cancel</button>
+                <button type="button" class="btn btn-primary" id="dockflare-confirm-ok">OK</button>
+            </div>
+        </div>
+    </dialog>
+
+    <dialog id="dockflare-prompt-modal" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg mb-4" id="dockflare-prompt-title">Input Required</h3>
+            <p class="py-4" id="dockflare-prompt-message"></p>
+            <input type="text" class="input input-bordered w-full" id="dockflare-prompt-input" />
+            <div class="modal-action">
+                <button type="button" class="btn btn-ghost" id="dockflare-prompt-cancel">Cancel</button>
+                <button type="button" class="btn btn-primary" id="dockflare-prompt-ok">OK</button>
+            </div>
+        </div>
+    </dialog>
+
+    <script>
+        window.dfAlert = function(message, title = 'Alert') {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('dockflare-alert-modal');
+                const titleEl = document.getElementById('dockflare-alert-title');
+                const messageEl = document.getElementById('dockflare-alert-message');
+                const okBtn = document.getElementById('dockflare-alert-ok');
+
+                titleEl.textContent = title;
+                messageEl.textContent = message;
+
+                const handleOk = () => {
+                    modal.close();
+                    okBtn.removeEventListener('click', handleOk);
+                    resolve();
+                };
+
+                okBtn.addEventListener('click', handleOk);
+                modal.showModal();
+            });
+        };
+
+        window.dfConfirm = function(message, title = 'Confirm') {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('dockflare-confirm-modal');
+                const titleEl = document.getElementById('dockflare-confirm-title');
+                const messageEl = document.getElementById('dockflare-confirm-message');
+                const okBtn = document.getElementById('dockflare-confirm-ok');
+                const cancelBtn = document.getElementById('dockflare-confirm-cancel');
+
+                titleEl.textContent = title;
+                messageEl.textContent = message;
+
+                const handleOk = () => {
+                    modal.close();
+                    cleanup();
+                    resolve(true);
+                };
+
+                const handleCancel = () => {
+                    modal.close();
+                    cleanup();
+                    resolve(false);
+                };
+
+                const cleanup = () => {
+                    okBtn.removeEventListener('click', handleOk);
+                    cancelBtn.removeEventListener('click', handleCancel);
+                };
+
+                okBtn.addEventListener('click', handleOk);
+                cancelBtn.addEventListener('click', handleCancel);
+                modal.showModal();
+            });
+        };
+
+        window.dfPrompt = function(message, defaultValue = '', title = 'Input Required') {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('dockflare-prompt-modal');
+                const titleEl = document.getElementById('dockflare-prompt-title');
+                const messageEl = document.getElementById('dockflare-prompt-message');
+                const inputEl = document.getElementById('dockflare-prompt-input');
+                const okBtn = document.getElementById('dockflare-prompt-ok');
+                const cancelBtn = document.getElementById('dockflare-prompt-cancel');
+
+                titleEl.textContent = title;
+                messageEl.textContent = message;
+                inputEl.value = defaultValue;
+
+                const handleOk = () => {
+                    const value = inputEl.value;
+                    modal.close();
+                    cleanup();
+                    resolve(value);
+                };
+
+                const handleCancel = () => {
+                    modal.close();
+                    cleanup();
+                    resolve(null);
+                };
+
+                const handleEnter = (e) => {
+                    if (e.key === 'Enter') {
+                        handleOk();
+                    }
+                };
+
+                const cleanup = () => {
+                    okBtn.removeEventListener('click', handleOk);
+                    cancelBtn.removeEventListener('click', handleCancel);
+                    inputEl.removeEventListener('keypress', handleEnter);
+                };
+
+                okBtn.addEventListener('click', handleOk);
+                cancelBtn.addEventListener('click', handleCancel);
+                inputEl.addEventListener('keypress', handleEnter);
+
+                modal.showModal();
+                setTimeout(() => inputEl.focus(), 100);
+            });
+        };
+    </script>
+
     <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     {% block scripts %}{% endblock %}

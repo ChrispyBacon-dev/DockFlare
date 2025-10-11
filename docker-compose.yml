@@ -38,11 +38,10 @@ services:
     restart: unless-stopped
     ports:
       - "5000:5000"
-    labels:
-      # -- Cloudflare Tunnel Configuration (via DockFlare) OPTIONAL --
-      # Main DockFlare interface with access policy
+    #labels: # -- Cloudflare Tunnel Configuration (via DockFlare) OPTIONAL --
+      # Main DockFlare with access policy
       #- dockflare.enable=true
-      #- dockflare.hostname=dockflare.master.tld
+      #- dockflare.hostname=dockflare.example.tld
       #- dockflare.service=http://dockflare:5000
       #- dockflare.access.group=YOUR-ACCESS-GROUP-ID  # your custom access policy
 
@@ -64,7 +63,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - REDIS_DB_INDEX=0  # Optional: specify Redis database index (0-15) for isolation from other containers
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
-      # - LOG_LEVEL=DEBUG # Uncomment for more verbose logging/debugging
+      #- LOG_LEVEL=DEBUG # Uncomment for more verbose logging/debugging
     depends_on:
       docker-socket-proxy:
         condition: service_started
