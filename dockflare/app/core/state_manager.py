@@ -141,6 +141,8 @@ def load_state():
                 rule_copy.setdefault("access_group_id", None)
                 rule_copy.setdefault("tunnel_id", None)
                 rule_copy.setdefault("zone_name", None)
+                rule_copy.setdefault("no_tls_verify", False)
+                rule_copy.setdefault("origin_server_name", None)
 
                 tunnel_name = rule_copy.get("tunnel_name")
                 if not tunnel_name or tunnel_name == "dockflare-tunnel":
