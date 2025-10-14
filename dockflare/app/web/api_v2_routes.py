@@ -1076,15 +1076,15 @@ def process_agent_container_start(payload, agent_id):
                             logging.error(f"AGENT_PROCESS: Could not determine Zone ID for DNS record {hostname_dns}")
     
                     from app.core.state_manager import get_agent_rules
+                    from app.core.tunnel_manager import _build_ingress_entry_from_rule
                     agent_rules = get_agent_rules(agent_id)
-                    
+
                     ingress_rules = []
                     for rule_key, rule in agent_rules.items():
                         if rule.get("status") == "active":
-                            entry = {"hostname": rule["hostname"], "service": rule["service"]}
-                            if rule.get("path"):
-                                entry["path"] = rule["path"]
-                            ingress_rules.append(entry)
+                            entry = _build_ingress_entry_from_rule(rule)
+                            if entry:
+                                ingress_rules.append(entry)
                     ingress_rules.append({"service": "http_status:404"})
                     account_id = current_app.config.get('CF_ACCOUNT_ID')
                     endpoint = f"/accounts/{account_id}/cfd_tunnel/{agent_tunnel_id}/configurations"
