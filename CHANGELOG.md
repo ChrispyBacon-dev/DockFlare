@@ -62,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Prevention of unsafe configurations:** System now prevents creation of policies where "any user with selected IdP" (e.g., any Google account) could access protected services
   - **Clear error messaging:** Users receive actionable security warnings explaining why email addresses are required with IdP authentication
   - **Result:** Eliminates accidental creation of overly permissive access policies that could expose services to unauthorized users
+  - **Agent No TLS Verify Bug:** Fixed bug where `dockflare.no_tls_verify=true` label was ignored when Agent containers started.
 
 ### Documentation
 - **CLI Usage Guide:** Created comprehensive [CLI_USAGE.md](CLI_USAGE.md) documenting the duplicate policy cleanup utility with examples, safety features, and best practices for advanced users.
