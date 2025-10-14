@@ -17,6 +17,7 @@ These labels control the fundamental routing and service definition for a contai
 | `dockflare.originsrvname` | Sets a specific Server Name Indication (SNI) hostname for the TLS connection to the origin. This is also known as "Origin Server Name" in the Cloudflare dashboard. | `dockflare.originsrvname=internal.service.local` |
 | `dockflare.httpHostHeader` | Overrides the `Host` header sent from `cloudflared` to your origin service. | `dockflare.httpHostHeader=custom-host.internal` |
 | `dockflare.http2_origin` | If set to `true`, enables HTTP/2 protocol for the connection between `cloudflared` and your origin service. Required for gRPC services. Only applies to HTTP/HTTPS services. | `dockflare.http2_origin=true` |
+| `dockflare.disable_chunked_encoding` | If set to `true`, disables chunked transfer encoding over HTTP/1.1. Useful for WSGI servers (Flask, Django, FastAPI) and other origins that don't properly support chunked requests. Only applies to HTTP/HTTPS services. | `dockflare.disable_chunked_encoding=true` |
 
 > **Tip:** Starting with DockFlare v3.0, you can skip `dockflare.zonename` for most workloads. The master detects the correct Cloudflare zone by matching the hostname suffix and only falls back to the configured default zone when it cannot find a match. Provide the label when you intentionally want to place a record in a different zone.
 

@@ -200,6 +200,9 @@
                                            {% if details.http2_origin %}
                                                <span class="badge badge-success badge-xs ml-1" title="HTTP/2 protocol enabled for origin connection">HTTP/2 Origin</span>
                                            {% endif %}
+                                           {% if details.disable_chunked_encoding %}
+                                               <span class="badge badge-info badge-xs ml-1" title="Chunked transfer encoding disabled for HTTP/1.1">No Chunked Encoding</span>
+                                           {% endif %}
                                        </div>
                                    </td>
                                    <td class="p-3 whitespace-nowrap">
@@ -513,6 +516,13 @@
                           </label>
                           <div class="text-xs opacity-60 ml-8">Enable HTTP/2 protocol between Cloudflare and your origin server. Required for gRPC services. (Only applies to HTTP/HTTPS services).</div>
                         </div>
+                        <div id="manual_disable_chunked_encoding_div" class="form-control">
+                          <label class="label cursor-pointer justify-start gap-2">
+                            <input type="checkbox" name="manual_disable_chunked_encoding" id="manual_disable_chunked_encoding" class="checkbox checkbox-sm" />
+                            <span class="label-text">Disable Chunked Encoding</span>
+                          </label>
+                          <div class="text-xs opacity-60 ml-8">Disables chunked transfer encoding over HTTP/1.1. Useful for WSGI servers (Flask, Django) and other origins that don't support chunked requests. (Only applies to HTTP/HTTPS services).</div>
+                        </div>
                     </div>
                 </div>
                 <div id="manual_rule_feedback" class="hidden alert mt-4"></div>
@@ -656,6 +666,13 @@
                             <span class="label-text">Enable HTTP/2 Origin</span>
                           </label>
                           <div class="text-xs opacity-60 ml-8">Enable HTTP/2 protocol between Cloudflare and your origin server. Required for gRPC services. (Only applies to HTTP/HTTPS services).</div>
+                        </div>
+                        <div id="edit_disable_chunked_encoding_div" class="form-control">
+                          <label class="label cursor-pointer justify-start gap-2">
+                            <input type="checkbox" name="edit_disable_chunked_encoding" id="edit_disable_chunked_encoding" class="checkbox checkbox-sm" />
+                            <span class="label-text">Disable Chunked Encoding</span>
+                          </label>
+                          <div class="text-xs opacity-60 ml-8">Disables chunked transfer encoding over HTTP/1.1. Useful for WSGI servers (Flask, Django) and other origins that don't support chunked requests. (Only applies to HTTP/HTTPS services).</div>
                         </div>
                     </div>
                 </div>

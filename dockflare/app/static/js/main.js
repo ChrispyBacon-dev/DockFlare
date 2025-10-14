@@ -232,6 +232,9 @@ function initializeEditRuleModal() {
                 const http2OriginField = modal.querySelector('#edit_http2_origin');
                 if (http2OriginField) http2OriginField.checked = details.http2_origin || false;
 
+                const disableChunkedEncodingField = modal.querySelector('#edit_disable_chunked_encoding');
+                if (disableChunkedEncodingField) disableChunkedEncodingField.checked = details.disable_chunked_encoding || false;
+
                 const tunnelDisplay = modal.querySelector('#edit_rule_tunnel_value');
                 const zoneDisplay = modal.querySelector('#edit_rule_zone_value');
                 const agentHint = modal.querySelector('#edit_rule_agent_hint');

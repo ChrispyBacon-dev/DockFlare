@@ -263,6 +263,8 @@ def _build_ingress_entry_from_rule(rule_details):
             origin_request["httpHostHeader"] = http_host_header
         if rule_details.get("http2_origin"):
             origin_request["http2Origin"] = True
+        if rule_details.get("disable_chunked_encoding"):
+            origin_request["disableChunkedEncoding"] = True
     if origin_request:
         entry["originRequest"] = origin_request
     return entry
@@ -302,7 +304,8 @@ def _ingress_to_comparable(rule):
     origin_name = origin.get("originServerName") or ""
     http_host = origin.get("httpHostHeader") or ""
     http2_origin = bool(origin.get("http2Origin"))
-    return (hostname, service, path, no_tls, origin_name, http_host, http2_origin)
+    disable_chunked = bool(origin.get("disableChunkedEncoding"))
+    return (hostname, service, path, no_tls, origin_name, http_host, http2_origin, disable_chunked)
 
 
 def _is_catch_all_rule(rule):

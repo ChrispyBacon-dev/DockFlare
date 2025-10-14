@@ -144,6 +144,7 @@ def load_state():
                 rule_copy.setdefault("no_tls_verify", False)
                 rule_copy.setdefault("origin_server_name", None)
                 rule_copy.setdefault("http2_origin", False)
+                rule_copy.setdefault("disable_chunked_encoding", False)
 
                 tunnel_name = rule_copy.get("tunnel_name")
                 if not tunnel_name or tunnel_name == "dockflare-tunnel":
@@ -502,6 +503,7 @@ def save_state():
                 "origin_server_name": rule.get("origin_server_name"),
                 "http_host_header": rule.get("http_host_header"),
                 "http2_origin": rule.get("http2_origin", False),
+                "disable_chunked_encoding": rule.get("disable_chunked_encoding", False),
                 "access_app_id": rule.get("access_app_id"),
                 "access_policy_type": rule.get("access_policy_type"),
                 "access_app_config_hash": rule.get("access_app_config_hash"),
