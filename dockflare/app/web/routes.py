@@ -1237,6 +1237,8 @@ def ui_add_manual_rule_route():
     no_tls_verify = request.form.get('manual_no_tls_verify') == 'on'
     origin_server_name_input = request.form.get('manual_origin_server_name', '').strip()
     manual_http_host_header = request.form.get('manual_http_host_header', '').strip()
+    http2_origin = request.form.get('manual_http2_origin') == 'on'
+    disable_chunked_encoding = request.form.get('manual_disable_chunked_encoding') == 'on'
 
     manual_access_group_ids = request.form.getlist('manual_access_groups')
     manual_access_policy_type = request.form.get('manual_access_policy_type', 'none').strip().lower()
@@ -1489,6 +1491,8 @@ def ui_add_manual_rule_route():
             "no_tls_verify": no_tls_verify,
             "origin_server_name": origin_server_name_input or None,
             "http_host_header": manual_http_host_header or None,
+            "http2_origin": http2_origin,
+            "disable_chunked_encoding": disable_chunked_encoding,
             "source": "manual",
             "access_app_id": access_app_id,
             "access_policy_type": access_policy_type,
@@ -1591,7 +1595,9 @@ def ui_edit_manual_rule_route():
     no_tls_verify = request.form.get('edit_no_tls_verify') == 'on'
     origin_server_name_input = request.form.get('edit_origin_server_name', '').strip()
     manual_http_host_header = request.form.get('edit_http_host_header', '').strip()
-    
+    http2_origin = request.form.get('edit_http2_origin') == 'on'
+    disable_chunked_encoding = request.form.get('edit_disable_chunked_encoding') == 'on'
+
     if not domain_name_input or not service_type_input:
         cloudflared_agent_state["last_action_status"] = "Error: Domain and service type required."
         return redirect(url_for('web.status_page'))
@@ -1775,6 +1781,8 @@ def ui_edit_manual_rule_route():
             "no_tls_verify": no_tls_verify,
             "origin_server_name": origin_server_name_input or None,
             "http_host_header": manual_http_host_header or None,
+            "http2_origin": http2_origin,
+            "disable_chunked_encoding": disable_chunked_encoding,
             "access_app_id": access_app_id,
             "access_policy_type": access_policy_type,
             "access_app_config_hash": access_app_config_hash,

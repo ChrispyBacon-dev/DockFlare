@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v3.0.5] - 2025-10-14
+
+### Added
+- **HTTP/2 Origin Support:** Added support for enabling HTTP/2 protocol between `cloudflared` and origin services via the new `dockflare.http2_origin` label and UI controls. Required for gRPC services. Only applies to HTTP/HTTPS services.
+- **Disable Chunked Encoding Support:** Added support for disabling chunked transfer encoding over HTTP/1.1 via the new `dockflare.disable_chunked_encoding` label and UI controls. Useful for WSGI servers (Flask, Django, FastAPI) and other origins that don't properly support chunked requests. Only applies to HTTP/HTTPS services.
+
+---
+
 ## [v3.0.4] - 2025-10-11
 
 ### Added
