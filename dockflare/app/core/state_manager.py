@@ -465,91 +465,74 @@ def ensure_authenticated_default_policy(flask_app=None):
                         logging.error(f"Error verifying/updating default authenticated policy in Cloudflare: {e}")
 
 def save_state():
-    global managed_rules, access_groups
-    current_thread_name = threading.current_thread().name
-
     with state_lock:
-        logging.info(f"SAVE_STATE: Start (RLock acquired). THREAD: {current_thread_name}. Items to save: {len(managed_rules)} rules, {len(access_groups)} access groups.")
-        
-    serializable_rules = {}
-    rules_to_iterate = list(managed_rules.items())
-    groups_to_iterate = dict(access_groups)
-    agents_to_iterate = dict(agents)
-    idps_to_iterate = dict(identity_providers)
-    if not rules_to_iterate and not groups_to_iterate and not agents_to_iterate and not idps_to_iterate:
-        logging.info(f"SAVE_STATE: THREAD: {current_thread_name}. State is empty. Proceeding to write empty state file.")
-    else:
-        logging.info(
-            "SAVE_STATE: THREAD: %s. Serializing %s rules, %s groups, %s agents and %s identity providers.",
-            current_thread_name,
-            len(rules_to_iterate),
-            len(groups_to_iterate),
-            len(agents_to_iterate),
-            len(idps_to_iterate)
-        )
+        current_thread_name = threading.current_thread().name
+        logging.info(f"SAVE_STATE: Start. THREAD: {current_thread_name}. Items to save: {len(managed_rules)} rules, {len(access_groups)} access groups.")
 
-    for rule_key, rule in rules_to_iterate:
-        logging.debug(f"SAVE_STATE_LOOP: THREAD: {current_thread_name}. Preparing rule for key: {rule_key}")
-        try:
-            data_to_serialize = {
-                "hostname": rule.get("hostname"),
-                "path": rule.get("path"),
-                "service": rule.get("service"),
-                "container_id": rule.get("container_id"),
-                "status": rule.get("status"),
-                "delete_at": None,
-                "zone_id": rule.get("zone_id"),
-                "no_tls_verify": rule.get("no_tls_verify", False),
-                "origin_server_name": rule.get("origin_server_name"),
-                "http_host_header": rule.get("http_host_header"),
-                "http2_origin": rule.get("http2_origin", False),
-                "disable_chunked_encoding": rule.get("disable_chunked_encoding", False),
-                "access_app_id": rule.get("access_app_id"),
-                "access_policy_type": rule.get("access_policy_type"),
-                "access_app_config_hash": rule.get("access_app_config_hash"),
-                "access_policy_ui_override": rule.get("access_policy_ui_override", False),
-                "rule_ui_override": rule.get("rule_ui_override", False),
-                "source": rule.get("source", "docker"),
-                "access_group_id": rule.get("access_group_id"),
-                "tunnel_id": rule.get("tunnel_id"),
-                "tunnel_name": rule.get("tunnel_name"),
-                "zone_name": rule.get("zone_name")
-            }
-            delete_at_val = rule.get("delete_at")
-            if isinstance(delete_at_val, datetime):
-                logging.debug(f"SAVE_STATE_LOOP: THREAD: {current_thread_name}. Serializing datetime for {rule_key} (value: {delete_at_val}).")
-                data_to_serialize["delete_at"] = delete_at_val.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
-            serializable_rules[rule_key] = data_to_serialize
-        except Exception as e_serialize_item:
-            logging.error(f"SAVE_STATE_LOOP_ERROR: THREAD: {current_thread_name}. Error preparing rule for serialization '{rule_key}': {e_serialize_item}. Rule data: {rule}", exc_info=True)
-            continue
-    
-    final_state_to_save = {
-        "managed_rules": serializable_rules,
-        "access_groups": groups_to_iterate,
-        "agents": agents_to_iterate,
-        "identity_providers": idps_to_iterate
-    }
+        serializable_rules = {}
+        rules_to_iterate = list(managed_rules.items())
+        groups_to_iterate = dict(access_groups)
+        agents_to_iterate = dict(agents)
+        idps_to_iterate = dict(identity_providers)
 
-    logging.info(f"SAVE_STATE: THREAD: {current_thread_name}. Prepared final state with {len(serializable_rules)} rules, {len(groups_to_iterate)} groups and {len(idps_to_iterate)} identity providers.")
-
-    try:
-        state_dir = os.path.dirname(config.STATE_FILE_PATH)
-        if not os.path.exists(state_dir):
+        for rule_key, rule in rules_to_iterate:
             try:
-                os.makedirs(state_dir, exist_ok=True)
-            except OSError as e_mkdir:
-                logging.error(f"SAVE_STATE: THREAD: {current_thread_name}. Mkdir error {e_mkdir}. Save failed.")
-                return
-        temp_file_path = config.STATE_FILE_PATH + ".tmp"
-        with open(temp_file_path, 'w') as f:
-            json.dump(final_state_to_save, f, indent=2)
-        os.replace(temp_file_path, config.STATE_FILE_PATH)
-        logging.info(f"SAVE_STATE: THREAD: {current_thread_name}. Successfully saved state for {len(serializable_rules)} rules and {len(groups_to_iterate)} groups to {config.STATE_FILE_PATH}")
-    except Exception as e_save_io:
-        logging.error(f"SAVE_STATE: THREAD: {current_thread_name}. File I/O or other error: {e_save_io}", exc_info=True)
-    
-    logging.info(f"SAVE_STATE: End. THREAD: {current_thread_name}.")
+                data_to_serialize = {
+                    "hostname": rule.get("hostname"),
+                    "path": rule.get("path"),
+                    "service": rule.get("service"),
+                    "container_id": rule.get("container_id"),
+                    "status": rule.get("status"),
+                    "delete_at": None,
+                    "zone_id": rule.get("zone_id"),
+                    "no_tls_verify": rule.get("no_tls_verify", False),
+                    "origin_server_name": rule.get("origin_server_name"),
+                    "http_host_header": rule.get("http_host_header"),
+                    "http2_origin": rule.get("http2_origin", False),
+                    "disable_chunked_encoding": rule.get("disable_chunked_encoding", False),
+                    "access_app_id": rule.get("access_app_id"),
+                    "access_policy_type": rule.get("access_policy_type"),
+                    "access_app_config_hash": rule.get("access_app_config_hash"),
+                    "access_policy_ui_override": rule.get("access_policy_ui_override", False),
+                    "rule_ui_override": rule.get("rule_ui_override", False),
+                    "source": rule.get("source", "docker"),
+                    "access_group_id": rule.get("access_group_id"),
+                    "tunnel_id": rule.get("tunnel_id"),
+                    "tunnel_name": rule.get("tunnel_name"),
+                    "zone_name": rule.get("zone_name")
+                }
+                delete_at_val = rule.get("delete_at")
+                if isinstance(delete_at_val, datetime):
+                    data_to_serialize["delete_at"] = delete_at_val.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
+                serializable_rules[rule_key] = data_to_serialize
+            except Exception as e_serialize_item:
+                logging.error(f"SAVE_STATE_LOOP_ERROR: THREAD: {current_thread_name}. Error preparing rule for serialization '{rule_key}': {e_serialize_item}. Rule data: {rule}", exc_info=True)
+                continue
+        
+        final_state_to_save = {
+            "managed_rules": serializable_rules,
+            "access_groups": groups_to_iterate,
+            "agents": agents_to_iterate,
+            "identity_providers": idps_to_iterate
+        }
+
+        try:
+            state_dir = os.path.dirname(config.STATE_FILE_PATH)
+            if not os.path.exists(state_dir):
+                try:
+                    os.makedirs(state_dir, exist_ok=True)
+                except OSError as e_mkdir:
+                    logging.error(f"SAVE_STATE: THREAD: {current_thread_name}. Mkdir error {e_mkdir}. Save failed.")
+                    return
+            temp_file_path = config.STATE_FILE_PATH + ".tmp"
+            with open(temp_file_path, 'w') as f:
+                json.dump(final_state_to_save, f, indent=2)
+            os.replace(temp_file_path, config.STATE_FILE_PATH)
+            logging.info(f"SAVE_STATE: THREAD: {current_thread_name}. Successfully saved state to {config.STATE_FILE_PATH}")
+        except Exception as e_save_io:
+            logging.error(f"SAVE_STATE: THREAD: {current_thread_name}. File I/O or other error: {e_save_io}", exc_info=True)
+        
+        logging.info(f"SAVE_STATE: End. THREAD: {current_thread_name}.")
 
 def add_agent(agent_id, agent_data):
     """
