@@ -203,6 +203,8 @@ If you are migrating from older environment-based setups, DockFlare can import e
 
 Use container labels to declare hostname, service target, and access behavior. DockFlare observes lifecycle events and reconciles records and ingress rules automatically.
 
+Detailed label reference: [https://dockflare.app/docs/container-labels](https://dockflare.app/docs/container-labels)
+
 ### Manual Rule Mode
 
 Create and edit routes directly in the UI for static hosts, VMs, appliances, or external services. Manual rules support HTTP/HTTPS advanced origin options and are persisted in DockFlare state.
