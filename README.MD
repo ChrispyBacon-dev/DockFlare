@@ -14,7 +14,7 @@
 <a href="https://github.com/ChrispyBacon-dev/DockFlare/stargazers">
   <img src="https://img.shields.io/github/stars/ChrispyBacon-dev/DockFlare?style=for-the-badge" alt="Stars">
 </a>
-  <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases"><img src="https://img.shields.io/badge/Release-v3.0.6-blue.svg?style=for-the-badge" alt="Release"></a>
+  <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases"><img src="https://img.shields.io/badge/Release-v3.0.7-blue.svg?style=for-the-badge" alt="Release"></a>
   <a href="https://hub.docker.com/r/alplat/dockflare"><img src="https://img.shields.io/docker/pulls/alplat/dockflare?style=for-the-badge" alt="Docker Pulls"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Made%20with-Python-1f425f.svg?style=for-the-badge" alt="Python"></a>
   <a href="https://github.com/ChrispyBacon-dev/DockFlare/blob/main/LICENSE.MD"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg?style=for-the-badge" alt="License"></a>
@@ -49,6 +49,15 @@ DockFlare 3.0.3 introduces complete Identity Provider management, cleaner access
 - **Performance optimizations**: Access Policies page now lazy-loads zone policies via AJAX for instant page rendering, eliminating the 8+ second wait caused by synchronous API calls.
 - **Simplified UI**: Removed confusing quick-create options ("Email Auth", "Default *.tld") from manual rule creation. Complex policies should be designed on the Access Policies page and then applied to services.
 - **Migration-ready**: Legacy inline policies automatically convert to reusable policies during the next sync, and DockFlare harmonizes Cloudflare `block` decisions with the newer `deny` verb.
+
+### ✨ What's New in DockFlare 3.0.7: Manual Rule SNI, Safer Sync, and Cloudflare UI Link Fixes
+
+DockFlare 3.0.7 improves compatibility with Cloudflare Tunnel and Access UI changes and closes edge-case reliability gaps.
+
+- **Manual Rule `Match SNI to Host` support**: Added a dedicated toggle in manual rule create/edit flows and persisted it in DockFlare state so `originRequest.matchSNIToHost` is retained across restarts and syncs.
+- **Preserve unmanaged Cloudflare ingress fields**: Added a Settings toggle to keep Cloudflare-side route fields DockFlare does not explicitly manage, reducing accidental resets of advanced Cloudflare-only options.
+- **Cloudflare dashboard deep-link updates**: Updated generated links for Tunnel routes, Access Applications, and Access Policies to match current Cloudflare Zero Trust URL paths.
+- **Tunnel name to container-name normalization**: Tunnel names containing Docker-invalid characters are now safely normalized when deriving the local `cloudflared` container name.
 
 ### ✨ What's New in DockFlare 3.0: Multi-Server & Agent Release
 

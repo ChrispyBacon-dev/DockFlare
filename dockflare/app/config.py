@@ -18,6 +18,7 @@
 # dockflare/app/config.py
 import os
 import logging 
+from app.core.container_name import build_cloudflared_container_name
 
 def _get_int_env(name, default, minimum=None):
     raw_value = os.getenv(name)
@@ -34,7 +35,7 @@ def _get_int_env(name, default, minimum=None):
         return default
 
 # --- DockFlare Version ---
-APP_VERSION = "v3.0.6"
+APP_VERSION = "v3.0.7"
 # --- web: https://dockflare.app ---
 # --- github: https://github.com/ChrispyBacon-dev/DockFlare ---
 
@@ -71,7 +72,7 @@ EXTERNAL_TUNNEL_ID = os.getenv('EXTERNAL_TUNNEL_ID')
 if not USE_EXTERNAL_CLOUDFLARED:
     CLOUDFLARED_NETWORK_NAME = os.getenv('CLOUDFLARED_NETWORK_NAME', 'cloudflare-net')
     
-    CLOUDFLARED_CONTAINER_NAME = os.getenv('CLOUDFLARED_CONTAINER_NAME', f"cloudflared-agent-{TUNNEL_NAME}")
+    CLOUDFLARED_CONTAINER_NAME = os.getenv('CLOUDFLARED_CONTAINER_NAME', build_cloudflared_container_name(TUNNEL_NAME))
 else:
     CLOUDFLARED_NETWORK_NAME = None
     CLOUDFLARED_CONTAINER_NAME = None
@@ -141,3 +142,4 @@ REDIS_DB_INDEX = int(os.getenv('REDIS_DB_INDEX', 0))
 USE_REUSABLE_POLICIES = os.getenv('USE_REUSABLE_POLICIES', 'true').lower() in ['true', '1', 't', 'yes']
 
 SYNC_ALL_CLOUDFLARE_POLICIES = os.getenv('SYNC_ALL_CLOUDFLARE_POLICIES', 'false').lower() in ['true', '1', 't', 'yes']
+PRESERVE_UNMANAGED_CF_INGRESS_FIELDS = False

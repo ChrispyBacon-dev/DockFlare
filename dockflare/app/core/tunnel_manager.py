@@ -157,7 +157,10 @@ def update_cloudflare_config(target_tunnel_id=None):
                 if comp not in desired_comparable:
                     preserved_rules.append(api_rule)
 
-        final_ingress = list(desired_ingress)
+        if config.PRESERVE_UNMANAGED_CF_INGRESS_FIELDS:
+            final_ingress = [_merge_desired_with_current_fields(rule, current_api_ingress_rules) for rule in desired_ingress]
+        else:
+            final_ingress = list(desired_ingress)
         seen = set(desired_comparable)
         for preserved in preserved_rules:
             comp = _ingress_to_comparable(preserved)
@@ -265,6 +268,8 @@ def _build_ingress_entry_from_rule(rule_details):
             origin_request["http2Origin"] = True
         if rule_details.get("disable_chunked_encoding"):
             origin_request["disableChunkedEncoding"] = True
+        if rule_details.get("match_sni_to_host"):
+            origin_request["matchSNIToHost"] = True
     if origin_request:
         entry["originRequest"] = origin_request
     return entry
@@ -305,7 +310,8 @@ def _ingress_to_comparable(rule):
     http_host = origin.get("httpHostHeader") or ""
     http2_origin = bool(origin.get("http2Origin"))
     disable_chunked = bool(origin.get("disableChunkedEncoding"))
-    return (hostname, service, path, no_tls, origin_name, http_host, http2_origin, disable_chunked)
+    match_sni_to_host = bool(origin.get("matchSNIToHost"))
+    return (hostname, service, path, no_tls, origin_name, http_host, http2_origin, disable_chunked, match_sni_to_host)
 
 
 def _is_catch_all_rule(rule):
@@ -313,6 +319,62 @@ def _is_catch_all_rule(rule):
     hostname = rule.get("hostname")
     path = rule.get("path")
     return service == "http_status:404" and not hostname and not path
+
+
+def _ingress_identity_key(rule):
+    hostname = rule.get("hostname") or ""
+    service = rule.get("service") or ""
+    path = _normalize_path_for_ingress(rule.get("path")) or ""
+    return (hostname, service, path)
+
+
+def _merge_desired_with_current_fields(desired_rule, current_rules):
+    desired_identity = _ingress_identity_key(desired_rule)
+    matching_current = None
+    for current_rule in current_rules:
+        if _ingress_identity_key(current_rule) == desired_identity:
+            matching_current = current_rule
+            break
+    if not isinstance(matching_current, dict):
+        return desired_rule
+
+    merged = copy.deepcopy(matching_current)
+    merged["service"] = desired_rule.get("service")
+    if desired_rule.get("hostname"):
+        merged["hostname"] = desired_rule.get("hostname")
+    else:
+        merged.pop("hostname", None)
+
+    desired_path = desired_rule.get("path")
+    if desired_path:
+        merged["path"] = desired_path
+    else:
+        merged.pop("path", None)
+
+    existing_origin = merged.get("originRequest")
+    if not isinstance(existing_origin, dict):
+        existing_origin = {}
+    desired_origin = desired_rule.get("originRequest")
+    if not isinstance(desired_origin, dict):
+        desired_origin = {}
+
+    managed_origin_keys = {
+        "noTLSVerify",
+        "originServerName",
+        "httpHostHeader",
+        "http2Origin",
+        "disableChunkedEncoding",
+        "matchSNIToHost"
+    }
+    merged_origin = {k: v for k, v in existing_origin.items() if k not in managed_origin_keys}
+    merged_origin.update(desired_origin)
+
+    if merged_origin:
+        merged["originRequest"] = merged_origin
+    else:
+        merged.pop("originRequest", None)
+
+    return merged
 
 def get_cloudflared_container():
     from app import app

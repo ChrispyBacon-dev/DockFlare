@@ -29,6 +29,7 @@ from cryptography.fernet import Fernet
 from werkzeug.security import generate_password_hash
 from app import config
 from app.core import backup_manager
+from app.core.container_name import build_cloudflared_container_name
 from app.web import config_loader
 
 setup_bp = Blueprint('setup', __name__, url_prefix='/setup', template_folder='../templates')
@@ -228,6 +229,7 @@ def step4_finalize():
             'cf_zone_id': session.get('cf_zone_id'),
             'tunnel_dns_scan_zone_names': session.get('tunnel_dns_scan_zone_names', ''),
             'grace_period_seconds': session['grace_period_seconds'],
+            'preserve_unmanaged_cf_ingress_fields': False,
             'username': session['username'],
             'password': hashed_password,
             'master_api_key': master_api_key,
@@ -248,7 +250,7 @@ def step4_finalize():
         config_module.CF_ACCOUNT_ID = app_config['CF_ACCOUNT_ID']
         app_config['TUNNEL_NAME'] = config_payload['tunnel_name']
         config_module.TUNNEL_NAME = app_config['TUNNEL_NAME']
-        app_config['CLOUDFLARED_CONTAINER_NAME'] = f"cloudflared-agent-{app_config['TUNNEL_NAME']}"
+        app_config['CLOUDFLARED_CONTAINER_NAME'] = build_cloudflared_container_name(app_config['TUNNEL_NAME'])
         app_config['CF_ZONE_ID'] = config_payload['cf_zone_id']
         config_module.CF_ZONE_ID = app_config['CF_ZONE_ID']
         tunnel_dns_scan_zone_names_str = config_payload.get('tunnel_dns_scan_zone_names', '')
@@ -256,6 +258,8 @@ def step4_finalize():
         config_module.TUNNEL_DNS_SCAN_ZONE_NAMES = app_config['TUNNEL_DNS_SCAN_ZONE_NAMES']
         app_config['GRACE_PERIOD_SECONDS'] = int(config_payload.get('grace_period_seconds', 28800))
         config_module.GRACE_PERIOD_SECONDS = app_config['GRACE_PERIOD_SECONDS']
+        app_config['PRESERVE_UNMANAGED_CF_INGRESS_FIELDS'] = bool(config_payload.get('preserve_unmanaged_cf_ingress_fields', False))
+        config_module.PRESERVE_UNMANAGED_CF_INGRESS_FIELDS = app_config['PRESERVE_UNMANAGED_CF_INGRESS_FIELDS']
         app_config['DOCKFLARE_USERNAME'] = config_payload['username']
         app_config['DOCKFLARE_PASSWORD_HASH'] = config_payload['password']
         app_config['MASTER_API_KEY'] = master_api_key

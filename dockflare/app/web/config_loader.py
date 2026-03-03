@@ -25,6 +25,7 @@ from typing import Dict, Optional
 from cryptography.fernet import Fernet
 
 from app import config
+from app.core.container_name import build_cloudflared_container_name
 
 
 def _data_directory() -> str:
@@ -87,6 +88,7 @@ def apply_config_to_app(flask_app, config_data: Dict) -> None:
     ]
 
     flask_app.config['GRACE_PERIOD_SECONDS'] = int(config_data.get('grace_period_seconds', 28800))
+    flask_app.config['PRESERVE_UNMANAGED_CF_INGRESS_FIELDS'] = bool(config_data.get('preserve_unmanaged_cf_ingress_fields', False))
     flask_app.config['DOCKFLARE_USERNAME'] = config_data.get('username')
     flask_app.config['DOCKFLARE_PASSWORD_HASH'] = config_data.get('password')
     disable_password_login_legacy = config_data.get('disable_password_login')
@@ -117,6 +119,7 @@ def apply_config_to_app(flask_app, config_data: Dict) -> None:
     config.TUNNEL_NAME = flask_app.config['TUNNEL_NAME']
     config.TUNNEL_DNS_SCAN_ZONE_NAMES = flask_app.config['TUNNEL_DNS_SCAN_ZONE_NAMES']
     config.GRACE_PERIOD_SECONDS = flask_app.config['GRACE_PERIOD_SECONDS']
+    config.PRESERVE_UNMANAGED_CF_INGRESS_FIELDS = flask_app.config['PRESERVE_UNMANAGED_CF_INGRESS_FIELDS']
     config.MASTER_API_KEY = effective_master_key
 
     if flask_app.config['CF_API_TOKEN']:
@@ -125,6 +128,6 @@ def apply_config_to_app(flask_app, config_data: Dict) -> None:
         config.CF_HEADERS.pop('Authorization', None)
 
     flask_app.is_configured = True
-    container_name = f"cloudflared-agent-{tunnel_name}" if tunnel_name else None
+    container_name = build_cloudflared_container_name(tunnel_name)
     flask_app.config['CLOUDFLARED_CONTAINER_NAME'] = container_name
     config.CLOUDFLARED_CONTAINER_NAME = container_name

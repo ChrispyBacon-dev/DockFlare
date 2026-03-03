@@ -45,6 +45,9 @@
                             <span class="label-text">{{ settings_form.tunnel_name.label.text }}</span>
                         </label>
                         {{ settings_form.tunnel_name(class="input input-bordered w-full", **{'id': 'tunnel_name'}) }}
+                        <label class="label">
+                            <span class="label-text-alt">Used for Cloudflare tunnel display. DockFlare automatically normalizes this value when generating the local cloudflared container name.</span>
+                        </label>
                         {% for error in settings_form.tunnel_name.errors %}
                             <label class="label">
                                 <span class="label-text-alt text-error">{{ error }}</span>
@@ -82,6 +85,16 @@
                                 <span class="label-text-alt text-error">{{ error }}</span>
                             </label>
                         {% endfor %}
+                    </div>
+
+                    <div class="form-control w-full">
+                        <label class="label cursor-pointer justify-start gap-3" for="preserve_unmanaged_cf_ingress_fields">
+                            {{ settings_form.preserve_unmanaged_cf_ingress_fields(class="toggle toggle-primary", **{'id': 'preserve_unmanaged_cf_ingress_fields'}) }}
+                            <span class="label-text">{{ settings_form.preserve_unmanaged_cf_ingress_fields.label.text }}</span>
+                        </label>
+                        <label class="label">
+                            <span class="label-text-alt">When enabled, DockFlare keeps existing Cloudflare tunnel route fields that it does not manage instead of clearing them during sync.</span>
+                        </label>
                     </div>
                     
                     <div class="card-actions pt-4">

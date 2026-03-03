@@ -16,6 +16,7 @@
 #
 # dockflare/app/core/utils.py
 from app import config
+from app.core.container_name import build_cloudflared_container_name
 
 
 def get_rule_key(hostname, path):

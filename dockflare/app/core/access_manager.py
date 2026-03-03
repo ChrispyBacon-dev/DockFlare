@@ -19,16 +19,11 @@ import logging
 import json
 import hashlib
 import requests
-import time
 import copy
 from flask import current_app
 from app.core import cloudflare_api
 from app.core.state_manager import access_groups, managed_rules, state_lock
 from app.core.utils import normalize_path_value
-
-_ACCOUNT_EMAIL_CACHE_TTL = 3600
-_cached_account_email = None
-_cached_account_email_timestamp = 0
 
 def _build_access_app_payload(application_domain, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies_or_ids, allowed_idps=None, auto_redirect_to_identity=False, use_reusable=False):
     from app import config
@@ -112,35 +107,7 @@ def check_for_tld_access_policy(zone_name):
         return False
 
 def get_cloudflare_account_email():
-    global _cached_account_email, _cached_account_email_timestamp
-
-    current_time = time.time()
-    if _cached_account_email and (current_time - _cached_account_email_timestamp < _ACCOUNT_EMAIL_CACHE_TTL):
-        logging.debug(f"Returning cached Cloudflare account email: {_cached_account_email}")
-        return _cached_account_email
-
-    logging.info("Fetching Cloudflare account email from API.")
-    try:
-        response_data = cloudflare_api.cf_api_request("GET", "/user")
-        if response_data and response_data.get("success"):
-            email = response_data.get("result", {}).get("email")
-            if email:
-                logging.info(f"Successfully fetched Cloudflare account email: {email}")
-                _cached_account_email = email
-                _cached_account_email_timestamp = current_time
-                return email
-            else:
-                logging.warning("Cloudflare account email not found in API response.")
-                return None
-        else:
-            logging.warning(f"Failed to fetch Cloudflare account email, API call unsuccessful. Response: {response_data}")
-            return None
-    except requests.exceptions.RequestException as e:
-        logging.error(f"API error fetching Cloudflare account email: {e}")
-        return None
-    except Exception as e:
-        logging.error(f"Unexpected error fetching Cloudflare account email: {e}", exc_info=True)
-        return None
+    return cloudflare_api.get_cloudflare_account_email()
 
 def find_cloudflare_access_application_by_domain(application_domain):
     account_id = current_app.config.get('CF_ACCOUNT_ID')

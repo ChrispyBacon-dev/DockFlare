@@ -66,6 +66,7 @@ from app.core.access_manager import (
 from app.core.reconciler import reconcile_state_threaded
 from app.core.docker_handler import is_valid_hostname, is_valid_service
 from app.core.utils import get_rule_key, normalize_path_value
+from app.core.container_name import build_cloudflared_container_name
 from app.core import backup_manager
 from app.web import config_loader
 from cryptography.fernet import Fernet
@@ -546,6 +547,7 @@ def settings_page():
                 config_data['cf_zone_id'] = settings_form.cf_zone_id.data
                 config_data['tunnel_dns_scan_zone_names'] = settings_form.tunnel_dns_scan_zone_names.data
                 config_data['grace_period_seconds'] = settings_form.grace_period_seconds.data
+                config_data['preserve_unmanaged_cf_ingress_fields'] = bool(settings_form.preserve_unmanaged_cf_ingress_fields.data)
 
                 encrypted_payload = fernet.encrypt(json.dumps(config_data).encode('utf-8'))
                 with open(config_file, 'wb') as f:
@@ -554,15 +556,17 @@ def settings_page():
                 from app import config as config_module
                 current_app.config['TUNNEL_NAME'] = new_tunnel_name
                 config_module.TUNNEL_NAME = new_tunnel_name
-                current_app.config['CLOUDFLARED_CONTAINER_NAME'] = f"cloudflared-agent-{new_tunnel_name}"
-                config_module.CLOUDFLARED_CONTAINER_NAME = f"cloudflared-agent-{new_tunnel_name}"
+                current_app.config['CLOUDFLARED_CONTAINER_NAME'] = build_cloudflared_container_name(new_tunnel_name)
+                config_module.CLOUDFLARED_CONTAINER_NAME = build_cloudflared_container_name(new_tunnel_name)
                 current_app.config['CF_ZONE_ID'] = config_data['cf_zone_id']
                 config_module.CF_ZONE_ID = config_data['cf_zone_id']
                 scan_zones_str = config_data.get('tunnel_dns_scan_zone_names', '')
                 current_app.config['TUNNEL_DNS_SCAN_ZONE_NAMES'] = [name.strip() for name in scan_zones_str.split(',') if name.strip()]
                 config_module.TUNNEL_DNS_SCAN_ZONE_NAMES = current_app.config['TUNNEL_DNS_SCAN_ZONE_NAMES']
                 current_app.config['GRACE_PERIOD_SECONDS'] = int(config_data.get('grace_period_seconds', 28800))
-                config_module.GRACE_PERIOD_SECONDS = app_config['GRACE_PERIOD_SECONDS']
+                config_module.GRACE_PERIOD_SECONDS = current_app.config['GRACE_PERIOD_SECONDS']
+                current_app.config['PRESERVE_UNMANAGED_CF_INGRESS_FIELDS'] = bool(config_data.get('preserve_unmanaged_cf_ingress_fields', False))
+                config_module.PRESERVE_UNMANAGED_CF_INGRESS_FIELDS = current_app.config['PRESERVE_UNMANAGED_CF_INGRESS_FIELDS']
 
                 flash('General settings updated successfully.', 'success')
 
@@ -662,6 +666,7 @@ def settings_page():
         settings_form.cf_zone_id.data = current_app.config.get('CF_ZONE_ID')
         settings_form.tunnel_dns_scan_zone_names.data = ','.join(current_app.config.get('TUNNEL_DNS_SCAN_ZONE_NAMES', []))
         settings_form.grace_period_seconds.data = current_app.config.get('GRACE_PERIOD_SECONDS')
+        settings_form.preserve_unmanaged_cf_ingress_fields.data = current_app.config.get('PRESERVE_UNMANAGED_CF_INGRESS_FIELDS', False)
         security_settings_form.disable_password_login.data = current_app.config.get('DISABLE_PASSWORD_LOGIN', False)
 
     template_tunnel_state = {}
@@ -1239,6 +1244,7 @@ def ui_add_manual_rule_route():
     manual_http_host_header = request.form.get('manual_http_host_header', '').strip()
     http2_origin = request.form.get('manual_http2_origin') == 'on'
     disable_chunked_encoding = request.form.get('manual_disable_chunked_encoding') == 'on'
+    match_sni_to_host = request.form.get('manual_match_sni_to_host') == 'on'
 
     manual_access_group_ids = request.form.getlist('manual_access_groups')
     manual_access_policy_type = request.form.get('manual_access_policy_type', 'none').strip().lower()
@@ -1493,6 +1499,7 @@ def ui_add_manual_rule_route():
             "http_host_header": manual_http_host_header or None,
             "http2_origin": http2_origin,
             "disable_chunked_encoding": disable_chunked_encoding,
+            "match_sni_to_host": match_sni_to_host,
             "source": "manual",
             "access_app_id": access_app_id,
             "access_policy_type": access_policy_type,
@@ -1597,6 +1604,7 @@ def ui_edit_manual_rule_route():
     manual_http_host_header = request.form.get('edit_http_host_header', '').strip()
     http2_origin = request.form.get('edit_http2_origin') == 'on'
     disable_chunked_encoding = request.form.get('edit_disable_chunked_encoding') == 'on'
+    match_sni_to_host = request.form.get('edit_match_sni_to_host') == 'on'
 
     if not domain_name_input or not service_type_input:
         cloudflared_agent_state["last_action_status"] = "Error: Domain and service type required."
@@ -1783,6 +1791,7 @@ def ui_edit_manual_rule_route():
             "http_host_header": manual_http_host_header or None,
             "http2_origin": http2_origin,
             "disable_chunked_encoding": disable_chunked_encoding,
+            "match_sni_to_host": match_sni_to_host,
             "access_app_id": access_app_id,
             "access_policy_type": access_policy_type,
             "access_app_config_hash": access_app_config_hash,

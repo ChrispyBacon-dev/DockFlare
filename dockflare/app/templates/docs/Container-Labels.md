@@ -21,6 +21,8 @@ These labels control the fundamental routing and service definition for a contai
 
 > **Tip:** Starting with DockFlare v3.0, you can skip `dockflare.zonename` for most workloads. The master detects the correct Cloudflare zone by matching the hostname suffix and only falls back to the configured default zone when it cannot find a match. Provide the label when you intentionally want to place a record in a different zone.
 
+> **Note:** Cloudflare's **Match SNI to Host** option is available in DockFlare manual rule configuration in the dashboard. It is not currently set through a Docker label.
+
 ---
 
 ## Access Policy Configuration

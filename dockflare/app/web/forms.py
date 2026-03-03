@@ -38,6 +38,9 @@ class SettingsForm(FlaskForm):
         'Grace Period (seconds)',
         validators=[DataRequired(message="Grace period is required.")]
     )
+    preserve_unmanaged_cf_ingress_fields = BooleanField(
+        'Preserve Unmanaged Cloudflare Ingress Fields'
+    )
     submit_settings = SubmitField('Save General Settings')
 
 class SecuritySettingsForm(FlaskForm):

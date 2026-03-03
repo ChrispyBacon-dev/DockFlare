@@ -203,6 +203,9 @@
                                            {% if details.disable_chunked_encoding %}
                                                <span class="badge badge-info badge-xs ml-1" title="Chunked transfer encoding disabled for HTTP/1.1">No Chunked Encoding</span>
                                            {% endif %}
+                                           {% if details.match_sni_to_host %}
+                                               <span class="badge badge-info badge-xs ml-1" title="Cloudflare will match TLS SNI to the public hostname">Match SNI to Host</span>
+                                           {% endif %}
                                        </div>
                                    </td>
                                    <td class="p-3 whitespace-nowrap">
@@ -270,11 +273,7 @@
                                                 {% set public_index = public_hostname_indices.get(display_hostname_lc) if public_hostname_indices else None %}
                                                 {% if ACCOUNT_ID_FOR_DISPLAY and ACCOUNT_ID_FOR_DISPLAY != "Not Configured" and effective_tunnel_id and display_hostname %}
                                                 <li>
-                                                    {% if public_index is not none %}
-                                                    <a href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/networks/tunnels/{{ effective_tunnel_id }}/public-hostname/{{ display_hostname }}/{{ public_index }}" target="_blank" rel="noopener noreferrer">
-                                                    {% else %}
-                                                    <a href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/networks/tunnels/{{ effective_tunnel_id }}/public-hostname/{{ display_hostname }}" target="_blank" rel="noopener noreferrer">
-                                                    {% endif %}
+                                                    <a href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/networks/connectors/cloudflare-tunnels/{{ effective_tunnel_id }}/public-hostname/{{ display_hostname }}/{{ public_index if public_index is not none else 0 }}" target="_blank" rel="noopener noreferrer">
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
                                                             <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
                                                         </svg>
@@ -284,7 +283,7 @@
                                                 {% endif %}
                                                 {% if details.access_app_id and ACCOUNT_ID_FOR_DISPLAY and ACCOUNT_ID_FOR_DISPLAY != "Not Configured" %}
                                                 <li>
-                                                    <a href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/access/apps/self-hosted/{{ details.access_app_id }}/edit?tab=basic-info" target="_blank" rel="noopener noreferrer">
+                                                    <a href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/access-controls/apps/self-hosted/{{ details.access_app_id }}/edit?tab=basic-info" target="_blank" rel="noopener noreferrer">
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
                                                             <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
                                                         </svg>
@@ -523,6 +522,13 @@
                           </label>
                           <div class="text-xs opacity-60 ml-8">Disables chunked transfer encoding over HTTP/1.1. Useful for WSGI servers (Flask, Django) and other origins that don't support chunked requests. (Only applies to HTTP/HTTPS services).</div>
                         </div>
+                        <div id="manual_match_sni_to_host_div" class="form-control">
+                          <label class="label cursor-pointer justify-start gap-2">
+                            <input type="checkbox" name="manual_match_sni_to_host" id="manual_match_sni_to_host" class="checkbox checkbox-sm" />
+                            <span class="label-text">Match SNI to Host</span>
+                          </label>
+                          <div class="text-xs opacity-60 ml-8">Makes Cloudflare use the public hostname as TLS SNI for origin connections. (Only applies to HTTP/HTTPS services).</div>
+                        </div>
                     </div>
                 </div>
                 <div id="manual_rule_feedback" class="hidden alert mt-4"></div>
@@ -673,6 +679,13 @@
                             <span class="label-text">Disable Chunked Encoding</span>
                           </label>
                           <div class="text-xs opacity-60 ml-8">Disables chunked transfer encoding over HTTP/1.1. Useful for WSGI servers (Flask, Django) and other origins that don't support chunked requests. (Only applies to HTTP/HTTPS services).</div>
+                        </div>
+                        <div id="edit_match_sni_to_host_div" class="form-control">
+                          <label class="label cursor-pointer justify-start gap-2">
+                            <input type="checkbox" name="edit_match_sni_to_host" id="edit_match_sni_to_host" class="checkbox checkbox-sm" />
+                            <span class="label-text">Match SNI to Host</span>
+                          </label>
+                          <div class="text-xs opacity-60 ml-8">Makes Cloudflare use the public hostname as TLS SNI for origin connections. (Only applies to HTTP/HTTPS services).</div>
                         </div>
                     </div>
                 </div>

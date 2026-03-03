@@ -235,6 +235,9 @@ function initializeEditRuleModal() {
                 const disableChunkedEncodingField = modal.querySelector('#edit_disable_chunked_encoding');
                 if (disableChunkedEncodingField) disableChunkedEncodingField.checked = details.disable_chunked_encoding || false;
 
+                const matchSniToHostField = modal.querySelector('#edit_match_sni_to_host');
+                if (matchSniToHostField) matchSniToHostField.checked = details.match_sni_to_host || false;
+
                 const tunnelDisplay = modal.querySelector('#edit_rule_tunnel_value');
                 const zoneDisplay = modal.querySelector('#edit_rule_zone_value');
                 const agentHint = modal.querySelector('#edit_rule_agent_hint');
@@ -1233,6 +1236,7 @@ function updateManualRuleServiceFields() {
     const manualServiceAddressLabel = document.getElementById('manual_service_address_label');
     const manualServiceHelpText = document.getElementById('manual_service_help');
     const manualServicePrefixSpan = document.getElementById('manual_service_prefix_span');
+    const matchSniToHostDiv = document.getElementById('manual_match_sni_to_host_div');
     let showNoTlsVerify = false;
     let showOriginServerName = false;
 
@@ -1278,6 +1282,9 @@ function updateManualRuleServiceFields() {
     }
     if (originServerNameDiv) {
         originServerNameDiv.style.display = showOriginServerName ? '' : 'none';
+    }
+    if (matchSniToHostDiv) {
+        matchSniToHostDiv.style.display = showOriginServerName ? '' : 'none';
     }
 }
 

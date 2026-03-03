@@ -52,6 +52,15 @@ This error almost always happens due to a misconfiguration of SSL/TLS settings b
 
 ---
 
+### Issue: A service behind Traefik/Proxmox only works when Cloudflare's "Match SNI to Host" is enabled.
+
+**Solution:**
+1.  Edit the manual rule in DockFlare and enable **Match SNI to Host**.
+2.  Save the rule and verify the route in Cloudflare Zero Trust.
+3.  If you also need DockFlare to keep Cloudflare-side route fields that DockFlare does not model, go to **Settings → General Settings** and enable **Preserve Unmanaged Cloudflare Ingress Fields**.
+
+---
+
 ### Issue: The managed `cloudflared-agent` container fails to start with a "stale network" error.
 
 **Solution:**

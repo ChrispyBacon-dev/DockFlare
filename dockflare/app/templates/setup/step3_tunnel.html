@@ -14,6 +14,9 @@
     <label class="label">
         <span class="label-text-alt">A descriptive name for your Cloudflare Tunnel. This name will appear in your Cloudflare dashboard.</span>
     </label>
+    <label class="label">
+        <span class="label-text-alt">DockFlare automatically normalizes this value when generating the local cloudflared container name.</span>
+    </label>
         {% for error in form.tunnel_name.errors %}
             <label class="label">
                 <span class="label-text-alt text-error">{{ error }}</span>
