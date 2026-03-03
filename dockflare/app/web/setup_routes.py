@@ -22,6 +22,7 @@ import logging
 import threading
 import secrets
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, current_app
+from flask_babel import gettext as _, lazy_gettext as _l
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, IntegerField, SubmitField
 from wtforms.validators import DataRequired, EqualTo, Optional
@@ -43,35 +44,35 @@ def _setup_lock_exists():
 # Step 1
 class AdminUserForm(FlaskForm):
     """Form for Step 1: Admin User Creation."""
-    username = StringField('Username', validators=[DataRequired()])
-    password = PasswordField('Password', validators=[DataRequired(), EqualTo('confirm_password', message='Passwords must match.')])
-    confirm_password = PasswordField('Confirm Password', validators=[DataRequired()])
-    submit = SubmitField('Next')
+    username = StringField(_l('Username'), validators=[DataRequired()])
+    password = PasswordField(_l('Password'), validators=[DataRequired(), EqualTo('confirm_password', message=_l('Passwords must match.'))])
+    confirm_password = PasswordField(_l('Confirm Password'), validators=[DataRequired()])
+    submit = SubmitField(_l('Next'))
 
 # Step 2
 class CredentialsForm(FlaskForm):
     """Form for Step 2: Cloudflare API Credentials."""
-    cf_api_token = PasswordField('Cloudflare API Token', validators=[DataRequired()])
-    cf_account_id = StringField('Cloudflare Account ID', validators=[DataRequired()])
-    submit = SubmitField('Next')
+    cf_api_token = PasswordField(_l('Cloudflare API Token'), validators=[DataRequired()])
+    cf_account_id = StringField(_l('Cloudflare Account ID'), validators=[DataRequired()])
+    submit = SubmitField(_l('Next'))
 
 # Step 3
 class TunnelForm(FlaskForm):
     """Form for Step 3: Tunnel and Zone Configuration."""
-    tunnel_name = StringField('Tunnel Name', default='dockflare-tunnel', validators=[DataRequired()])
-    cf_zone_id = StringField('Primary Cloudflare Zone ID (Optional)', validators=[Optional()])
-    tunnel_dns_scan_zone_names = StringField('Other Zones to Scan (comma-separated, optional)', description="e.g. my-other-domain.com,another.dev")
-    grace_period_seconds = IntegerField('Grace Period (seconds)', default=28800, validators=[DataRequired()])
-    submit = SubmitField('Next')
+    tunnel_name = StringField(_l('Tunnel Name'), default='dockflare-tunnel', validators=[DataRequired()])
+    cf_zone_id = StringField(_l('Primary Cloudflare Zone ID (Optional)'), validators=[Optional()])
+    tunnel_dns_scan_zone_names = StringField(_l('Other Zones to Scan (comma-separated, optional)'), description=_l('e.g. my-other-domain.com,another.dev'))
+    grace_period_seconds = IntegerField(_l('Grace Period (seconds)'), default=28800, validators=[DataRequired()])
+    submit = SubmitField(_l('Next'))
 
 # Step 4
 class FinalizeForm(FlaskForm):
     """Form for Step 4: Finalization."""
-    submit = SubmitField('Complete Setup')
+    submit = SubmitField(_l('Complete Setup'))
 
 class ImportEnvForm(FlaskForm):
     """Form for acknowledging the .env import."""
-    submit = SubmitField('Proceed to User Creation')
+    submit = SubmitField(_l('Proceed to User Creation'))
 
 @setup_bp.route('/', methods=['GET'])
 @setup_bp.route('/step1', methods=['GET', 'POST'])
@@ -95,7 +96,7 @@ def step1_admin_user():
     return render_template(
         'setup/step1_user.html',
         form=form,
-        title="Step 1: Setup Web Access",
+        title=_("Step 1: Setup Web Access"),
         current_step=1,
         is_migration=is_migration,
         show_restore_option=True
@@ -110,7 +111,7 @@ def restore_from_backup():
     if request.method == 'POST':
         file = request.files.get('backup_file')
         if not file or file.filename == '':
-            flash('Please select a DockFlare backup archive (.zip).', 'danger')
+            flash(_('Please select a DockFlare backup archive (.zip).'), 'danger')
             return redirect(url_for('setup.restore_from_backup'))
 
         try:
@@ -128,7 +129,7 @@ def restore_from_backup():
 
             config_payload = config_loader.load_encrypted_config()
             if not config_payload:
-                flash('Backup restored, but configuration could not be loaded. Check logs.', 'danger')
+                flash(_('Backup restored, but configuration could not be loaded. Check logs.'), 'danger')
                 return redirect(url_for('setup.restore_from_backup'))
 
             config_loader.apply_config_to_app(current_app, config_payload)
@@ -140,10 +141,10 @@ def restore_from_backup():
             return redirect(url_for('auth.login'))
         except Exception as err:
             logging.error("SETUP_RESTORE: Failed restoring backup: %s", err, exc_info=True)
-            flash('Restore failed. Ensure you selected a DockFlare backup archive and try again.', 'danger')
+            flash(_('Restore failed. Ensure you selected a DockFlare backup archive and try again.'), 'danger')
             return redirect(url_for('setup.restore_from_backup'))
 
-    return render_template('setup/restore.html', title='Restore from Backup', current_step=0)
+    return render_template('setup/restore.html', title=_('Restore from Backup'), current_step=0)
 
 @setup_bp.route('/step2', methods=['GET', 'POST'])
 def step2_api_credentials():
@@ -164,19 +165,19 @@ def step2_api_credentials():
             if response.status_code == 200:
                 session['cf_api_token'] = token
                 session['cf_account_id'] = account_id
-                flash('Credentials verified successfully.', 'success')
+                flash(_('Credentials verified successfully.'), 'success')
                 return redirect(url_for('setup.step3_tunnel_config'))
             else:
-                error_message = "Invalid credentials or permissions."
+                error_message = _("Invalid credentials or permissions.")
                 try:
                     error_message = response.json().get('errors', [{}])[0].get('message', error_message)
                 except Exception:
                     pass
-                flash(f'Validation failed. Cloudflare API returned: {error_message}', 'danger')
+                flash(_('Validation failed. Cloudflare API returned: %(message)s', message=error_message), 'danger')
         except requests.exceptions.RequestException as e:
-            flash(f'Could not connect to the Cloudflare API: {e}', 'danger')
+            flash(_('Could not connect to the Cloudflare API: %(error)s', error=e), 'danger')
 
-    return render_template('setup/step2_cloudflare.html', form=form, title="Step 2: Cloudflare Configuration", current_step=2)
+    return render_template('setup/step2_cloudflare.html', form=form, title=_("Step 2: Cloudflare Configuration"), current_step=2)
 
 @setup_bp.route('/step3', methods=['GET', 'POST'])
 def step3_tunnel_config():
@@ -193,7 +194,7 @@ def step3_tunnel_config():
         session['grace_period_seconds'] = form.grace_period_seconds.data
         return redirect(url_for('setup.step4_finalize'))
 
-    return render_template('setup/step3_tunnel.html', form=form, title="Step 3: Tunnel Configuration", current_step=3)
+    return render_template('setup/step3_tunnel.html', form=form, title=_("Step 3: Tunnel Configuration"), current_step=3)
 
 @setup_bp.route('/step4', methods=['GET', 'POST'])
 def step4_finalize():
@@ -269,7 +270,7 @@ def step4_finalize():
         init_thread.start()
 
         session.clear()
-        flash('Setup complete! Please log in to continue.', 'success')
+        flash(_('Setup complete! Please log in to continue.'), 'success')
         return redirect(url_for('web.login'))
 
     config_summary = {key: val for key, val in session.items() if key != 'csrf_token' and not key.startswith('_')}
@@ -280,7 +281,7 @@ def step4_finalize():
     if 'master_api_key' in config_summary:
         config_summary['master_api_key'] = '********'
 
-    return render_template('setup/step4_finalize.html', form=form, title="Step 4: Finalize Setup", summary=config_summary, current_step=4)
+    return render_template('setup/step4_finalize.html', form=form, title=_("Step 4: Finalize Setup"), summary=config_summary, current_step=4)
 
 @setup_bp.route('/import-env', methods=['GET', 'POST'])
 def step_import_env():
@@ -295,7 +296,7 @@ def step_import_env():
         ]
         for key in keys_to_clear:
             session.pop(key, None)
-        flash('Migration cancelled. Please start the setup from scratch.', 'info')
+        flash(_('Migration cancelled. Please start the setup from scratch.'), 'info')
         return redirect(url_for('setup.step1_admin_user'))
 
     if not session.get('is_env_import'):
@@ -307,24 +308,24 @@ def step_import_env():
     if form.validate_on_submit():
 
         if not session.get('cf_api_token') or not session.get('cf_account_id'):
-            flash('Critical information (API Token or Account ID) was missing from the import. Please configure manually.', 'danger')
+            flash(_('Critical information (API Token or Account ID) was missing from the import. Please configure manually.'), 'danger')
             session.clear()
 
             return redirect(url_for('setup.step2_api_credentials'))
 
-        flash('Settings confirmed. Please create an admin user to continue.', 'info')
+        flash(_('Settings confirmed. Please create an admin user to continue.'), 'info')
         return redirect(url_for('setup.step1_admin_user'))
 
     imported_settings = {
-        'CF_API_TOKEN': '********' if session.get('cf_api_token') else 'Not Found',
-        'CF_ACCOUNT_ID': session.get('cf_account_id', 'Not Found'),
-        'TUNNEL_NAME': session.get('tunnel_name', 'Not Found'),
-        'CF_ZONE_ID': session.get('cf_zone_id') or 'Not Set',
-        'TUNNEL_DNS_SCAN_ZONE_NAMES': session.get('tunnel_dns_scan_zone_names') or 'Not Set',
-        'GRACE_PERIOD_SECONDS': session.get('grace_period_seconds') or 'Not Set',
+        'CF_API_TOKEN': '********' if session.get('cf_api_token') else _('Not Found'),
+        'CF_ACCOUNT_ID': session.get('cf_account_id', _('Not Found')),
+        'TUNNEL_NAME': session.get('tunnel_name', _('Not Found')),
+        'CF_ZONE_ID': session.get('cf_zone_id') or _('Not Set'),
+        'TUNNEL_DNS_SCAN_ZONE_NAMES': session.get('tunnel_dns_scan_zone_names') or _('Not Set'),
+        'GRACE_PERIOD_SECONDS': session.get('grace_period_seconds') or _('Not Set'),
     }
 
     if not session.get('cf_api_token') or not session.get('cf_account_id'):
-        flash('Warning: Missing required fields (CF_API_TOKEN or CF_ACCOUNT_ID). You will not be able to proceed.', 'warning')
+        flash(_('Warning: Missing required fields (CF_API_TOKEN or CF_ACCOUNT_ID). You will not be able to proceed.'), 'warning')
 
-    return render_template('setup/step_import_env.html', form=form, title="Setup: Import from .env", summary=imported_settings)
+    return render_template('setup/step_import_env.html', form=form, title=_("Setup: Import from .env"), summary=imported_settings)

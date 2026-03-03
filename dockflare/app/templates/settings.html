@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Settings{% endblock %}
+{% block title %}{{ _('Settings') }}{% endblock %}
 
 {% block content %}
 <style>
@@ -13,17 +13,17 @@
     <aside class="w-full sm:w-1/3 md:w-1/4 flex-shrink-0">
         <div class="sticky top-20">
             <ul id="settings-left-nav" class="menu bg-base-200 rounded-box p-2">
-                <li><a href="{{ url_for('web.settings_page') }}#general-settings">General Settings</a></li>
-                <li><a href="{{ url_for('web.settings_page') }}#cloudflare-tunnels">All Cloudflare Tunnels</a></li>
-                <li><a href="{{ url_for('web.settings_page') }}#backup-restore">Backup & Restore</a></li>
-                <li><a href="{{ url_for('web.settings_page') }}#security">Security</a></li>
-                <li><a href="{{ url_for('web.settings_page') }}#security" class="pl-8 text-sm">OAuth Authentication</a></li>
-                <li><a href="{{ url_for('web.settings_page') }}#tunnel-agent-status">Tunnel & Agent Status</a></li>
+                <li><a href="{{ url_for('web.settings_page') }}#general-settings">{{ _('General Settings') }}</a></li>
+                <li><a href="{{ url_for('web.settings_page') }}#cloudflare-tunnels">{{ _('All Cloudflare Tunnels') }}</a></li>
+                <li><a href="{{ url_for('web.settings_page') }}#backup-restore">{{ _('Backup & Restore') }}</a></li>
+                <li><a href="{{ url_for('web.settings_page') }}#security">{{ _('Security') }}</a></li>
+                <li><a href="{{ url_for('web.settings_page') }}#security" class="pl-8 text-sm">{{ _('OAuth Authentication') }}</a></li>
+                <li><a href="{{ url_for('web.settings_page') }}#tunnel-agent-status">{{ _('Tunnel & Agent Status') }}</a></li>
             </ul>
             <div class="mt-4 px-2">
-                <button id="btn-check-version" class="btn btn-sm btn-outline w-full" type="button" title="Check DockFlare version">
+                <button id="btn-check-version" class="btn btn-sm btn-outline w-full" type="button" title="{{ _('Check DockFlare version') }}">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                    Check version
+                    {{ _('Check version') }}
                 </button>
                 <div id="version-check-status" class="text-xs opacity-70 mt-2 hidden"></div>
             </div>
@@ -35,7 +35,7 @@
         <section id="general-settings" class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
             <div class="card-body">
                 <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
-                    General Settings
+                    {{ _('General Settings') }}
                 </h2>
                 <form method="POST" action="{{ url_for('web.settings_page') }}" class="space-y-4">
                     {{ settings_form.hidden_tag() }}
@@ -58,7 +58,7 @@
                         </label>
                         {{ settings_form.cf_zone_id(class="input input-bordered w-full", **{'id': 'cf_zone_id'}) }}
                         <label class="label">
-                            <span class="label-text-alt">Optional. The default Zone ID for new DNS records.</span>
+                            <span class="label-text-alt">{{ _('Optional. The default Zone ID for new DNS records.') }}</span>
                         </label>
                     </div>
 
@@ -89,22 +89,22 @@
                     </div>
                 </form>
                 <div class="border-t border-base-300 mt-8 pt-8">
-                    <h3 class="font-semibold text-lg mb-2">Update Cloudflare Credentials</h3>
+                    <h3 class="font-semibold text-lg mb-2">{{ _('Update Cloudflare Credentials') }}</h3>
                     <div role="alert" class="alert alert-info text-sm mb-4">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         <span>
-                            Enter a new Account ID or API Token to update. For security, current values are not displayed.
+                            {{ _('Enter a new Account ID or API Token to update. For security, current values are not displayed.') }}
                             <br>
-                            Updating credentials require an DockFlare restart to take full effect.
+                            {{ _('Updating credentials require an DockFlare restart to take full effect.') }}
                         </span>
                     </div>
                     <form method="POST" action="{{ url_for('web.settings_page') }}" class="space-y-4">
                         {{ cf_credentials_form.hidden_tag() }}
                         <div class="form-control">
                             <label class="label" for="cf_account_id">
-                                <span class="label-text">Cloudflare Account ID</span>
+                                <span class="label-text">{{ _('Cloudflare Account ID') }}</span>
                             </label>
-                            {{ cf_credentials_form.cf_account_id(class="input input-bordered w-full", **{'id': 'cf_account_id', 'placeholder': 'Enter new 32-character Account ID'}) }}
+                            {{ cf_credentials_form.cf_account_id(class="input input-bordered w-full", **{'id': 'cf_account_id', 'placeholder': _('Enter new 32-character Account ID')}) }}
                             {% for error in cf_credentials_form.cf_account_id.errors %}
                                 <label class="label">
                                     <span class="label-text-alt text-error">{{ error }}</span>
@@ -113,9 +113,9 @@
                         </div>
                         <div class="form-control">
                             <label class="label" for="cf_api_token">
-                                <span class="label-text">Cloudflare API Token</span>
+                                <span class="label-text">{{ _('Cloudflare API Token') }}</span>
                             </label>
-                            {{ cf_credentials_form.cf_api_token(class="input input-bordered w-full", **{'id': 'cf_api_token', 'placeholder': 'Enter new 40-character API Token'}) }}
+                            {{ cf_credentials_form.cf_api_token(class="input input-bordered w-full", **{'id': 'cf_api_token', 'placeholder': _('Enter new 40-character API Token')}) }}
                             {% for error in cf_credentials_form.cf_api_token.errors %}
                                 <label class="label">
                                     <span class="label-text-alt text-error">{{ error }}</span>
@@ -133,12 +133,12 @@
         <!-- 2. All Cloudflare Tunnels on Account Section -->
         <section id="cloudflare-tunnels" class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
             <div class="card-body">
-                <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">All Cloudflare Tunnels on Account</h2>
+                <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">{{ _('All Cloudflare Tunnels on Account') }}</h2>
                 {% if CF_ACCOUNT_ID_CONFIGURED %}
                     <p class="mb-4 text-sm opacity-70">
-                        Displaying tunnels for Account ID: <code class="badge badge-ghost">{{ ACCOUNT_ID_FOR_DISPLAY | e }}</code>.
+                        {{ _('Displaying tunnels for Account ID:') }} <code class="badge badge-ghost">{{ ACCOUNT_ID_FOR_DISPLAY | e }}</code>.
                         <br>
-                        <em class="text-xs opacity-60">This list shows all tunnels on the account, not just the one managed by DockFlare. Click '+' to view associated DNS records.</em>
+                        <em class="text-xs opacity-60">{{ _('This list shows all tunnels on the account, not just the one managed by DockFlare. Click + to view associated DNS records.') }}</em>
                     </p>
                     {% if all_account_tunnels is defined and all_account_tunnels %}
                         <div class="overflow-x-auto -mx-6 sm:-mx-8">
@@ -146,11 +146,11 @@
                                 <thead>
                                     <tr>
                                         <th class="w-12">+/-</th>
-                                        <th>Tunnel Name</th>
-                                        <th>Tunnel ID</th>
-                                        <th>Status</th>
-                                        <th>Created At</th>
-                                        <th class="w-32">Actions</th>
+                                        <th>{{ _('Tunnel Name') }}</th>
+                                        <th>{{ _('Tunnel ID') }}</th>
+                                        <th>{{ _('Status') }}</th>
+                                        <th>{{ _('Created At') }}</th>
+                                        <th class="w-32">{{ _('Actions') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -158,7 +158,7 @@
                                         <tr>
                                             <td class="text-center">
                                                 <button type="button" class="btn btn-xs btn-ghost btn-circle tunnel-dns-toggle"
-                                                        data-tunnel-id="{{ tunnel.id | e }}" aria-expanded="false" aria-controls="dns-records-{{ tunnel.id | e }}" title="Toggle DNS records">
+                                                        data-tunnel-id="{{ tunnel.id | e }}" aria-expanded="false" aria-controls="dns-records-{{ tunnel.id | e }}" title="{{ _('Toggle DNS records') }}">
                                                     <svg class="w-4 h-4 expand-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
                                                     <svg class="w-4 h-4 collapse-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6"></path></svg>
                                                 </button>
@@ -174,14 +174,14 @@
                                                 <button type="button" class="btn btn-xs btn-error delete-tunnel-btn"
                                                         data-tunnel-id="{{ tunnel.id | e }}"
                                                         data-tunnel-name="{{ tunnel.name | e }}">
-                                                    Delete
+                                                    {{ _('Delete') }}
                                                 </button>
                                             </td>
                                         </tr>
                                         <tr class="dns-records-row hidden bg-base-200/30">
                                             <td colspan="6">
                                                 <div id="dns-records-{{ tunnel.id | e }}" class="p-4 text-sm space-y-2">
-                                                    <p class="opacity-60 italic">Click the '+' button to load DNS records for this tunnel.</p>
+                                                    <p class="opacity-60 italic">{{ _("Click the '+' button to load DNS records for this tunnel.") }}</p>
                                                 </div>
                                             </td>
                                         </tr>
@@ -190,15 +190,15 @@
                             </table>
                         </div>
                     {% elif all_account_tunnels is defined %}
-                        <p class="text-center opacity-70 py-8">No Cloudflare Tunnels found for Account ID: <code class="badge badge-ghost">{{ ACCOUNT_ID_FOR_DISPLAY | e }}</code>.</p>
-                        <p class="text-center text-xs opacity-60"><em>This could also mean an error occurred. Ensure your API Token has 'Account:Cloudflare Tunnel:Read' permission.</em></p>
+                        <p class="text-center opacity-70 py-8">{{ _('No Cloudflare Tunnels found for Account ID:') }} <code class="badge badge-ghost">{{ ACCOUNT_ID_FOR_DISPLAY | e }}</code>.</p>
+                        <p class="text-center text-xs opacity-60"><em>{{ _("This could also mean an error occurred. Ensure your API Token has 'Account:Cloudflare Tunnel:Read' permission.") }}</em></p>
                     {% else %}
-                        <p class="alert alert-warning text-center py-8">Could not retrieve tunnel information.</p>
+                        <p class="alert alert-warning text-center py-8">{{ _('Could not retrieve tunnel information.') }}</p>
                     {% endif %}
                 {% else %}
                      <div role="alert" class="alert alert-warning">
                         <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                        <span>The <code>CF_ACCOUNT_ID</code> environment variable is not configured. This section cannot be displayed.</span>
+                        <span>{{ _('The') }} <code>CF_ACCOUNT_ID</code> {{ _('environment variable is not configured. This section cannot be displayed.') }}</span>
                     </div>
                 {% endif %}
             </div>
@@ -207,22 +207,22 @@
         <dialog id="delete_tunnel_modal" class="modal">
             <div class="modal-box w-11/12 max-w-md bg-base-100/90 backdrop-blur">
                 <form method="dialog">
-                    <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" title="Close">✕</button>
+                    <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" title="{{ _('Close') }}">✕</button>
                 </form>
-                <h3 class="font-bold text-lg mb-2">Delete Cloudflare Tunnel</h3>
+                <h3 class="font-bold text-lg mb-2">{{ _('Delete Cloudflare Tunnel') }}</h3>
                 <p id="delete_tunnel_warning_text" class="text-sm opacity-80 mb-4">
-                    Deleting this tunnel will disconnect any agents currently using it.
+                    {{ _('Deleting this tunnel will disconnect any agents currently using it.') }}
                 </p>
                 <form id="delete_tunnel_form" action="{{ url_for('web.ui_delete_cloudflare_tunnel_route') }}" method="POST" class="space-y-4">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="tunnel_id" id="delete_tunnel_id">
                     <label class="form-control w-full">
-                        <span class="label-text text-sm">Type <span class="font-semibold">delete</span> to confirm</span>
+                        <span class="label-text text-sm">{{ _('Type') }} <span class="font-semibold">delete</span> {{ _('to confirm') }}</span>
                         <input type="text" name="confirm_text" id="delete_tunnel_confirm_input" class="input input-bordered w-full" autocomplete="off" required>
                     </label>
                     <div class="modal-action mt-4">
-                        <button type="submit" id="delete_tunnel_confirm_button" class="btn btn-error" disabled>Delete Tunnel</button>
-                        <button type="button" class="btn" onclick="document.getElementById('delete_tunnel_modal').close()">Cancel</button>
+                        <button type="submit" id="delete_tunnel_confirm_button" class="btn btn-error" disabled>{{ _('Delete Tunnel') }}</button>
+                        <button type="button" class="btn" onclick="document.getElementById('delete_tunnel_modal').close()">{{ _('Cancel') }}</button>
                     </div>
                 </form>
             </div>
@@ -233,44 +233,44 @@
         <section id="backup-restore" class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl border-2 border-warning">
             <div class="card-body">
                 <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
-                    Backup & Restore
+                    {{ _('Backup & Restore') }}
                 </h2>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
                     
                     <!-- Backup Column -->
                     <div>
-                        <h3 class="font-semibold text-lg mb-2">Create Backup</h3>
+                        <h3 class="font-semibold text-lg mb-2">{{ _('Create Backup') }}</h3>
                         <p class="text-sm opacity-80 mb-4">
-                            Download a full DockFlare backup archive (`.zip`) containing your encrypted configuration, agent keys, and state file. Store it safely with the `dockflare.key` included in the archive.
+                            {{ _('Download a full DockFlare backup archive (`.zip`) containing your encrypted configuration, agent keys, and state file. Store it safely with the `dockflare.key` included in the archive.') }}
                         </p>
                         <a href="{{ url_for('web.download_state_backup') }}" class="btn btn-primary">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                               <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                             </svg>
-                            Download Backup Archive
+                            {{ _('Download Backup Archive') }}
                         </a>
                     </div>
 
                     <!-- Restore Column -->
                     <div>
-                        <h3 class="font-semibold text-lg mb-2">Restore from Backup</h3>
+                        <h3 class="font-semibold text-lg mb-2">{{ _('Restore from Backup') }}</h3>
                         <div role="alert" class="alert alert-warning text-sm mb-4">
                             <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                            <span><strong>Warning:</strong> Restoring a backup overwrites configuration, credentials, agent keys, and state. This action cannot be undone.</span>
+                            <span><strong>{{ _('Warning:') }}</strong> {{ _('Restoring a backup overwrites configuration, credentials, agent keys, and state. This action cannot be undone.') }}</span>
                         </div>
 
                         <form action="{{ url_for('web.restore_state_backup') }}" method="POST" enctype="multipart/form-data" class="protocol-aware-form space-y-3">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <input type="file" name="backup_file" class="file-input file-input-bordered w-full" accept=".zip,.json" required />
                             <label class="label">
-                                <span class="label-text-alt text-sm">Upload a DockFlare backup archive (`.zip`). Legacy `state.json` files are still accepted but only restore rules/groups.</span>
+                                <span class="label-text-alt text-sm">{{ _('Upload a DockFlare backup archive (`.zip`). Legacy `state.json` files are still accepted but only restore rules/groups.') }}</span>
                             </label>
-                            <button type="submit" class="btn btn-error w-full" onclick="event.preventDefault(); dfConfirm('Are you sure you want to overwrite your current settings with this backup? This cannot be undone.', 'Restore Backup').then(ok => { if(ok) this.closest('form').submit(); })">
+                            <button type="submit" class="btn btn-error w-full" onclick="event.preventDefault(); dfConfirm({{ _('Are you sure you want to overwrite your current settings with this backup? This cannot be undone.')|tojson }}, {{ _('Restore Backup')|tojson }}).then(ok => { if(ok) this.closest('form').submit(); })">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                   <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                 </svg>
-                                Upload and Restore Backup
+                                {{ _('Upload and Restore Backup') }}
                             </button>
                         </form>
                     </div>
@@ -282,38 +282,38 @@
         <section id="security" class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
             <div class="card-body">
                 <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
-                    Security
+                    {{ _('Security') }}
                 </h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
                     <div>
-                        <h3 class="font-semibold text-lg mb-2">Change Password</h3>
+                        <h3 class="font-semibold text-lg mb-2">{{ _('Change Password') }}</h3>
                         <form method="POST" action="{{ url_for('web.change_password') }}" class="space-y-4">
                             {{ change_password_form.hidden_tag() }}
                             <div class="form-control">
                                 <label class="label" for="current_password">
-                                    <span class="label-text">Current Password</span>
+                                    <span class="label-text">{{ _('Current Password') }}</span>
                                 </label>
                                 {{ change_password_form.current_password(class="input input-bordered w-full", **{'id': 'current_password'}) }}
                             </div>
                             <div class="form-control">
                                 <label class="label" for="new_password">
-                                    <span class="label-text">New Password</span>
+                                    <span class="label-text">{{ _('New Password') }}</span>
                                 </label>
                                 {{ change_password_form.new_password(class="input input-bordered w-full", **{'id': 'new_password'}) }}
                             </div>
                             <div class="form-control">
                                 <label class="label" for="confirm_new_password">
-                                    <span class="label-text">Confirm New Password</span>
+                                    <span class="label-text">{{ _('Confirm New Password') }}</span>
                                 </label>
                                 {{ change_password_form.confirm_new_password(class="input input-bordered w-full", **{'id': 'confirm_new_password'}) }}
                             </div>
                             <div class="card-actions">
-                                <button type="submit" class="btn btn-primary">Change Password</button>
+                                <button type="submit" class="btn btn-primary">{{ _('Change Password') }}</button>
                             </div>
                         </form>
                     </div>
                     <div>
-                        <h3 class="font-semibold text-lg mb-2">Disable Password Login</h3>
+                        <h3 class="font-semibold text-lg mb-2">{{ _('Disable Password Login') }}</h3>
                         <form method="POST" action="{{ url_for('web.settings_page') }}" class="space-y-4 protocol-aware-form">
                             {{ security_settings_form.hidden_tag() }}
 
@@ -326,7 +326,7 @@
 
                             <div role="alert" class="alert alert-warning text-sm">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                                <span><strong>Security Warning:</strong> When disabling password login, you become responsible for securing DockFlare access. Best practice is to use a Cloudflare Tunnel with an Access Policy and ensure Docker ports are not exposed, preventing access from the local network (LAN).</span>
+                                <span><strong>{{ _('Security Warning:') }}</strong> {{ _('When disabling password login, you become responsible for securing DockFlare access. Best practice is to use a Cloudflare Tunnel with an Access Policy and ensure Docker ports are not exposed, preventing access from the local network (LAN).') }}</span>
                             </div>
 
                             <div class="card-actions">
@@ -334,26 +334,26 @@
                             </div>
                         </form>
                         <div class="mt-6">
-                            <h4 class="text-md font-semibold mb-2 opacity-80">Master API Key</h4>
-                            <button type="button" class="btn btn-sm btn-outline" id="btn-show-master-key">Show Master API Key</button>
-                            <span class="block text-xs opacity-70 mt-2">Keep this key secret; rotate it if exposed.</span>
+                            <h4 class="text-md font-semibold mb-2 opacity-80">{{ _('Master API Key') }}</h4>
+                            <button type="button" class="btn btn-sm btn-outline" id="btn-show-master-key">{{ _('Show Master API Key') }}</button>
+                            <span class="block text-xs opacity-70 mt-2">{{ _('Keep this key secret; rotate it if exposed.') }}</span>
                         </div>
                     </div>
                 </div>
 
                 <!-- OAuth Authentication Section -->
                 <div class="mt-8">
-                    <h3 class="font-semibold text-lg mb-4">OAuth Authentication</h3>
-                    <p class="text-sm opacity-70 mb-4">Configure OAuth providers to allow users to log in with third-party services like Google, GitHub, or Microsoft.</p>
+                    <h3 class="font-semibold text-lg mb-4">{{ _('OAuth Authentication') }}</h3>
+                    <p class="text-sm opacity-70 mb-4">{{ _('Configure OAuth providers to allow users to log in with third-party services like Google, GitHub, or Microsoft.') }}</p>
 
                     <!-- OAuth Settings Card -->
                     <div class="card bg-base-200 mb-6">
                         <div class="card-body">
-                            <h4 class="card-title text-md">OAuth Settings</h4>
+                            <h4 class="card-title text-md">{{ _('OAuth Settings') }}</h4>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div class="form-control">
                                     <label class="label" for="oauth_session_timeout">
-                                        <span class="label-text">Session Timeout (seconds)</span>
+                                        <span class="label-text">{{ _('Session Timeout (seconds)') }}</span>
                                     </label>
                                     {{ security_settings_form.oauth_session_timeout(class="input input-bordered input-sm", **{'id': 'oauth_session_timeout'}) }}
                                 </div>
@@ -370,23 +370,23 @@
                     <!-- OAuth Providers Section -->
                     <div class="mb-6">
                         <div class="flex justify-between items-center mb-4">
-                            <h4 class="text-md font-semibold">OAuth Providers</h4>
+                            <h4 class="text-md font-semibold">{{ _('OAuth Providers') }}</h4>
                             <button class="btn btn-primary btn-sm" onclick="showAddProviderModal()">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                                 </svg>
-                                Add Provider
+                                {{ _('Add Provider') }}
                             </button>
                         </div>
                         <div role="alert" class="alert alert-warning text-sm mb-4">
                             <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                             </svg>
-                            <span><strong>Security:</strong> OAuth providers you configure here will be trusted to authenticate users. Only add providers you control or fully trust.</span>
+                            <span><strong>{{ _('Security:') }}</strong> {{ _('OAuth providers you configure here will be trusted to authenticate users. Only add providers you control or fully trust.') }}</span>
                         </div>
                         <div id="provider-list" class="space-y-3">
                             <div class="text-center text-sm opacity-60 py-8">
-                                No OAuth providers configured. Click "Add Provider" to get started.
+                                {{ _('No OAuth providers configured. Click "Add Provider" to get started.') }}
                             </div>
                         </div>
                     </div>
@@ -394,35 +394,35 @@
                     <!-- Authorized Users Section -->
                     <div class="mb-6">
                         <div class="flex justify-between items-center mb-4">
-                            <h4 class="text-md font-semibold">Authorized Users</h4>
+                            <h4 class="text-md font-semibold">{{ _('Authorized Users') }}</h4>
                             <button class="btn btn-secondary btn-sm" onclick="showAddUserModal()">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                 </svg>
-                                Add User
+                                {{ _('Add User') }}
                             </button>
                         </div>
-                        <p class="text-sm opacity-70 mb-4">Only users with email addresses listed here will be allowed to authenticate via OAuth.</p>
+                        <p class="text-sm opacity-70 mb-4">{{ _('Only users with email addresses listed here will be allowed to authenticate via OAuth.') }}</p>
                         <div id="user-list" class="space-y-3">
                             <div class="text-center text-sm opacity-60 py-8">
-                                No authorized users configured. Click "Add User" to authorize email addresses.
+                                {{ _('No authorized users configured. Click "Add User" to authorize email addresses.') }}
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <div class="mt-8">
-                    <h3 class="font-semibold text-lg mb-2">Password Reset</h3>
+                    <h3 class="font-semibold text-lg mb-2">{{ _('Password Reset') }}</h3>
                     <div role="alert" class="alert alert-info text-sm">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         <span>
-                            To reset your password, you must have filesystem access to the DockFlare container.
+                            {{ _('To reset your password, you must have filesystem access to the DockFlare container.') }}
                             <br>
-                            1. Stop the DockFlare container.
+                            {{ _('1. Stop the DockFlare container.') }}
                             <br>
-                            2. Delete the `dockflare_config.dat` and `dockflare.key` files from your persistent data volume.
+                            {{ _('2. Delete the `dockflare_config.dat` and `dockflare.key` files from your persistent data volume.') }}
                             <br>
-                            3. Restart the container. You will be prompted to go through the initial setup again.
+                            {{ _('3. Restart the container. You will be prompted to go through the initial setup again.') }}
                         </span>
                     </div>
                 </div>
@@ -433,7 +433,7 @@
         <section id="tunnel-agent-status" class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
             <div class="card-body">
                 <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
-                    Tunnel & Agent Status
+                    {{ _('Tunnel & Agent Status') }}
                 </h2>
 
                 {% if agent_state.last_action_status or tunnel_state.get('error') %}
@@ -446,25 +446,25 @@
                 {% endif %}
 
                 <div class="mb-6">
-                    <h4 class="text-md font-semibold mb-3 opacity-80">Tunnel Details</h4>
+                    <h4 class="text-md font-semibold mb-3 opacity-80">{{ _('Tunnel Details') }}</h4>
                      <div class="space-y-2 text-sm">
-                        <p><strong class="inline-block w-36 opacity-70">Desired Name:</strong> <code class="badge badge-ghost">{{ tunnel_state.name }}</code></p>
-                        <p><strong class="inline-block w-36 opacity-70">Tunnel ID:</strong> <code class="badge badge-ghost">{{ tunnel_state.id if tunnel_state.id else 'N/A' }}</code></p>
+                        <p><strong class="inline-block w-36 opacity-70">{{ _('Desired Name:') }}</strong> <code class="badge badge-ghost">{{ tunnel_state.name }}</code></p>
+                        <p><strong class="inline-block w-36 opacity-70">{{ _('Tunnel ID:') }}</strong> <code class="badge badge-ghost">{{ tunnel_state.id if tunnel_state.id else _('N/A') }}</code></p>
                         {% if not external_cloudflared %}
-                        <p><strong class="inline-block w-36 opacity-70">Tunnel Token:</strong> <code class="badge badge-ghost">{{ display_token }}</code></p>
+                        <p><strong class="inline-block w-36 opacity-70">{{ _('Tunnel Token:') }}</strong> <code class="badge badge-ghost">{{ display_token }}</code></p>
                         {% endif %}
                     </div>
                 </div>
                 <div>
-                    <h3 class="text-lg font-semibold mb-3 opacity-80">Agent Control</h3>
+                    <h3 class="text-lg font-semibold mb-3 opacity-80">{{ _('Agent Control') }}</h3>
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-6 mt-2 p-4 bg-base-200/50 rounded-md">
                         {% if external_cloudflared %}
                             <div class="flex-grow space-y-1.5">
-                                <strong class="text-sm font-medium">External Mode:</strong> <span class="badge badge-info badge-sm animate-pulse">Active</span>
+                                <strong class="text-sm font-medium">{{ _('External Mode:') }}</strong> <span class="badge badge-info badge-sm animate-pulse">{{ _('Active') }}</span>
                             </div>
                         {% else %}
                          <div class="flex-grow space-y-1.5">
-                            <strong class="text-sm font-medium">Agent Status:</strong>
+                            <strong class="text-sm font-medium">{{ _('Agent Status:') }}</strong>
                             {% set indicator_color = 'bg-gray-400' %}
                             {% if agent_state.container_status == 'running' %} {% set indicator_color = 'badge-success' %}
                             {% elif agent_state.container_status in ['exited', 'dead', 'not_found'] %} {% set indicator_color = 'badge-error' %}
@@ -475,12 +475,12 @@
                              {% if agent_state.container_status=='running' %}
                                  <form action="{{ url_for('web.stop_tunnel_route') }}" method="post" class="protocol-aware-form">
                                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                     <button type="submit" class="btn btn-sm btn-error w-full sm:w-auto">Stop Agent</button>
+                                     <button type="submit" class="btn btn-sm btn-error w-full sm:w-auto">{{ _('Stop Agent') }}</button>
                                  </form>
                              {% else %}
                                  <form action="{{ url_for('web.start_tunnel_route') }}" method="post" class="protocol-aware-form">
                                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                     <button type="submit" class="btn btn-sm btn-success w-full sm:w-auto">Start Agent</button>
+                                     <button type="submit" class="btn btn-sm btn-success w-full sm:w-auto">{{ _('Start Agent') }}</button>
                                  </form>
                              {% endif %}
                          </div>
@@ -494,14 +494,14 @@
 
 <dialog id="master-key-modal" class="modal">
   <div class="modal-box max-w-xl">
-    <h3 class="font-bold text-lg mb-2">Master API Key</h3>
-    <p class="text-sm opacity-70 mb-4">Treat this key like a password. Anyone with it can call the DockFlare API.</p>
+    <h3 class="font-bold text-lg mb-2">{{ _('Master API Key') }}</h3>
+    <p class="text-sm opacity-70 mb-4">{{ _('Treat this key like a password. Anyone with it can call the DockFlare API.') }}</p>
     <div class="bg-base-200 rounded-md p-4">
-      <code id="master-key-display" class="break-all text-sm">Loading...</code>
+      <code id="master-key-display" class="break-all text-sm">{{ _('Loading...') }}</code>
     </div>
     <div class="modal-action mt-6 gap-2">
-      <button type="button" class="btn btn-sm" id="btn-copy-master-key">Copy</button>
-      <button type="button" class="btn btn-sm btn-primary" id="btn-close-master-key">Close</button>
+      <button type="button" class="btn btn-sm" id="btn-copy-master-key">{{ _('Copy') }}</button>
+      <button type="button" class="btn btn-sm btn-primary" id="btn-close-master-key">{{ _('Close') }}</button>
     </div>
   </div>
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
@@ -529,8 +529,8 @@
 
           if (!response.ok) {
             const errorPayload = await response.json().catch(() => ({}));
-            const msg = errorPayload.message || 'Unable to reveal the master key. Check logs.';
-            await dfAlert(`Error: ${msg}`, 'Error');
+            const msg = errorPayload.message || {{ _('Unable to reveal the master key. Check logs.')|tojson }};
+            await dfAlert(`{{ _('Error:') }} ${msg}`, {{ _('Error')|tojson }});
             return;
           }
 
@@ -538,12 +538,12 @@
           const modal = document.getElementById('master-key-modal');
           const keyDisplay = document.getElementById('master-key-display');
           if (modal && keyDisplay) {
-            keyDisplay.textContent = payload.master_api_key || 'Unavailable';
+            keyDisplay.textContent = payload.master_api_key || {{ _('Unavailable')|tojson }};
             modal.showModal();
           }
         } catch (err) {
           console.error('Failed to fetch master API key:', err);
-          await dfAlert('Failed to contact the server.', 'Error');
+          await dfAlert({{ _('Failed to contact the server.')|tojson }}, {{ _('Error')|tojson }});
         }
       });
     }
@@ -568,11 +568,11 @@
             throw new Error('clipboard_unavailable');
           }
           await navigator.clipboard.writeText(keyDisplay.textContent || '');
-          copyMasterKeyBtn.textContent = 'Copied!';
-          setTimeout(() => { copyMasterKeyBtn.textContent = 'Copy'; }, 2000);
+          copyMasterKeyBtn.textContent = {{ _('Copied!')|tojson }};
+          setTimeout(() => { copyMasterKeyBtn.textContent = {{ _('Copy')|tojson }}; }, 2000);
         } catch (err) {
           console.error('Clipboard copy failed', err);
-          await dfAlert('Could not copy to clipboard.', 'Error');
+          await dfAlert({{ _('Could not copy to clipboard.')|tojson }}, {{ _('Error')|tojson }});
         }
       });
     }
@@ -663,7 +663,7 @@
     btn.addEventListener('click', async function () {
       btn.disabled = true;
       const originalHtml = btn.innerHTML;
-      btn.innerHTML = '<span class="loading loading-spinner"></span> Checking...';
+      btn.innerHTML = '<span class="loading loading-spinner"></span> {{ _("Checking...") }}';
       status.classList.add('hidden');
 
       try {
@@ -673,7 +673,7 @@
 
         if (data.method === 'digest') {
           if (data.up_to_date) {
-            renderMessage('<span class="text-success">Up to date — running the same image as {{ config.CLOUDFLARED_IMAGE if false else "" }}</span>');
+            renderMessage('<span class="text-success">{{ _("Up to date") }}</span>');
           } else {
             let repoPart = data.repo ? `${data.repo}:${data.tag || 'stable'}` : '';
             let cmd = repoPart ? `docker pull ${data.repo}:${data.tag || 'stable'} && docker compose restart dockflare` : 'docker pull alplat/dockflare:stable && docker compose restart dockflare';
@@ -684,24 +684,24 @@
                     pushedAt = `<div class="mt-1 text-xs">Latest version from: ${d.toLocaleString()}</div>`;
                 } catch(e) {}
             }
-            renderMessage(`<span class="text-warning">Update available</span><div class="mt-1">Run: <code class="text-xs">${cmd}</code></div>${pushedAt}`);
+            renderMessage(`<span class="text-warning">{{ _("Update available") }}</span><div class="mt-1">{{ _("Run:") }} <code class="text-xs">${cmd}</code></div>${pushedAt}`);
           }
         } else if (data.method === 'version') {
           if (data.up_to_date) {
-            renderMessage('<span class="text-success">Up to date (APP_VERSION matches latest release).</span>');
+            renderMessage('<span class="text-success">{{ _("Up to date (APP_VERSION matches latest release).") }}</span>');
           } else if (data.latest) {
-            renderMessage(`<span class="text-warning">Latest: ${data.latest} · Current: ${data.current}</span><div class="mt-1">See the <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases" target="_blank" rel="noopener noreferrer">release notes</a> for upgrade instructions.</div>`);
+            renderMessage(`<span class="text-warning">{{ _("Latest:") }} ${data.latest} · {{ _("Current:") }} ${data.current}</span><div class="mt-1">{{ _("See the") }} <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases" target="_blank" rel="noopener noreferrer">{{ _("release notes") }}</a> {{ _("for upgrade instructions.") }}</div>`);
           } else {
-            renderMessage('<span class="text-muted">Could not determine latest version.</span>');
+            renderMessage('<span class="text-muted">{{ _("Could not determine latest version.") }}</span>');
           }
         } else if (data.error) {
-          renderMessage(`<span class="text-error">Version check error: ${String(data.error)}</span>`);
+          renderMessage(`<span class="text-error">{{ _("Version check error:") }} ${String(data.error)}</span>`);
         } else {
-          renderMessage('<span class="text-muted">Could not determine version status.</span>');
+          renderMessage('<span class="text-muted">{{ _("Could not determine version status.") }}</span>');
         }
       } catch (err) {
         console.debug('Version check failed', err);
-        renderMessage('<span class="text-error">Version check failed (network or server error).</span>');
+        renderMessage('<span class="text-error">{{ _("Version check failed (network or server error).") }}</span>');
       } finally {
         btn.disabled = false;
         btn.innerHTML = originalHtml;
@@ -733,7 +733,7 @@
       } else {
         console.error('Failed to load auth settings');
         const providerList = document.getElementById('provider-list');
-        if(providerList) providerList.innerHTML = '<div class="text-center text-error py-8">Failed to load OAuth settings. Please check browser console for errors.</div>';
+        if(providerList) providerList.innerHTML = '<div class="text-center text-error py-8">{{ _("Failed to load OAuth settings. Please check browser console for errors.") }}</div>';
       }
     } catch (error) {
       console.error('Error loading auth settings:', error);
@@ -744,7 +744,7 @@
     const providerList = document.getElementById('provider-list');
     if (!providerList) return;
     if (!authData || !authData.providers || authData.providers.length === 0) {
-      providerList.innerHTML = '<div class="text-center text-sm opacity-60 py-8">No OAuth providers configured. Click "Add Provider" to get started.</div>';
+      providerList.innerHTML = '<div class="text-center text-sm opacity-60 py-8">{{ _("No OAuth providers configured. Click Add Provider to get started.") }}</div>';
       return;
     }
 
@@ -755,7 +755,7 @@
         const callbackUrl = `https://${publicHostname}/auth/${provider.id}/callback`;
         callbackUrlHtml = `
           <div class="text-xs opacity-80 mt-2 pt-2 border-t border-base-200">
-            <strong class="font-semibold">Callback URL:</strong>
+            <strong class="font-semibold">{{ _('Callback URL:') }}</strong>
             <code class="bg-base-300 p-1 rounded text-xs select-all">${escapeHtml(callbackUrl)}</code>
           </div>
         `;
@@ -767,7 +767,7 @@
           <div class="flex justify-between items-center">
             <div class="flex-grow">
               <div class="flex items-center space-x-3">
-                  <div class="badge badge-sm ${provider.enabled ? 'badge-success' : 'badge-warning'}">${provider.enabled ? 'Enabled' : 'Disabled'}</div>
+                  <div class="badge badge-sm ${provider.enabled ? 'badge-success' : 'badge-warning'}">${provider.enabled ? '{{ _("Enabled") }}' : '{{ _("Disabled") }}'}</div>
                   <h5 class="font-semibold">${escapeHtml(provider.name)}</h5>
               </div>
               <p class="text-sm opacity-70 mt-1">${escapeHtml(provider.type)} · ID: ${escapeHtml(provider.id)}</p>
@@ -795,7 +795,7 @@
     const userList = document.getElementById('user-list');
     if (!userList) return;
     if (!authData || !authData.users || authData.users.length === 0) {
-      userList.innerHTML = '<div class="text-center text-sm opacity-60 py-8">No authorized users configured. Click "Add User" to authorize email addresses.</div>';
+      userList.innerHTML = '<div class="text-center text-sm opacity-60 py-8">{{ _("No authorized users configured. Click Add User to authorize email addresses.") }}</div>';
       return;
     }
 
@@ -806,7 +806,7 @@
             <div>
               <h5 class="font-semibold">${escapeHtml(user.email)}</h5>
               ${user.name ? `<p class="text-sm opacity-70">${escapeHtml(user.name)}</p>` : ''}
-              ${user.added_date ? `<p class="text-xs opacity-50">Added: ${new Date(user.added_date).toLocaleDateString()}</p>` : ''}
+              ${user.added_date ? `<p class="text-xs opacity-50">{{ _('Added:') }} ${new Date(user.added_date).toLocaleDateString()}</p>` : ''}
             </div>
             <button class="btn btn-sm btn-error" onclick="deleteUser('${escapeHtml(user.email)}')">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -871,7 +871,7 @@
   window.editProvider = function(providerId) {
     const provider = authData.providers.find(p => p.id === providerId);
     if (!provider) {
-      showToast('Provider not found.', 'error');
+      showToast('{{ _("Provider not found.") }}', 'error');
       return;
     }
 
@@ -894,7 +894,7 @@
     form.elements['provider_id'].value = provider.id;
     form.elements['provider_name'].value = provider.name;
     form.elements['client_id'].value = provider.client_id || '';
-    form.elements['client_id'].placeholder = 'OAuth Client ID';
+    form.elements['client_id'].placeholder = '{{ _("OAuth Client ID") }}';
     form.elements['enabled'].checked = provider.enabled;
     
     form.elements['client_secret'].value = '';
@@ -935,13 +935,13 @@
       if (response.ok) {
         document.getElementById('editProviderModal').close();
         await loadAuthSettings();
-        showToast('Provider updated successfully!', 'success');
+        showToast('{{ _("Provider updated successfully!") }}', 'success');
       } else {
         const error = await response.json();
-        showToast(error.message || 'Failed to update provider', 'error');
+        showToast(error.message || '{{ _("Failed to update provider") }}', 'error');
       }
     } catch (error) {
-      showToast('Error updating provider', 'error');
+      showToast('{{ _("Error updating provider") }}', 'error');
     }
   };
 
@@ -981,13 +981,13 @@
         document.getElementById('addProviderModal').close();
         form.reset();
         await loadAuthSettings();
-        showToast('Provider added successfully!', 'success');
+        showToast('{{ _("Provider added successfully!") }}', 'success');
       } else {
         const error = await response.json();
-        showToast(error.message || 'Failed to add provider', 'error');
+        showToast(error.message || '{{ _("Failed to add provider") }}', 'error');
       }
     } catch (error) {
-      showToast('Error adding provider', 'error');
+      showToast('{{ _("Error adding provider") }}', 'error');
     }
   };
 
@@ -1014,18 +1014,18 @@
         document.getElementById('addUserModal').close();
         form.reset();
         await loadAuthSettings();
-        showToast('User added successfully!', 'success');
+        showToast('{{ _("User added successfully!") }}', 'success');
       } else {
         const error = await response.json();
-        showToast(error.message || 'Failed to add user', 'error');
+        showToast(error.message || '{{ _("Failed to add user") }}', 'error');
       }
     } catch (error) {
-      showToast('Error adding user', 'error');
+      showToast('{{ _("Error adding user") }}', 'error');
     }
   };
 
   window.deleteProvider = async function(providerId) {
-    const confirmed = await dfConfirm('Are you sure you want to delete this OAuth provider?', 'Delete Provider');
+    const confirmed = await dfConfirm('{{ _("Are you sure you want to delete this OAuth provider?") }}', '{{ _("Delete Provider") }}');
     if (!confirmed) return;
 
     try {
@@ -1039,17 +1039,17 @@
 
       if (response.ok) {
         await loadAuthSettings();
-        showToast('Provider deleted successfully!', 'success');
+        showToast('{{ _("Provider deleted successfully!") }}', 'success');
       } else {
-        showToast('Failed to delete provider', 'error');
+        showToast('{{ _("Failed to delete provider") }}', 'error');
       }
     } catch (error) {
-      showToast('Error deleting provider', 'error');
+      showToast('{{ _("Error deleting provider") }}', 'error');
     }
   };
 
   window.deleteUser = async function(userEmail) {
-    const confirmed = await dfConfirm('Are you sure you want to remove this authorized user?', 'Remove User');
+    const confirmed = await dfConfirm('{{ _("Are you sure you want to remove this authorized user?") }}', '{{ _("Remove User") }}');
     if (!confirmed) return;
 
     try {
@@ -1063,12 +1063,12 @@
 
       if (response.ok) {
         await loadAuthSettings();
-        showToast('User removed successfully!', 'success');
+        showToast('{{ _("User removed successfully!") }}', 'success');
       } else {
-        showToast('Failed to remove user', 'error');
+        showToast('{{ _("Failed to remove user") }}', 'error');
       }
     } catch (error) {
-      showToast('Error removing user', 'error');
+      showToast('{{ _("Error removing user") }}', 'error');
     }
   };
 
@@ -1101,63 +1101,63 @@
 <!-- Add Provider Modal -->
 <dialog id="addProviderModal" class="modal">
   <div class="modal-box">
-    <h3 class="font-bold text-lg">Add OAuth Provider</h3>
+    <h3 class="font-bold text-lg">{{ _('Add OAuth Provider') }}</h3>
     <form id="addProviderForm" class="space-y-4 mt-4">
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Provider Type</span>
+          <span class="label-text">{{ _('Provider Type') }}</span>
         </label>
         <select name="provider_type" class="select select-bordered" required>
           <option value="google" selected>Google</option>
           <option value="github">GitHub</option>
-          <option value="oidc">Generic OIDC / Authentik</option>
+          <option value="oidc">{{ _('Generic OIDC / Authentik') }}</option>
         </select>
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Issuer URL</span>
+          <span class="label-text">{{ _('Issuer URL') }}</span>
         </label>
-        <input name="issuer_url" type="url" placeholder="https://authentik.example.com/application/o/dockflare/" class="input input-bordered" required />
+        <input name="issuer_url" type="url" placeholder="{{ _('https://authentik.example.com/application/o/dockflare/') }}" class="input input-bordered" required />
         <label class="label">
-            <span class="label-text-alt">The OIDC provider's issuer URL.</span>
+            <span class="label-text-alt">{{ _("The OIDC provider's issuer URL.") }}</span>
         </label>
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Provider ID</span>
+          <span class="label-text">{{ _('Provider ID') }}</span>
         </label>
-        <input name="provider_id" type="text" placeholder="e.g. google, github-corp" class="input input-bordered" required />
+        <input name="provider_id" type="text" placeholder="{{ _('e.g. google, github-corp') }}" class="input input-bordered" required />
         <label class="label">
-          <span class="label-text-alt">Unique identifier for this provider</span>
+          <span class="label-text-alt">{{ _('Unique identifier for this provider') }}</span>
         </label>
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Display Name</span>
+          <span class="label-text">{{ _('Display Name') }}</span>
         </label>
-        <input name="provider_name" type="text" placeholder="e.g. Google, GitHub Corporate" class="input input-bordered" required />
+        <input name="provider_name" type="text" placeholder="{{ _('e.g. Google, GitHub Corporate') }}" class="input input-bordered" required />
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Client ID</span>
+          <span class="label-text">{{ _('Client ID') }}</span>
         </label>
-        <input name="client_id" type="text" placeholder="OAuth Client ID" class="input input-bordered" required />
+        <input name="client_id" type="text" placeholder="{{ _('OAuth Client ID') }}" class="input input-bordered" required />
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Client Secret</span>
+          <span class="label-text">{{ _('Client Secret') }}</span>
         </label>
-        <input name="client_secret" type="password" placeholder="OAuth Client Secret" class="input input-bordered" required />
+        <input name="client_secret" type="password" placeholder="{{ _('OAuth Client Secret') }}" class="input input-bordered" required />
       </div>
 
       <div class="form-control">
         <label class="label cursor-pointer">
-          <span class="label-text">Enable Provider</span>
+          <span class="label-text">{{ _('Enable Provider') }}</span>
           <input name="enabled" type="checkbox" class="toggle" checked />
         </label>
       </div>
@@ -1165,9 +1165,9 @@
 
     <div class="modal-action">
       <form method="dialog">
-        <button class="btn">Cancel</button>
+        <button class="btn">{{ _('Cancel') }}</button>
       </form>
-      <button class="btn btn-primary" onclick="addProvider()">Add Provider</button>
+      <button class="btn btn-primary" onclick="addProvider()">{{ _('Add Provider') }}</button>
     </div>
   </div>
 </dialog>
@@ -1175,58 +1175,58 @@
 <!-- Edit Provider Modal -->
 <dialog id="editProviderModal" class="modal">
   <div class="modal-box">
-    <h3 class="font-bold text-lg">Edit OAuth Provider</h3>
+    <h3 class="font-bold text-lg">{{ _('Edit OAuth Provider') }}</h3>
     <form id="editProviderForm" class="space-y-4 mt-4">
       <input type="hidden" name="original_provider_id">
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Provider Type</span>
+          <span class="label-text">{{ _('Provider Type') }}</span>
         </label>
         <select name="provider_type" class="select select-bordered" required disabled>
           <option value="google">Google</option>
           <option value="github">GitHub</option>
-          <option value="oidc">Generic OIDC / Authentik</option>
+          <option value="oidc">{{ _('Generic OIDC / Authentik') }}</option>
         </select>
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Issuer URL</span>
+          <span class="label-text">{{ _('Issuer URL') }}</span>
         </label>
         <input name="issuer_url" type="url" placeholder="https://authentik.example.com/application/o/dockflare/" class="input input-bordered" required />
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Provider ID</span>
+          <span class="label-text">{{ _('Provider ID') }}</span>
         </label>
         <input name="provider_id" type="text" placeholder="e.g. google" class="input input-bordered" required disabled />
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Display Name</span>
+          <span class="label-text">{{ _('Display Name') }}</span>
         </label>
         <input name="provider_name" type="text" placeholder="e.g. Google" class="input input-bordered" required />
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Client ID</span>
+          <span class="label-text">{{ _('Client ID') }}</span>
         </label>
-        <input name="client_id" type="text" placeholder="OAuth Client ID" class="input input-bordered" required />
+        <input name="client_id" type="text" placeholder="{{ _('OAuth Client ID') }}" class="input input-bordered" required />
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Client Secret</span>
+          <span class="label-text">{{ _('Client Secret') }}</span>
         </label>
-        <input name="client_secret" type="password" placeholder="Leave blank to keep existing secret" class="input input-bordered" />
+        <input name="client_secret" type="password" placeholder="{{ _('Leave blank to keep existing secret') }}" class="input input-bordered" />
       </div>
 
       <div class="form-control">
         <label class="label cursor-pointer">
-          <span class="label-text">Enable Provider</span>
+          <span class="label-text">{{ _('Enable Provider') }}</span>
           <input name="enabled" type="checkbox" class="toggle" />
         </label>
       </div>
@@ -1234,9 +1234,9 @@
 
     <div class="modal-action">
       <form method="dialog">
-        <button class="btn">Cancel</button>
+        <button class="btn">{{ _('Cancel') }}</button>
       </form>
-      <button class="btn btn-primary" onclick="updateProvider()">Save Changes</button>
+      <button class="btn btn-primary" onclick="updateProvider()">{{ _('Save Changes') }}</button>
     </div>
   </div>
 </dialog>
@@ -1244,31 +1244,31 @@
 <!-- Add User Modal -->
 <dialog id="addUserModal" class="modal">
   <div class="modal-box">
-    <h3 class="font-bold text-lg">Add Authorized User</h3>
+    <h3 class="font-bold text-lg">{{ _('Add Authorized User') }}</h3>
     <form id="addUserForm" class="space-y-4 mt-4">
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Email Address</span>
+          <span class="label-text">{{ _('Email Address') }}</span>
         </label>
-        <input name="user_email" type="email" placeholder="user@example.com" class="input input-bordered" required />
+        <input name="user_email" type="email" placeholder="{{ _('user@example.com') }}" class="input input-bordered" required />
         <label class="label">
-          <span class="label-text-alt">This email must match exactly with the OAuth provider</span>
+          <span class="label-text-alt">{{ _('This email must match exactly with the OAuth provider') }}</span>
         </label>
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Display Name (Optional)</span>
+          <span class="label-text">{{ _('Display Name (Optional)') }}</span>
         </label>
-        <input name="user_name" type="text" placeholder="John Doe" class="input input-bordered" />
+        <input name="user_name" type="text" placeholder="{{ _('John Doe') }}" class="input input-bordered" />
       </div>
     </form>
 
     <div class="modal-action">
       <form method="dialog">
-        <button class="btn">Cancel</button>
+        <button class="btn">{{ _('Cancel') }}</button>
       </form>
-      <button class="btn btn-primary" onclick="addUser()">Add User</button>
+      <button class="btn btn-primary" onclick="addUser()">{{ _('Add User') }}</button>
     </div>
   </div>
 </dialog>

@@ -12,6 +12,13 @@ let manualZoneDetectionTimeout = null;
 let servicesSnapshotPromise = null;
 let servicesSnapshotQueued = false;
 
+function t(key, fallback = '') {
+    if (window.dfTranslations && typeof window.dfTranslations[key] === 'string') {
+        return window.dfTranslations[key];
+    }
+    return fallback || key;
+}
+
 function getMasterApiKey() {
     const meta = document.querySelector('meta[name="dockflare-api-key"]');
     return meta && meta.content ? meta.content : null;
@@ -259,7 +266,7 @@ function initializeEditRuleModal() {
                 modal.showModal();
             } catch (e) {
                 console.error("Error populating edit modal:", e);
-                await dfAlert("Could not open the edit dialog due to an error. Please check the console.", 'Error');
+                await dfAlert(t('failed_open_edit', "Could not open the edit dialog due to an error. Please check the console."), t('error', 'Error'));
             }
         });
     });
@@ -333,7 +340,7 @@ function updateRowFromService(row, service) {
     const statusBadge = statusCell ? statusCell.querySelector('.status-badge') : null;
     if (statusBadge) {
         if (service.source === 'manual') {
-            statusBadge.textContent = 'Manual';
+            statusBadge.textContent = t('manual', 'Manual');
             statusBadge.className = 'badge badge-info badge-sm status-badge';
         } else {
             const normalizedStatus = (service.status || 'unknown').replace(/_/g, ' ');
@@ -373,7 +380,7 @@ function updateRowFromService(row, service) {
                 container.appendChild(countdownSpan);
             }
         } else {
-            expiresCell.innerHTML = '<span class="text-xs opacity-60">N/A</span>';
+            expiresCell.innerHTML = `<span class="text-xs opacity-60">${t('na', 'N/A')}</span>`;
         }
     }
 }
@@ -533,7 +540,7 @@ function addLogLine(message, type = 'log') {
     if (!logOutput) {
         return;
     }
-    if (!initialConnectMessageCleared && logOutput.textContent.includes('Connecting to log stream...')) {
+    if (!initialConnectMessageCleared && logOutput.textContent.includes(t('connecting_log_stream', 'Connecting to log stream...'))) {
         logOutput.textContent = '';
         initialConnectMessageCleared = true;
     }
@@ -564,7 +571,7 @@ function setupLogControls() {
     enableBtn.addEventListener('click', () => {
         logsEnabled = true;
         logOutput.classList.remove('hidden');
-        logOutput.textContent = 'Connecting to log stream...';
+        logOutput.textContent = t('connecting_log_stream', 'Connecting to log stream...');
         connectEventSource();
         enableBtn.classList.add('hidden');
         disableBtn.classList.remove('hidden');
@@ -712,7 +719,7 @@ function updateCountdowns() {
             
             if (diffMs < 0) {
                 
-                absoluteTimeSpan.textContent = "Expired";
+                absoluteTimeSpan.textContent = t('expired', "Expired");
                 countdownSpan.textContent = "";
                 absoluteTimeSpan.className = 'absolute-time-display text-error font-bold';
             } else if (diffSeconds < 3600) {
@@ -761,7 +768,7 @@ function updateCountdowns() {
             div.setAttribute('title', `Exact time: ${fullTimestamp}`);
 
         } catch (e) {
-            absoluteTimeSpan.textContent = "(Invalid Date)";
+            absoluteTimeSpan.textContent = t('invalid_date', "(Invalid Date)");
             countdownSpan.textContent = "";
             console.error("Error processing date for countdown:", deleteAtISO, e);
         }
@@ -891,12 +898,13 @@ function detectZoneForHostname(hostname) {
     return { status: 'ambiguous', candidates: topMatches };
 }
 
-function populateZoneSelector(selector, zones, placeholderText = 'Select a zone...') {
+function populateZoneSelector(selector, zones, placeholderText = null) {
     if (!selector) return;
     selector.innerHTML = '';
+    const resolvedPlaceholder = placeholderText || t('select_zone', 'Select a zone...');
     const placeholder = document.createElement('option');
     placeholder.value = '';
-    placeholder.textContent = placeholderText;
+    placeholder.textContent = resolvedPlaceholder;
     placeholder.disabled = true;
     placeholder.selected = true;
     selector.appendChild(placeholder);
@@ -934,48 +942,48 @@ function updateManualZoneUI(state, elements) {
             zoneIdInput.value = '';
             if (selectorWrapper) selectorWrapper.classList.add('hidden');
             hideBadge();
-            messageEl.textContent = 'Enter a hostname to auto-detect the Cloudflare zone.';
+            messageEl.textContent = t('enter_hostname_zone', 'Enter a hostname to auto-detect the Cloudflare zone.');
             break;
         case 'override':
             zoneIdInput.value = '';
             if (selectorWrapper) selectorWrapper.classList.add('hidden');
             if (state.zoneName) {
-                setZoneBadge(badgeEl, 'Override', 'info');
-                messageEl.textContent = `Using zone override: ${state.zoneName}`;
+                setZoneBadge(badgeEl, t('override', 'Override'), 'info');
+                messageEl.textContent = `${t('using_zone_override', 'Using zone override:')} ${state.zoneName}`;
             } else {
                 hideBadge();
-                messageEl.textContent = 'Using zone override.';
+                messageEl.textContent = t('using_zone_override_simple', 'Using zone override.');
             }
             break;
         case 'ok':
             zoneIdInput.value = state.zone && state.zone.id ? state.zone.id : '';
             if (selectorWrapper) selectorWrapper.classList.add('hidden');
-            setZoneBadge(badgeEl, 'Detected', 'success');
-            messageEl.textContent = state.zone && state.zone.name ? `Detected zone: ${state.zone.name}` : 'Detected zone from hostname.';
+            setZoneBadge(badgeEl, t('detected', 'Detected'), 'success');
+            messageEl.textContent = state.zone && state.zone.name ? `${t('detected_zone', 'Detected zone:')} ${state.zone.name}` : t('detected_zone_from_hostname', 'Detected zone from hostname.');
             break;
         case 'ambiguous':
             zoneIdInput.value = '';
             if (selectorWrapper && selectorEl) {
-                populateZoneSelector(selectorEl, state.candidates, 'Select a matching zone...');
+                populateZoneSelector(selectorEl, state.candidates, t('select_matching_zone', 'Select a matching zone...'));
                 selectorWrapper.classList.remove('hidden');
             }
-            setZoneBadge(badgeEl, 'Select zone', 'warning');
-            messageEl.textContent = 'Multiple zones match this hostname. Choose the correct zone below.';
+            setZoneBadge(badgeEl, t('select_zone_warning', 'Select zone'), 'warning');
+            messageEl.textContent = t('multiple_zone_match', 'Multiple zones match this hostname. Choose the correct zone below.');
             break;
         case 'not_found':
             zoneIdInput.value = '';
             if (selectorWrapper && selectorEl) {
-                populateZoneSelector(selectorEl, cachedZones || [], 'Select a zone...');
+                populateZoneSelector(selectorEl, cachedZones || [], t('select_zone', 'Select a zone...'));
                 selectorWrapper.classList.remove('hidden');
             }
-            setZoneBadge(badgeEl, 'Zone required', 'warning');
-            messageEl.textContent = 'No zone matched this hostname. Select the appropriate zone manually.';
+            setZoneBadge(badgeEl, t('zone_required', 'Zone required'), 'warning');
+            messageEl.textContent = t('no_zone_match', 'No zone matched this hostname. Select the appropriate zone manually.');
             break;
         case 'selected':
             zoneIdInput.value = state.zone && state.zone.id ? state.zone.id : '';
             if (selectorWrapper) selectorWrapper.classList.remove('hidden');
-            setZoneBadge(badgeEl, 'Selected', 'success');
-            messageEl.textContent = state.zone && state.zone.name ? `Zone selected: ${state.zone.name}` : 'Zone selected.';
+            setZoneBadge(badgeEl, t('zone_selected', 'Selected'), 'success');
+            messageEl.textContent = state.zone && state.zone.name ? `${t('zone_selected_label', 'Zone selected:')} ${state.zone.name}` : t('zone_selected_simple', 'Zone selected.');
             break;
         default:
             break;
@@ -1006,7 +1014,7 @@ async function populateManualTunnelOptions(feedbackEl) {
     } else {
         manualTunnelTomSelect.refreshOptions(false);
         if (feedbackEl) {
-            feedbackEl.textContent = 'No tunnels were found for this account. Configure a Cloudflare Tunnel before adding rules.';
+            feedbackEl.textContent = t('no_tunnels_found', 'No tunnels were found for this account. Configure a Cloudflare Tunnel before adding rules.');
             feedbackEl.classList.remove('hidden');
             feedbackEl.classList.remove('alert-success', 'alert-error');
             feedbackEl.classList.add('alert-warning');
@@ -1429,7 +1437,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (collapseIcon) collapseIcon.classList.remove('hidden');
 
                 if (targetDiv.dataset.loaded !== 'true' || targetDiv.dataset.loaded === 'error') {
-                    targetDiv.innerHTML = '<p class="opacity-60 italic animate-pulse p-2">Loading DNS records...</p>';
+                    targetDiv.innerHTML = `<p class="opacity-60 italic animate-pulse p-2">${t('loading_dns', 'Loading DNS records...')}</p>`;
                     dnsRecordsDisplayRow.classList.remove('hidden');
 
                     try {
@@ -1455,13 +1463,13 @@ document.addEventListener('DOMContentLoaded', function() {
                             currentTargetDiv.innerHTML = dnsHtml;
                             currentTargetDiv.dataset.loaded = 'true';
                         } else {
-                            currentTargetDiv.innerHTML = `<p class="opacity-60 italic p-2">${data.message || 'No CNAME records found.'}</p>`;
+                            currentTargetDiv.innerHTML = `<p class="opacity-60 italic p-2">${data.message || t('no_cname_records', 'No CNAME records found.')}</p>`;
                             currentTargetDiv.dataset.loaded = 'true';
                         }
                     } catch (error) {
                         const errorTargetDiv = document.getElementById(`dns-records-${tunnelId}`);
                         if (errorTargetDiv) {
-                            errorTargetDiv.innerHTML = `<p class="text-error p-2">Error loading DNS records: ${error.message}</p>`;
+                            errorTargetDiv.innerHTML = `<p class="text-error p-2">${t('error_loading_dns', 'Error loading DNS records:')} ${error.message}</p>`;
                             errorTargetDiv.dataset.loaded = 'error';
                         }
                     }
@@ -1676,7 +1684,7 @@ function renderIdPTable(idps) {
 async function syncIdentityProviders() {
     const btn = document.getElementById('sync-idps-btn');
     btn.disabled = true;
-    btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Syncing...';
+    btn.innerHTML = `<span class="loading loading-spinner loading-sm"></span> ${t('syncing', 'Syncing...')}`;
 
     try {
         const response = await fetch('/api/v2/idp/sync', {
@@ -1689,14 +1697,14 @@ async function syncIdentityProviders() {
         if (data.success) {
             await loadIdentityProviders();
         } else {
-            await dfAlert('Error: ' + (data.error || 'Failed to sync identity providers'), 'Sync Error');
+            await dfAlert(`${t('error', 'Error')}: ${data.error || 'Failed to sync identity providers'}`, t('sync_error', 'Sync Error'));
         }
     } catch (error) {
         console.error('Error syncing IdPs:', error);
-        await dfAlert('Error syncing identity providers. Check console for details.', 'Error');
+        await dfAlert('Error syncing identity providers. Check console for details.', t('error', 'Error'));
     } finally {
         btn.disabled = false;
-        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg> Sync from Cloudflare';
+        btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg> ${t('sync_from_cloudflare', 'Sync from Cloudflare')}`;
     }
 }
 
@@ -1712,12 +1720,12 @@ function showIdPModal(mode, friendlyName = null) {
     document.getElementById('idp-config-fields').innerHTML = '<div class="alert alert-warning"><svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg><span>Select a provider type to configure credentials</span></div>';
 
     if (mode === 'create') {
-        title.textContent = 'Add Identity Provider';
-        submitBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Create Provider';
+        title.textContent = t('add_identity_provider', 'Add Identity Provider');
+        submitBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> ${t('create_provider', 'Create Provider')}`;
         document.getElementById('idp-friendly-name').disabled = false;
     } else if (mode === 'edit' && friendlyName) {
         title.textContent = 'Edit Identity Provider';
-        submitBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Update Provider';
+        submitBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> ${t('update_provider', 'Update Provider')}`;
         document.getElementById('idp-friendly-name').disabled = true;
         document.getElementById('idp-edit-name').value = friendlyName;
 
@@ -1795,7 +1803,7 @@ async function handleIdPFormSubmit(e) {
 
     const submitBtn = document.getElementById('idp-submit-btn');
     submitBtn.disabled = true;
-    submitBtn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Saving...';
+    submitBtn.innerHTML = `<span class="loading loading-spinner loading-sm"></span> ${t('saving', 'Saving...')}`;
 
     try {
         let response;
@@ -1835,16 +1843,16 @@ async function handleIdPFormSubmit(e) {
                 }
             }
         } else {
-            await dfAlert('Error: ' + (data.error || 'Failed to save identity provider'), 'Save Error');
+            await dfAlert(`${t('error', 'Error')}: ${data.error || 'Failed to save identity provider'}`, t('save_error', 'Save Error'));
         }
     } catch (error) {
         console.error('Error saving IdP:', error);
-        await dfAlert('Error saving identity provider. Check console for details.', 'Error');
+        await dfAlert('Error saving identity provider. Check console for details.', t('error', 'Error'));
     } finally {
         submitBtn.disabled = false;
         submitBtn.innerHTML = mode === 'create' ?
-            '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Create Provider' :
-            '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Update Provider';
+            `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> ${t('create_provider', 'Create Provider')}` :
+            `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> ${t('update_provider', 'Update Provider')}`;
     }
 }
 
@@ -1864,7 +1872,7 @@ async function testIdP(idpId) {
         }
     } catch (error) {
         console.error('Error testing IdP:', error);
-        await dfAlert('Error opening test URL. Check console for details.', 'Error');
+        await dfAlert('Error opening test URL. Check console for details.', t('error', 'Error'));
     }
 }
 
@@ -1884,10 +1892,10 @@ async function deleteIdP(friendlyName) {
         if (data.success) {
             await loadIdentityProviders();
         } else {
-            await dfAlert('Error: ' + (data.error || 'Failed to delete identity provider'), 'Delete Error');
+            await dfAlert(`${t('error', 'Error')}: ${data.error || 'Failed to delete identity provider'}`, t('delete_error', 'Delete Error'));
         }
     } catch (error) {
         console.error('Error deleting IdP:', error);
-        await dfAlert('Error deleting identity provider. Check console for details.', 'Error');
+        await dfAlert('Error deleting identity provider. Check console for details.', t('error', 'Error'));
     }
 }

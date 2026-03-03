@@ -1,7 +1,7 @@
 {% extends "setup/base.html" %}
 
 {% block setup_content %}
-<p class="text-center text-gray-500 mb-6">Configure the settings for your Cloudflare Tunnel. The tunnel name you specify will identify your tunnel within the Cloudflare dashboard. Additionally, you have the option to designate a primary zone and other zones for DNS scanning.</p>
+<p class="text-center text-gray-500 mb-6">{{ _('Configure the settings for your Cloudflare Tunnel. The tunnel name you specify will identify your tunnel within the Cloudflare dashboard. Additionally, you have the option to designate a primary zone and other zones for DNS scanning.') }}</p>
 
 <form method="POST" action="{{ url_for('setup.step3_tunnel_config') }}" class="space-y-4">
     {{ form.hidden_tag() }}
@@ -12,7 +12,7 @@
         </label>
         {{ form.tunnel_name(class="input input-bordered w-full") }}
     <label class="label">
-        <span class="label-text-alt">A descriptive name for your Cloudflare Tunnel. This name will appear in your Cloudflare dashboard.</span>
+        <span class="label-text-alt">{{ _('A descriptive name for your Cloudflare Tunnel. This name will appear in your Cloudflare dashboard.') }}</span>
     </label>
         {% for error in form.tunnel_name.errors %}
             <label class="label">
@@ -25,9 +25,9 @@
         <label class="label">
             <span class="label-text">{{ form.cf_zone_id.label }}</span>
         </label>
-        {{ form.cf_zone_id(class="input input-bordered w-full", placeholder="e.g., abc123def456...") }}
+        {{ form.cf_zone_id(class="input input-bordered w-full", placeholder=_('e.g., abc123def456...')) }}
     <label class="label">
-        <span class="label-text-alt">The main domain (zone) you want DockFlare to manage DNS records for. If you leave this blank, DockFlare will attempt to find a suitable zone automatically.</span>
+        <span class="label-text-alt">{{ _('The main domain (zone) you want DockFlare to manage DNS records for. If you leave this blank, DockFlare will attempt to find a suitable zone automatically.') }}</span>
     </label>
         {% for error in form.cf_zone_id.errors %}
             <label class="label">
@@ -40,7 +40,7 @@
         <label class="label">
             <span class="label-text">{{ form.tunnel_dns_scan_zone_names.label }}</span>
         </label>
-        {{ form.tunnel_dns_scan_zone_names(class="input input-bordered w-full", placeholder="e.g., example.com, my-other-domain.net") }}
+        {{ form.tunnel_dns_scan_zone_names(class="input input-bordered w-full", placeholder=_('e.g., example.com, my-other-domain.net')) }}
          <label class="label">
             <span class="label-text-alt">{{ form.tunnel_dns_scan_zone_names.description }}</span>
         </label>
@@ -57,7 +57,7 @@
         </label>
         {{ form.grace_period_seconds(class="input input-bordered w-full") }}
     <label class="label">
-        <span class="label-text-alt">The time (in seconds) to wait before automatically removing DNS records for a stopped container. This prevents records from being deleted immediately if a container is just being restarted. Minimum: 60 seconds.</span>
+        <span class="label-text-alt">{{ _('The time (in seconds) to wait before automatically removing DNS records for a stopped container. This prevents records from being deleted immediately if a container is just being restarted. Minimum: 60 seconds.') }}</span>
     </label>
         {% for error in form.grace_period_seconds.errors %}
             <label class="label">
@@ -68,7 +68,7 @@
 
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-6">
         {{ form.submit(class="btn btn-primary w-full") }}
-        <a href="{{ url_for('setup.step2_api_credentials') }}" class="btn btn-ghost w-full">Back to Step 2</a>
+        <a href="{{ url_for('setup.step2_api_credentials') }}" class="btn btn-ghost w-full">{{ _('Back to Step 2') }}</a>
     </div>
 </form>
 {% endblock %}

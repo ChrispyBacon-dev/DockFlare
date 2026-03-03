@@ -3,7 +3,7 @@
         <form method="dialog">
             <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
         </form>
-        <h3 id="access_group_modal_title" class="font-bold text-lg mb-4">Create New Access Group</h3>
+        <h3 id="access_group_modal_title" class="font-bold text-lg mb-4">{{ _('Create New Access Group') }}</h3>
 
         <form id="access_group_form" method="POST" class="space-y-6 protocol-aware-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -12,95 +12,95 @@
             
             <div role="tablist" class="tabs tabs-boxed mb-6">
                 <a role="tab" class="tab tab-active" id="tab-authenticated" data-mode="authenticated">
-                    Authenticated Access
+                    {{ _('Authenticated Access') }}
                 </a>
                 <a role="tab" class="tab" id="tab-public" data-mode="public">
-                    Public Access
+                    {{ _('Public Access') }}
                 </a>
             </div>
             
             <div id="mode-description-authenticated" class="alert alert-info mb-4">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 <div>
-                    <h4 class="font-bold">Authenticated Access</h4>
-                    <div class="text-sm">Requires user authentication via email/domain. Optionally restrict by geography. Use for protected applications.</div>
+                    <h4 class="font-bold">{{ _('Authenticated Access') }}</h4>
+                    <div class="text-sm">{{ _('Requires user authentication via email/domain. Optionally restrict by geography. Use for protected applications.') }}</div>
                 </div>
             </div>
             <div id="mode-description-public" class="alert alert-warning mb-4" style="display: none;">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                 <div>
-                    <h4 class="font-bold">Public Access (Bypass)</h4>
-                    <div class="text-sm">⚠️ No authentication required. Publicly accessible with optional geographic restrictions. Email authentication is not available in this mode.</div>
+                    <h4 class="font-bold">{{ _('Public Access (Bypass)') }}</h4>
+                    <div class="text-sm">{{ _('No authentication required. Publicly accessible with optional geographic restrictions. Email authentication is not available in this mode.') }}</div>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="form-control">
-                    <label class="label" for="group_display_name"><span class="label-text">Display Name (Required)</span></label>
-                    <input type="text" id="group_display_name" name="display_name" placeholder="e.g., NAS Family Access" class="input input-bordered w-full" required />
-                    <div class="label"><span class="label-text-alt">A friendly name shown in the UI.</span></div>
+                    <label class="label" for="group_display_name"><span class="label-text">{{ _('Display Name (Required)') }}</span></label>
+                    <input type="text" id="group_display_name" name="display_name" placeholder="{{ _('e.g., NAS Family Access') }}" class="input input-bordered w-full" required />
+                    <div class="label"><span class="label-text-alt">{{ _('A friendly name shown in the UI.') }}</span></div>
                 </div>
                 <div class="form-control">
-                    <label class="label" for="group_id"><span class="label-text">Group ID (Required)</span></label>
-                    <input type="text" id="group_id" name="group_id" placeholder="e.g., nas-family" class="input input-bordered w-full" required pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$" />
-                    <div class="label"><span class="label-text-alt">Used in Docker labels. Lowercase, numbers, and hyphens only.</span></div>
+                    <label class="label" for="group_id"><span class="label-text">{{ _('Group ID (Required)') }}</span></label>
+                    <input type="text" id="group_id" name="group_id" placeholder="{{ _('e.g., nas-family') }}" class="input input-bordered w-full" required pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$" />
+                    <div class="label"><span class="label-text-alt">{{ _('Used in Docker labels. Lowercase, numbers, and hyphens only.') }}</span></div>
                 </div>
             </div>
 
             <div>
-                <h4 class="text-md font-semibold mb-2">Policy Rules</h4>
+                <h4 class="text-md font-semibold mb-2">{{ _('Policy Rules') }}</h4>
 
                 <div class="form-control" id="idp-field-container">
                     <label class="label" for="group_identity_providers">
-                        <span class="label-text">Identity Providers</span>
+                        <span class="label-text">{{ _('Identity Providers') }}</span>
                     </label>
                     <select id="group_identity_providers" name="identity_providers" multiple="multiple" class="w-full border-0">
                     </select>
-                    <div class="label"><span class="label-text-alt">Select OAuth/OIDC providers for authentication. <strong class="text-warning">Emails are required when using IdPs.</strong></span></div>
+                    <div class="label"><span class="label-text-alt">{{ _('Select OAuth/OIDC providers for authentication.') }} <strong class="text-warning">{{ _('Emails are required when using IdPs.') }}</strong></span></div>
                 </div>
 
                 <div class="form-control" id="email-field-container">
                     <label class="label" for="group_emails">
-                        <span class="label-text">Allowed Emails or Domains (Required with IdPs)</span>
+                        <span class="label-text">{{ _('Allowed Emails or Domains (Required with IdPs)') }}</span>
                     </label>
-                    <textarea id="group_emails" name="emails" class="textarea textarea-bordered h-12 resize-y" placeholder="me@example.com, myfriend@example.com, @mycompany.com"></textarea>
-                    <div class="label"><span class="label-text-alt">Comma-separated. To allow anyone from a domain, use <code class="text-xs">@domain.com</code>. <strong>When using IdPs, you must specify allowed emails to prevent unauthorized access.</strong></span></div>
+                    <textarea id="group_emails" name="emails" class="textarea textarea-bordered h-12 resize-y" placeholder="{{ _('me@example.com, myfriend@example.com, @mycompany.com') }}"></textarea>
+                    <div class="label"><span class="label-text-alt">{{ _('Comma-separated. To allow anyone from a domain, use') }} <code class="text-xs">@domain.com</code>. <strong>{{ _('When using IdPs, you must specify allowed emails to prevent unauthorized access.') }}</strong></span></div>
                 </div>
                 <div class="form-control">
-                    <label class="label" for="group_ip_ranges"><span class="label-text">Allowed IP Ranges</span></label>
-                    <textarea id="group_ip_ranges" name="ip_ranges" class="textarea textarea-bordered h-12 resize-y" placeholder="192.168.1.0/24, 2001:db8::/32"></textarea>
-                    <div class="label"><span class="label-text-alt">Comma-separated list of IP ranges in CIDR format.</span></div>
+                    <label class="label" for="group_ip_ranges"><span class="label-text">{{ _('Allowed IP Ranges') }}</span></label>
+                    <textarea id="group_ip_ranges" name="ip_ranges" class="textarea textarea-bordered h-12 resize-y" placeholder="{{ _('192.168.1.0/24, 2001:db8::/32') }}"></textarea>
+                    <div class="label"><span class="label-text-alt">{{ _('Comma-separated list of IP ranges in CIDR format.') }}</span></div>
                 </div>
                 <div class="form-control">
                     <label class="label" for="group_countries">
-                        <span class="label-text">Blocked Countries</span>
-                        <span class="label-text-alt" id="country-selection-counter">0 of 195 countries selected</span>
+                        <span class="label-text">{{ _('Blocked Countries') }}</span>
+                        <span class="label-text-alt" id="country-selection-counter">{{ _('0 of 195 countries selected') }}</span>
                     </label>
 
                     <div class="flex flex-wrap gap-2 mb-3">
                         <button type="button" class="btn btn-xs btn-outline" id="select-all-countries">
-                            Select All
+                            {{ _('Select All') }}
                         </button>
                         <button type="button" class="btn btn-xs btn-outline" id="select-none-countries">
-                            Select None
+                            {{ _('Select None') }}
                         </button>
                         <button type="button" class="btn btn-xs btn-outline" id="invert-selection">
-                            Invert Selection
+                            {{ _('Invert Selection') }}
                         </button>
                         <div class="dropdown">
                             <button type="button" class="btn btn-xs btn-outline" id="templates-dropdown">
-                                Quick Templates ▾
+                                {{ _('Quick Templates') }} ▾
                             </button>
                             <ul class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-52 z-50" id="templates-menu" style="display: none;">
-                                <li><a href="#" data-template="block-all-except-us">Block All Except US</a></li>
-                                <li><a href="#" data-template="block-all-except-eu">Block All Except EU</a></li>
-                                <li><a href="#" data-template="block-high-risk">Block High Risk Countries</a></li>
-                                <li><a href="#" data-template="block-non-nato">Block Non-NATO Countries</a></li>
+                                <li><a href="#" data-template="block-all-except-us">{{ _('Block All Except US') }}</a></li>
+                                <li><a href="#" data-template="block-all-except-eu">{{ _('Block All Except EU') }}</a></li>
+                                <li><a href="#" data-template="block-high-risk">{{ _('Block High Risk Countries') }}</a></li>
+                                <li><a href="#" data-template="block-non-nato">{{ _('Block Non-NATO Countries') }}</a></li>
                             </ul>
                         </div>
                         <div class="dropdown">
                             <button type="button" class="btn btn-xs btn-outline" id="regions-dropdown">
-                                Select by Region ▾
+                                {{ _('Select by Region') }} ▾
                             </button>
                             <ul class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-48 z-50" id="regions-menu" style="display: none;">
                                 <li><a href="#" data-region="africa">Africa</a></li>
@@ -122,20 +122,20 @@
                     </div>
 
                     <div class="label">
-                        <span class="label-text-alt" id="country-policy-help-text">Selected countries will be blocked. All other countries will be allowed.</span>
+                        <span class="label-text-alt" id="country-policy-help-text">{{ _('Selected countries will be blocked. All other countries will be allowed.') }}</span>
                     </div>
 
                     <div class="mt-2">
-                        <div class="text-xs opacity-70 mb-1">Common scenarios:</div>
+                        <div class="text-xs opacity-70 mb-1">{{ _('Common scenarios:') }}</div>
                         <div class="flex flex-wrap gap-1">
                             <button type="button" class="btn btn-xs btn-ghost" data-quick-action="allow-us-only">
-                                Allow US Only
+                                {{ _('Allow US Only') }}
                             </button>
                             <button type="button" class="btn btn-xs btn-ghost" data-quick-action="allow-us-eu">
-                                Allow US + EU
+                                {{ _('Allow US + EU') }}
                             </button>
                             <button type="button" class="btn btn-xs btn-ghost" data-quick-action="block-high-risk">
-                                Block High Risk
+                                {{ _('Block High Risk') }}
                             </button>
                         </div>
                     </div>
@@ -143,30 +143,30 @@
             </div>
             
             <div id="app-settings-container">
-                <h4 class="text-md font-semibold mb-2">Application Settings (Optional)</h4>
+                <h4 class="text-md font-semibold mb-2">{{ _('Application Settings (Optional)') }}</h4>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="form-control">
-                        <label class="label" for="group_session_duration"><span class="label-text">Session Duration</span></label>
+                        <label class="label" for="group_session_duration"><span class="label-text">{{ _('Session Duration') }}</span></label>
                         <input type="text" id="group_session_duration" name="session_duration" value="24h" class="input input-bordered w-full" />
-                         <div class="label"><span class="label-text-alt">e.g., 24h, 30m, 720h.</span></div>
+                         <div class="label"><span class="label-text-alt">{{ _('e.g., 24h, 30m, 720h.') }}</span></div>
                     </div>
                     <div class="form-control pt-8">
                       <label class="label cursor-pointer justify-start gap-2">
                         <input type="checkbox" name="auto_redirect" id="group_auto_redirect" class="checkbox checkbox-sm" />
-                        <span class="label-text">Auto Redirect to Identity</span>
+                        <span class="label-text">{{ _('Auto Redirect to Identity') }}</span>
                       </label>
                     </div>
                     <div class="form-control pt-8">
                       <label class="label cursor-pointer justify-start gap-2">
                         <input type="checkbox" name="app_launcher_visible" id="group_app_launcher_visible" class="checkbox checkbox-sm" />
-                        <span class="label-text">Visible in App Launcher</span>
+                        <span class="label-text">{{ _('Visible in App Launcher') }}</span>
                       </label>
                     </div>
                 </div>
             </div>
             
             <div class="modal-action mt-8">
-              <button type="submit" class="btn btn-primary">Save Group</button>
+              <button type="submit" class="btn btn-primary">{{ _('Save Group') }}</button>
             </div>
         </form>
     </div>

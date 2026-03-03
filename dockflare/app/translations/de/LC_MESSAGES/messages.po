@@ -1,0 +1,888 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: DockFlare 3.0\n"
+"POT-Creation-Date: 2026-02-21 00:00+0000\n"
+"PO-Revision-Date: 2026-02-21 00:00+0000\n"
+"Last-Translator: DockFlare Team\n"
+"Language: de\n"
+"Language-Team: German\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Cloudflare Tunnel Manager"
+msgstr "Cloudflare-Tunnel-Verwaltung"
+
+msgid "Dashboard"
+msgstr "Dashboard"
+
+msgid "Access Policies"
+msgstr "Zugriffsrichtlinien"
+
+msgid "Agents"
+msgstr "Agenten"
+
+msgid "Settings"
+msgstr "Einstellungen"
+
+msgid "Help"
+msgstr "Hilfe"
+
+msgid "Language"
+msgstr "Sprache"
+
+msgid "Logout"
+msgstr "Abmelden"
+
+msgid "Sponsor DockFlare"
+msgstr "DockFlare unterstützen"
+
+msgid "Alert"
+msgstr "Hinweis"
+
+msgid "OK"
+msgstr "OK"
+
+msgid "Confirm"
+msgstr "Bestätigen"
+
+msgid "Cancel"
+msgstr "Abbrechen"
+
+msgid "Input Required"
+msgstr "Eingabe erforderlich"
+
+msgid "Sign In"
+msgstr "Anmelden"
+
+msgid "Username"
+msgstr "Benutzername"
+
+msgid "Password"
+msgstr "Passwort"
+
+msgid "Login"
+msgstr "Anmelden"
+
+msgid "Sign in with %(provider)s"
+msgstr "Mit %(provider)s anmelden"
+
+msgid "Tunnel Name"
+msgstr "Tunnel-Name"
+
+msgid "A tunnel name is required."
+msgstr "Ein Tunnel-Name ist erforderlich."
+
+msgid "Primary Cloudflare Zone ID"
+msgstr "Primäre Cloudflare-Zonen-ID"
+
+msgid "Other Zones to Scan (comma-separated)"
+msgstr "Weitere zu scannende Zonen (kommagetrennt)"
+
+msgid "e.g. my-other-domain.com,another.dev"
+msgstr "z. B. meine-andere-domain.com,andere.dev"
+
+msgid "Grace Period (seconds)"
+msgstr "Schonfrist (Sekunden)"
+
+msgid "Grace period is required."
+msgstr "Eine Schonfrist ist erforderlich."
+
+msgid "Save General Settings"
+msgstr "Allgemeine Einstellungen speichern"
+
+msgid "Disable Password Login"
+msgstr "Passwortanmeldung deaktivieren"
+
+msgid "OAuth Session Timeout (seconds)"
+msgstr "OAuth-Sitzungs-Timeout (Sekunden)"
+
+msgid "Enable OAuth Audit Logging"
+msgstr "OAuth-Audit-Protokollierung aktivieren"
+
+msgid "Save Security Settings"
+msgstr "Sicherheitseinstellungen speichern"
+
+msgid "Current Password"
+msgstr "Aktuelles Passwort"
+
+msgid "New Password"
+msgstr "Neues Passwort"
+
+msgid "Password must be at least 8 characters long."
+msgstr "Das Passwort muss mindestens 8 Zeichen lang sein."
+
+msgid "Confirm New Password"
+msgstr "Neues Passwort bestätigen"
+
+msgid "New passwords must match."
+msgstr "Die neuen Passwörter müssen übereinstimmen."
+
+msgid "Change Password"
+msgstr "Passwort ändern"
+
+msgid "Username is required."
+msgstr "Benutzername ist erforderlich."
+
+msgid "Password is required."
+msgstr "Passwort ist erforderlich."
+
+msgid "Cloudflare Account ID"
+msgstr "Cloudflare-Konto-ID"
+
+msgid "Account ID must be 32 characters long."
+msgstr "Die Konto-ID muss 32 Zeichen lang sein."
+
+msgid "Cloudflare API Token"
+msgstr "Cloudflare-API-Token"
+
+msgid "API Token must be 40 characters long."
+msgstr "Das API-Token muss 40 Zeichen lang sein."
+
+msgid "Update Cloudflare Credentials"
+msgstr "Cloudflare-Anmeldedaten aktualisieren"
+
+msgid "Passwords must match."
+msgstr "Passwörter müssen übereinstimmen."
+
+msgid "Confirm Password"
+msgstr "Passwort bestätigen"
+
+msgid "Next"
+msgstr "Weiter"
+
+msgid "Primary Cloudflare Zone ID (Optional)"
+msgstr "Primäre Cloudflare-Zonen-ID (optional)"
+
+msgid "Other Zones to Scan (comma-separated, optional)"
+msgstr "Weitere zu scannende Zonen (kommagetrennt, optional)"
+
+msgid "Complete Setup"
+msgstr "Einrichtung abschließen"
+
+msgid "Proceed to User Creation"
+msgstr "Zur Benutzererstellung fortfahren"
+
+msgid "Step 1: Setup Web Access"
+msgstr "Schritt 1: Webzugang einrichten"
+
+msgid "Please select a DockFlare backup archive (.zip)."
+msgstr "Bitte wählen Sie ein DockFlare-Backup-Archiv (.zip) aus."
+
+msgid "Backup restored, but configuration could not be loaded. Check logs."
+msgstr "Backup wurde wiederhergestellt, aber die Konfiguration konnte nicht geladen werden. Prüfen Sie die Logs."
+
+msgid "Restore failed. Ensure you selected a DockFlare backup archive and try again."
+msgstr "Wiederherstellung fehlgeschlagen. Stellen Sie sicher, dass Sie ein DockFlare-Backup-Archiv ausgewählt haben, und versuchen Sie es erneut."
+
+msgid "Restore from Backup"
+msgstr "Aus Backup wiederherstellen"
+
+msgid "Credentials verified successfully."
+msgstr "Anmeldedaten erfolgreich verifiziert."
+
+msgid "Invalid credentials or permissions."
+msgstr "Ungültige Anmeldedaten oder Berechtigungen."
+
+msgid "Validation failed. Cloudflare API returned: %(message)s"
+msgstr "Validierung fehlgeschlagen. Cloudflare-API meldet: %(message)s"
+
+msgid "Could not connect to the Cloudflare API: %(error)s"
+msgstr "Verbindung zur Cloudflare-API fehlgeschlagen: %(error)s"
+
+msgid "Step 2: Cloudflare Configuration"
+msgstr "Schritt 2: Cloudflare-Konfiguration"
+
+msgid "Step 3: Tunnel Configuration"
+msgstr "Schritt 3: Tunnel-Konfiguration"
+
+msgid "Setup complete! Please log in to continue."
+msgstr "Einrichtung abgeschlossen. Bitte melden Sie sich an, um fortzufahren."
+
+msgid "Step 4: Finalize Setup"
+msgstr "Schritt 4: Einrichtung abschließen"
+
+msgid "Migration cancelled. Please start the setup from scratch."
+msgstr "Migration abgebrochen. Bitte starten Sie die Einrichtung von vorne."
+
+msgid "Critical information (API Token or Account ID) was missing from the import. Please configure manually."
+msgstr "Wichtige Informationen (API-Token oder Konto-ID) fehlten beim Import. Bitte manuell konfigurieren."
+
+msgid "Settings confirmed. Please create an admin user to continue."
+msgstr "Einstellungen bestätigt. Bitte erstellen Sie einen Admin-Benutzer, um fortzufahren."
+
+msgid "Not Found"
+msgstr "Nicht gefunden"
+
+msgid "Not Set"
+msgstr "Nicht gesetzt"
+
+msgid "Warning: Missing required fields (CF_API_TOKEN or CF_ACCOUNT_ID). You will not be able to proceed."
+msgstr "Warnung: Erforderliche Felder fehlen (CF_API_TOKEN oder CF_ACCOUNT_ID). Sie können nicht fortfahren."
+
+msgid "Setup: Import from .env"
+msgstr "Einrichtung: Aus .env importieren"
+
+msgid "DockFlare Setup"
+msgstr "DockFlare-Einrichtung"
+
+msgid "Web Access"
+msgstr "Webzugang"
+
+msgid "Cloudflare"
+msgstr "Cloudflare"
+
+msgid "Tunnel"
+msgstr "Tunnel"
+
+msgid "Finalize"
+msgstr "Abschließen"
+
+msgid "Restore DockFlare Backup"
+msgstr "DockFlare-Backup wiederherstellen"
+
+msgid "Upload a DockFlare backup archive (`.zip`) to restore configuration, state, and agent keys into this fresh deployment."
+msgstr "Laden Sie ein DockFlare-Backup-Archiv (`.zip`) hoch, um Konfiguration, Zustand und Agentenschlüssel in diese neue Bereitstellung wiederherzustellen."
+
+msgid "Backup Archive (.zip)"
+msgstr "Backup-Archiv (.zip)"
+
+msgid "Backups must be generated from DockFlare >= 3.0."
+msgstr "Backups müssen mit DockFlare >= 3.0 erstellt worden sein."
+
+msgid "After a successful restore you will be redirected to the sign-in screen. Existing agents may take a moment to reconnect."
+msgstr "Nach erfolgreicher Wiederherstellung werden Sie zur Anmeldeseite weitergeleitet. Bestehende Agenten brauchen eventuell einen Moment für die Wiederverbindung."
+
+msgid "Restore Backup"
+msgstr "Backup wiederherstellen"
+
+msgid "Prefer to configure DockFlare manually?"
+msgstr "DockFlare lieber manuell konfigurieren?"
+
+msgid "Final Step: Create Admin User"
+msgstr "Letzter Schritt: Admin-Benutzer erstellen"
+
+msgid "Your settings have been imported. Please create an administrator account to complete the migration."
+msgstr "Ihre Einstellungen wurden importiert. Bitte erstellen Sie ein Administratorkonto, um die Migration abzuschließen."
+
+msgid "Create Admin User"
+msgstr "Admin-Benutzer erstellen"
+
+msgid "Create a secure administrator account to access the DockFlare web interface. All your data, including your password, will be encrypted to ensure it remains safe and confidential."
+msgstr "Erstellen Sie ein sicheres Administratorkonto für den Zugriff auf die DockFlare-Weboberfläche. Alle Daten, einschließlich Ihres Passworts, werden verschlüsselt, damit sie sicher und vertraulich bleiben."
+
+msgid "e.g., admin"
+msgstr "z. B. admin"
+
+msgid "Coming from another DockFlare instance? Restore from backup"
+msgstr "Kommen Sie von einer anderen DockFlare-Instanz? Aus Backup wiederherstellen"
+
+msgid "Provide your Cloudflare API Token and Account ID. This is necessary for DockFlare to securely manage your tunnels and DNS records. You can find your Account ID in the Cloudflare dashboard, on the right side of the overview page for any of your domains. An API token can be created from the API Tokens page located in your profile."
+msgstr "Geben Sie Ihr Cloudflare-API-Token und Ihre Konto-ID an. Das ist notwendig, damit DockFlare Ihre Tunnel und DNS-Einträge sicher verwalten kann. Ihre Konto-ID finden Sie im Cloudflare-Dashboard auf der rechten Seite der Übersichtsseite einer beliebigen Domain. Ein API-Token kann auf der Seite für API-Tokens in Ihrem Profil erstellt werden."
+
+msgid "Your Cloudflare API Token"
+msgstr "Ihr Cloudflare-API-Token"
+
+msgid "Your Cloudflare Account ID"
+msgstr "Ihre Cloudflare-Konto-ID"
+
+msgid "Back to Step 1"
+msgstr "Zurück zu Schritt 1"
+
+msgid "Configure the settings for your Cloudflare Tunnel. The tunnel name you specify will identify your tunnel within the Cloudflare dashboard. Additionally, you have the option to designate a primary zone and other zones for DNS scanning."
+msgstr "Konfigurieren Sie die Einstellungen für Ihren Cloudflare-Tunnel. Der angegebene Tunnel-Name identifiziert Ihren Tunnel im Cloudflare-Dashboard. Zusätzlich können Sie eine primäre Zone und weitere Zonen für den DNS-Scan festlegen."
+
+msgid "A descriptive name for your Cloudflare Tunnel. This name will appear in your Cloudflare dashboard."
+msgstr "Ein beschreibender Name für Ihren Cloudflare-Tunnel. Dieser Name erscheint im Cloudflare-Dashboard."
+
+msgid "e.g., abc123def456..."
+msgstr "z. B. abc123def456..."
+
+msgid "The main domain (zone) you want DockFlare to manage DNS records for. If you leave this blank, DockFlare will attempt to find a suitable zone automatically."
+msgstr "Die Hauptdomain (Zone), für die DockFlare DNS-Einträge verwalten soll. Wenn Sie dieses Feld leer lassen, versucht DockFlare automatisch eine passende Zone zu finden."
+
+msgid "e.g., example.com, my-other-domain.net"
+msgstr "z. B. beispiel.com, meine-andere-domain.net"
+
+msgid "The time (in seconds) to wait before automatically removing DNS records for a stopped container. This prevents records from being deleted immediately if a container is just being restarted. Minimum: 60 seconds."
+msgstr "Die Wartezeit (in Sekunden), bevor DNS-Einträge für einen gestoppten Container automatisch entfernt werden. So werden Einträge nicht sofort gelöscht, wenn ein Container nur neu gestartet wird. Minimum: 60 Sekunden."
+
+msgid "Back to Step 2"
+msgstr "Zurück zu Schritt 2"
+
+msgid "Review your configuration details below before completing the setup. Once you finalize, DockFlare will begin managing your tunnels based on these settings, and you will be redirected to the login page."
+msgstr "Überprüfen Sie unten Ihre Konfigurationsdetails, bevor Sie die Einrichtung abschließen. Nach dem Abschluss beginnt DockFlare, Ihre Tunnel anhand dieser Einstellungen zu verwalten, und Sie werden zur Anmeldeseite weitergeleitet."
+
+msgid "Not set"
+msgstr "Nicht gesetzt"
+
+msgid "Go Back"
+msgstr "Zurück"
+
+msgid "Migration Assistant"
+msgstr "Migrationsassistent"
+
+msgid "DockFlare has detected settings from a previous version (.env file). We have imported them for you."
+msgstr "DockFlare hat Einstellungen aus einer früheren Version erkannt (.env-Datei). Wir haben sie für Sie importiert."
+
+msgid "Imported Settings"
+msgstr "Importierte Einstellungen"
+
+msgid "Please review the imported settings. If they are correct, proceed to the final step: creating your admin user account."
+msgstr "Bitte prüfen Sie die importierten Einstellungen. Wenn sie korrekt sind, fahren Sie mit dem letzten Schritt fort: dem Erstellen Ihres Admin-Benutzerkontos."
+
+msgid "Proceed with Migration"
+msgstr "Mit Migration fortfahren"
+
+msgid "Create New Configuration"
+msgstr "Neue Konfiguration erstellen"
+
+msgid "DockFlare is Restarting"
+msgstr "DockFlare wird neu gestartet"
+
+msgid "Hold tight, DockFlare is rebooting..."
+msgstr "Einen Moment, DockFlare startet neu..."
+
+msgid "We are loading your restored configuration and giving the tunnel hamsters a quick pep talk."
+msgstr "Wir laden Ihre wiederhergestellte Konfiguration und motivieren die Tunnel-Hamster kurz."
+
+msgid "What is happening?"
+msgstr "Was passiert?"
+
+msgid "Encrypted secrets were imported successfully."
+msgstr "Verschlüsselte Geheimnisse wurden erfolgreich importiert."
+
+msgid "Agents and rules are warming up."
+msgstr "Agenten und Regeln werden vorbereitet."
+
+msgid "We will refresh this page automatically in"
+msgstr "Wir aktualisieren diese Seite automatisch in"
+
+msgid "seconds."
+msgstr "Sekunden."
+
+msgid "General Settings"
+msgstr "Allgemeine Einstellungen"
+
+msgid "All Cloudflare Tunnels"
+msgstr "Alle Cloudflare-Tunnel"
+
+msgid "Backup & Restore"
+msgstr "Backup & Wiederherstellung"
+
+msgid "Security"
+msgstr "Sicherheit"
+
+msgid "OAuth Authentication"
+msgstr "OAuth-Authentifizierung"
+
+msgid "Tunnel & Agent Status"
+msgstr "Tunnel- und Agent-Status"
+
+msgid "Check DockFlare version"
+msgstr "DockFlare-Version prüfen"
+
+msgid "Check version"
+msgstr "Version prüfen"
+
+msgid "Optional. The default Zone ID for new DNS records."
+msgstr "Optional. Die Standard-Zonen-ID für neue DNS-Einträge."
+
+msgid "Enter a new Account ID or API Token to update. For security, current values are not displayed."
+msgstr "Geben Sie eine neue Konto-ID oder ein neues API-Token ein. Aus Sicherheitsgründen werden aktuelle Werte nicht angezeigt."
+
+msgid "Updating credentials require an DockFlare restart to take full effect."
+msgstr "Das Aktualisieren der Zugangsdaten erfordert einen DockFlare-Neustart, damit es vollständig wirksam wird."
+
+msgid "Enter new 32-character Account ID"
+msgstr "Neue 32-stellige Konto-ID eingeben"
+
+msgid "Enter new 40-character API Token"
+msgstr "Neues 40-stelliges API-Token eingeben"
+
+msgid "All Cloudflare Tunnels on Account"
+msgstr "Alle Cloudflare-Tunnel im Konto"
+
+msgid "Displaying tunnels for Account ID:"
+msgstr "Tunnel für Konto-ID:"
+
+msgid "This list shows all tunnels on the account, not just the one managed by DockFlare. Click + to view associated DNS records."
+msgstr "Diese Liste zeigt alle Tunnel im Konto, nicht nur den von DockFlare verwalteten. Klicken Sie auf +, um zugehörige DNS-Einträge anzuzeigen."
+
+msgid "Tunnel ID"
+msgstr "Tunnel-ID"
+
+msgid "Created At"
+msgstr "Erstellt am"
+
+msgid "Toggle DNS records"
+msgstr "DNS-Einträge umschalten"
+
+msgid "Click the '+' button to load DNS records for this tunnel."
+msgstr "Klicken Sie auf '+', um DNS-Einträge für diesen Tunnel zu laden."
+
+msgid "No Cloudflare Tunnels found for Account ID:"
+msgstr "Keine Cloudflare-Tunnel für Konto-ID gefunden:"
+
+msgid "This could also mean an error occurred. Ensure your API Token has 'Account:Cloudflare Tunnel:Read' permission."
+msgstr "Das kann auch auf einen Fehler hindeuten. Stellen Sie sicher, dass Ihr API-Token die Berechtigung 'Account:Cloudflare Tunnel:Read' hat."
+
+msgid "Could not retrieve tunnel information."
+msgstr "Tunnel-Informationen konnten nicht geladen werden."
+
+msgid "environment variable is not configured. This section cannot be displayed."
+msgstr "Umgebungsvariable ist nicht konfiguriert. Dieser Abschnitt kann nicht angezeigt werden."
+
+msgid "Delete Cloudflare Tunnel"
+msgstr "Cloudflare-Tunnel löschen"
+
+msgid "Deleting this tunnel will disconnect any agents currently using it."
+msgstr "Beim Löschen dieses Tunnels werden alle aktuell verbundenen Agenten getrennt."
+
+msgid "Type"
+msgstr "Geben Sie"
+
+msgid "to confirm"
+msgstr "zur Bestätigung ein"
+
+msgid "Delete Tunnel"
+msgstr "Tunnel löschen"
+
+msgid "Create Backup"
+msgstr "Backup erstellen"
+
+msgid "Download Backup Archive"
+msgstr "Backup-Archiv herunterladen"
+
+msgid "Warning:"
+msgstr "Warnung:"
+
+msgid "Upload and Restore Backup"
+msgstr "Hochladen und wiederherstellen"
+
+msgid "Security Warning:"
+msgstr "Sicherheitswarnung:"
+
+msgid "Show Master API Key"
+msgstr "Master-API-Schlüssel anzeigen"
+
+msgid "Keep this key secret; rotate it if exposed."
+msgstr "Halten Sie diesen Schlüssel geheim; rotieren Sie ihn bei Offenlegung."
+
+msgid "OAuth Settings"
+msgstr "OAuth-Einstellungen"
+
+msgid "Session Timeout (seconds)"
+msgstr "Sitzungs-Timeout (Sekunden)"
+
+msgid "OAuth Providers"
+msgstr "OAuth-Anbieter"
+
+msgid "Add Provider"
+msgstr "Anbieter hinzufügen"
+
+msgid "Authorized Users"
+msgstr "Autorisierte Benutzer"
+
+msgid "Add User"
+msgstr "Benutzer hinzufügen"
+
+msgid "Password Reset"
+msgstr "Passwort zurücksetzen"
+
+msgid "Tunnel Details"
+msgstr "Tunneldetails"
+
+msgid "Desired Name:"
+msgstr "Gewünschter Name:"
+
+msgid "Tunnel Token:"
+msgstr "Tunnel-Token:"
+
+msgid "Agent Control"
+msgstr "Agent-Steuerung"
+
+msgid "External Mode:"
+msgstr "Externer Modus:"
+
+msgid "Agent Status:"
+msgstr "Agent-Status:"
+
+msgid "Stop Agent"
+msgstr "Agent stoppen"
+
+msgid "Start Agent"
+msgstr "Agent starten"
+
+msgid "Treat this key like a password. Anyone with it can call the DockFlare API."
+msgstr "Behandeln Sie diesen Schlüssel wie ein Passwort. Jeder mit diesem Schlüssel kann die DockFlare-API aufrufen."
+
+msgid "Loading..."
+msgstr "Lädt..."
+
+msgid "Checking..."
+msgstr "Prüfe..."
+
+msgid "Up to date"
+msgstr "Aktuell"
+
+msgid "Update available"
+msgstr "Update verfügbar"
+
+msgid "Run:"
+msgstr "Ausführen:"
+
+msgid "Latest:"
+msgstr "Neueste:"
+
+msgid "Current:"
+msgstr "Aktuell:"
+
+msgid "release notes"
+msgstr "Release-Notes"
+
+msgid "for upgrade instructions."
+msgstr "für Upgrade-Anweisungen."
+
+msgid "No OAuth providers configured. Click Add Provider to get started."
+msgstr "Keine OAuth-Anbieter konfiguriert. Klicken Sie auf Anbieter hinzufügen, um zu starten."
+
+msgid "No authorized users configured. Click Add User to authorize email addresses."
+msgstr "Keine autorisierten Benutzer konfiguriert. Klicken Sie auf Benutzer hinzufügen, um E-Mail-Adressen zu autorisieren."
+
+msgid "Enabled"
+msgstr "Aktiviert"
+
+msgid "Disabled"
+msgstr "Deaktiviert"
+
+msgid "Added:"
+msgstr "Hinzugefügt:"
+
+msgid "Agent Management"
+msgstr "Agent-Verwaltung"
+
+msgid "Agents Management"
+msgstr "Agent-Verwaltung"
+
+msgid "Force Reconciliation"
+msgstr "Abgleich erzwingen"
+
+msgid "Generate New API Key"
+msgstr "Neuen API-Schlüssel generieren"
+
+msgid "Agent ID"
+msgstr "Agent-ID"
+
+msgid "Heart Beat"
+msgstr "Heartbeat"
+
+msgid "Assigned Tunnel"
+msgstr "Zugewiesener Tunnel"
+
+msgid "Migration"
+msgstr "Migration"
+
+msgid "Cloudflared Version"
+msgstr "Cloudflared-Version"
+
+msgid "Tunnel Status"
+msgstr "Tunnel-Status"
+
+msgid "Active API Keys"
+msgstr "Aktive API-Schlüssel"
+
+msgid "Key (Partial)"
+msgstr "Schlüssel (teilweise)"
+
+msgid "Owner"
+msgstr "Inhaber"
+
+msgid "Revoked Keys"
+msgstr "Widerrufene Schlüssel"
+
+msgid "Remove keys revoked >30 days ago"
+msgstr "Schlüssel entfernen, die vor >30 Tagen widerrufen wurden"
+
+msgid "Auto Cleanup"
+msgstr "Automatische Bereinigung"
+
+msgid "Clear All"
+msgstr "Alle löschen"
+
+msgid "Full API Key"
+msgstr "Vollständiger API-Schlüssel"
+
+msgid "Revoked At"
+msgstr "Widerrufen am"
+
+msgid "Auto-Delete"
+msgstr "Automatisch löschen"
+
+msgid "No revoked keys"
+msgstr "Keine widerrufenen Schlüssel"
+
+msgid "Revoked API keys will appear here for cleanup"
+msgstr "Widerrufene API-Schlüssel erscheinen hier zur Bereinigung"
+
+msgid "Generate New Agent API Key"
+msgstr "Neuen Agent-API-Schlüssel generieren"
+
+msgid "Owner (Optional, for reference)"
+msgstr "Inhaber (optional, zur Referenz)"
+
+msgid "Generate"
+msgstr "Generieren"
+
+msgid "Please copy this key now. You will not be able to see it again."
+msgstr "Bitte kopieren Sie diesen Schlüssel jetzt. Er wird später nicht mehr angezeigt."
+
+msgid "Enroll Agent"
+msgstr "Agent registrieren"
+
+msgid "Existing Tunnels"
+msgstr "Vorhandene Tunnel"
+
+msgid "Loading tunnels..."
+msgstr "Tunnel werden geladen..."
+
+msgid "OR"
+msgstr "ODER"
+
+msgid "Create New Tunnel"
+msgstr "Neuen Tunnel erstellen"
+
+msgid "Rename Agent"
+msgstr "Agent umbenennen"
+
+msgid "Save Name"
+msgstr "Namen speichern"
+
+msgid "API Key Rolled Successfully"
+msgstr "API-Schlüssel erfolgreich erneuert"
+
+msgid "Done"
+msgstr "Fertig"
+
+msgid "Unknown"
+msgstr "Unbekannt"
+
+msgid "Critical"
+msgstr "Kritisch"
+
+msgid "Warning"
+msgstr "Warnung"
+
+msgid "Lost"
+msgstr "Verloren"
+
+msgid "No agents have registered yet."
+msgstr "Es haben sich noch keine Agenten registriert."
+
+msgid "None"
+msgstr "Keine"
+
+msgid "Complete"
+msgstr "Abgeschlossen"
+
+msgid "Needs attention"
+msgstr "Benötigt Aufmerksamkeit"
+
+msgid "Resolve"
+msgstr "Beheben"
+
+msgid "Never used"
+msgstr "Nie verwendet"
+
+msgid "Revoke Key"
+msgstr "Schlüssel widerrufen"
+
+msgid "Ready for cleanup"
+msgstr "Bereit zur Bereinigung"
+
+msgid "days"
+msgstr "Tage"
+
+msgid "Full Key:"
+msgstr "Vollständiger Schlüssel:"
+
+msgid "Revoked"
+msgstr "Widerrufen"
+
+msgid "Delete Permanently"
+msgstr "Dauerhaft löschen"
+
+msgid "Advanced Access Policies"
+msgstr "Erweiterte Zugriffsrichtlinien"
+
+msgid "Create reusable access policies to apply with a single label."
+msgstr "Erstellen Sie wiederverwendbare Zugriffsrichtlinien, die mit einem einzelnen Label angewendet werden."
+
+msgid "Filter:"
+msgstr "Filter:"
+
+msgid "All Policies"
+msgstr "Alle Richtlinien"
+
+msgid "DockFlare-Managed"
+msgstr "Von DockFlare verwaltet"
+
+msgid "External"
+msgstr "Extern"
+
+msgid "System"
+msgstr "System"
+
+msgid "Sync from Cloudflare"
+msgstr "Von Cloudflare synchronisieren"
+
+msgid "Create New Group"
+msgstr "Neue Gruppe erstellen"
+
+msgid "Group ID (for label)"
+msgstr "Gruppen-ID (für Label)"
+
+msgid "Policy Summary"
+msgstr "Richtlinienübersicht"
+
+msgid "Policy Type"
+msgstr "Richtlinientyp"
+
+msgid "No rules"
+msgstr "Keine Regeln"
+
+msgid "DockFlare"
+msgstr "DockFlare"
+
+msgid "Edit"
+msgstr "Bearbeiten"
+
+msgid "View in Cloudflare"
+msgstr "In Cloudflare anzeigen"
+
+msgid "Delete (system policy)"
+msgstr "Löschen (Systemrichtlinie)"
+
+msgid "Delete (policy is in use)"
+msgstr "Löschen (Richtlinie wird verwendet)"
+
+msgid "Used by these services:"
+msgstr "Verwendet von diesen Diensten:"
+
+msgid "No Access Groups have been created yet."
+msgstr "Es wurden noch keine Zugriffsgruppen erstellt."
+
+msgid "Click \"Create New Group\" to get started."
+msgstr "Klicken Sie auf \"Neue Gruppe erstellen\", um zu starten."
+
+msgid "Identity Providers"
+msgstr "Identitätsanbieter"
+
+msgid "Configure OAuth/OIDC providers for Zero Trust authentication."
+msgstr "Konfigurieren Sie OAuth/OIDC-Anbieter für Zero-Trust-Authentifizierung."
+
+msgid "Loading identity providers..."
+msgstr "Identitätsanbieter werden geladen..."
+
+msgid "Zone Default Policies (*.tld Wildcards)"
+msgstr "Zonen-Standardrichtlinien (*.tld Wildcards)"
+
+msgid "Protect all subdomains of your zones with a wildcard"
+msgstr "Schützen Sie alle Subdomains Ihrer Zonen mit einem Wildcard"
+
+msgid "access policy."
+msgstr "Zugriffsrichtlinie."
+
+msgid "Create New Access Group"
+msgstr "Neue Zugriffsgruppe erstellen"
+
+msgid "Authenticated Access"
+msgstr "Authentifizierter Zugriff"
+
+msgid "Public Access"
+msgstr "Öffentlicher Zugriff"
+
+msgid "Policy Rules"
+msgstr "Richtlinienregeln"
+
+msgid "Allowed Emails or Domains (Required with IdPs)"
+msgstr "Erlaubte E-Mails oder Domains (erforderlich mit IdPs)"
+
+msgid "Allowed IP Ranges"
+msgstr "Erlaubte IP-Bereiche"
+
+msgid "Blocked Countries"
+msgstr "Blockierte Länder"
+
+msgid "Select All"
+msgstr "Alle auswählen"
+
+msgid "Select None"
+msgstr "Keine auswählen"
+
+msgid "Invert Selection"
+msgstr "Auswahl umkehren"
+
+msgid "Quick Templates"
+msgstr "Schnellvorlagen"
+
+msgid "Select by Region"
+msgstr "Nach Region auswählen"
+
+msgid "rule(s) defined"
+msgstr "Regel(n) definiert"
+
+msgid "Managed Ingress Rules"
+msgstr "Verwaltete Ingress-Regeln"
+
+msgid "Filter & Sort Options"
+msgstr "Filter- und Sortieroptionen"
+
+msgid "Search..."
+msgstr "Suchen..."
+
+msgid "No Policy Assigned"
+msgstr "Keine Richtlinie zugewiesen"
+
+msgid "Real-time Activity Logs"
+msgstr "Echtzeit-Aktivitätsprotokolle"
+
+msgid "(Click to enable - may impact performance)"
+msgstr "(Klicken zum Aktivieren - kann die Leistung beeinträchtigen)"
+
+msgid "Add New Manual Ingress Rule"
+msgstr "Neue manuelle Ingress-Regel hinzufügen"
+
+msgid "Public Hostname"
+msgstr "Öffentlicher Hostname"
+
+msgid "Subdomain"
+msgstr "Subdomain"
+
+msgid "Domain (Required)"
+msgstr "Domain (erforderlich)"
+
+msgid "Path"
+msgstr "Pfad"
+
+msgid "Tunnel (Required)"
+msgstr "Tunnel (erforderlich)"
+
+msgid "Zone Detection"
+msgstr "Zonenerkennung"
+
+msgid "Service"
+msgstr "Dienst"
+
+msgid "Type (Required)"
+msgstr "Typ (erforderlich)"
+
+msgid "Select..."
+msgstr "Auswählen..."
+
+msgid "URL (Required for most types)"
+msgstr "URL (für die meisten Typen erforderlich)"
+
+msgid "Access Policy (Optional)"
+msgstr "Zugriffsrichtlinie (optional)"

@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="{{ current_locale }}" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ title }} - DockFlare Setup</title>
+    <title>{{ title }} - {{ _('DockFlare Setup') }}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
     <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
     <style>
@@ -11,6 +11,22 @@
     </style>
 </head>
 <body class="bg-base-200 min-h-screen flex items-center justify-center p-4">
+    <div class="absolute top-4 right-4">
+        <div class="dropdown dropdown-end">
+            <button tabindex="0" role="button" class="btn btn-ghost btn-sm" title="{{ _('Language') }}">
+                {{ current_locale|upper }}
+            </button>
+            <ul tabindex="0" class="dropdown-content z-[51] menu p-2 shadow bg-base-200 rounded-box w-40">
+                {% for locale_code, locale_name in available_locales.items() %}
+                <li>
+                    <a href="{{ request.path }}?lang={{ locale_code }}" class="{{ 'active' if current_locale == locale_code else '' }}">
+                        {{ locale_name }}
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
     <div class="card w-full max-w-lg bg-base-100 shadow-xl">
         <div class="card-body">
             <div class="text-center mb-6">

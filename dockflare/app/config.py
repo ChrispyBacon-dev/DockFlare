@@ -141,3 +141,20 @@ REDIS_DB_INDEX = int(os.getenv('REDIS_DB_INDEX', 0))
 USE_REUSABLE_POLICIES = os.getenv('USE_REUSABLE_POLICIES', 'true').lower() in ['true', '1', 't', 'yes']
 
 SYNC_ALL_CLOUDFLARE_POLICIES = os.getenv('SYNC_ALL_CLOUDFLARE_POLICIES', 'false').lower() in ['true', '1', 't', 'yes']
+
+def _normalize_locales(raw_locales):
+    locales = []
+    for locale in raw_locales:
+        normalized = locale.strip().lower()
+        if normalized and normalized not in locales:
+            locales.append(normalized)
+    return locales
+
+DEFAULT_LOCALE = os.getenv('DOCKFLARE_DEFAULT_LOCALE', 'en').strip().lower() or 'en'
+SUPPORTED_LOCALES = _normalize_locales(os.getenv('DOCKFLARE_SUPPORTED_LOCALES', 'en,de').split(','))
+if DEFAULT_LOCALE not in SUPPORTED_LOCALES:
+    SUPPORTED_LOCALES.insert(0, DEFAULT_LOCALE)
+LOCALE_DISPLAY_NAMES = {
+    'en': 'English',
+    'de': 'Deutsch',
+}

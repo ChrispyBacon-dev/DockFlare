@@ -33,6 +33,7 @@ import docker
 from docker.errors import APIError
 from . import config
 from .core.cache import init_app as init_cache
+from .i18n import init_i18n, get_current_locale
 
 tunnel_state = { "name": config.TUNNEL_NAME, "id": None, "token": None, "status_message": "Initializing...", "error": None }
 cloudflared_agent_state = { "container_status": "unknown", "last_action_status": None }
@@ -151,6 +152,7 @@ def create_app():
     oauth.init_app(app_instance)
 
     limiter.init_app(app_instance)
+    init_i18n(app_instance)
 
     @login_manager.unauthorized_handler
     def unauthorized():
@@ -211,8 +213,15 @@ def create_app():
 
     @app_instance.context_processor
     def inject_version():
-        """Injects the app version into all templates."""
-        return dict(app_version=config.APP_VERSION)
+        locale_options = {
+            locale: config.LOCALE_DISPLAY_NAMES.get(locale, locale)
+            for locale in config.SUPPORTED_LOCALES
+        }
+        return dict(
+            app_version=config.APP_VERSION,
+            available_locales=locale_options,
+            current_locale=get_current_locale(),
+        )
 
     app_instance.reconciliation_info = {
         "in_progress": False,
