@@ -22,206 +22,214 @@
 </p>
 
 <p align="center">
-  <a href="https://dockflare.app">🌐 Website</a> ·
-  <a href="https://dockflare.app/docs">📚 Documentation</a> ·
-  <a href="https://github.com/ChrispyBacon-dev/DockFlare/issues">🐛 Report a Bug</a> ·
-  <a href="https://github.com/sponsors/ChrispyBacon-dev">❤️ Sponsor</a>
+  <a href="https://dockflare.app">Website</a> ·
+  <a href="https://dockflare.app/docs">Documentation</a> ·
+  <a href="https://github.com/ChrispyBacon-dev/DockFlare/issues">Report a Bug</a> ·
+  <a href="https://github.com/sponsors/ChrispyBacon-dev">Sponsor</a>
 </p>
 
 ---
 
 ## Introduction
 
-DockFlare is a powerful, self-hosted ingress controller that simplifies Cloudflare Tunnel and Zero Trust management. It uses Docker labels for automated configuration while providing a robust web UI for manual service definitions and policy overrides.
+DockFlare is a self-hosted ingress and access-control plane for Cloudflare Tunnel environments. It continuously translates your desired state into Cloudflare configuration by combining Docker labels, manual rules from the web UI, and optional remote agents.
 
-It enables secure, hassle-free public access to both Dockerized and non-Dockerized applications with minimal direct interaction with Cloudflare, making it the perfect tool for centralizing and streamlining your access management.
+It was built to remove repetitive dashboard work from fast-changing self-hosted environments. Instead of manually updating DNS records, tunnel ingress rules, and Access applications, you define intent once and DockFlare reconciles it.
 
-### ✨ What's New in DockFlare 3.0.3: Identity Providers, Access Modes & Zone Security
+The result is a set-it-and-forget-it workflow: less operational drift, more reliable service exposure, and one place to manage routing and access decisions.
 
-DockFlare 3.0.3 introduces complete Identity Provider management, cleaner access control design, and enhanced zone-level security.
+## Core Capabilities
 
-- **Identity Provider (IdP) Management**: Full OAuth/OIDC identity provider support directly in DockFlare. Manage Google, Azure AD, GitHub, Okta, and generic OpenID Connect providers with friendly names, one-click Cloudflare sync, and built-in testing. IdPs integrate seamlessly with Access Groups and require email restrictions for security.
-- **Two access modes**: Access Groups now offer dedicated Public and Authenticated tabs. Pick `Public` for Cloudflare Access `bypass` (no login, optional geo blocks) or `Authenticated` for `allow` policies that require email/domain logins with optional IdP authentication.
-- **Reusable Cloudflare policies**: DockFlare syncs every Access Group to a reusable Access Policy, so you can reference the same rules across multiple applications, edit them centrally, and keep the Cloudflare dashboard tidy.
-- **System-managed default bypass policy**: A single, non-deletable `public-default-bypass` policy is automatically created and reused across all public services, eliminating duplicate bypass policies.
-- **Legacy label migration**: DockFlare automatically migrates legacy `dockflare.access.policy=bypass` and `dockflare.access.group=bypass` labels to use the centralized system policy. Migration happens transparently during container processing and reconciliation—no manual changes required.
-- **Zone Default Policies (*.tld wildcards)**: New section on the Access Policies page shows which DNS zones have wildcard protection. Create `*.yourdomain.com` policies with one click to ensure all subdomains are protected by default—even ones you forget to configure explicitly.
-- **Performance optimizations**: Access Policies page now lazy-loads zone policies via AJAX for instant page rendering, eliminating the 8+ second wait caused by synchronous API calls.
-- **Simplified UI**: Removed confusing quick-create options ("Email Auth", "Default *.tld") from manual rule creation. Complex policies should be designed on the Access Policies page and then applied to services.
-- **Migration-ready**: Legacy inline policies automatically convert to reusable policies during the next sync, and DockFlare harmonizes Cloudflare `block` decisions with the newer `deny` verb.
+- Automatic service discovery from Docker labels.
+- Manual ingress rule management for non-Docker workloads.
+- Cloudflare Tunnel ingress orchestration, including advanced origin options.
+- Access Group and reusable policy management with application assignment.
+- Cloudflare Access application lifecycle management.
+- Multi-zone DNS handling and zone-aware record placement.
+- Multi-host operation through a master and lightweight agents.
+- Backup and restore of encrypted configuration and runtime state.
+- Deep-link shortcuts into Cloudflare Zero Trust pages from the DockFlare UI.
 
-### ✨ What's New in DockFlare 3.0.7: Manual Rule SNI, Safer Sync, and Cloudflare UI Link Fixes
+## Architecture Overview
 
-DockFlare 3.0.7 improves compatibility with Cloudflare Tunnel and Access UI changes and closes edge-case reliability gaps.
+Detailed architecture guide: [https://dockflare.app/architecture](https://dockflare.app/architecture)
 
-- **Manual Rule `Match SNI to Host` support**: Added a dedicated toggle in manual rule create/edit flows and persisted it in DockFlare state so `originRequest.matchSNIToHost` is retained across restarts and syncs.
-- **Preserve unmanaged Cloudflare ingress fields**: Added a Settings toggle to keep Cloudflare-side route fields DockFlare does not explicitly manage, reducing accidental resets of advanced Cloudflare-only options.
-- **Cloudflare dashboard deep-link updates**: Updated generated links for Tunnel routes, Access Applications, and Access Policies to match current Cloudflare Zero Trust URL paths.
-- **Tunnel name to container-name normalization**: Tunnel names containing Docker-invalid characters are now safely normalized when deriving the local `cloudflared` container name.
+| Component | Purpose |
+| --- | --- |
+| DockFlare Master | Web UI, encrypted config/state, reconciliation, Cloudflare API orchestration |
+| Redis | Shared cache, coordination, and pub/sub signaling |
+| DockFlare Agent | Remote host watcher and command executor for distributed deployments |
+| cloudflared | Tunnel connector runtime managed per deployment mode |
+| Cloudflare API | Source of truth for Tunnel, DNS, and Access resources |
 
-### ✨ What's New in DockFlare 3.0: Multi-Server & Agent Release
+### Reconciliation Flow
 
-DockFlare 3.0 elevates the project from a single-node helper to a distributed fleet orchestrator.
+1. DockFlare collects desired state from labels, manual rules, and agent-reported containers.
+2. It computes deltas against persisted state and Cloudflare state.
+3. It applies updates for ingress, DNS, and Access resources.
+4. It updates local runtime state and keeps `cloudflared` aligned.
 
-- **DockFlare Agent**: Deploy the lightweight agent next to workloads on any host. Agents stream container events, maintain their own tunnels, and obey commands from the master.
-- **Fleet Management UI**: A dedicated *Agents* page lets you enrol nodes with API keys, assign tunnels, monitor health, and trigger actions without touching the CLI.
-- **Security Hardening**: Master API calls now require an explicit master key that is revealed on demand, agent tokens are revocable, and sensitive setup routes stay locked after onboarding. The DockFlare Agent container now runs as the unprivileged `dockflare` user (UID/GID 65532) and the reference compose stack proxies Docker access through `tecnativa/docker-socket-proxy` for least-privilege isolation.
-- **Redis Backplane**: The master now uses Redis for caching, queue fan-out, and cross-process signalling—ready for future scaling.
-- **Full Backup & Restore**: Download a complete, timestamped archive of your DockFlare instance (including encrypted credentials and agent keys) and restore it via the UI to rebuild a master in minutes.
-- **Documentation Refresh**: New guides cover the master/agent architecture, configuration tips, and upgrade considerations.
+## Getting Started
 
-## Getting Started & Documentation
+For full setup documentation, use the project docs site:
 
-For comprehensive documentation, please refer to the official project website:
-
-- **[Quick Start Guide](https://dockflare.app/docs)** - Step-by-step guide to get up and running.
-- **[Label Reference](https://dockflare.app/docs/container-labels)** - Detailed information on all available Docker labels.
-- **[Advanced Configuration](https://dockflare.app/docs/managing-dns-zones)** - Details on multi-zone setups, external mode, and more.
+- [Quick Start Guide](https://dockflare.app/docs)
+- [Container Label Reference](https://dockflare.app/docs/container-labels)
+- [Advanced DNS and Zone Management](https://dockflare.app/docs/managing-dns-zones)
+- [Multi-Server Agent Setup](https://dockflare.app/docs/multi-server-agent)
 
 ### Prerequisites
 
-Before you begin, ensure you have the following:
-- Docker & Docker Compose installed.
-- A Redis instance (the quick-start stack below runs one for you).
-- A Cloudflare Account.
-- Your **Cloudflare Account ID**.
-- The **Zone ID** for the domain you wish to use.
-- A **Cloudflare API Token** with the following permissions:
-    - `Account:Cloudflare Tunnel:Edit`
-    - `Account:Access: Organizations, Identity Providers, and Groups:Edit`
-    - `Account:Account Settings:Read`
-    - `Account:Access: Apps and Policies:Edit`
-    - `Zone:Zone:Read`
-    - `Zone:DNS:Edit`
+- Docker and Docker Compose.
+- A Redis instance (the quick-start stack below includes one).
+- A Cloudflare account.
+- Cloudflare Account ID.
+- Cloudflare Zone ID for your primary domain.
+- Cloudflare API token with these permissions:
+  - `Account:Cloudflare Tunnel:Edit`
+  - `Account:Access: Organizations, Identity Providers, and Groups:Edit`
+  - `Account:Account Settings:Read`
+  - `Account:Access: Apps and Policies:Edit`
+  - `Zone:Zone:Read`
+  - `Zone:DNS:Edit`
 
 ![Cloudflare API Permissions](images/cf.png)
 
 <details>
-<summary>🚀 Quick Start Docker Compose</summary>
+<summary>Quick Start Docker Compose</summary>
 
-Before the first launch, provision the shared network once:
+Before first launch, create the shared network once:
 
 ```bash
 docker network create cloudflare-net
 ```
 
-1.  **Create `docker-compose.yml`**:
-    ```yaml
-    version: '3.8'
-    services:
-      docker-socket-proxy:
-        image: tecnativa/docker-socket-proxy:v0.4.1
-        logging:
-          driver: "none"  # Minimize the logs, remove for verbose
-        container_name: docker-socket-proxy
-        restart: unless-stopped
-        environment:
-          - DOCKER_HOST=unix:///var/run/docker.sock
-          - CONTAINERS=1
-          - EVENTS=1
-          - NETWORKS=1
-          - IMAGES=1
-          - POST=1
-          - PING=1
-          - INFO=1
-          - EXEC=1
-        volumes:
-          - /var/run/docker.sock:/var/run/docker.sock
-        networks:
-          - dockflare-internal
+1. Create `docker-compose.yml`:
 
-      dockflare-init:
-        image: alpine:3.20
-        command: ["sh", "-c", "chown -R ${DOCKFLARE_UID:-65532}:${DOCKFLARE_GID:-65532} /app/data"]
-        volumes:
-          - dockflare_data:/app/data
-        networks:
-          - dockflare-internal
-        restart: "no"
-
-      dockflare:
-        image: alplat/dockflare:stable
-        container_name: dockflare
-        restart: unless-stopped
-        ports:
-          - "5000:5000"
-        volumes:
-          - dockflare_data:/app/data
-        environment:
-          - REDIS_URL=redis://redis:6379/0
-          - REDIS_DB_INDEX=0  # Optional: specify Redis database index (0-15) for isolation from other containers
-          - DOCKER_HOST=tcp://docker-socket-proxy:2375
-          - LOG_LEVEL=ERROR
-        depends_on:
-          docker-socket-proxy:
-            condition: service_started
-          dockflare-init:
-            condition: service_completed_successfully
-          redis:
-            condition: service_started
-        networks:
-          - cloudflare-net
-          - dockflare-internal
-
-      redis:
-        image: redis:7-alpine
-        container_name: dockflare-redis
-        restart: unless-stopped
-        command: ["redis-server", "--save", "", "--appendonly", "no"]
-        volumes:
-          - dockflare_redis:/data
-        networks:
-          - dockflare-internal
-
+```yaml
+version: '3.8'
+services:
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.4.1
+    logging:
+      driver: "none"
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - CONTAINERS=1
+      - EVENTS=1
+      - NETWORKS=1
+      - IMAGES=1
+      - POST=1
+      - PING=1
+      - INFO=1
+      - EXEC=1
     volumes:
-      dockflare_data:
-      dockflare_redis:
-
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
-      cloudflare-net:
-        name: cloudflare-net
-        external: true
-      dockflare-internal:
-        name: dockflare-internal
-    ```
+      - dockflare-internal
 
-2.  **Run DockFlare**:
-    ```bash
-    docker compose up -d
-    ```
+  dockflare-init:
+    image: alpine:3.20
+    command: ["sh", "-c", "chown -R ${DOCKFLARE_UID:-65532}:${DOCKFLARE_GID:-65532} /app/data"]
+    volumes:
+      - dockflare_data:/app/data
+    networks:
+      - dockflare-internal
+    restart: "no"
 
-3.  **Complete the Pre-Flight Setup**: Open `http://your-server-ip:5000` in your browser. You will be guided through a one-time setup wizard to enter your Cloudflare credentials and create a password for the UI.
+  dockflare:
+    image: alplat/dockflare:stable
+    container_name: dockflare
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - dockflare_data:/app/data
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_DB_INDEX=0
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
+      - LOG_LEVEL=ERROR
+    depends_on:
+      docker-socket-proxy:
+        condition: service_started
+      dockflare-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+    networks:
+      - cloudflare-net
+      - dockflare-internal
 
-4.  **For Existing Users**: If you are upgrading, DockFlare will detect your old `.env` file and automatically guide you through a quick migration process.
+  redis:
+    image: redis:7-alpine
+    container_name: dockflare-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    volumes:
+      - dockflare_redis:/data
+    networks:
+      - dockflare-internal
 
-The master now runs as the unprivileged `dockflare` user (UID/GID 65532) and only talks to Docker through the bundled socket proxy. If you bind-mount a host directory instead of using the named volume above, make sure it is writable by that UID/GID or adjust the `DOCKFLARE_UID`/`DOCKFLARE_GID` build args.
+volumes:
+  dockflare_data:
+  dockflare_redis:
 
-💡 *Need to manage workloads on additional hosts?* Deploy the [DockFlare Agent](https://github.com/ChrispyBacon-dev/DockFlare-Agent-prd) next to your containers, enrol it from the master UI, and let DockFlare orchestrate the tunnels for you. Both the master and agent images run as the non-root `dockflare` user by default, so align your volume permissions or override the build args if required. A full guide is available in the new [Multi-Server Agent](dockflare/app/templates/docs/Multi-Server-Agent.md) documentation.
+networks:
+  cloudflare-net:
+    name: cloudflare-net
+    external: true
+  dockflare-internal:
+    name: dockflare-internal
+```
+
+2. Start DockFlare:
+
+```bash
+docker compose up -d
+```
+
+3. Open `http://your-server-ip:5000` and complete the setup wizard.
+
+If you are migrating from older environment-based setups, DockFlare can import existing values during onboarding.
 
 </details>
 
-## 🏷️ How It Works & Labeling Containers
+## Configuration Modes
 
-DockFlare's power comes from its flexible, layered approach to configuration.
+### Docker Label Mode
 
-- **Access Groups First (Recommended)**: The easiest and most maintainable way to secure services is to create an **Access Group** in the UI and apply it with a single label.
-- **Individual Labels for One-Offs**: For services that don't fit a group, you can still use individual `dockflare.access.*` labels for initial configuration.
-- **UI for Dynamic Overrides**: The Web UI can override the access policy for any service, whether it was configured by a group or by individual labels. UI changes are persistent and stored in the encrypted `dockflare_config.dat` file.
-- **DNS Zone Auto-Detection**: Starting with v3.0, DockFlare automatically infers the correct Cloudflare zone from each hostname. You only need `dockflare.zonename` when intentionally sending a record to a different zone.
+Use container labels to declare hostname, service target, and access behavior. DockFlare observes lifecycle events and reconciles records and ingress rules automatically.
 
-#### Access Group Modes & Policy Reuse
+### Manual Rule Mode
 
-- **Pick the right decision instantly**: Each Access Group now has Public and Authenticated tabs. Public mode issues a Cloudflare `bypass` decision (ideal for blogs and marketing pages) while Authenticated mode creates an `allow` policy that enforces email/domain logins.
-- **Geo controls in both modes**: Apply country-based `exclude` rules no matter which mode you choose, keeping public destinations open while filtering risky regions.
-- **Reusable policies by default**: DockFlare syncs every Access Group to a named reusable policy (`DockFlare-AccessGroup-<id>`) so the same rule set can power multiple applications and stay editable from either DockFlare or the Cloudflare dashboard.
-- **Legacy-safe**: Existing inline policies are upgraded on the next reconciliation and continue to function even if you tweak them directly in Cloudflare.
+Create and edit routes directly in the UI for static hosts, VMs, appliances, or external services. Manual rules support HTTP/HTTPS advanced origin options and are persisted in DockFlare state.
 
-<details>
-<summary>📝 Labeling Your Containers (Examples)</summary>
+### Hybrid Mode
 
-#### 1. Recommended Method: Using an Access Group
+Use labels for most workloads while managing exceptions in UI. DockFlare merges both sources into one reconciliation model.
 
-Assuming you created an Access Group with the ID `nas-family` in the UI:
+### Agent Mode (Multi-Server)
+
+Run a central master with agents on remote Docker hosts. Agents stream host-local container events and execute commands while the master owns policy and Cloudflare configuration decisions.
+
+Multi-agent setup guide: [https://dockflare.app/docs/multi-server-agent](https://dockflare.app/docs/multi-server-agent)
+
+## Access Control Model
+
+DockFlare uses Access Groups as the primary abstraction for reusable access intent.
+
+- One Access Group can be attached to multiple services.
+- Groups sync to reusable Cloudflare Access policies.
+- Services map to Access applications using consistent naming and update logic.
+- Public and authenticated patterns are supported through policy decisions.
+- Zone-level defaults can be used to protect wildcard domains and reduce accidental exposure.
+
+For one-off services, individual `dockflare.access.*` labels are still supported.
+
+## Example Labels
 
 ```yaml
 services:
@@ -231,57 +239,87 @@ services:
       - "dockflare.enable=true"
       - "dockflare.hostname=files.example.com"
       - "dockflare.service=http://picoshare:8080"
-
-      # Apply the entire policy with one label:
       - "dockflare.access.group=nas-family"
 ```
 
-#### 2. Alternative Method: Using Individual Labels
-
-For a service with a unique, one-off policy:
-
 ```yaml
 services:
-  my-service:
+  internal-tool:
     image: nginx:latest
     labels:
       - "dockflare.enable=true"
-      - "dockflare.hostname=my-service.example.com"
-      - "dockflare.service=http://my-service:80"
-
-      # Optional individual labels for a one-off policy
+      - "dockflare.hostname=tool.example.com"
+      - "dockflare.service=http://internal-tool:80"
       - "dockflare.access.policy=authenticate"
-      - "dockflare.access.email=user@example.com,@domain.com"
+      - "dockflare.access.email=admin@example.com,@example.com"
 ```
 
-**Note**: For Identity Provider authentication, create an Access Group in the UI instead of using individual labels. This ensures proper IdP configuration with required email restrictions.
+## Reliability and Drift Management
 
-</details>
+- DockFlare reconciliation is designed to be idempotent.
+- Runtime and configuration state are persisted in encrypted files.
+- Manual rule options are preserved and re-applied across restarts.
+- Optional unmanaged-ingress-field preservation can keep Cloudflare-side values that DockFlare does not explicitly model.
+- Backup and restore enable rapid recovery of full control-plane state.
 
-<details>
-<summary>🛡️ All Access Policy Labels (for one-off configs)</summary>
+## Security Model
 
-Use these labels only when **not** using `dockflare.access.group`.
+- Supports web authentication with local credentials and OAuth providers.
+- Uses scoped Cloudflare API tokens.
+- Encourages Docker socket proxy for least-privilege Docker API exposure.
+- Runs containers as non-root (`UID/GID 65532`) in the reference setup.
+- Supports agent API key lifecycle controls and enrollment flow.
 
-| Label | Description | Default | Example |
-| :--- | :--- | :--- | :--- |
-| `dockflare.access.policy` | Type: `bypass` (public app), `authenticate` (IdP login), `default_tld` (inherits from `*.domain.com` policy). If unset, service is public (no Access App). | (None/Public) | `dockflare.access.policy="authenticate"` |
-| `dockflare.access.name` | Custom name for the Cloudflare Access Application. | `DockFlare-{hostname}` | `dockflare.access.name="My Web App Access"` |
-| `dockflare.access.session_duration` | Session duration (e.g., `24h`, `30m`). | `24h` | `dockflare.access.session_duration="1h"` |
-| `dockflare.access.custom_rules` | JSON string array of [Cloudflare Access Policy rules](https://developers.cloudflare.com/api/operations/access-policies-create-an-access-policy). Overrides basic `access.policy` decisions. | (None) | `'...=[{"email":{"email":"user@example.com"},"action":"allow"},{"action":"block"}]'` |
-| ... | *Other `access.*` labels for launcher visibility, IdPs, etc. are also available.* | | |
+## Operations and Day-2 Tasks
 
-</details>
+Common workflows handled in UI:
 
-## Known Issues
+- Add, edit, and remove manual routes.
+- Assign or change Access Groups on services.
+- View service status and reconciliation state.
+- Rotate or revoke agent API keys.
+- Trigger agent tunnel actions.
+- Export and restore backups.
 
-- Running Cloudflare WARP locally (for example on macOS) can block the managed `cloudflared` container from establishing a tunnel, resulting in repeated handshake failures and missing `cert.pem` errors. Disable WARP before testing DockFlare on the same host.
-- Deleting the DockFlare data volume clears stored agent API keys. Generate new keys and re-enroll agents after a reset; stale keys will be refused.
+## Troubleshooting Pointers
 
-## License
+- Verify Cloudflare token scopes first when API calls fail.
+- Confirm domain-to-zone mapping when records do not appear.
+- Validate service URL format (`http://` or `https://`) for manual rules.
+- Check agent heartbeat and enrollment status for remote hosts.
+- Confirm Docker socket proxy permissions if container discovery fails.
 
-DockFlare is open-source software licensed under the [GPL-3.0 license](LICENSE.MD).
+Additional troubleshooting references:
 
-## Star History
+- [Common Issues](dockflare/app/templates/docs/Common-Issues.md)
+- [Container Labels](dockflare/app/templates/docs/Container-Labels.md)
+- [Multi-Server Agent](dockflare/app/templates/docs/Multi-Server-Agent.md)
 
-[![Star History Chart](https://api.star-history.com/svg?repos=ChrispyBacon-dev/DockFlare&type=Date)](https://www.star-history.com/#ChrispyBacon-dev/DockFlare&Date)
+## Development
+
+- Build and run locally:
+
+```bash
+docker compose build --no-cache
+docker compose up -d
+```
+
+- Basic health checks:
+
+```bash
+curl http://localhost:5000/ping
+curl http://localhost:5000/api/v2/overview
+```
+
+## Documentation Map
+
+- Product docs: [https://dockflare.app/docs](https://dockflare.app/docs)
+- Source docs in repository:
+  - [Multi-Server Agent Guide](dockflare/app/templates/docs/Multi-Server-Agent.md)
+  - [Using the Web UI](dockflare/app/templates/docs/Using-the-Web-UI.md)
+  - [Managing DNS Zones](dockflare/app/templates/docs/Managing-DNS-Zones.md)
+  - [Identity Providers](dockflare/app/templates/docs/Identity-Providers.md)
+
+## Changelog
+
+Release notes are maintained in [CHANGELOG.md](CHANGELOG.md).
