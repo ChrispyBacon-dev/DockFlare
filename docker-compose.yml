@@ -32,8 +32,8 @@ services:
     restart: "no"
 
   dockflare:
-    #build: ./dockflare
-    image: alplat/dockflare:stable
+    build: ./dockflare
+    #image: alplat/dockflare:stable
     container_name: dockflare
     restart: unless-stopped
     ports:
