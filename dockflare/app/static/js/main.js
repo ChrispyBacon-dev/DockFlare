@@ -11,7 +11,7 @@ let cachedZones = null;
 let manualZoneDetectionTimeout = null;
 let servicesSnapshotPromise = null;
 let servicesSnapshotQueued = false;
-
+let activeStateEventSource = null;
 function getMasterApiKey() {
     const meta = document.querySelector('meta[name="dockflare-api-key"]');
     return meta && meta.content ? meta.content : null;
@@ -494,7 +494,11 @@ function connectStateUpdateSource() {
     }
 
     const streamUrl = `${document.baseURI}stream-state-updates`;
-    const eventSource = new EventSource(streamUrl);
+    if (activeStateEventSource) {
+        activeStateEventSource.close();
+    }
+    activeStateEventSource = new EventSource(streamUrl);
+    const eventSource = activeStateEventSource;
 
     eventSource.onmessage = function(event) {
         if (!event.data) {
@@ -1536,6 +1540,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     window.addEventListener('beforeunload', function() {
         if (activeLogSource) activeLogSource.close();
+        if (activeStateEventSource) activeStateEventSource.close();
         if (eventSourceHealthCheck) clearInterval(eventSourceHealthCheck);
         if (pingInterval) clearInterval(pingInterval);
     });

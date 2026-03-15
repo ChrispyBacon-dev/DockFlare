@@ -130,6 +130,13 @@ def get_display_token_ui(token_value):
         return "Not available"
     return f"{token_value[:5]}...{token_value[-5:]}" if len(token_value) > 10 else "Token (short)"
 
+@bp.route('/set_language/<lang>')
+def set_language(lang):
+    """Sets the user's preferred language in the session."""
+    if lang in ['en', 'de', 'fr', 'es', 'pl', 'zh', 'it', 'ja', 'ch-barnduetsch']:
+        session['lang'] = lang
+    return redirect(request.referrer or url_for('web.status_page'))
+
 @bp.before_app_request
 def gating_logic():
 

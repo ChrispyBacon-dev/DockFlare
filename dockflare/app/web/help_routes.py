@@ -18,7 +18,7 @@
 import os
 import re
 import markdown
-from flask import Blueprint, render_template, current_app, abort
+from flask import Blueprint, render_template, current_app, abort, session
 from flask_login import login_required
 
 help_bp = Blueprint('help', __name__, template_folder='../templates')
@@ -26,8 +26,12 @@ help_bp = Blueprint('help', __name__, template_folder='../templates')
 def parse_docs_nav():
     """Parses the navigation.md file to build the navigation structure for the help pages."""
     nav_structure = []
+    lang = session.get('lang', 'en')
     docs_path = os.path.join(current_app.root_path, 'templates', 'docs')
-    home_md_path = os.path.join(docs_path, 'navigation.md')
+    home_md_path = os.path.join(docs_path, lang, 'navigation.md')
+    
+    if not os.path.exists(home_md_path):
+        home_md_path = os.path.join(docs_path, 'en', 'navigation.md')
 
     if not os.path.exists(home_md_path):
         current_app.logger.error(f"Help navigation file not found at {home_md_path}")
@@ -37,31 +41,33 @@ def parse_docs_nav():
         lines = f.readlines()
 
     link_regex = re.compile(r'\[([^\]]+)\]\(([^)]+\.md)\)')
+    list_regex = re.compile(r'^(\s*)[*+-]\s+(.*)')
     
     for line in lines:
+        match = list_regex.match(line)
+        if not match:
+            continue
+            
+        indent = match.group(1)
+        item_text = match.group(2).strip()
+        indent_spaces = len(indent.replace('\t', '    '))
         
-        if line.startswith('*   '):
-            item_text = line[4:].strip()
-            
-            
+        # Check if top-level category or child item
+        if indent_spaces < 2:
             if item_text.startswith('**') and not link_regex.search(item_text):
                 category_name = item_text.replace('**', '').strip()
                 category = {'name': category_name, 'is_category': True, 'children': []}
                 nav_structure.append(category)
-            
             else:
-                match = link_regex.search(item_text)
-                if match:
-                    link_item = {'name': match.group(1), 'link': match.group(2)}
+                link_match = link_regex.search(item_text)
+                if link_match:
+                    link_item = {'name': link_match.group(1), 'link': link_match.group(2)}
                     nav_structure.append(link_item)
-        
-        
-        elif line.startswith('    *   '):
+        else:
             if nav_structure and nav_structure[-1].get('is_category'):
-                item_text = line[8:].strip()
-                match = link_regex.search(item_text)
-                if match:
-                    child_item = {'name': match.group(1), 'link': match.group(2)}
+                link_match = link_regex.search(item_text)
+                if link_match:
+                    child_item = {'name': link_match.group(1), 'link': link_match.group(2)}
                     nav_structure[-1]['children'].append(child_item)
 
     return nav_structure
@@ -74,11 +80,17 @@ def help_page(page='Home.md'):
     if not page.endswith('.md'):
         abort(404)
 
+    lang = session.get('lang', 'en')
     docs_path = os.path.abspath(os.path.join(current_app.root_path, 'templates', 'docs'))
-    file_path = os.path.abspath(os.path.join(docs_path, page))
+    lang_docs_path = os.path.abspath(os.path.join(docs_path, lang))
+    en_docs_path = os.path.abspath(os.path.join(docs_path, 'en'))
 
-    if not file_path.startswith(docs_path + os.sep) or not os.path.isfile(file_path):
-        abort(404)
+    file_path = os.path.abspath(os.path.join(lang_docs_path, page))
+
+    if not file_path.startswith(lang_docs_path + os.sep) or not os.path.isfile(file_path):
+        file_path = os.path.abspath(os.path.join(en_docs_path, page))
+        if not file_path.startswith(en_docs_path + os.sep) or not os.path.isfile(file_path):
+            abort(404)
 
     with open(file_path, 'r', encoding='utf-8') as f:
         md_content = f.read()

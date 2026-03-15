@@ -20,7 +20,6 @@ permissions:
   contents: read
 
 jobs:
-  # Job 1: Attempt to build on your self-hosted runner
   build_self_hosted:
     runs-on: self-hosted
     
@@ -71,11 +70,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  # Job 2: This job only runs if the self-hosted build fails or is canceled
   build_github_hosted_fallback:
-    
     needs: build_self_hosted
-    
     if: failure() || cancelled()
     runs-on: ubuntu-latest
     steps:
