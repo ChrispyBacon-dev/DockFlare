@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="{{ current_lang }}" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -44,11 +44,11 @@
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16" /></svg>
                     </label>
                     <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[51] p-2 shadow bg-base-100 rounded-box w-52">
-                        <li><a href="{{ url_for('web.status_page') }}" class="{{ 'active' if request.endpoint == 'web.status_page' else '' }}">Dashboard</a></li>
-                        <li><a href="{{ url_for('web.access_policies_page') }}" class="{{ 'active' if request.endpoint == 'web.access_policies_page' else '' }}">Access Policies</a></li>
-                        <li><a href="{{ url_for('web.agents_page') }}" class="{{ 'active' if request.endpoint == 'web.agents_page' else '' }}">Agents</a></li>
-                        <li><a href="{{ url_for('web.settings_page') }}" class="{{ 'active' if request.endpoint == 'web.settings_page' else '' }}">Settings</a></li>
-                        <li><a href="{{ url_for('help.help_page') }}" class="{{ 'active' if request.endpoint.startswith('help.') else '' }}">Help</a></li>
+                        <li><a href="{{ url_for('web.status_page') }}" class="{{ 'active' if request.endpoint == 'web.status_page' else '' }}">{{ t('nav.dashboard') }}</a></li>
+                        <li><a href="{{ url_for('web.access_policies_page') }}" class="{{ 'active' if request.endpoint == 'web.access_policies_page' else '' }}">{{ t('nav.access_policies') }}</a></li>
+                        <li><a href="{{ url_for('web.agents_page') }}" class="{{ 'active' if request.endpoint == 'web.agents_page' else '' }}">{{ t('nav.agents') }}</a></li>
+                        <li><a href="{{ url_for('web.settings_page') }}" class="{{ 'active' if request.endpoint == 'web.settings_page' else '' }}">{{ t('nav.settings') }}</a></li>
+                        <li><a href="{{ url_for('help.help_page') }}" class="{{ 'active' if request.endpoint.startswith('help.') else '' }}">{{ t('nav.help') }}</a></li>
                     </ul>
                 </div>
                 <a href="{{ url_for('web.status_page') }}" class="px-2" title="Now you're thinking with tunnels">
@@ -58,17 +58,17 @@
     
             <div class="navbar-center hidden lg:flex">
                 <ul class="menu menu-horizontal px-1">
-                    <li><a href="{{ url_for('web.status_page') }}" class="{{ 'active' if request.endpoint == 'web.status_page' else '' }}">Dashboard</a></li>
-                    <li><a href="{{ url_for('web.access_policies_page') }}" class="{{ 'active' if request.endpoint == 'web.access_policies_page' else '' }}">Access Policies</a></li>
-                    <li><a href="{{ url_for('web.agents_page') }}" class="{{ 'active' if request.endpoint == 'web.agents_page' else '' }}">Agents</a></li>
-                    <li><a href="{{ url_for('web.settings_page') }}" class="{{ 'active' if request.endpoint == 'web.settings_page' else '' }}">Settings</a></li>
-                    <li><a href="{{ url_for('help.help_page') }}" class="{{ 'active' if request.endpoint.startswith('help.') else '' }}">Help</a></li>
+                    <li><a href="{{ url_for('web.status_page') }}" class="{{ 'active' if request.endpoint == 'web.status_page' else '' }}">{{ t('nav.dashboard') }}</a></li>
+                    <li><a href="{{ url_for('web.access_policies_page') }}" class="{{ 'active' if request.endpoint == 'web.access_policies_page' else '' }}">{{ t('nav.access_policies') }}</a></li>
+                    <li><a href="{{ url_for('web.agents_page') }}" class="{{ 'active' if request.endpoint == 'web.agents_page' else '' }}">{{ t('nav.agents') }}</a></li>
+                    <li><a href="{{ url_for('web.settings_page') }}" class="{{ 'active' if request.endpoint == 'web.settings_page' else '' }}">{{ t('nav.settings') }}</a></li>
+                    <li><a href="{{ url_for('help.help_page') }}" class="{{ 'active' if request.endpoint.startswith('help.') else '' }}">{{ t('nav.help') }}</a></li>
                 </ul>
               </div>
     
             <div class="navbar-end">
                 <div class="dropdown dropdown-end">
-                    <button tabindex="0" role="button" class="btn btn-ghost btn-circle" title="Change Language">
+                    <button tabindex="0" role="button" class="btn btn-ghost btn-circle" title="{{ t('common.change_language') }}">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
                         </svg>
@@ -97,11 +97,11 @@
                     </ul>
                 </div>
                 <!-- Help Button -->
-                <a href="{{ url_for('help.help_page') }}" class="btn btn-ghost btn-circle" title="Help">
+                <a href="{{ url_for('help.help_page') }}" class="btn btn-ghost btn-circle" title="{{ t('nav.help') }}">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 </a>
 
-                <a href="{{ url_for('web.logout') }}" class="btn btn-ghost btn-circle" title="Logout">
+                <a href="{{ url_for('web.logout') }}" class="btn btn-ghost btn-circle" title="{{ t('common.logout') }}">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
                     </svg>
@@ -125,7 +125,7 @@
         <p class="my-3">
             <a href="https://ko-fi.com/chrispybacon" target="_blank" rel="noopener noreferrer" class="inline-flex items-center link link-hover">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-pink-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" /></svg>
-                Sponsor DockFlare 
+                {{ t('common.sponsor_dockflare') }}
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1 text-pink-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd" /></svg>
             </a>
         </p>
@@ -140,39 +140,40 @@
 
     <dialog id="dockflare-alert-modal" class="modal">
         <div class="modal-box">
-            <h3 class="font-bold text-lg mb-4" id="dockflare-alert-title">Alert</h3>
+            <h3 class="font-bold text-lg mb-4" id="dockflare-alert-title">{{ t('common.alert') }}</h3>
             <p class="py-4 whitespace-pre-wrap" id="dockflare-alert-message"></p>
             <div class="modal-action">
-                <button type="button" class="btn btn-primary" id="dockflare-alert-ok">OK</button>
+                <button type="button" class="btn btn-primary" id="dockflare-alert-ok">{{ t('common.ok') }}</button>
             </div>
         </div>
     </dialog>
 
     <dialog id="dockflare-confirm-modal" class="modal">
         <div class="modal-box">
-            <h3 class="font-bold text-lg mb-4" id="dockflare-confirm-title">Confirm</h3>
+            <h3 class="font-bold text-lg mb-4" id="dockflare-confirm-title">{{ t('common.confirm') }}</h3>
             <p class="py-4 whitespace-pre-wrap" id="dockflare-confirm-message"></p>
             <div class="modal-action">
-                <button type="button" class="btn btn-ghost" id="dockflare-confirm-cancel">Cancel</button>
-                <button type="button" class="btn btn-primary" id="dockflare-confirm-ok">OK</button>
+                <button type="button" class="btn btn-ghost" id="dockflare-confirm-cancel">{{ t('common.cancel') }}</button>
+                <button type="button" class="btn btn-primary" id="dockflare-confirm-ok">{{ t('common.ok') }}</button>
             </div>
         </div>
     </dialog>
 
     <dialog id="dockflare-prompt-modal" class="modal">
         <div class="modal-box">
-            <h3 class="font-bold text-lg mb-4" id="dockflare-prompt-title">Input Required</h3>
+            <h3 class="font-bold text-lg mb-4" id="dockflare-prompt-title">{{ t('common.input_required') }}</h3>
             <p class="py-4" id="dockflare-prompt-message"></p>
             <input type="text" class="input input-bordered w-full" id="dockflare-prompt-input" />
             <div class="modal-action">
-                <button type="button" class="btn btn-ghost" id="dockflare-prompt-cancel">Cancel</button>
-                <button type="button" class="btn btn-primary" id="dockflare-prompt-ok">OK</button>
+                <button type="button" class="btn btn-ghost" id="dockflare-prompt-cancel">{{ t('common.cancel') }}</button>
+                <button type="button" class="btn btn-primary" id="dockflare-prompt-ok">{{ t('common.ok') }}</button>
             </div>
         </div>
     </dialog>
 
     <script>
-        window.dfAlert = function(message, title = 'Alert') {
+        window.dfAlert = function(message, title) {
+            title = title || t('common.alert');
             return new Promise((resolve) => {
                 const modal = document.getElementById('dockflare-alert-modal');
                 const titleEl = document.getElementById('dockflare-alert-title');
@@ -193,7 +194,8 @@
             });
         };
 
-        window.dfConfirm = function(message, title = 'Confirm') {
+        window.dfConfirm = function(message, title) {
+            title = title || t('common.confirm');
             return new Promise((resolve) => {
                 const modal = document.getElementById('dockflare-confirm-modal');
                 const titleEl = document.getElementById('dockflare-confirm-title');
@@ -227,7 +229,9 @@
             });
         };
 
-        window.dfPrompt = function(message, defaultValue = '', title = 'Input Required') {
+        window.dfPrompt = function(message, defaultValue, title) {
+            defaultValue = defaultValue || '';
+            title = title || t('common.input_required');
             return new Promise((resolve) => {
                 const modal = document.getElementById('dockflare-prompt-modal');
                 const titleEl = document.getElementById('dockflare-prompt-title');
@@ -275,6 +279,21 @@
         };
     </script>
 
+    <script>
+        window.DF_LANG = {{ current_lang|tojson }};
+        window.DF_I18N = {{ js_translations|tojson }};
+        window.t = function(key, params) {
+            var val = (window.DF_I18N && window.DF_I18N[key]) || key;
+            if (params) {
+                for (var k in params) {
+                    if (params.hasOwnProperty(k)) {
+                        val = val.split('{' + k + '}').join(String(params[k]));
+                    }
+                }
+            }
+            return val;
+        };
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     {% block scripts %}{% endblock %}

@@ -3,112 +3,112 @@
         <form method="dialog">
             <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
         </form>
-        <h3 id="access_group_modal_title" class="font-bold text-lg mb-4">Create New Access Group</h3>
+        <h3 id="access_group_modal_title" class="font-bold text-lg mb-4">{{ t('modal.access_group.title_create') }}</h3>
 
         <form id="access_group_form" method="POST" class="space-y-6 protocol-aware-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="original_group_id" id="original_group_id">
             <input type="hidden" name="public_mode" id="public_mode" value="false">
-            
+
             <div role="tablist" class="tabs tabs-boxed mb-6">
                 <a role="tab" class="tab tab-active" id="tab-authenticated" data-mode="authenticated">
-                    Authenticated Access
+                    {{ t('modal.access_group.tab_authenticated') }}
                 </a>
                 <a role="tab" class="tab" id="tab-public" data-mode="public">
-                    Public Access
+                    {{ t('modal.access_group.tab_public') }}
                 </a>
             </div>
-            
+
             <div id="mode-description-authenticated" class="alert alert-info mb-4">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 <div>
-                    <h4 class="font-bold">Authenticated Access</h4>
-                    <div class="text-sm">Requires user authentication via email/domain. Optionally restrict by geography. Use for protected applications.</div>
+                    <h4 class="font-bold">{{ t('modal.access_group.auth_heading') }}</h4>
+                    <div class="text-sm">{{ t('modal.access_group.auth_desc') }}</div>
                 </div>
             </div>
             <div id="mode-description-public" class="alert alert-warning mb-4" style="display: none;">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                 <div>
-                    <h4 class="font-bold">Public Access (Bypass)</h4>
-                    <div class="text-sm">⚠️ No authentication required. Publicly accessible with optional geographic restrictions. Email authentication is not available in this mode.</div>
+                    <h4 class="font-bold">{{ t('modal.access_group.public_heading') }}</h4>
+                    <div class="text-sm">⚠️ {{ t('modal.access_group.public_desc') }}</div>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div class="form-control">
-                    <label class="label" for="group_display_name"><span class="label-text">Display Name (Required)</span></label>
-                    <input type="text" id="group_display_name" name="display_name" placeholder="e.g., NAS Family Access" class="input input-bordered w-full" required />
-                    <div class="label"><span class="label-text-alt">A friendly name shown in the UI.</span></div>
+                    <label class="label" for="group_display_name"><span class="label-text">{{ t('modal.access_group.display_name_label') }}</span></label>
+                    <input type="text" id="group_display_name" name="display_name" placeholder="{{ t('modal.access_group.display_name_placeholder') }}" class="input input-bordered w-full" required />
+                    <div class="label"><span class="label-text-alt">{{ t('modal.access_group.display_name_help') }}</span></div>
                 </div>
                 <div class="form-control">
-                    <label class="label" for="group_id"><span class="label-text">Group ID (Required)</span></label>
-                    <input type="text" id="group_id" name="group_id" placeholder="e.g., nas-family" class="input input-bordered w-full" required pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$" />
-                    <div class="label"><span class="label-text-alt">Used in Docker labels. Lowercase, numbers, and hyphens only.</span></div>
+                    <label class="label" for="group_id"><span class="label-text">{{ t('modal.access_group.group_id_label') }}</span></label>
+                    <input type="text" id="group_id" name="group_id" placeholder="{{ t('modal.access_group.group_id_placeholder') }}" class="input input-bordered w-full" required pattern="^[a-z0-9][a-z0-9-]*[a-z0-9]$" />
+                    <div class="label"><span class="label-text-alt">{{ t('modal.access_group.group_id_help') }}</span></div>
                 </div>
             </div>
 
             <div>
-                <h4 class="text-md font-semibold mb-2">Policy Rules</h4>
+                <h4 class="text-md font-semibold mb-2">{{ t('modal.access_group.policy_rules') }}</h4>
 
                 <div class="form-control" id="idp-field-container">
                     <label class="label" for="group_identity_providers">
-                        <span class="label-text">Identity Providers</span>
+                        <span class="label-text">{{ t('modal.access_group.idp_label') }}</span>
                     </label>
                     <select id="group_identity_providers" name="identity_providers" multiple="multiple" class="w-full border-0">
                     </select>
-                    <div class="label"><span class="label-text-alt">Select OAuth/OIDC providers for authentication. <strong class="text-warning">Emails are required when using IdPs.</strong></span></div>
+                    <div class="label"><span class="label-text-alt">{{ t('modal.access_group.idp_help') }} <strong class="text-warning">{{ t('modal.access_group.idp_warning') }}</strong></span></div>
                 </div>
 
                 <div class="form-control" id="email-field-container">
                     <label class="label" for="group_emails">
-                        <span class="label-text">Allowed Emails or Domains (Required with IdPs)</span>
+                        <span class="label-text">{{ t('modal.access_group.emails_label') }}</span>
                     </label>
-                    <textarea id="group_emails" name="emails" class="textarea textarea-bordered h-12 resize-y" placeholder="me@example.com, myfriend@example.com, @mycompany.com"></textarea>
-                    <div class="label"><span class="label-text-alt">Comma-separated. To allow anyone from a domain, use <code class="text-xs">@domain.com</code>. <strong>When using IdPs, you must specify allowed emails to prevent unauthorized access.</strong></span></div>
+                    <textarea id="group_emails" name="emails" class="textarea textarea-bordered h-12 resize-y" placeholder="{{ t('modal.access_group.emails_placeholder') }}"></textarea>
+                    <div class="label"><span class="label-text-alt">{{ t('modal.access_group.emails_help') }}</span></div>
                 </div>
                 <div class="form-control">
-                    <label class="label" for="group_ip_ranges"><span class="label-text">Allowed IP Ranges</span></label>
-                    <textarea id="group_ip_ranges" name="ip_ranges" class="textarea textarea-bordered h-12 resize-y" placeholder="192.168.1.0/24, 2001:db8::/32"></textarea>
-                    <div class="label"><span class="label-text-alt">Comma-separated list of IP ranges in CIDR format.</span></div>
+                    <label class="label" for="group_ip_ranges"><span class="label-text">{{ t('modal.access_group.ip_ranges_label') }}</span></label>
+                    <textarea id="group_ip_ranges" name="ip_ranges" class="textarea textarea-bordered h-12 resize-y" placeholder="{{ t('modal.access_group.ip_ranges_placeholder') }}"></textarea>
+                    <div class="label"><span class="label-text-alt">{{ t('modal.access_group.ip_ranges_help') }}</span></div>
                 </div>
                 <div class="form-control">
                     <label class="label" for="group_countries">
-                        <span class="label-text">Blocked Countries</span>
-                        <span class="label-text-alt" id="country-selection-counter">0 of 195 countries selected</span>
+                        <span class="label-text">{{ t('modal.access_group.countries_label') }}</span>
+                        <span class="label-text-alt" id="country-selection-counter">{{ t('modal.access_group.country_counter', selected='0') }}</span>
                     </label>
 
                     <div class="flex flex-wrap gap-2 mb-3">
                         <button type="button" class="btn btn-xs btn-outline" id="select-all-countries">
-                            Select All
+                            {{ t('modal.access_group.select_all') }}
                         </button>
                         <button type="button" class="btn btn-xs btn-outline" id="select-none-countries">
-                            Select None
+                            {{ t('modal.access_group.select_none') }}
                         </button>
                         <button type="button" class="btn btn-xs btn-outline" id="invert-selection">
-                            Invert Selection
+                            {{ t('modal.access_group.invert_selection') }}
                         </button>
                         <div class="dropdown">
                             <button type="button" class="btn btn-xs btn-outline" id="templates-dropdown">
-                                Quick Templates ▾
+                                {{ t('modal.access_group.quick_templates') }}
                             </button>
                             <ul class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-52 z-50" id="templates-menu" style="display: none;">
-                                <li><a href="#" data-template="block-all-except-us">Block All Except US</a></li>
-                                <li><a href="#" data-template="block-all-except-eu">Block All Except EU</a></li>
-                                <li><a href="#" data-template="block-high-risk">Block High Risk Countries</a></li>
-                                <li><a href="#" data-template="block-non-nato">Block Non-NATO Countries</a></li>
+                                <li><a href="#" data-template="block-all-except-us">{{ t('modal.access_group.tpl_block_except_us') }}</a></li>
+                                <li><a href="#" data-template="block-all-except-eu">{{ t('modal.access_group.tpl_block_except_eu') }}</a></li>
+                                <li><a href="#" data-template="block-high-risk">{{ t('modal.access_group.tpl_block_high_risk') }}</a></li>
+                                <li><a href="#" data-template="block-non-nato">{{ t('modal.access_group.tpl_block_non_nato') }}</a></li>
                             </ul>
                         </div>
                         <div class="dropdown">
                             <button type="button" class="btn btn-xs btn-outline" id="regions-dropdown">
-                                Select by Region ▾
+                                {{ t('modal.access_group.select_by_region') }}
                             </button>
                             <ul class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-48 z-50" id="regions-menu" style="display: none;">
-                                <li><a href="#" data-region="africa">Africa</a></li>
-                                <li><a href="#" data-region="asia">Asia</a></li>
-                                <li><a href="#" data-region="europe">Europe</a></li>
-                                <li><a href="#" data-region="north-america">North America</a></li>
-                                <li><a href="#" data-region="south-america">South America</a></li>
-                                <li><a href="#" data-region="oceania">Oceania</a></li>
+                                <li><a href="#" data-region="africa">{{ t('modal.access_group.region_africa') }}</a></li>
+                                <li><a href="#" data-region="asia">{{ t('modal.access_group.region_asia') }}</a></li>
+                                <li><a href="#" data-region="europe">{{ t('modal.access_group.region_europe') }}</a></li>
+                                <li><a href="#" data-region="north-america">{{ t('modal.access_group.region_north_america') }}</a></li>
+                                <li><a href="#" data-region="south-america">{{ t('modal.access_group.region_south_america') }}</a></li>
+                                <li><a href="#" data-region="oceania">{{ t('modal.access_group.region_oceania') }}</a></li>
                             </ul>
                         </div>
                     </div>
@@ -122,53 +122,53 @@
                     </div>
 
                     <div class="label">
-                        <span class="label-text-alt" id="country-policy-help-text">Selected countries will be blocked. All other countries will be allowed.</span>
+                        <span class="label-text-alt" id="country-policy-help-text">{{ t('modal.access_group.country_policy_help') }}</span>
                     </div>
 
                     <div class="mt-2">
-                        <div class="text-xs opacity-70 mb-1">Common scenarios:</div>
+                        <div class="text-xs opacity-70 mb-1">{{ t('modal.access_group.common_scenarios') }}</div>
                         <div class="flex flex-wrap gap-1">
                             <button type="button" class="btn btn-xs btn-ghost" data-quick-action="allow-us-only">
-                                Allow US Only
+                                {{ t('modal.access_group.allow_us_only') }}
                             </button>
                             <button type="button" class="btn btn-xs btn-ghost" data-quick-action="allow-us-eu">
-                                Allow US + EU
+                                {{ t('modal.access_group.allow_us_eu') }}
                             </button>
                             <button type="button" class="btn btn-xs btn-ghost" data-quick-action="block-high-risk">
-                                Block High Risk
+                                {{ t('modal.access_group.block_high_risk') }}
                             </button>
                         </div>
                     </div>
                 </div>
             </div>
-            
+
             <div id="app-settings-container">
-                <h4 class="text-md font-semibold mb-2">Application Settings (Optional)</h4>
+                <h4 class="text-md font-semibold mb-2">{{ t('modal.access_group.app_settings') }}</h4>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="form-control">
-                        <label class="label" for="group_session_duration"><span class="label-text">Session Duration</span></label>
+                        <label class="label" for="group_session_duration"><span class="label-text">{{ t('modal.access_group.session_duration') }}</span></label>
                         <input type="text" id="group_session_duration" name="session_duration" value="24h" class="input input-bordered w-full" />
-                         <div class="label"><span class="label-text-alt">e.g., 24h, 30m, 720h.</span></div>
+                         <div class="label"><span class="label-text-alt">{{ t('modal.access_group.session_duration_help') }}</span></div>
                     </div>
                     <div class="form-control pt-8">
                       <label class="label cursor-pointer justify-start gap-2">
                         <input type="checkbox" name="auto_redirect" id="group_auto_redirect" class="checkbox checkbox-sm" />
-                        <span class="label-text">Auto Redirect to Identity</span>
+                        <span class="label-text">{{ t('modal.access_group.auto_redirect') }}</span>
                       </label>
                     </div>
                     <div class="form-control pt-8">
                       <label class="label cursor-pointer justify-start gap-2">
                         <input type="checkbox" name="app_launcher_visible" id="group_app_launcher_visible" class="checkbox checkbox-sm" />
-                        <span class="label-text">Visible in App Launcher</span>
+                        <span class="label-text">{{ t('modal.access_group.app_launcher_visible') }}</span>
                       </label>
                     </div>
                 </div>
             </div>
-            
+
             <div class="modal-action mt-8">
-              <button type="submit" class="btn btn-primary">Save Group</button>
+              <button type="submit" class="btn btn-primary">{{ t('modal.access_group.save_group') }}</button>
             </div>
         </form>
     </div>
-    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+    <form method="dialog" class="modal-backdrop"><button>{{ t('common.close') }}</button></form>
 </dialog>

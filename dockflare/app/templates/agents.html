@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Agent Management{% endblock %}
+{% block title %}{{ t('agents.title') }}{% endblock %}
 
 
 {% block content %}
@@ -9,12 +9,12 @@
   <div class="card-body">
 
     <div class="flex flex-col sm:flex-row items-center justify-between border-b border-base-300 pb-3 mb-6">
-        <h1 class="card-title text-2xl sm:text-3xl">Agents Management</h1>
+        <h1 class="card-title text-2xl sm:text-3xl">{{ t('agents.agents_management') }}</h1>
         <div class="flex items-center gap-2 mt-4 sm:mt-0">
-            <button id="btn-force-reconcile" class="btn btn-ghost btn-sm">Force Reconciliation</button>
+            <button id="btn-force-reconcile" class="btn btn-ghost btn-sm">{{ t('agents.force_reconciliation') }}</button>
             <button id="btn-generate-key" class="btn btn-primary btn-sm">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v-2.25L15.188 8.43c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" /></svg>
-                Generate New API Key
+                {{ t('agents.generate_new_api_key') }}
             </button>
         </div>
     </div>
@@ -23,16 +23,16 @@
       <table class="table table-zebra table-sm w-full">
         <thead>
           <tr>
-            <th class="p-3">Agent ID</th>
-            <th class="p-3">Display Name</th>
-            <th class="p-3">Version</th>
-            <th class="p-3">Status</th>
-            <th class="p-3 text-center">Heart Beat</th>
-            <th class="p-3">Assigned Tunnel</th>
-            <th class="p-3">Migration</th>
-            <th class="p-3">Cloudflared Version</th>
-            <th class="p-3">Tunnel Status</th>
-            <th class="p-3 text-center">Actions</th>
+            <th class="p-3">{{ t('agents.agent_id') }}</th>
+            <th class="p-3">{{ t('agents.display_name') }}</th>
+            <th class="p-3">{{ t('agents.version') }}</th>
+            <th class="p-3">{{ t('agents.status') }}</th>
+            <th class="p-3 text-center">{{ t('agents.heart_beat') }}</th>
+            <th class="p-3">{{ t('agents.assigned_tunnel') }}</th>
+            <th class="p-3">{{ t('agents.migration') }}</th>
+            <th class="p-3">{{ t('agents.cloudflared_version') }}</th>
+            <th class="p-3">{{ t('agents.tunnel_status') }}</th>
+            <th class="p-3 text-center">{{ t('common.actions') }}</th>
           </tr>
         </thead>
         <tbody id="agents-table-body">
@@ -47,7 +47,7 @@
 <!-- Active API Keys Section -->
 <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
   <div class="card-body">
-    <h2 class="card-title text-xl border-b border-base-300 pb-3 mb-6">Active API Keys</h2>
+    <h2 class="card-title text-xl border-b border-base-300 pb-3 mb-6">{{ t('agents.active_api_keys') }}</h2>
     <div class="overflow-x-auto active-keys-table-container">
       <table class="table table-zebra table-sm w-full api-keys-table">
         <colgroup>
@@ -59,11 +59,11 @@
         </colgroup>
         <thead>
           <tr>
-            <th class="px-4 py-3">Key (Partial)</th>
-            <th class="px-4 py-3">Owner</th>
-            <th class="px-4 py-3">Created At</th>
-            <th class="px-4 py-3">Status</th>
-            <th class="px-4 py-3 text-right">Actions</th>
+            <th class="px-4 py-3">{{ t('agents.key_partial') }}</th>
+            <th class="px-4 py-3">{{ t('agents.owner') }}</th>
+            <th class="px-4 py-3">{{ t('agents.created_at') }}</th>
+            <th class="px-4 py-3">{{ t('common.status') }}</th>
+            <th class="px-4 py-3 text-right">{{ t('common.actions') }}</th>
           </tr>
         </thead>
         <tbody id="active-keys-table-body">
@@ -78,19 +78,19 @@
 <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
   <div class="card-body">
     <div class="flex flex-col sm:flex-row items-center justify-between border-b border-base-300 pb-3 mb-6">
-      <h2 class="card-title text-xl">Revoked Keys <span id="revoked-count-badge" class="badge badge-ghost badge-sm ml-2">0</span></h2>
+      <h2 class="card-title text-xl">{{ t('agents.revoked_keys') }} <span id="revoked-count-badge" class="badge badge-ghost badge-sm ml-2">0</span></h2>
       <div class="flex items-center gap-2 mt-4 sm:mt-0">
-        <button id="btn-cleanup-expired" class="btn btn-ghost btn-sm" title="Remove keys revoked >30 days ago">
+        <button id="btn-cleanup-expired" class="btn btn-ghost btn-sm" title="{{ t('agents.remove_old_keys') }}">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          Auto Cleanup
+          {{ t('agents.auto_cleanup') }}
         </button>
         <button id="btn-clear-all-revoked" class="btn btn-warning btn-sm">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
           </svg>
-          Clear All
+          {{ t('agents.clear_all') }}
         </button>
       </div>
     </div>
@@ -105,11 +105,11 @@
         </colgroup>
         <thead>
           <tr>
-            <th class="px-4 py-3">Full API Key</th>
-            <th class="px-4 py-3">Owner</th>
-            <th class="px-4 py-3">Revoked At</th>
-            <th class="px-4 py-3">Auto-Delete</th>
-            <th class="px-4 py-3 text-right">Actions</th>
+            <th class="px-4 py-3">{{ t('agents.full_api_key') }}</th>
+            <th class="px-4 py-3">{{ t('agents.owner') }}</th>
+            <th class="px-4 py-3">{{ t('agents.revoked_at') }}</th>
+            <th class="px-4 py-3">{{ t('agents.auto_delete') }}</th>
+            <th class="px-4 py-3 text-right">{{ t('common.actions') }}</th>
           </tr>
         </thead>
         <tbody id="revoked-keys-table-body">
@@ -120,8 +120,8 @@
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-12 h-12 mx-auto mb-4 opacity-30">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
-        <p class="text-lg font-medium">No revoked keys</p>
-        <p class="text-sm">Revoked API keys will appear here for cleanup</p>
+        <p class="text-lg font-medium">{{ t('agents.no_revoked_keys') }}</p>
+        <p class="text-sm">{{ t('agents.revoked_keys_desc') }}</p>
       </div>
     </div>
   </div>
@@ -132,102 +132,102 @@
 
 <dialog id="modal-generate-key" class="modal">
   <div class="modal-box">
-    <h3 class="font-bold text-lg">Generate New Agent API Key</h3>
+    <h3 class="font-bold text-lg">{{ t('agents.generate_new_agent_key') }}</h3>
     <form id="form-generate-key" class="py-4">
       <div class="form-control w-full">
-        <label class="label" for="owner-input"><span class="label-text">Owner (Optional, for reference)</span></label>
-        <input type="text" id="owner-input" name="owner" placeholder="e.g., 'remote-server-1' or 'testing-key'" class="input input-bordered w-full" />
+        <label class="label" for="owner-input"><span class="label-text">{{ t('agents.owner_optional') }}</span></label>
+        <input type="text" id="owner-input" name="owner" placeholder="{{ t('agents.owner_example') }}" class="input input-bordered w-full" />
       </div>
       <div class="modal-action">
-        <button type="submit" class="btn btn-primary">Generate</button>
-        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-generate-key').close()">Cancel</button>
+        <button type="submit" class="btn btn-primary">{{ t('agents.generate_new_api_key') }}</button>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-generate-key').close()">{{ t('common.cancel') }}</button>
       </div>
     </form>
     <div id="generated-key-container" class="mt-4 hidden prose">
-      <p class="text-error">Please copy this key now. You will not be able to see it again.</p>
+      <p class="text-error">{{ t('agents.copy_key_now') }}</p>
       <div class="relative bg-base-200 p-3 rounded-md">
         <code class="font-mono break-all" id="generated-key-text"></code>
-        <button id="btn-copy-key" class="btn btn-ghost btn-sm absolute top-1 right-1">Copy</button>
+        <button id="btn-copy-key" class="btn btn-ghost btn-sm absolute top-1 right-1">{{ t('common.copy') }}</button>
       </div>
     </div>
   </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  <form method="dialog" class="modal-backdrop"><button>{{ t('common.close') }}</button></form>
 </dialog>
 
 <dialog id="modal-enroll-agent" class="modal">
   <div class="modal-box w-11/12 max-w-lg">
-    <h3 class="font-bold text-lg">Enroll Agent</h3>
-    <p class="py-4">Select an existing Cloudflare Tunnel to assign to this agent, or create a new tunnel by providing a name.</p>
+    <h3 class="font-bold text-lg">{{ t('agents.enroll_agent') }}</h3>
+    <p class="py-4">{{ t('agents.select_existing_or_create') }}</p>
     <form id="form-enroll-agent">
       <input type="hidden" id="enroll-agent-id" name="agent_id">
       <div class="form-control w-full">
-        <label class="label" for="enroll-tunnel-select"><span class="label-text">Existing Tunnels</span></label>
+        <label class="label" for="enroll-tunnel-select"><span class="label-text">{{ t('agents.existing_tunnels') }}</span></label>
         <select id="enroll-tunnel-select" class="select select-bordered">
-          <option disabled selected>Loading tunnels...</option>
+          <option disabled selected>{{ t('agents.loading_tunnels') }}</option>
         </select>
       </div>
       <div class="divider">OR</div>
       <div class="form-control w-full">
-        <label class="label" for="enroll-new-tunnel-name"><span class="label-text">Create New Tunnel</span></label>
-        <input type="text" id="enroll-new-tunnel-name" placeholder="e.g., my-new-remote-server" class="input input-bordered w-full" />
+        <label class="label" for="enroll-new-tunnel-name"><span class="label-text">{{ t('agents.create_new_tunnel') }}</span></label>
+        <input type="text" id="enroll-new-tunnel-name" placeholder="{{ t('agents.new_tunnel_name_example') }}" class="input input-bordered w-full" />
       </div>
       <div class="modal-action">
-        <button type="submit" class="btn btn-primary">Enroll Agent</button>
-        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-enroll-agent').close()">Cancel</button>
+        <button type="submit" class="btn btn-primary">{{ t('agents.enroll_agent') }}</button>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-enroll-agent').close()">{{ t('common.cancel') }}</button>
       </div>
     </form>
   </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  <form method="dialog" class="modal-backdrop"><button>{{ t('common.close') }}</button></form>
 </dialog>
 
 <dialog id="modal-migration-assistant" class="modal">
   <div class="modal-box w-11/12 max-w-4xl">
-    <h3 class="font-bold text-lg">Migration Assistant</h3>
+    <h3 class="font-bold text-lg">{{ t('agents.migration_assistant') }}</h3>
     <div id="migration-content" class="py-4"></div>
     <div class="modal-action">
-      <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-migration-assistant').close()">Close</button>
+      <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-migration-assistant').close()">{{ t('common.close') }}</button>
     </div>
   </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  <form method="dialog" class="modal-backdrop"><button>{{ t('common.close') }}</button></form>
 </dialog>
 
 <dialog id="modal-rename-agent" class="modal">
   <div class="modal-box">
-    <h3 class="font-bold text-lg">Rename Agent</h3>
+    <h3 class="font-bold text-lg">{{ t('agents.rename_agent') }}</h3>
     <form id="form-rename-agent" class="py-4">
       <input type="hidden" id="rename-agent-id" name="agent_id">
       <div class="form-control w-full">
-        <label class="label" for="rename-display-name"><span class="label-text">Display Name</span></label>
-        <input type="text" id="rename-display-name" name="display_name" placeholder="e.g., Production Server, NAS Server" class="input input-bordered w-full" required />
+        <label class="label" for="rename-display-name"><span class="label-text">{{ t('agents.display_name') }}</span></label>
+        <input type="text" id="rename-display-name" name="display_name" placeholder="{{ t('agents.owner_example') }}" class="input input-bordered w-full" required />
         <label class="label">
-          <span class="label-text-alt">This name will persist even when the agent reconnects</span>
+          <span class="label-text-alt">{{ t('agents.name_persists') }}</span>
         </label>
       </div>
       <div class="modal-action">
-        <button type="submit" class="btn btn-primary">Save Name</button>
-        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-rename-agent').close()">Cancel</button>
+        <button type="submit" class="btn btn-primary">{{ t('agents.save_name') }}</button>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-rename-agent').close()">{{ t('common.cancel') }}</button>
       </div>
     </form>
   </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  <form method="dialog" class="modal-backdrop"><button>{{ t('common.close') }}</button></form>
 </dialog>
 
 <dialog id="modal-rolled-key" class="modal">
   <div class="modal-box">
-    <h3 class="font-bold text-lg">API Key Rolled Successfully</h3>
+    <h3 class="font-bold text-lg">{{ t('agents.key_rolled_success') }}</h3>
     <div class="py-4 prose">
-      <p class="text-error">Please copy this key now. You will not be able to see it again.</p>
+      <p class="text-error">{{ t('agents.copy_key_now') }}</p>
       <div class="relative bg-base-200 p-3 rounded-md">
         <code class="font-mono break-all text-sm" id="rolled-key-text"></code>
-        <button id="btn-copy-rolled-key" class="btn btn-ghost btn-sm absolute top-1 right-1">Copy</button>
+        <button id="btn-copy-rolled-key" class="btn btn-ghost btn-sm absolute top-1 right-1">{{ t('common.copy') }}</button>
       </div>
-      <p class="text-sm mt-4">Update your DockFlare agent configuration with this new key and restart the agent.</p>
+      <p class="text-sm mt-4">{{ t('agents.update_agent_config') }}</p>
     </div>
     <div class="modal-action">
-      <button type="button" class="btn btn-primary" onclick="document.getElementById('modal-rolled-key').close()">Done</button>
+      <button type="button" class="btn btn-primary" onclick="document.getElementById('modal-rolled-key').close()">{{ t('common.ok') }}</button>
     </div>
   </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  <form method="dialog" class="modal-backdrop"><button>{{ t('common.close') }}</button></form>
 </dialog>
 {% endblock %}
 
@@ -479,11 +479,11 @@
 
     if (healthPercentage < 20) {
       stripClass = 'critical';
-      labelText = 'Critical';
+      labelText = t('js.text.critical');
       labelClass = 'text-error';
     } else if (healthPercentage < 47) {
       stripClass = 'warning';
-      labelText = 'Warning';
+      labelText = t('js.text.warning');
       labelClass = 'text-warning';
     }
 
@@ -773,7 +773,7 @@
             autoDeleteInfo = `${daysUntilCleanup} days`;
           }
         } catch (e) {
-          autoDeleteInfo = 'Error';
+          autoDeleteInfo = t('js.text.error');
         }
       }
 
@@ -958,12 +958,12 @@
         document.getElementById('form-enroll-agent').reset();
 
         const tunnelSelect = document.getElementById('enroll-tunnel-select');
-        tunnelSelect.innerHTML = '<option value="">-- Select an existing tunnel --</option>';
+        tunnelSelect.innerHTML = `<option value="">${t('js.text.select_existing_tunnel')}</option>`;
 
         if (window.lastFetchedData && window.lastFetchedData.all_account_tunnels) {
           const tunnels = window.lastFetchedData.all_account_tunnels;
           if (Object.keys(tunnels).length === 0) {
-            tunnelSelect.innerHTML += '<option disabled>No existing tunnels</option>';
+            tunnelSelect.innerHTML += `<option disabled>${t('js.text.no_existing_tunnels')}</option>`;
           } else {
             for (const [tunnelId, tunnel] of Object.entries(tunnels)) {
               if (tunnel && tunnel.name) {

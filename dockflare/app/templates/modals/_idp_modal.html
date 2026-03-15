@@ -4,11 +4,11 @@
             <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
         </form>
 
-        <h3 class="font-bold text-2xl mb-4" id="idp-modal-title">Add Identity Provider</h3>
+        <h3 class="font-bold text-2xl mb-4" id="idp-modal-title">{{ t('modal.idp.title_create') }}</h3>
 
         <div role="alert" class="alert alert-info mb-4">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-            <span>Need help? See <a href="/help/Identity-Providers.md" target="_blank" class="link link-primary">Identity Provider Setup Guide</a> for step-by-step instructions.</span>
+            <span>{{ t('modal.idp.help_text_before') }} <a href="/help/Identity-Providers.md" target="_blank" class="link link-primary">{{ t('modal.idp.help_text_link') }}</a> {{ t('modal.idp.help_text_after') }}</span>
         </div>
 
         <form id="idp-form" class="space-y-4">
@@ -17,46 +17,46 @@
 
             <div class="form-control">
                 <label class="label">
-                    <span class="label-text font-semibold">Friendly Name</span>
+                    <span class="label-text font-semibold">{{ t('modal.idp.friendly_name') }}</span>
                     <span class="label-text-alt text-error">*</span>
                 </label>
-                <input type="text" id="idp-friendly-name" placeholder="e.g., google-main, azure-work" class="input input-bordered w-full" required>
+                <input type="text" id="idp-friendly-name" placeholder="{{ t('modal.idp.friendly_name_placeholder') }}" class="input input-bordered w-full" required>
                 <label class="label">
-                    <span class="label-text-alt">Internal name for referencing this IdP in labels</span>
+                    <span class="label-text-alt">{{ t('modal.idp.friendly_name_help') }}</span>
                 </label>
             </div>
 
             <div class="form-control">
                 <label class="label">
-                    <span class="label-text font-semibold">Display Name</span>
+                    <span class="label-text font-semibold">{{ t('modal.idp.display_name') }}</span>
                     <span class="label-text-alt text-error">*</span>
                 </label>
-                <input type="text" id="idp-display-name" placeholder="e.g., Google Workspace, Company Azure AD" class="input input-bordered w-full" required>
+                <input type="text" id="idp-display-name" placeholder="{{ t('modal.idp.display_name_placeholder') }}" class="input input-bordered w-full" required>
                 <label class="label">
-                    <span class="label-text-alt">Name shown in Cloudflare dashboard</span>
+                    <span class="label-text-alt">{{ t('modal.idp.display_name_help') }}</span>
                 </label>
             </div>
 
             <div class="form-control">
                 <label class="label">
-                    <span class="label-text font-semibold">Provider Type</span>
+                    <span class="label-text font-semibold">{{ t('modal.idp.provider_type') }}</span>
                     <span class="label-text-alt text-error">*</span>
                 </label>
                 <select id="idp-type" class="select select-bordered w-full" required>
-                    <option value="">Select a provider...</option>
-                    <option value="google">Google (Consumer Accounts)</option>
-                    <option value="google-apps">Google Workspace</option>
-                    <option value="azureAD">Microsoft Azure AD</option>
-                    <option value="okta">Okta</option>
-                    <option value="github">GitHub</option>
-                    <option value="oidc">Generic OpenID Connect</option>
+                    <option value="">{{ t('modal.idp.select_provider') }}</option>
+                    <option value="google">{{ t('modal.idp.provider_google') }}</option>
+                    <option value="google-apps">{{ t('modal.idp.provider_google_workspace') }}</option>
+                    <option value="azureAD">{{ t('modal.idp.provider_azure_ad') }}</option>
+                    <option value="okta">{{ t('modal.idp.provider_okta') }}</option>
+                    <option value="github">{{ t('modal.idp.provider_github') }}</option>
+                    <option value="oidc">{{ t('modal.idp.provider_oidc') }}</option>
                 </select>
             </div>
 
             <div id="idp-config-fields" class="space-y-4 mt-6">
                 <div class="alert alert-warning">
                     <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                    <span>Select a provider type to configure credentials</span>
+                    <span>{{ t('modal.idp.select_type_warning') }}</span>
                 </div>
             </div>
 
@@ -65,22 +65,22 @@
                 <div class="alert">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-info shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                     <div>
-                        <h4 class="font-bold">Redirect URI for OAuth Configuration:</h4>
+                        <h4 class="font-bold">{{ t('modal.idp.redirect_uri_heading') }}</h4>
                         <code id="redirect-url-display" class="block mt-2 p-2 bg-base-200 rounded"></code>
                     </div>
                 </div>
             </div>
 
             <div class="modal-action">
-                <button type="button" class="btn" onclick="idp_modal.close()">Cancel</button>
+                <button type="button" class="btn" onclick="idp_modal.close()">{{ t('common.cancel') }}</button>
                 <button type="submit" class="btn btn-primary" id="idp-submit-btn">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    Create Provider
+                    {{ t('modal.idp.create_provider') }}
                 </button>
             </div>
         </form>
     </div>
     <form method="dialog" class="modal-backdrop">
-        <button>close</button>
+        <button>{{ t('common.close') }}</button>
     </form>
 </dialog>

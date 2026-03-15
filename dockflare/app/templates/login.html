@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="{{ current_lang }}" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign In - DockFlare</title>
+    <title>{{ t('login.title') }}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
     <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
     <style>
@@ -42,18 +42,18 @@
                         <div class="form-control mb-3">
                             {% if form %}
                                 {{ form.username.label(class="label hidden") }}
-                                {{ form.username(class="input input-bordered w-full", placeholder="Username") }}
+                                {{ form.username(class="input input-bordered w-full", placeholder="{{ t('login.username_placeholder') }}") }}
                             {% else %}
-                                <input type="text" name="username" class="input input-bordered w-full" placeholder="Username" required>
+                                <input type="text" name="username" class="input input-bordered w-full" placeholder="{{ t('login.username_placeholder') }}" required>
                             {% endif %}
                         </div>
 
                         <div class="form-control mb-4">
                             {% if form %}
                                 {{ form.password.label(class="label hidden") }}
-                                {{ form.password(class="input input-bordered w-full", placeholder="Password") }}
+                                {{ form.password(class="input input-bordered w-full", placeholder="{{ t('login.password_placeholder') }}") }}
                             {% else %}
-                                <input type="password" name="password" class="input input-bordered w-full" placeholder="Password" required>
+                                <input type="password" name="password" class="input input-bordered w-full" placeholder="{{ t('login.password_placeholder') }}" required>
                             {% endif %}
                         </div>
 
@@ -61,7 +61,7 @@
                             {% if form %}
                                 {{ form.submit(class="btn btn-primary w-full") }}
                             {% else %}
-                                <input type="submit" value="Login" class="btn btn-primary w-full">
+                                <input type="submit" value="{{ t('login.submit') }}" class="btn btn-primary w-full">
                             {% endif %}
                         </div>
                     </form>
@@ -81,7 +81,7 @@
                                     {{ logos[provider.type] | safe if provider.type in logos else '' }}
                                 </span>
                                 <span class="flex-grow text-center">
-                                    Sign in with {{ provider.name }}
+                                    {{ t('login.sign_in_with', provider=provider.name) }}
                                 </span>
                             </a>
                         {% endfor %}
@@ -94,7 +94,7 @@
                 {% for provider in oauth_providers %}
                     <a href="{{ url_for('web.login_provider', provider_id=provider.id) }}" class="btn btn-outline justify-start w-full mb-2 font-medium">
                         <span class="flex-grow text-center">
-                            Sign in with {{ provider.name }}
+                            {{ t('login.sign_in_with', provider=provider.name) }}
                         </span>
                     </a>
                 {% endfor %}
@@ -106,24 +106,24 @@
                 <div class="form-control mb-3">
                     {% if form %}
                         {{ form.username.label(class="label hidden") }}
-                        {{ form.username(class="input input-bordered w-full", placeholder="Username") }}
+                        {{ form.username(class="input input-bordered w-full", placeholder="{{ t('login.username_placeholder') }}") }}
                     {% else %}
-                        <input type="text" name="username" class="input input-bordered w-full" placeholder="Username" required>
+                        <input type="text" name="username" class="input input-bordered w-full" placeholder="{{ t('login.username_placeholder') }}" required>
                     {% endif %}
                 </div>
                 <div class="form-control mb-4">
                     {% if form %}
                         {{ form.password.label(class="label hidden") }}
-                        {{ form.password(class="input input-bordered w-full", placeholder="Password") }}
+                        {{ form.password(class="input input-bordered w-full", placeholder="{{ t('login.password_placeholder') }}") }}
                     {% else %}
-                        <input type="password" name="password" class="input input-bordered w-full" placeholder="Password" required>
+                        <input type="password" name="password" class="input input-bordered w-full" placeholder="{{ t('login.password_placeholder') }}" required>
                     {% endif %}
                 </div>
                 <div class="form-control">
                     {% if form %}
                         {{ form.submit(class="btn btn-primary w-full") }}
                     {% else %}
-                        <input type="submit" value="Login" class="btn btn-primary w-full">
+                        <input type="submit" value="{{ t('login.submit') }}" class="btn btn-primary w-full">
                     {% endif %}
                 </div>
             </form>

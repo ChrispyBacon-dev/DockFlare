@@ -33,6 +33,7 @@ import docker
 from docker.errors import APIError
 from . import config
 from .core.cache import init_app as init_cache
+from .i18n import init_app as init_i18n
 
 tunnel_state = { "name": config.TUNNEL_NAME, "id": None, "token": None, "status_message": "Initializing...", "error": None }
 cloudflared_agent_state = { "container_status": "unknown", "last_action_status": None }
@@ -223,7 +224,8 @@ def create_app():
         "status": "Not started"
     }
 
-    # Initialize cache
+    init_i18n(app_instance)
+
     init_cache(app_instance)
     logging.info("Cache initialized.")
 

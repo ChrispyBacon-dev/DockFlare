@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard{% endblock %}
+{% block title %}{{ t('status.title') }}{% endblock %}
 
 {% block content %}
     {% if initialization and initialization.in_progress %}
     <div role="alert" class="alert alert-info shadow-md text-sm mb-8">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6 animate-spin"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6l4 2M21.56 10.5A10.001 10.001 0 0012 2a10 10 0 100 20 9.974 9.974 0 005.201-1.71l-.001-.001z"></path></svg>
         <div>
-            <h3 class="font-bold">Initialization in Progress...</h3>
-            <div class="text-xs">You can view logs below. The UI will update when ready.</div>
+            <h3 class="font-bold">{{ t('status.initialization_in_progress') }}</h3>
+            <div class="text-xs">{{ t('status.init_logs_below') }}</div>
         </div>
     </div>
     {% endif %}
@@ -22,13 +22,13 @@
             <svg xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 00-3.7-3.7 48.678 48.678 0 00-7.324 0 4.006 4.006 0 00-3.7 3.7c-.017.22-.032.441-.046.662M19.5 12l3-3m-3 3l-3-3m-12 3c0 1.232.046 2.453.138 3.662a4.006 4.006 0 003.7 3.7 48.678 48.678 0 007.324 0 4.006 4.006 0 003.7-3.7c.017-.22.032-.441.046-.662M4.5 12l3 3m-3-3l-3 3" />
             </svg>
-            Cache: {% if cache_status.connected %}Connected{% else %}Fallback{% endif %}
+            {{ t('status.cache_label') }} {% if cache_status.connected %}{{ t('status.cache_connected') }}{% else %}{{ t('status.cache_fallback') }}{% endif %}
         </div>
         <span class="text-xs opacity-75">
             {% if cache_status.connected %}
-                Redis cache active
+                {{ t('status.cache_redis_title') }}
             {% else %}
-                Using in-memory cache
+                {{ t('status.cache_memory_title') }}
             {% endif %}
             ({{ cache_status.dns_records_count|default(0) }} DNS records cached)
             {% if cache_status.error is defined and cache_status.error %}
@@ -42,14 +42,14 @@
          <div class="card-body">
             <div class="flex flex-col sm:flex-row items-center justify-between border-b border-base-300 pb-3 mb-6">
                 <h2 class="card-title text-2xl sm:text-3xl">
-                    Managed Ingress Rules
-                    <button class="btn btn-ghost btn-xs ml-2" title="Click the Cloudflare icon to open this hostname in Cloudflare Zero Trust (Tunnels → Public Hostnames). Click the access-policy icon to edit the Access App.">
+                    {{ t('status.managed_ingress_rules') }}
+                    <button class="btn btn-ghost btn-xs ml-2" title="{{ t('status.click_cf_icon_hint') }}">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="10" class="opacity-30"/><path d="M12 8h.01" stroke-linecap="round" stroke-linejoin="round"/><path d="M11 12h1v4h1" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </button>
                 </h2>
                 <button class="btn btn-sm btn-primary ml-auto" onclick="document.getElementById('add_manual_rule_modal').showModal()">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                    Add Manual Rule
+                    {{ t('status.add_manual_rule') }}
                 </button>
             </div>
 
@@ -64,7 +64,7 @@
                         {% else %}<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />{% endif %}
                     </svg>
                     <div class="flex-1">
-                        <h3 class="font-bold text-xs uppercase opacity-80">Last Action</h3>
+                        <h3 class="font-bold text-xs uppercase opacity-80">{{ t('status.last_action') }}</h3>
                         <div class="text-xs">{{ agent_state.last_action_status }}</div>
                     </div>
                 </div>
@@ -79,7 +79,7 @@
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 inline-block mr-2 align-middle">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.572a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" />
                             </svg>
-                            Filter & Sort Options
+                            {{ t('status.filter_sort_options') }}
                         </div>
                         <span id="filter-stats" class="text-sm opacity-75 font-normal"></span>
                     </div>
@@ -87,63 +87,63 @@
                         <div class="flex flex-row flex-wrap items-end gap-4 pt-4">
                 
                             <div class="form-control w-full sm:w-auto">
-                                <label for="source-filter" class="label py-0 pb-1"><span class="label-text text-xs font-semibold opacity-70">Source</span></label>
+                                <label for="source-filter" class="label py-0 pb-1"><span class="label-text text-xs font-semibold opacity-70">{{ t('status.source') }}</span></label>
                                 <select id="source-filter" class="select select-bordered select-sm w-full">
-                                    <option value="all">All Sources</option>
-                                    <option value="docker">Local Docker</option>
-                                    <option value="manual">Manual Rules</option>
+                                    <option value="all">{{ t('status.all_sources') }}</option>
+                                    <option value="docker">{{ t('status.local_docker') }}</option>
+                                    <option value="manual">{{ t('status.manual_rules') }}</option>
                                 </select>
                             </div>
 
                             <div class="form-control w-full sm:w-auto">
-                                <label for="status-filter" class="label py-0 pb-1"><span class="label-text text-xs font-semibold opacity-70">Status</span></label>
+                                <label for="status-filter" class="label py-0 pb-1"><span class="label-text text-xs font-semibold opacity-70">{{ t('common.status') }}</span></label>
                                 <select id="status-filter" class="select select-bordered select-sm w-full">
-                                    <option value="all">All Status</option>
-                                    <option value="active">Active</option>
-                                    <option value="pending">Pending</option>
-                                    <option value="failed">Failed</option>
-                                    <option value="pending_deletion">Pending Deletion</option>
+                                    <option value="all">{{ t('status.all_status') }}</option>
+                                    <option value="active">{{ t('common.active') }}</option>
+                                    <option value="pending">{{ t('status.pending') }}</option>
+                                    <option value="failed">{{ t('status.failed') }}</option>
+                                    <option value="pending_deletion">{{ t('status.pending_deletion') }}</option>
                                 </select>
                             </div>
                 
                             <div class="form-control w-full sm:w-auto">
-                                <label for="tunnel-filter" class="label py-0 pb-1"><span class="label-text text-xs font-semibold opacity-70">Tunnel</span></label>
+                                <label for="tunnel-filter" class="label py-0 pb-1"><span class="label-text text-xs font-semibold opacity-70">{{ t('js.form.tunnel') }}</span></label>
                                 <select id="tunnel-filter" class="select select-bordered select-sm w-full">
-                                    <option value="all">All Tunnels</option>
+                                    <option value="all">{{ t('status.all_tunnels') }}</option>
                                 </select>
                             </div>
 
                             <div class="form-control w-full sm:w-auto">
-                                <label for="sort-select" class="label py-0 pb-1"><span class="label-text text-xs font-semibold opacity-70">Sort by</span></label>
+                                <label for="sort-select" class="label py-0 pb-1"><span class="label-text text-xs font-semibold opacity-70">{{ t('status.sort_by') }}</span></label>
                                 <select id="sort-select" class="select select-bordered select-sm w-full">
-                                    <option value="hostname">Hostname A-Z</option>
-                                    <option value="hostname-desc">Hostname Z-A</option>
-                                    <option value="status">Status</option>
-                                    <option value="source">Source</option>
-                                    <option value="tunnel">Tunnel</option>
-                                    <option value="access-policy">Access Policy</option>
+                                    <option value="hostname">{{ t('status.hostname_a_z') }}</option>
+                                    <option value="hostname-desc">{{ t('status.hostname_z_a') }}</option>
+                                    <option value="status">{{ t('common.status') }}</option>
+                                    <option value="source">{{ t('status.source') }}</option>
+                                    <option value="tunnel">{{ t('js.form.tunnel') }}</option>
+                                    <option value="access-policy">{{ t('status.access_policy') }}</option>
                                 </select>
                             </div>
 
                             <div class="form-control w-full sm:w-auto">
-                                <label for="group-select" class="label py-0 pb-1"><span class="label-text text-xs font-semibold opacity-70">Group by</span></label>
+                                <label for="group-select" class="label py-0 pb-1"><span class="label-text text-xs font-semibold opacity-70">{{ t('status.group_by') }}</span></label>
                                 <select id="group-select" class="select select-bordered select-sm w-full">
-                                    <option value="none">None</option>
-                                    <option value="status">Status</option>
-                                    <option value="tunnel">Tunnel</option>
-                                    <option value="access-policy">Access Policy</option>
+                                    <option value="none">{{ t('common.none') }}</option>
+                                    <option value="status">{{ t('common.status') }}</option>
+                                    <option value="tunnel">{{ t('js.form.tunnel') }}</option>
+                                    <option value="access-policy">{{ t('status.access_policy') }}</option>
                                 </select>
                             </div>
 
                             <div class="form-control w-full sm:w-auto">
-                                 <label for="search-input" class="label py-0 pb-1"><span class="label-text text-xs font-semibold opacity-70">Search Hostname</span></label>
+                                 <label for="search-input" class="label py-0 pb-1"><span class="label-text text-xs font-semibold opacity-70">{{ t('status.search_hostname') }}</span></label>
                                 <div class="relative">
                                     <span class="absolute inset-y-0 left-0 flex items-center pl-3">
                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                         </svg>
                                     </span>
-                                    <input type="text" id="search-input" placeholder="Search..." class="input input-bordered input-sm w-full pl-9" />
+                                    <input type="text" id="search-input" placeholder="{{ t('status.search_placeholder') }}" class="input input-bordered input-sm w-full pl-9" />
                                 </div>
                             </div>
                         </div>
@@ -154,14 +154,14 @@
                     <table class="table table-zebra table-sm w-full">
                         <thead>
                             <tr>
-                                <th class="p-3 w-auto">Status</th>
-                                <th class="p-3">Tunnel Name</th>
-                                <th class="p-3 w-1/4">Hostname</th>
-                                <th class="p-3 w-1/6">Path</th>
-                                <th class="p-3 w-1/5">Service Target</th>
-                                <th class="p-3 w-1/5">Access Policy</th>
-                                <th class="p-3 w-auto">Expires In</th>
-                                <th class="p-3 w-auto">Actions</th>
+                                <th class="p-3 w-auto">{{ t('common.status') }}</th>
+                                <th class="p-3">{{ t('status.tunnel_name') }}</th>
+                                <th class="p-3 w-1/4">{{ t('status.hostname') }}</th>
+                                <th class="p-3 w-1/6">{{ t('status.path') }}</th>
+                                <th class="p-3 w-1/5">{{ t('status.service_target') }}</th>
+                                <th class="p-3 w-1/5">{{ t('status.access_policy') }}</th>
+                                <th class="p-3 w-auto">{{ t('status.expires_in') }}</th>
+                                <th class="p-3 w-auto">{{ t('common.actions') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -169,7 +169,7 @@
                                 <tr data-rule-key="{{ hostname }}" data-rule-status="{{ details.status }}" data-rule-source="{{ details.source }}">
                                     <td class="p-3 whitespace-nowrap" data-role="status-cell">
                                         {% if details.source == 'manual' %}
-                                            <span class="badge badge-info badge-sm status-badge">Manual</span>
+                                            <span class="badge badge-info badge-sm status-badge">{{ t('status.manual_rules') }}</span>
                                         {% else %}
                                             {% set status_badge_color = 'badge-warning' if 'pending' in details.status else 'badge-success' %}
                                             <span class="badge {{ status_badge_color }} badge-sm status-badge">
@@ -191,7 +191,7 @@
                                     <td class="p-3 whitespace-nowrap">
                                     {% set display_hostname = details.hostname if details.hostname else hostname.split('|')[0] %}
                                     {% set display_path = details.path if details.path else (hostname.split('|')[1] if '|' in hostname else None) %}
-                                    <a href="https://{{ display_hostname }}{% if display_path %}{{ display_path }}{% endif %}" target="_blank" rel="noopener noreferrer" title="Open https://{{ display_hostname }}{% if display_path %}{{ display_path }}{% endif %}" class="link link-hover link-primary text-sm">
+                                    <a href="https://{{ display_hostname }}{% if display_path %}{{ display_path }}{% endif %}" target="_blank" rel="noopener noreferrer" title="{{ t('status.open_url', hostname=display_hostname, path=display_path if display_path else '') }}" class="link link-hover link-primary text-sm">
                                        {{ display_hostname }}
                                    </a>
                                    {% if display_hostname and display_hostname.startswith('*.') %}
@@ -199,22 +199,22 @@
                                    {% endif %}
                                    <div class="text-xs mt-1">
                                            {% if details.no_tls_verify %}
-                                               <span class="badge badge-warning badge-xs" title="TLS verification disabled for origin">No TLS Verify</span>
+                                               <span class="badge badge-warning badge-xs" title="{{ t('status.tls_verification_disabled') }}">{{ t('status.no_tls_verify') }}</span>
                                            {% endif %}
                                            {% if details.origin_server_name %}
-                                               <span class="badge badge-info badge-xs ml-1" title="Origin Server Name (SNI): {{ details.origin_server_name }}">SNI: {{ details.origin_server_name | truncate(20, True) }}</span>
+                                               <span class="badge badge-info badge-xs ml-1" title="{{ t('status.origin_server_name_sni') }}: {{ details.origin_server_name }}">SNI: {{ details.origin_server_name | truncate(20, True) }}</span>
                                            {% endif %}
                                            {% if details.http_host_header %}
-                                               <span class="badge badge-info badge-xs ml-1" title="HTTP Host Header: {{ details.http_host_header }}">Host: {{ details.http_host_header | truncate(20, True) }}</span>
+                                               <span class="badge badge-info badge-xs ml-1" title="{{ t('status.http_host_header_optional') }}: {{ details.http_host_header }}">Host: {{ details.http_host_header | truncate(20, True) }}</span>
                                            {% endif %}
                                            {% if details.http2_origin %}
-                                               <span class="badge badge-success badge-xs ml-1" title="HTTP/2 protocol enabled for origin connection">HTTP/2 Origin</span>
+                                               <span class="badge badge-success badge-xs ml-1" title="{{ t('status.http2_protocol_enabled') }}">{{ t('status.http2_origin') }}</span>
                                            {% endif %}
                                            {% if details.disable_chunked_encoding %}
-                                               <span class="badge badge-info badge-xs ml-1" title="Chunked transfer encoding disabled for HTTP/1.1">No Chunked Encoding</span>
+                                               <span class="badge badge-info badge-xs ml-1" title="{{ t('status.chunked_encoding_disabled') }}">{{ t('status.no_chunked_encoding') }}</span>
                                            {% endif %}
                                            {% if details.match_sni_to_host %}
-                                               <span class="badge badge-info badge-xs ml-1" title="Cloudflare will match TLS SNI to the public hostname">Match SNI to Host</span>
+                                               <span class="badge badge-info badge-xs ml-1" title="{{ t('status.match_sni_to_host_description') }}">{{ t('status.match_sni_to_host') }}</span>
                                            {% endif %}
                                        </div>
                                    </td>
@@ -240,16 +240,16 @@
                                                 {{ details.access_policy_type.replace('_', ' ') }}
                                             </span>
                                         {% elif details.get('status') == 'active' %} 
-                                            <span class="opacity-60 italic">No Policy Assigned</span>
+                                            <span class="opacity-60 italic">{{ t('status.no_policy_assigned') }}</span>
                                         {% else %}
                                             <span class="text-xs opacity-50">N/A</span>
                                         {% endif %}
 
                                         {% if details.access_policy_ui_override and details.source != 'manual' %}
-                                            <span class="badge badge-warning badge-xs ml-2 animate-pulse" title="This policy is managed by the UI and overrides container labels.">UI Override</span>
+                                            <span class="badge badge-warning badge-xs ml-2 animate-pulse" title="{{ t('status.ui_policy_override') }}">{{ t('status.ui_override') }}</span>
                                         {% endif %}
                                         {% if details.rule_ui_override and details.source == 'docker' %}
-                                            <span class="badge badge-error badge-xs ml-2 animate-pulse" title="This Docker rule has been overridden via UI and no longer reflects container labels.">Rule UI Override</span>
+                                            <span class="badge badge-error badge-xs ml-2 animate-pulse" title="{{ t('status.docker_rule_overridden') }}">{{ t('status.rule_ui_override') }}</span>
                                         {% endif %}
                                     </td>
                                     <td class="p-3 whitespace-nowrap text-sm opacity-70" data-role="expires-cell">
@@ -275,7 +275,7 @@
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
                                                             <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
                                                         </svg>
-                                                        Manage Rule
+                                                        {{ t('status.manage_rule') }}
                                                     </a>
                                                 </li>
                                                 {% set effective_tunnel_id = details.tunnel_id if details.tunnel_id else (tunnel_state.get('id') if tunnel_state else None) %}
@@ -287,7 +287,7 @@
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
                                                             <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
                                                         </svg>
-                                                        View CF Tunnel Route
+                                                        {{ t('status.view_cf_tunnel_route') }}
                                                     </a>
                                                 </li>
                                                 {% endif %}
@@ -297,7 +297,7 @@
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
                                                             <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
                                                         </svg>
-                                                        View CF Access Application
+                                                        {{ t('status.view_cf_access_app') }}
                                                     </a>
                                                 </li>
                                                 {% endif %}
@@ -308,7 +308,7 @@
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
                                                             <path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
                                                         </svg>
-                                                        Revert Policy to Labels
+                                                        {{ t('status.revert_policy_to_labels') }}
                                                     </a>
                                                 </li>
                                                 {% endif %}
@@ -318,7 +318,7 @@
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
                                                             <path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
                                                         </svg>
-                                                        Revert to Docker Labels
+                                                        {{ t('status.revert_to_docker_labels') }}
                                                     </a>
                                                 </li>
                                                 {% endif %}
@@ -327,7 +327,7 @@
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
                                                             <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
                                                         </svg>
-                                                        Delete
+                                                        {{ t('common.delete') }}
                                                     </a>
                                                 </li>
                                             </ul>
@@ -339,7 +339,7 @@
                     </table>
                 </div>
             {% else %}
-                <p class="text-center opacity-70 py-8">No ingress rules are currently being managed.</p>
+                <p class="text-center opacity-70 py-8">{{ t('status.no_ingress_rules') }}</p>
             {% endif %}
         </div>
     </section>
@@ -349,17 +349,17 @@
              <div class="collapse collapse-arrow border border-base-300 rounded-box">
                 <input type="checkbox" id="logs-toggle" />
                 <div class="collapse-title text-xl font-medium">
-                    Real-time Activity Logs
+                    {{ t('status.real_time_logs') }}
                     <span class="text-sm font-normal opacity-70 ml-2">(Click to enable - may impact performance)</span>
                 </div>
                 <div class="collapse-content">
                     <div class="mockup-code text-xs max-h-96 overflow-y-hidden mt-4">
-                        <pre id="log-output" aria-live="polite" class="h-full overflow-y-scroll p-4 hidden">Click "Enable Logs" to start streaming...</pre>
+                        <pre id="log-output" aria-live="polite" class="h-full overflow-y-scroll p-4 hidden">{{ t('status.click_enable_logs') }}</pre>
                     </div>
                     <div class="mt-4 flex gap-2">
-                        <button id="enable-logs-btn" class="btn btn-primary btn-sm">Enable Logs</button>
-                        <button id="disable-logs-btn" class="btn btn-error btn-sm hidden">Disable Logs</button>
-                        <button id="clear-logs-btn" class="btn btn-ghost btn-sm">Clear</button>
+                        <button id="enable-logs-btn" class="btn btn-primary btn-sm">{{ t('status.enable_logs') }}</button>
+                        <button id="disable-logs-btn" class="btn btn-error btn-sm hidden">{{ t('status.disable_logs') }}</button>
+                        <button id="clear-logs-btn" class="btn btn-ghost btn-sm">{{ t('status.clear') }}</button>
                     </div>
                 </div>
             </div>
@@ -371,82 +371,82 @@
             <form method="dialog">
                 <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
             </form>
-            <h3 class="font-bold text-lg mb-6">Add New Manual Ingress Rule</h3>
+            <h3 class="font-bold text-lg mb-6">{{ t('status.add_new_manual_rule') }}</h3>
             <form id="add_manual_rule_form" action="{{ url_for('web.ui_add_manual_rule_route') }}" method="POST" class="protocol-aware-form flex flex-col flex-grow min-h-0">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" id="manual_zone_id" name="manual_zone_id" />
                 <div class="flex-grow overflow-y-auto space-y-6 p-1">
                     <div>
-                        <h4 class="text-md font-semibold mb-2">Public Hostname</h4>
+                        <h4 class="text-md font-semibold mb-2">{{ t('status.public_hostname') }}</h4>
                         <div class="grid grid-cols-1 md:grid-cols-7 gap-4 items-start">
                             <div class="md:col-span-2">
-                                <label class="label" for="manual_subdomain"><span class="label-text">Subdomain</span></label>
-                                <input type="text" id="manual_subdomain" name="manual_subdomain" placeholder="(optional) subdomain" class="input input-bordered w-full" autocomplete="off" />
+                                <label class="label" for="manual_subdomain"><span class="label-text">{{ t('status.subdomain') }}</span></label>
+                                <input type="text" id="manual_subdomain" name="manual_subdomain" placeholder="{{ t('status.subdomain_optional') }}" class="input input-bordered w-full" autocomplete="off" />
                             </div>
                             <div class="md:col-span-3">
-                                <label class="label" for="manual_domain_name"><span class="label-text">Domain (Required)</span></label>
-                                <input type="text" id="manual_domain_name" name="manual_domain_name" placeholder="example.com" class="input input-bordered w-full" autocomplete="off" required />
-                                <div class="text-xs opacity-60 mt-1">Combined with subdomain to build the public hostname.</div>
+                                <label class="label" for="manual_domain_name"><span class="label-text">{{ t('status.domain_required') }}</span></label>
+                                <input type="text" id="manual_domain_name" name="manual_domain_name" placeholder="{{ t('status.example_domain') }}" class="input input-bordered w-full" autocomplete="off" required />
+                                <div class="text-xs opacity-60 mt-1">{{ t('status.domain_description') }}</div>
                             </div>
                             <div class="md:col-span-2">
-                                <label class="label" for="manual_path_display"><span class="label-text">Path</span></label>
+                                <label class="label" for="manual_path_display"><span class="label-text">{{ t('status.path') }}</span></label>
                                 <div class="join w-full">
                                     <span class="join-item btn btn-disabled normal-case pointer-events-none bg-base-200 border-base-300 !min-h-[3rem] !h-[3rem] px-3">/</span>
-                                    <input type="text" id="manual_path_display" placeholder="(optional) path" class="input input-bordered join-item w-full" autocomplete="off" />
+                                    <input type="text" id="manual_path_display" placeholder="{{ t('status.path_optional') }}" class="input input-bordered join-item w-full" autocomplete="off" />
                                 </div>
                                 <input type="hidden" id="manual_path" name="manual_path" />
-                                <div class="text-xs opacity-60 mt-1">Leave blank for root. "app" becomes "/app".</div>
+                                <div class="text-xs opacity-60 mt-1">{{ t('status.subdomain_description') }}</div>
                             </div>
                         </div>
                         <div class="mt-4">
-                            <label class="label" for="manual_tunnel_id"><span class="label-text">Tunnel (Required)</span></label>
+                            <label class="label" for="manual_tunnel_id"><span class="label-text">{{ t('status.tunnel_required') }}</span></label>
                             <select id="manual_tunnel_id" name="manual_tunnel_id" class="select select-bordered w-full" data-default-tunnel-id="{{ default_tunnel_id or '' }}" required>
-                                <option value="" disabled selected>Select a tunnel...</option>
+                                <option value="" disabled selected>{{ t('status.select_tunnel') }}</option>
                             </select>
-                            <div class="text-xs opacity-60 mt-1">Choose which Cloudflare Tunnel will serve this hostname.</div>
+                            <div class="text-xs opacity-60 mt-1">{{ t('status.tunnel_description') }}</div>
                         </div>
                         <div class="mt-4 p-3 rounded-lg bg-base-200/60" id="manual_zone_container">
                             <div class="flex items-center justify-between">
-                                <span class="text-sm font-semibold">Zone Detection</span>
+                                <span class="text-sm font-semibold">{{ t('status.zone_detection') }}</span>
                                 <span class="badge badge-outline badge-sm hidden" id="manual_zone_status_badge"></span>
                             </div>
-                            <p class="text-xs opacity-80 mt-2" id="manual_zone_message">Enter a hostname to auto-detect the Cloudflare zone. Select a zone if multiple matches are found.</p>
+                            <p class="text-xs opacity-80 mt-2" id="manual_zone_message">{{ t('status.enter_hostname_autodetect') }}</p>
                             <div class="hidden mt-3" id="manual_zone_selector_wrapper">
-                                <label class="label" for="manual_zone_selector"><span class="label-text">Select Zone</span></label>
+                                <label class="label" for="manual_zone_selector"><span class="label-text">{{ t('status.select_zone') }}</span></label>
                                 <select id="manual_zone_selector" class="select select-bordered w-full"></select>
                             </div>
                         </div>
                     </div>
                     <div>
-                        <h4 class="text-md font-semibold mb-2">Service</h4>
+                        <h4 class="text-md font-semibold mb-2">{{ t('status.service') }}</h4>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                             <div>
-                                <label class="label" for="manual_service_type"><span class="label-text">Type (Required)</span></label>
+                                <label class="label" for="manual_service_type"><span class="label-text">{{ t('status.type_required') }}</span></label>
                                 <select name="manual_service_type" id="manual_service_type" class="select select-bordered w-full" required>
                                     <option value="" disabled selected>Select...</option>
-                                    <option value="http">HTTP</option>
-                                    <option value="https">HTTPS</option>
-                                    <option value="tcp">TCP</option>
-                                    <option value="ssh">SSH (Native Client)</option>
-                                    <option value="bastion">Bastion (Browser SSH/VNC)</option>
-                                    <option value="rdp">RDP</option>
-                                    <option value="http_status">HTTP Status Code</option>
+                                    <option value="http">{{ t('status.http') }}</option>
+                                    <option value="https">{{ t('status.https') }}</option>
+                                    <option value="tcp">{{ t('status.tcp') }}</option>
+                                    <option value="ssh">{{ t('status.ssh') }}</option>
+                                    <option value="bastion">{{ t('status.bastion') }}</option>
+                                    <option value="rdp">{{ t('status.rdp') }}</option>
+                                    <option value="http_status">{{ t('status.http_status_code') }}</option>
                                 </select>
                             </div>
                             <div>
                                 <label class="label" for="manual_service_address">
-                                    <span class="label-text" id="manual_service_address_label">URL (Required for most types)</span>
+                                    <span class="label-text" id="manual_service_address_label">{{ t('status.url_required') }}</span>
                                 </label>
                                 <div class="join w-full">
                                     <span id="manual_service_prefix_span" class="join-item btn btn-disabled normal-case pointer-events-none hidden bg-base-200 border-base-300 !min-h-[3rem] !h-[3rem] px-3">://</span>
-                                    <input type="text" id="manual_service_address" name="manual_service_address" placeholder="host:port or status code" class="input input-bordered join-item w-full" />
+                                    <input type="text" id="manual_service_address" name="manual_service_address" placeholder="{{ t('status.host_port_or_status_code') }}" class="input input-bordered join-item w-full" />
                                 </div>
-                                <div id="manual_service_help" class="text-xs opacity-60 mt-1">e.g., 192.168.1.10:8000 or my-service.local:3000 for HTTP/S/TCP etc.</div>
+                                <div id="manual_service_help" class="text-xs opacity-60 mt-1">{{ t('status.service_description') }}</div>
                             </div>
                         </div>
-                    </div>                                
+                    </div>
                     <div>
-                        <h4 class="text-md font-semibold mb-2">Access Policy (Optional)</h4>
+                        <h4 class="text-md font-semibold mb-2">{{ t('status.access_policy_optional') }}</h4>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 items-start p-4 rounded-md bg-base-200/50">
                             
                             <div class="form-control md:col-span-2">
@@ -460,90 +460,90 @@
                                         {% endfor %}
                                     {% endif %}
                                 </select>
-                                <div class="label"><span class="label-text-alt">Using groups overrides the manual policy options below. You can select multiple.</span></div>
+                                <div class="label"><span class="label-text-alt">{{ t('status.using_groups_overrides') }}</span></div>
                             </div>
-        
+
                             <div class="divider md:col-span-2 text-xs opacity-80 my-0">OR</div>
-        
+
                             <div id="manual_policy_options_wrapper" class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
                                 <div class="form-control">
                                     <label class="label" for="manual_access_policy_type">
                                         <span class="label-text font-medium">2. Configure Manually</span>
                                     </label>
                                     <select name="manual_access_policy_type" id="manual_access_policy_type" class="select select-bordered w-full policy-type-select">
-                                        <option value="none" selected>No Policy Assigned</option>
-                                        <option value="bypass">Bypass (Public App)</option>
+                                        <option value="none" selected>{{ t('status.no_policy_assigned') }}</option>
+                                        <option value="bypass">{{ t('status.bypass') }}</option>
                                     </select>
                                 </div>
                             </div>
                         </div>
                     </div>
-                
+
                     <div class="space-y-4 pt-4 border-t border-base-300 mt-6">
                         <div>
-                            <label class="label" for="manual_zone_name_override"><span class="label-text">Cloudflare Zone Name (Override/Specific)</span></label>
-                            <input type="text" id="manual_zone_name_override" name="manual_zone_name_override" placeholder="yourdomain.com (if different from Domain Name or CF_ZONE_ID)" class="input input-bordered w-full" />
+                            <label class="label" for="manual_zone_name_override"><span class="label-text">{{ t('status.cloudflare_zone_override') }}</span></label>
+                            <input type="text" id="manual_zone_name_override" name="manual_zone_name_override" placeholder="{{ t('status.zone_override_placeholder') }}" class="input input-bordered w-full" />
                             {% if CF_ZONE_ID_CONFIGURED and CF_ZONE_ID %}
                             <div class="text-xs opacity-60 mt-1">If blank, DockFlare will use "Domain Name" or default CF_ZONE_ID ({{ CF_ZONE_ID[:12] }}...). Target a different Zone if needed.</div>
                             {% else %}
-                            <div class="text-xs opacity-60 mt-1">If blank, DockFlare will use "Domain Name". Target a specific Zone if "Domain Name" is ambiguous or CF_ZONE_ID is not set.</div>
+                            <div class="text-xs opacity-60 mt-1">{{ t('status.zone_override_help') }}</div>
                             {% endif %}
                         </div>
                         <div id="manual_no_tls_verify_div" class="form-control">
                           <label class="label cursor-pointer justify-start gap-2">
                             <input type="checkbox" name="manual_no_tls_verify" id="manual_no_tls_verify" class="checkbox checkbox-sm" />
-                            <span class="label-text">Disable TLS Verification (No TLS Verify)</span>
+                            <span class="label-text">{{ t('status.disable_tls_verification') }} ({{ t('status.no_tls_verify') }})</span>
                           </label>
-                          <div class="text-xs opacity-60 ml-8">Check if the origin service uses self-signed SSL or is HTTP. (Only applies to HTTP/HTTPS services).</div>
+                          <div class="text-xs opacity-60 ml-8">{{ t('status.tls_verification_check') }}</div>
                         </div>
-                        <div class="form-control" id="manual_origin_server_name_div"> 
+                        <div class="form-control" id="manual_origin_server_name_div">
                             <label class="label" for="manual_origin_server_name">
-                                <span class="label-text">Origin Server Name (SNI for TLS)</span>
+                                <span class="label-text">{{ t('status.origin_server_name_sni') }}</span>
                             </label>
                             <input type="text" id="manual_origin_server_name" name="manual_origin_server_name"
                                    placeholder="e.g., internal.service.local (optional)"
                                    class="input input-bordered w-full" />
                             <label class="label">
-                                <span class="label-text-alt">Specify the hostname Cloudflare should use for TLS SNI when connecting to your origin. Leave blank if not needed. (Only applies to HTTP/HTTPS services).</span>
+                                <span class="label-text-alt">{{ t('status.origin_server_name_description') }}</span>
                             </label>
                         </div>
                         <div class="form-control">
                             <label class="label" for="manual_http_host_header">
-                                <span class="label-text">HTTP Host Header (Optional)</span>
+                                <span class="label-text">{{ t('status.http_host_header_optional') }}</span>
                             </label>
                             <input type="text" id="manual_http_host_header" name="manual_http_host_header"
                                    placeholder="e.g., api.example.com"
                                    class="input input-bordered w-full" />
                             <label class="label">
-                                <span class="label-text-alt">Overrides the <code>Host</code> header sent to your origin server. Useful for origins expecting a different hostname than the public one. (Only applies to HTTP/HTTPS services).</span>
+                                <span class="label-text-alt">{{ t('status.http_host_header_desc') }}</span>
                             </label>
                         </div>
                         <div id="manual_http2_origin_div" class="form-control">
                           <label class="label cursor-pointer justify-start gap-2">
                             <input type="checkbox" name="manual_http2_origin" id="manual_http2_origin" class="checkbox checkbox-sm" />
-                            <span class="label-text">Enable HTTP/2 Origin</span>
+                            <span class="label-text">{{ t('status.enable_http2_origin') }}</span>
                           </label>
-                          <div class="text-xs opacity-60 ml-8">Enable HTTP/2 protocol between Cloudflare and your origin server. Required for gRPC services. (Only applies to HTTP/HTTPS services).</div>
+                          <div class="text-xs opacity-60 ml-8">{{ t('status.http2_origin_description') }}</div>
                         </div>
                         <div id="manual_disable_chunked_encoding_div" class="form-control">
                           <label class="label cursor-pointer justify-start gap-2">
                             <input type="checkbox" name="manual_disable_chunked_encoding" id="manual_disable_chunked_encoding" class="checkbox checkbox-sm" />
-                            <span class="label-text">Disable Chunked Encoding</span>
+                            <span class="label-text">{{ t('status.disable_chunked_encoding') }}</span>
                           </label>
-                          <div class="text-xs opacity-60 ml-8">Disables chunked transfer encoding over HTTP/1.1. Useful for WSGI servers (Flask, Django) and other origins that don't support chunked requests. (Only applies to HTTP/HTTPS services).</div>
+                          <div class="text-xs opacity-60 ml-8">{{ t('status.chunked_encoding_description') }}</div>
                         </div>
                         <div id="manual_match_sni_to_host_div" class="form-control">
                           <label class="label cursor-pointer justify-start gap-2">
                             <input type="checkbox" name="manual_match_sni_to_host" id="manual_match_sni_to_host" class="checkbox checkbox-sm" />
-                            <span class="label-text">Match SNI to Host</span>
+                            <span class="label-text">{{ t('status.match_sni_to_host') }}</span>
                           </label>
-                          <div class="text-xs opacity-60 ml-8">Makes Cloudflare use the public hostname as TLS SNI for origin connections. (Only applies to HTTP/HTTPS services).</div>
+                          <div class="text-xs opacity-60 ml-8">{{ t('status.match_sni_to_host_description') }}</div>
                         </div>
                     </div>
                 </div>
                 <div id="manual_rule_feedback" class="hidden alert mt-4"></div>
                 <div class="modal-action mt-8 pt-4 border-t border-base-300">
-                  <button type="submit" class="btn btn-primary" id="manual_rule_submit_btn">Add Rule</button>
+                  <button type="submit" class="btn btn-primary" id="manual_rule_submit_btn">{{ t('status.add_rule') }}</button>
                 </div>
             </form>
         </div>
@@ -555,70 +555,70 @@
             <form method="dialog">
                 <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
             </form>
-            <h3 class="font-bold text-lg mb-6">Edit Ingress Rule</h3>
+            <h3 class="font-bold text-lg mb-6">{{ t('status.edit_ingress_rule') }}</h3>
             <form action="{{ url_for('web.ui_edit_manual_rule_route') }}" method="POST" class="protocol-aware-form flex flex-col flex-grow min-h-0" id="edit_manual_rule_form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="flex-grow overflow-y-auto space-y-6 p-1">
                     <input type="hidden" name="edit_rule_key" id="edit_original_rule_key" />
                     <div>
-                        <h4 class="text-md font-semibold mb-2">Public Hostname</h4>
+                        <h4 class="text-md font-semibold mb-2">{{ t('status.public_hostname') }}</h4>
                         <div class="grid grid-cols-1 md:grid-cols-7 gap-4 items-start">
                             <div class="md:col-span-2">
-                                <label class="label" for="edit_manual_subdomain"><span class="label-text">Subdomain</span></label>
-                                <input type="text" id="edit_manual_subdomain" name="edit_subdomain" placeholder="(optional) subdomain" class="input input-bordered w-full" />
+                                <label class="label" for="edit_manual_subdomain"><span class="label-text">{{ t('status.subdomain') }}</span></label>
+                                <input type="text" id="edit_manual_subdomain" name="edit_subdomain" placeholder="{{ t('status.subdomain_optional') }}" class="input input-bordered w-full" />
                             </div>
                             <div class="md:col-span-3">
-                                <label class="label" for="edit_manual_domain_name"><span class="label-text">Domain (Required)</span></label>
-                                <input type="text" id="edit_manual_domain_name" name="edit_domain_name" placeholder="example.com" class="input input-bordered w-full" required />
+                                <label class="label" for="edit_manual_domain_name"><span class="label-text">{{ t('status.domain_required') }}</span></label>
+                                <input type="text" id="edit_manual_domain_name" name="edit_domain_name" placeholder="{{ t('status.example_domain') }}" class="input input-bordered w-full" required />
                             </div>
                             <div class="md:col-span-2">
-                                <label class="label" for="edit_manual_path_display"><span class="label-text">Path</span></label>
+                                <label class="label" for="edit_manual_path_display"><span class="label-text">{{ t('status.path') }}</span></label>
                                 <div class="join w-full">
                                     <span class="join-item btn btn-disabled normal-case pointer-events-none bg-base-200 border-base-300 !min-h-[3rem] !h-[3rem] px-3">/</span>
-                                    <input type="text" id="edit_manual_path_display" placeholder="(optional) path" class="input input-bordered join-item w-full" />
+                                    <input type="text" id="edit_manual_path_display" placeholder="{{ t('status.path_optional') }}" class="input input-bordered join-item w-full" />
                                 </div>
                                 <input type="hidden" id="edit_manual_path" name="edit_path" />
                             </div>
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                             <div class="rounded-lg bg-base-200/60 p-3">
-                                <p class="text-sm font-semibold">Tunnel</p>
+                                <p class="text-sm font-semibold">{{ t('status.tunnel_name') }}</p>
                                 <p class="text-sm mt-1" id="edit_rule_tunnel_value">—</p>
                             </div>
                             <div class="rounded-lg bg-base-200/60 p-3">
-                                <p class="text-sm font-semibold">Zone</p>
+                                <p class="text-sm font-semibold">{{ t('status.zone') }}</p>
                                 <p class="text-sm mt-1" id="edit_rule_zone_value">—</p>
                             </div>
                         </div>
-                        <div class="alert alert-info hidden mt-4" id="edit_rule_agent_hint">Managed by Agent; tunnel is not editable.</div>
+                        <div class="alert alert-info hidden mt-4" id="edit_rule_agent_hint">{{ t('status.managed_by_agent') }}</div>
                     </div>
                     <div>
-                        <h4 class="text-md font-semibold mb-2">Service</h4>
+                        <h4 class="text-md font-semibold mb-2">{{ t('status.service') }}</h4>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                             <div>
-                                <label class="label" for="edit_manual_service_type"><span class="label-text">Type (Required)</span></label>
+                                <label class="label" for="edit_manual_service_type"><span class="label-text">{{ t('status.type_required') }}</span></label>
                                 <select name="edit_service_type" id="edit_manual_service_type" class="select select-bordered w-full" required>
                                     <option value="" disabled>Select...</option>
-                                    <option value="http">HTTP</option>
-                                    <option value="https">HTTPS</option>
-                                    <option value="tcp">TCP</option>
-                                    <option value="ssh">SSH (Native Client)</option>
-                                    <option value="bastion">Bastion (Browser SSH/VNC)</option>
-                                    <option value="rdp">RDP</option>
-                                    <option value="http_status">HTTP Status Code</option>
+                                    <option value="http">{{ t('status.http') }}</option>
+                                    <option value="https">{{ t('status.https') }}</option>
+                                    <option value="tcp">{{ t('status.tcp') }}</option>
+                                    <option value="ssh">{{ t('status.ssh') }}</option>
+                                    <option value="bastion">{{ t('status.bastion') }}</option>
+                                    <option value="rdp">{{ t('status.rdp') }}</option>
+                                    <option value="http_status">{{ t('status.http_status_code') }}</option>
                                 </select>
                             </div>
                             <div>
                                 <label class="label" for="edit_manual_service_address">
-                                    <span class="label-text" id="edit_manual_service_address_label">URL or Status Code</span>
+                                    <span class="label-text" id="edit_manual_service_address_label">{{ t('status.url_or_status_code') }}</span>
                                 </label>
-                                <input type="text" id="edit_manual_service_address" name="edit_service_address" placeholder="host:port or status code" class="input input-bordered w-full" />
+                                <input type="text" id="edit_manual_service_address" name="edit_service_address" placeholder="{{ t('status.host_port_or_status_code') }}" class="input input-bordered w-full" />
                             </div>
                         </div>
                     </div>
-                                   
+
                     <div>
-                        <h4 class="text-md font-semibold mb-2">Access Policy (Optional)</h4>
+                        <h4 class="text-md font-semibold mb-2">{{ t('status.access_policy_optional') }}</h4>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 items-start p-4 rounded-md bg-base-200/50">
                             <div class="form-control md:col-span-2">
                                 <label class="label" for="edit_manual_access_group">
@@ -631,76 +631,76 @@
                                         {% endfor %}
                                     {% endif %}
                                 </select>
-                                <div class="label"><span class="label-text-alt">Using groups overrides the manual policy options below. You can select multiple.</span></div>
+                                <div class="label"><span class="label-text-alt">{{ t('status.using_groups_overrides') }}</span></div>
                             </div>
-        
+
                             <div class="divider md:col-span-2 text-xs opacity-80 my-0">OR</div>
-        
+
                             <div id="edit_manual_policy_options_wrapper" class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
                                 <div class="form-control">
                                     <label class="label" for="edit_manual_access_policy_type">
                                         <span class="label-text font-medium">2. Configure Manually</span>
                                     </label>
                                     <select name="edit_access_policy_type" id="edit_manual_access_policy_type" class="select select-bordered w-full policy-type-select">
-                                        <option value="none">No Policy Assigned</option>
-                                        <option value="bypass">Bypass (Public App)</option>
+                                        <option value="none">{{ t('status.no_policy_assigned') }}</option>
+                                        <option value="bypass">{{ t('status.bypass') }}</option>
                                     </select>
                                 </div>
                             </div>
                         </div>
                     </div>
-                                    
+
                     <div class="space-y-4 pt-4 border-t border-base-300 mt-6">
                         <div class="form-control">
-                            <label class="label" for="edit_manual_zone_name_override"><span class="label-text">Cloudflare Zone Name (Override/Specific)</span></label>
-                            <input type="text" id="edit_manual_zone_name_override" name="edit_zone_name_override" placeholder="yourdomain.com (if different from Domain Name)" class="input input-bordered w-full" />
+                            <label class="label" for="edit_manual_zone_name_override"><span class="label-text">{{ t('status.cloudflare_zone_override') }}</span></label>
+                            <input type="text" id="edit_manual_zone_name_override" name="edit_zone_name_override" placeholder="{{ t('status.zone_override_placeholder') }}" class="input input-bordered w-full" />
                         </div>
                         <div id="edit_manual_no_tls_verify_div" class="form-control">
                           <label class="label cursor-pointer justify-start gap-2">
                             <input type="checkbox" name="edit_no_tls_verify" id="edit_manual_no_tls_verify" class="checkbox checkbox-sm" />
-                            <span class="label-text">Disable TLS Verification</span>
+                            <span class="label-text">{{ t('status.disable_tls_verification') }}</span>
                           </label>
                         </div>
                         <div class="form-control" id="edit_manual_origin_server_name_div">
-                            <label class="label" for="edit_manual_origin_server_name"><span class="label-text">Origin Server Name (SNI)</span></label>
+                            <label class="label" for="edit_manual_origin_server_name"><span class="label-text">{{ t('status.origin_server_name_sni_short') }}</span></label>
                             <input type="text" id="edit_manual_origin_server_name" name="edit_origin_server_name" placeholder="e.g., internal.service.local" class="input input-bordered w-full" />
                         </div>
                         <div class="form-control">
                             <label class="label" for="edit_manual_http_host_header">
-                                <span class="label-text">HTTP Host Header (Optional)</span>
+                                <span class="label-text">{{ t('status.http_host_header_optional') }}</span>
                             </label>
                             <input type="text" id="edit_manual_http_host_header" name="edit_http_host_header"
                                    placeholder="e.g., api.example.com"
                                    class="input input-bordered w-full" />
                             <label class="label">
-                                <span class="label-text-alt">Overrides the <code>Host</code> header sent to your origin server. Useful for origins expecting a different hostname than the public one. (Only applies to HTTP/HTTPS services).</span>
+                                <span class="label-text-alt">{{ t('status.http_host_header_desc') }}</span>
                             </label>
                         </div>
                         <div id="edit_http2_origin_div" class="form-control">
                           <label class="label cursor-pointer justify-start gap-2">
                             <input type="checkbox" name="edit_http2_origin" id="edit_http2_origin" class="checkbox checkbox-sm" />
-                            <span class="label-text">Enable HTTP/2 Origin</span>
+                            <span class="label-text">{{ t('status.enable_http2_origin') }}</span>
                           </label>
-                          <div class="text-xs opacity-60 ml-8">Enable HTTP/2 protocol between Cloudflare and your origin server. Required for gRPC services. (Only applies to HTTP/HTTPS services).</div>
+                          <div class="text-xs opacity-60 ml-8">{{ t('status.http2_origin_description') }}</div>
                         </div>
                         <div id="edit_disable_chunked_encoding_div" class="form-control">
                           <label class="label cursor-pointer justify-start gap-2">
                             <input type="checkbox" name="edit_disable_chunked_encoding" id="edit_disable_chunked_encoding" class="checkbox checkbox-sm" />
-                            <span class="label-text">Disable Chunked Encoding</span>
+                            <span class="label-text">{{ t('status.disable_chunked_encoding') }}</span>
                           </label>
-                          <div class="text-xs opacity-60 ml-8">Disables chunked transfer encoding over HTTP/1.1. Useful for WSGI servers (Flask, Django) and other origins that don't support chunked requests. (Only applies to HTTP/HTTPS services).</div>
+                          <div class="text-xs opacity-60 ml-8">{{ t('status.chunked_encoding_description') }}</div>
                         </div>
                         <div id="edit_match_sni_to_host_div" class="form-control">
                           <label class="label cursor-pointer justify-start gap-2">
                             <input type="checkbox" name="edit_match_sni_to_host" id="edit_match_sni_to_host" class="checkbox checkbox-sm" />
-                            <span class="label-text">Match SNI to Host</span>
+                            <span class="label-text">{{ t('status.match_sni_to_host') }}</span>
                           </label>
-                          <div class="text-xs opacity-60 ml-8">Makes Cloudflare use the public hostname as TLS SNI for origin connections. (Only applies to HTTP/HTTPS services).</div>
+                          <div class="text-xs opacity-60 ml-8">{{ t('status.match_sni_to_host_description') }}</div>
                         </div>
                     </div>
                 </div>
                 <div class="modal-action mt-8 pt-4 border-t border-base-300">
-                  <button type="submit" class="btn btn-primary">Save Changes</button>
+                  <button type="submit" class="btn btn-primary">{{ t('status.save_changes') }}</button>
                 </div>
             </form>
         </div>
@@ -983,7 +983,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (groupValue === 'status') return getStatusGroup(row);
         if (groupValue === 'tunnel') return getTunnelGroup(row);
         if (groupValue === 'access-policy') return getAccessPolicyGroup(row);
-        return { key: 'all', label: 'All Rules' };
+        return { key: 'all', label: t('js.text.all_rules') };
     }
 
     function updateStats() {

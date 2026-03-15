@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Settings{% endblock %}
+{% block title %}{{ t('settings.title') }}{% endblock %}
 
 {% block content %}
 <style>
@@ -13,17 +13,17 @@
     <aside class="w-full sm:w-1/3 md:w-1/4 flex-shrink-0">
         <div class="sticky top-20">
             <ul id="settings-left-nav" class="menu bg-base-200 rounded-box p-2">
-                <li><a href="{{ url_for('web.settings_page') }}#general-settings">General Settings</a></li>
-                <li><a href="{{ url_for('web.settings_page') }}#cloudflare-tunnels">All Cloudflare Tunnels</a></li>
-                <li><a href="{{ url_for('web.settings_page') }}#backup-restore">Backup & Restore</a></li>
-                <li><a href="{{ url_for('web.settings_page') }}#security">Security</a></li>
-                <li><a href="{{ url_for('web.settings_page') }}#security" class="pl-8 text-sm">OAuth Authentication</a></li>
-                <li><a href="{{ url_for('web.settings_page') }}#tunnel-agent-status">Tunnel & Agent Status</a></li>
+                <li><a href="{{ url_for('web.settings_page') }}#general-settings">{{ t('settings.general_settings') }}</a></li>
+                <li><a href="{{ url_for('web.settings_page') }}#cloudflare-tunnels">{{ t('settings.all_cloudflare_tunnels') }}</a></li>
+                <li><a href="{{ url_for('web.settings_page') }}#backup-restore">{{ t('settings.backup_restore') }}</a></li>
+                <li><a href="{{ url_for('web.settings_page') }}#security">{{ t('settings.security') }}</a></li>
+                <li><a href="{{ url_for('web.settings_page') }}#security" class="pl-8 text-sm">{{ t('settings.oauth_authentication') }}</a></li>
+                <li><a href="{{ url_for('web.settings_page') }}#tunnel-agent-status">{{ t('settings.tunnel_agent_status') }}</a></li>
             </ul>
             <div class="mt-4 px-2">
-                <button id="btn-check-version" class="btn btn-sm btn-outline w-full" type="button" title="Check DockFlare version">
+                <button id="btn-check-version" class="btn btn-sm btn-outline w-full" type="button" title="{{ t('settings.check_version_title') }}">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 inline-block" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                    Check version
+                    {{ t('settings.check_version') }}
                 </button>
                 <div id="version-check-status" class="text-xs opacity-70 mt-2 hidden"></div>
             </div>
@@ -35,7 +35,7 @@
         <section id="general-settings" class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
             <div class="card-body">
                 <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
-                    General Settings
+                    {{ t('settings.general_settings') }}
                 </h2>
                 <form method="POST" action="{{ url_for('web.settings_page') }}" class="space-y-4">
                     {{ settings_form.hidden_tag() }}
@@ -46,7 +46,7 @@
                         </label>
                         {{ settings_form.tunnel_name(class="input input-bordered w-full", **{'id': 'tunnel_name'}) }}
                         <label class="label">
-                            <span class="label-text-alt">Used for Cloudflare tunnel display. DockFlare automatically normalizes this value when generating the local cloudflared container name.</span>
+                            <span class="label-text-alt">{{ t('settings.tunnel_name_help') }}</span>
                         </label>
                         {% for error in settings_form.tunnel_name.errors %}
                             <label class="label">
@@ -61,7 +61,7 @@
                         </label>
                         {{ settings_form.cf_zone_id(class="input input-bordered w-full", **{'id': 'cf_zone_id'}) }}
                         <label class="label">
-                            <span class="label-text-alt">Optional. The default Zone ID for new DNS records.</span>
+                            <span class="label-text-alt">{{ t('settings.optional_default_zone_id') }}</span>
                         </label>
                     </div>
 
@@ -93,7 +93,7 @@
                             <span class="label-text">{{ settings_form.preserve_unmanaged_cf_ingress_fields.label.text }}</span>
                         </label>
                         <label class="label">
-                            <span class="label-text-alt">When enabled, DockFlare keeps existing Cloudflare tunnel route fields that it does not manage instead of clearing them during sync.</span>
+                            <span class="label-text-alt">{{ t('settings.keep_existing_fields') }}</span>
                         </label>
                     </div>
                     
@@ -102,20 +102,20 @@
                     </div>
                 </form>
                 <div class="border-t border-base-300 mt-8 pt-8">
-                    <h3 class="font-semibold text-lg mb-2">Update Cloudflare Credentials</h3>
+                    <h3 class="font-semibold text-lg mb-2">{{ t('settings.update_cloudflare_credentials') }}</h3>
                     <div role="alert" class="alert alert-info text-sm mb-4">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         <span>
-                            Enter a new Account ID or API Token to update. For security, current values are not displayed.
+                            {{ t('settings.enter_new_credentials') }}
                             <br>
-                            Updating credentials require an DockFlare restart to take full effect.
+                            {{ t('settings.credentials_require_restart') }}
                         </span>
                     </div>
                     <form method="POST" action="{{ url_for('web.settings_page') }}" class="space-y-4">
                         {{ cf_credentials_form.hidden_tag() }}
                         <div class="form-control">
                             <label class="label" for="cf_account_id">
-                                <span class="label-text">Cloudflare Account ID</span>
+                                <span class="label-text">{{ t('settings.cloudflare_account_id') }}</span>
                             </label>
                             {{ cf_credentials_form.cf_account_id(class="input input-bordered w-full", **{'id': 'cf_account_id', 'placeholder': 'Enter new 32-character Account ID'}) }}
                             {% for error in cf_credentials_form.cf_account_id.errors %}
@@ -126,7 +126,7 @@
                         </div>
                         <div class="form-control">
                             <label class="label" for="cf_api_token">
-                                <span class="label-text">Cloudflare API Token</span>
+                                <span class="label-text">{{ t('settings.cloudflare_api_token') }}</span>
                             </label>
                             {{ cf_credentials_form.cf_api_token(class="input input-bordered w-full", **{'id': 'cf_api_token', 'placeholder': 'Enter new 40-character API Token'}) }}
                             {% for error in cf_credentials_form.cf_api_token.errors %}
@@ -146,10 +146,10 @@
         <!-- 2. All Cloudflare Tunnels on Account Section -->
         <section id="cloudflare-tunnels" class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
             <div class="card-body">
-                <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">All Cloudflare Tunnels on Account</h2>
+                <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">{{ t('settings.all_tunnels_on_account') }}</h2>
                 {% if CF_ACCOUNT_ID_CONFIGURED %}
                     <p class="mb-4 text-sm opacity-70">
-                        Displaying tunnels for Account ID: <code class="badge badge-ghost">{{ ACCOUNT_ID_FOR_DISPLAY | e }}</code>.
+                        {{ t('settings.displaying_tunnels_for') }} <code class="badge badge-ghost">{{ ACCOUNT_ID_FOR_DISPLAY | e }}</code>.
                         <br>
                         <em class="text-xs opacity-60">This list shows all tunnels on the account, not just the one managed by DockFlare. Click '+' to view associated DNS records.</em>
                     </p>
@@ -159,11 +159,11 @@
                                 <thead>
                                     <tr>
                                         <th class="w-12">+/-</th>
-                                        <th>Tunnel Name</th>
-                                        <th>Tunnel ID</th>
-                                        <th>Status</th>
-                                        <th>Created At</th>
-                                        <th class="w-32">Actions</th>
+                                        <th>{{ t('settings.tunnel_name') }}</th>
+                                        <th>{{ t('settings.tunnel_id') }}</th>
+                                        <th>{{ t('common.status') }}</th>
+                                        <th>{{ t('settings.created_at') }}</th>
+                                        <th class="w-32">{{ t('common.actions') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -171,7 +171,7 @@
                                         <tr>
                                             <td class="text-center">
                                                 <button type="button" class="btn btn-xs btn-ghost btn-circle tunnel-dns-toggle"
-                                                        data-tunnel-id="{{ tunnel.id | e }}" aria-expanded="false" aria-controls="dns-records-{{ tunnel.id | e }}" title="Toggle DNS records">
+                                                        data-tunnel-id="{{ tunnel.id | e }}" aria-expanded="false" aria-controls="dns-records-{{ tunnel.id | e }}" title="{{ t('settings.toggle_dns_records') }}">
                                                     <svg class="w-4 h-4 expand-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
                                                     <svg class="w-4 h-4 collapse-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6"></path></svg>
                                                 </button>
@@ -187,7 +187,7 @@
                                                 <button type="button" class="btn btn-xs btn-error delete-tunnel-btn"
                                                         data-tunnel-id="{{ tunnel.id | e }}"
                                                         data-tunnel-name="{{ tunnel.name | e }}">
-                                                    Delete
+                                                    {{ t('common.delete') }}
                                                 </button>
                                             </td>
                                         </tr>
@@ -203,15 +203,15 @@
                             </table>
                         </div>
                     {% elif all_account_tunnels is defined %}
-                        <p class="text-center opacity-70 py-8">No Cloudflare Tunnels found for Account ID: <code class="badge badge-ghost">{{ ACCOUNT_ID_FOR_DISPLAY | e }}</code>.</p>
-                        <p class="text-center text-xs opacity-60"><em>This could also mean an error occurred. Ensure your API Token has 'Account:Cloudflare Tunnel:Read' permission.</em></p>
+                        <p class="text-center opacity-70 py-8">{{ t('settings.no_tunnels_found') }} <code class="badge badge-ghost">{{ ACCOUNT_ID_FOR_DISPLAY | e }}</code>.</p>
+                        <p class="text-center text-xs opacity-60"><em>{{ t('settings.ensure_api_token_permission') }}</em></p>
                     {% else %}
-                        <p class="alert alert-warning text-center py-8">Could not retrieve tunnel information.</p>
+                        <p class="alert alert-warning text-center py-8">{{ t('settings.could_not_retrieve_tunnel_info') }}</p>
                     {% endif %}
                 {% else %}
                      <div role="alert" class="alert alert-warning">
                         <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                        <span>The <code>CF_ACCOUNT_ID</code> environment variable is not configured. This section cannot be displayed.</span>
+                        <span>{{ t('settings.env_var') }} <code>{{ t('settings.cf_account_id') }}</code> {{ t('settings.env_var_not_configured') }}</span>
                     </div>
                 {% endif %}
             </div>
@@ -220,40 +220,40 @@
         <dialog id="delete_tunnel_modal" class="modal">
             <div class="modal-box w-11/12 max-w-md bg-base-100/90 backdrop-blur">
                 <form method="dialog">
-                    <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" title="Close">✕</button>
+                    <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" title="{{ t('common.close') }}">✕</button>
                 </form>
-                <h3 class="font-bold text-lg mb-2">Delete Cloudflare Tunnel</h3>
+                <h3 class="font-bold text-lg mb-2">{{ t('settings.delete_cloudflare_tunnel') }}</h3>
                 <p id="delete_tunnel_warning_text" class="text-sm opacity-80 mb-4">
-                    Deleting this tunnel will disconnect any agents currently using it.
+                    {{ t('settings.deleting_tunnel_warning') }}
                 </p>
                 <form id="delete_tunnel_form" action="{{ url_for('web.ui_delete_cloudflare_tunnel_route') }}" method="POST" class="space-y-4">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="tunnel_id" id="delete_tunnel_id">
                     <label class="form-control w-full">
-                        <span class="label-text text-sm">Type <span class="font-semibold">delete</span> to confirm</span>
+                        <span class="label-text text-sm">{{ t('js.prompt.delete_tunnel_confirm') }}</span>
                         <input type="text" name="confirm_text" id="delete_tunnel_confirm_input" class="input input-bordered w-full" autocomplete="off" required>
                     </label>
                     <div class="modal-action mt-4">
-                        <button type="submit" id="delete_tunnel_confirm_button" class="btn btn-error" disabled>Delete Tunnel</button>
-                        <button type="button" class="btn" onclick="document.getElementById('delete_tunnel_modal').close()">Cancel</button>
+                        <button type="submit" id="delete_tunnel_confirm_button" class="btn btn-error" disabled>{{ t('settings.delete_tunnel') }}</button>
+                        <button type="button" class="btn" onclick="document.getElementById('delete_tunnel_modal').close()">{{ t('common.cancel') }}</button>
                     </div>
                 </form>
             </div>
-            <form method="dialog" class="modal-backdrop"><button>Close</button></form>
+            <form method="dialog" class="modal-backdrop"><button>{{ t('common.close') }}</button></form>
         </dialog>
 
         <!-- 3. Backup & Restore Section -->
         <section id="backup-restore" class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl border-2 border-warning">
             <div class="card-body">
                 <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
-                    Backup & Restore
+                    {{ t('settings.backup_restore') }}
                 </h2>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
                     
                     <!-- Backup Column -->
                     <div>
-                        <h3 class="font-semibold text-lg mb-2">Create Backup</h3>
+                        <h3 class="font-semibold text-lg mb-2">{{ t('settings.create_backup') }}</h3>
                         <p class="text-sm opacity-80 mb-4">
                             Download a full DockFlare backup archive (`.zip`) containing your encrypted configuration, agent keys, and state file. Store it safely with the `dockflare.key` included in the archive.
                         </p>
@@ -261,16 +261,16 @@
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                               <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                             </svg>
-                            Download Backup Archive
+                            {{ t('settings.download_backup') }}
                         </a>
                     </div>
 
                     <!-- Restore Column -->
                     <div>
-                        <h3 class="font-semibold text-lg mb-2">Restore from Backup</h3>
+                        <h3 class="font-semibold text-lg mb-2">{{ t('settings.restore_from_backup') }}</h3>
                         <div role="alert" class="alert alert-warning text-sm mb-4">
                             <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                            <span><strong>Warning:</strong> Restoring a backup overwrites configuration, credentials, agent keys, and state. This action cannot be undone.</span>
+                            <span><strong>Warning:</strong> {{ t('settings.restore_warning') }}</span>
                         </div>
 
                         <form action="{{ url_for('web.restore_state_backup') }}" method="POST" enctype="multipart/form-data" class="protocol-aware-form space-y-3">
@@ -283,7 +283,7 @@
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                   <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                 </svg>
-                                Upload and Restore Backup
+                                {{ t('settings.upload_restore_backup') }}
                             </button>
                         </form>
                     </div>
@@ -295,38 +295,38 @@
         <section id="security" class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
             <div class="card-body">
                 <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
-                    Security
+                    {{ t('settings.security') }}
                 </h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
                     <div>
-                        <h3 class="font-semibold text-lg mb-2">Change Password</h3>
+                        <h3 class="font-semibold text-lg mb-2">{{ t('settings.change_password') }}</h3>
                         <form method="POST" action="{{ url_for('web.change_password') }}" class="space-y-4">
                             {{ change_password_form.hidden_tag() }}
                             <div class="form-control">
                                 <label class="label" for="current_password">
-                                    <span class="label-text">Current Password</span>
+                                    <span class="label-text">{{ t('settings.current_password') }}</span>
                                 </label>
                                 {{ change_password_form.current_password(class="input input-bordered w-full", **{'id': 'current_password'}) }}
                             </div>
                             <div class="form-control">
                                 <label class="label" for="new_password">
-                                    <span class="label-text">New Password</span>
+                                    <span class="label-text">{{ t('settings.new_password') }}</span>
                                 </label>
                                 {{ change_password_form.new_password(class="input input-bordered w-full", **{'id': 'new_password'}) }}
                             </div>
                             <div class="form-control">
                                 <label class="label" for="confirm_new_password">
-                                    <span class="label-text">Confirm New Password</span>
+                                    <span class="label-text">{{ t('settings.confirm_new_password') }}</span>
                                 </label>
                                 {{ change_password_form.confirm_new_password(class="input input-bordered w-full", **{'id': 'confirm_new_password'}) }}
                             </div>
                             <div class="card-actions">
-                                <button type="submit" class="btn btn-primary">Change Password</button>
+                                <button type="submit" class="btn btn-primary">{{ t('settings.change_password') }}</button>
                             </div>
                         </form>
                     </div>
                     <div>
-                        <h3 class="font-semibold text-lg mb-2">Disable Password Login</h3>
+                        <h3 class="font-semibold text-lg mb-2">{{ t('settings.disable_password_login') }}</h3>
                         <form method="POST" action="{{ url_for('web.settings_page') }}" class="space-y-4 protocol-aware-form">
                             {{ security_settings_form.hidden_tag() }}
 
@@ -339,7 +339,7 @@
 
                             <div role="alert" class="alert alert-warning text-sm">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                                <span><strong>Security Warning:</strong> When disabling password login, you become responsible for securing DockFlare access. Best practice is to use a Cloudflare Tunnel with an Access Policy and ensure Docker ports are not exposed, preventing access from the local network (LAN).</span>
+                                <span><strong>{{ t('settings.security_warning') }}</strong> {{ t('settings.disable_password_warning') }}</span>
                             </div>
 
                             <div class="card-actions">
@@ -347,26 +347,26 @@
                             </div>
                         </form>
                         <div class="mt-6">
-                            <h4 class="text-md font-semibold mb-2 opacity-80">Master API Key</h4>
-                            <button type="button" class="btn btn-sm btn-outline" id="btn-show-master-key">Show Master API Key</button>
-                            <span class="block text-xs opacity-70 mt-2">Keep this key secret; rotate it if exposed.</span>
+                            <h4 class="text-md font-semibold mb-2 opacity-80">{{ t('settings.master_api_key') }}</h4>
+                            <button type="button" class="btn btn-sm btn-outline" id="btn-show-master-key">{{ t('settings.show_master_api_key') }}</button>
+                            <span class="block text-xs opacity-70 mt-2">{{ t('settings.master_api_key_desc') }}</span>
                         </div>
                     </div>
                 </div>
 
                 <!-- OAuth Authentication Section -->
                 <div class="mt-8">
-                    <h3 class="font-semibold text-lg mb-4">OAuth Authentication</h3>
-                    <p class="text-sm opacity-70 mb-4">Configure OAuth providers to allow users to log in with third-party services like Google, GitHub, or Microsoft.</p>
+                    <h3 class="font-semibold text-lg mb-4">{{ t('settings.oauth_authentication') }}</h3>
+                    <p class="text-sm opacity-70 mb-4">{{ t('settings.configure_oauth_desc') }}</p>
 
                     <!-- OAuth Settings Card -->
                     <div class="card bg-base-200 mb-6">
                         <div class="card-body">
-                            <h4 class="card-title text-md">OAuth Settings</h4>
+                            <h4 class="card-title text-md">{{ t('settings.oauth_settings') }}</h4>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div class="form-control">
                                     <label class="label" for="oauth_session_timeout">
-                                        <span class="label-text">Session Timeout (seconds)</span>
+                                        <span class="label-text">{{ t('settings.session_timeout') }}</span>
                                     </label>
                                     {{ security_settings_form.oauth_session_timeout(class="input input-bordered input-sm", **{'id': 'oauth_session_timeout'}) }}
                                 </div>
@@ -383,23 +383,23 @@
                     <!-- OAuth Providers Section -->
                     <div class="mb-6">
                         <div class="flex justify-between items-center mb-4">
-                            <h4 class="text-md font-semibold">OAuth Providers</h4>
+                            <h4 class="text-md font-semibold">{{ t('settings.oauth_settings') }}</h4>
                             <button class="btn btn-primary btn-sm" onclick="showAddProviderModal()">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                                 </svg>
-                                Add Provider
+                                {{ t('settings.add_provider') }}
                             </button>
                         </div>
                         <div role="alert" class="alert alert-warning text-sm mb-4">
                             <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                             </svg>
-                            <span><strong>Security:</strong> OAuth providers you configure here will be trusted to authenticate users. Only add providers you control or fully trust.</span>
+                            <span><strong>{{ t('settings.security') }}:</strong> {{ t('settings.oauth_trust_warning') }}</span>
                         </div>
                         <div id="provider-list" class="space-y-3">
                             <div class="text-center text-sm opacity-60 py-8">
-                                No OAuth providers configured. Click "Add Provider" to get started.
+                                {{ t('settings.no_oauth_configured') }}
                             </div>
                         </div>
                     </div>
@@ -407,29 +407,29 @@
                     <!-- Authorized Users Section -->
                     <div class="mb-6">
                         <div class="flex justify-between items-center mb-4">
-                            <h4 class="text-md font-semibold">Authorized Users</h4>
+                            <h4 class="text-md font-semibold">{{ t('settings.authorized_users') }}</h4>
                             <button class="btn btn-secondary btn-sm" onclick="showAddUserModal()">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                 </svg>
-                                Add User
+                                {{ t('settings.add_user') }}
                             </button>
                         </div>
-                        <p class="text-sm opacity-70 mb-4">Only users with email addresses listed here will be allowed to authenticate via OAuth.</p>
+                        <p class="text-sm opacity-70 mb-4">{{ t('settings.only_listed_users') }}</p>
                         <div id="user-list" class="space-y-3">
                             <div class="text-center text-sm opacity-60 py-8">
-                                No authorized users configured. Click "Add User" to authorize email addresses.
+                                {{ t('settings.no_authorized_users') }}
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <div class="mt-8">
-                    <h3 class="font-semibold text-lg mb-2">Password Reset</h3>
+                    <h3 class="font-semibold text-lg mb-2">{{ t('settings.password_reset') }}</h3>
                     <div role="alert" class="alert alert-info text-sm">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         <span>
-                            To reset your password, you must have filesystem access to the DockFlare container.
+                            {{ t('settings.filesystem_access_required') }}
                             <br>
                             1. Stop the DockFlare container.
                             <br>
@@ -446,7 +446,7 @@
         <section id="tunnel-agent-status" class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
             <div class="card-body">
                 <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
-                    Tunnel & Agent Status
+                    {{ t('settings.tunnel_agent_status') }}
                 </h2>
 
                 {% if agent_state.last_action_status or tunnel_state.get('error') %}
@@ -459,25 +459,25 @@
                 {% endif %}
 
                 <div class="mb-6">
-                    <h4 class="text-md font-semibold mb-3 opacity-80">Tunnel Details</h4>
+                    <h4 class="text-md font-semibold mb-3 opacity-80">{{ t('settings.tunnel_details') }}</h4>
                      <div class="space-y-2 text-sm">
-                        <p><strong class="inline-block w-36 opacity-70">Desired Name:</strong> <code class="badge badge-ghost">{{ tunnel_state.name }}</code></p>
-                        <p><strong class="inline-block w-36 opacity-70">Tunnel ID:</strong> <code class="badge badge-ghost">{{ tunnel_state.id if tunnel_state.id else 'N/A' }}</code></p>
+                        <p><strong class="inline-block w-36 opacity-70">{{ t('settings.desired_name_label') }}</strong> <code class="badge badge-ghost">{{ tunnel_state.name }}</code></p>
+                        <p><strong class="inline-block w-36 opacity-70">{{ t('settings.tunnel_id_label') }}</strong> <code class="badge badge-ghost">{{ tunnel_state.id if tunnel_state.id else 'N/A' }}</code></p>
                         {% if not external_cloudflared %}
-                        <p><strong class="inline-block w-36 opacity-70">Tunnel Token:</strong> <code class="badge badge-ghost">{{ display_token }}</code></p>
+                        <p><strong class="inline-block w-36 opacity-70">{{ t('settings.tunnel_token_label') }}</strong> <code class="badge badge-ghost">{{ display_token }}</code></p>
                         {% endif %}
                     </div>
                 </div>
                 <div>
-                    <h3 class="text-lg font-semibold mb-3 opacity-80">Agent Control</h3>
+                    <h3 class="text-lg font-semibold mb-3 opacity-80">{{ t('settings.agent_control') }}</h3>
                     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 sm:gap-6 mt-2 p-4 bg-base-200/50 rounded-md">
                         {% if external_cloudflared %}
                             <div class="flex-grow space-y-1.5">
-                                <strong class="text-sm font-medium">External Mode:</strong> <span class="badge badge-info badge-sm animate-pulse">Active</span>
+                                <strong class="text-sm font-medium">{{ t('settings.external_mode') }}</strong> <span class="badge badge-info badge-sm animate-pulse">{{ t('common.active') }}</span>
                             </div>
                         {% else %}
                          <div class="flex-grow space-y-1.5">
-                            <strong class="text-sm font-medium">Agent Status:</strong>
+                            <strong class="text-sm font-medium">{{ t('settings.agent_status') }}</strong>
                             {% set indicator_color = 'bg-gray-400' %}
                             {% if agent_state.container_status == 'running' %} {% set indicator_color = 'badge-success' %}
                             {% elif agent_state.container_status in ['exited', 'dead', 'not_found'] %} {% set indicator_color = 'badge-error' %}
@@ -488,12 +488,12 @@
                              {% if agent_state.container_status=='running' %}
                                  <form action="{{ url_for('web.stop_tunnel_route') }}" method="post" class="protocol-aware-form">
                                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                     <button type="submit" class="btn btn-sm btn-error w-full sm:w-auto">Stop Agent</button>
+                                     <button type="submit" class="btn btn-sm btn-error w-full sm:w-auto">{{ t('settings.stop_agent') }}</button>
                                  </form>
                              {% else %}
                                  <form action="{{ url_for('web.start_tunnel_route') }}" method="post" class="protocol-aware-form">
                                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                     <button type="submit" class="btn btn-sm btn-success w-full sm:w-auto">Start Agent</button>
+                                     <button type="submit" class="btn btn-sm btn-success w-full sm:w-auto">{{ t('settings.start_agent') }}</button>
                                  </form>
                              {% endif %}
                          </div>
@@ -507,17 +507,17 @@
 
 <dialog id="master-key-modal" class="modal">
   <div class="modal-box max-w-xl">
-    <h3 class="font-bold text-lg mb-2">Master API Key</h3>
-    <p class="text-sm opacity-70 mb-4">Treat this key like a password. Anyone with it can call the DockFlare API.</p>
+    <h3 class="font-bold text-lg mb-2">{{ t('settings.master_api_key') }}</h3>
+    <p class="text-sm opacity-70 mb-4">{{ t('settings.master_api_key_warning') }}</p>
     <div class="bg-base-200 rounded-md p-4">
-      <code id="master-key-display" class="break-all text-sm">Loading...</code>
+      <code id="master-key-display" class="break-all text-sm">{{ t('common.loading') }}</code>
     </div>
     <div class="modal-action mt-6 gap-2">
-      <button type="button" class="btn btn-sm" id="btn-copy-master-key">Copy</button>
-      <button type="button" class="btn btn-sm btn-primary" id="btn-close-master-key">Close</button>
+      <button type="button" class="btn btn-sm" id="btn-copy-master-key">{{ t('common.copy') }}</button>
+      <button type="button" class="btn btn-sm btn-primary" id="btn-close-master-key">{{ t('common.close') }}</button>
     </div>
   </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  <form method="dialog" class="modal-backdrop"><button>{{ t('common.close') }}</button></form>
 </dialog>
 {% endblock %}
 
@@ -551,7 +551,7 @@
           const modal = document.getElementById('master-key-modal');
           const keyDisplay = document.getElementById('master-key-display');
           if (modal && keyDisplay) {
-            keyDisplay.textContent = payload.master_api_key || 'Unavailable';
+            keyDisplay.textContent = payload.master_api_key || t('js.text.unavailable');
             modal.showModal();
           }
         } catch (err) {
@@ -757,7 +757,7 @@
     const providerList = document.getElementById('provider-list');
     if (!providerList) return;
     if (!authData || !authData.providers || authData.providers.length === 0) {
-      providerList.innerHTML = '<div class="text-center text-sm opacity-60 py-8">No OAuth providers configured. Click "Add Provider" to get started.</div>';
+      providerList.innerHTML = '<div class="text-center text-sm opacity-60 py-8">{{ t('settings.no_oauth_configured') }}</div>';
       return;
     }
 
@@ -808,7 +808,7 @@
     const userList = document.getElementById('user-list');
     if (!userList) return;
     if (!authData || !authData.users || authData.users.length === 0) {
-      userList.innerHTML = '<div class="text-center text-sm opacity-60 py-8">No authorized users configured. Click "Add User" to authorize email addresses.</div>';
+      userList.innerHTML = '<div class="text-center text-sm opacity-60 py-8">{{ t('settings.no_authorized_users') }}</div>';
       return;
     }
 
@@ -907,7 +907,7 @@
     form.elements['provider_id'].value = provider.id;
     form.elements['provider_name'].value = provider.name;
     form.elements['client_id'].value = provider.client_id || '';
-    form.elements['client_id'].placeholder = 'OAuth Client ID';
+    form.elements['client_id'].placeholder = t('js.text.oauth_client_id_placeholder');
     form.elements['enabled'].checked = provider.enabled;
     
     form.elements['client_secret'].value = '';
@@ -1114,63 +1114,63 @@
 <!-- Add Provider Modal -->
 <dialog id="addProviderModal" class="modal">
   <div class="modal-box">
-    <h3 class="font-bold text-lg">Add OAuth Provider</h3>
+    <h3 class="font-bold text-lg">{{ t('settings.add_oauth_provider') }}</h3>
     <form id="addProviderForm" class="space-y-4 mt-4">
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Provider Type</span>
+          <span class="label-text">{{ t('settings.provider_type') }}</span>
         </label>
         <select name="provider_type" class="select select-bordered" required>
-          <option value="google" selected>Google</option>
-          <option value="github">GitHub</option>
-          <option value="oidc">Generic OIDC / Authentik</option>
+          <option value="google" selected>{{ t('settings.google') }}</option>
+          <option value="github">{{ t('settings.github') }}</option>
+          <option value="oidc">{{ t('settings.generic_oidc') }}</option>
         </select>
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Issuer URL</span>
+          <span class="label-text">{{ t('settings.issuer_url') }}</span>
         </label>
-        <input name="issuer_url" type="url" placeholder="https://authentik.example.com/application/o/dockflare/" class="input input-bordered" required />
+        <input name="issuer_url" type="url" placeholder="{{ t('settings.issuer_url_example') }}" class="input input-bordered" required />
         <label class="label">
-            <span class="label-text-alt">The OIDC provider's issuer URL.</span>
+            <span class="label-text-alt">{{ t('settings.issuer_url_desc') }}</span>
         </label>
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Provider ID</span>
+          <span class="label-text">{{ t('settings.provider_id') }}</span>
         </label>
-        <input name="provider_id" type="text" placeholder="e.g. google, github-corp" class="input input-bordered" required />
+        <input name="provider_id" type="text" placeholder="{{ t('settings.provider_id_example') }}" class="input input-bordered" required />
         <label class="label">
-          <span class="label-text-alt">Unique identifier for this provider</span>
+          <span class="label-text-alt">{{ t('settings.unique_id_for_provider') }}</span>
         </label>
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Display Name</span>
+          <span class="label-text">{{ t('modal.idp.display_name') }}</span>
         </label>
-        <input name="provider_name" type="text" placeholder="e.g. Google, GitHub Corporate" class="input input-bordered" required />
+        <input name="provider_name" type="text" placeholder="{{ t('settings.provider_display_name_example') }}" class="input input-bordered" required />
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Client ID</span>
+          <span class="label-text">{{ t('settings.client_id') }}</span>
         </label>
-        <input name="client_id" type="text" placeholder="OAuth Client ID" class="input input-bordered" required />
+        <input name="client_id" type="text" placeholder="{{ t('settings.oauth_client_id') }}" class="input input-bordered" required />
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Client Secret</span>
+          <span class="label-text">{{ t('settings.client_secret') }}</span>
         </label>
-        <input name="client_secret" type="password" placeholder="OAuth Client Secret" class="input input-bordered" required />
+        <input name="client_secret" type="password" placeholder="{{ t('settings.oauth_client_secret') }}" class="input input-bordered" required />
       </div>
 
       <div class="form-control">
         <label class="label cursor-pointer">
-          <span class="label-text">Enable Provider</span>
+          <span class="label-text">{{ t('settings.enable_provider') }}</span>
           <input name="enabled" type="checkbox" class="toggle" checked />
         </label>
       </div>
@@ -1178,9 +1178,9 @@
 
     <div class="modal-action">
       <form method="dialog">
-        <button class="btn">Cancel</button>
+        <button class="btn">{{ t('common.cancel') }}</button>
       </form>
-      <button class="btn btn-primary" onclick="addProvider()">Add Provider</button>
+      <button class="btn btn-primary" onclick="addProvider()">{{ t('settings.add_provider') }}</button>
     </div>
   </div>
 </dialog>
@@ -1188,58 +1188,58 @@
 <!-- Edit Provider Modal -->
 <dialog id="editProviderModal" class="modal">
   <div class="modal-box">
-    <h3 class="font-bold text-lg">Edit OAuth Provider</h3>
+    <h3 class="font-bold text-lg">{{ t('settings.edit_oauth_provider') }}</h3>
     <form id="editProviderForm" class="space-y-4 mt-4">
       <input type="hidden" name="original_provider_id">
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Provider Type</span>
+          <span class="label-text">{{ t('settings.provider_type') }}</span>
         </label>
         <select name="provider_type" class="select select-bordered" required disabled>
-          <option value="google">Google</option>
-          <option value="github">GitHub</option>
-          <option value="oidc">Generic OIDC / Authentik</option>
+          <option value="google">{{ t('settings.google') }}</option>
+          <option value="github">{{ t('settings.github') }}</option>
+          <option value="oidc">{{ t('settings.generic_oidc') }}</option>
         </select>
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Issuer URL</span>
+          <span class="label-text">{{ t('settings.issuer_url') }}</span>
         </label>
-        <input name="issuer_url" type="url" placeholder="https://authentik.example.com/application/o/dockflare/" class="input input-bordered" required />
+        <input name="issuer_url" type="url" placeholder="{{ t('settings.issuer_url_example') }}" class="input input-bordered" required />
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Provider ID</span>
+          <span class="label-text">{{ t('settings.provider_id') }}</span>
         </label>
-        <input name="provider_id" type="text" placeholder="e.g. google" class="input input-bordered" required disabled />
+        <input name="provider_id" type="text" placeholder="{{ t('settings.provider_id_example') }}" class="input input-bordered" required disabled />
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Display Name</span>
+          <span class="label-text">{{ t('modal.idp.display_name') }}</span>
         </label>
-        <input name="provider_name" type="text" placeholder="e.g. Google" class="input input-bordered" required />
+        <input name="provider_name" type="text" placeholder="{{ t('settings.provider_name_example') }}" class="input input-bordered" required />
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Client ID</span>
+          <span class="label-text">{{ t('settings.client_id') }}</span>
         </label>
-        <input name="client_id" type="text" placeholder="OAuth Client ID" class="input input-bordered" required />
+        <input name="client_id" type="text" placeholder="{{ t('settings.oauth_client_id') }}" class="input input-bordered" required />
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Client Secret</span>
+          <span class="label-text">{{ t('settings.client_secret') }}</span>
         </label>
-        <input name="client_secret" type="password" placeholder="Leave blank to keep existing secret" class="input input-bordered" />
+        <input name="client_secret" type="password" placeholder="{{ t('settings.leave_blank_keep_secret') }}" class="input input-bordered" />
       </div>
 
       <div class="form-control">
         <label class="label cursor-pointer">
-          <span class="label-text">Enable Provider</span>
+          <span class="label-text">{{ t('settings.enable_provider') }}</span>
           <input name="enabled" type="checkbox" class="toggle" />
         </label>
       </div>
@@ -1247,9 +1247,9 @@
 
     <div class="modal-action">
       <form method="dialog">
-        <button class="btn">Cancel</button>
+        <button class="btn">{{ t('common.cancel') }}</button>
       </form>
-      <button class="btn btn-primary" onclick="updateProvider()">Save Changes</button>
+      <button class="btn btn-primary" onclick="updateProvider()">{{ t('common.save') }}</button>
     </div>
   </div>
 </dialog>
@@ -1257,21 +1257,21 @@
 <!-- Add User Modal -->
 <dialog id="addUserModal" class="modal">
   <div class="modal-box">
-    <h3 class="font-bold text-lg">Add Authorized User</h3>
+    <h3 class="font-bold text-lg">{{ t('settings.add_authorized_user') }}</h3>
     <form id="addUserForm" class="space-y-4 mt-4">
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Email Address</span>
+          <span class="label-text">{{ t('settings.email_address') }}</span>
         </label>
-        <input name="user_email" type="email" placeholder="user@example.com" class="input input-bordered" required />
+        <input name="user_email" type="email" placeholder="{{ t('settings.email_example') }}" class="input input-bordered" required />
         <label class="label">
-          <span class="label-text-alt">This email must match exactly with the OAuth provider</span>
+          <span class="label-text-alt">{{ t('settings.email_must_match') }}</span>
         </label>
       </div>
 
       <div class="form-control">
         <label class="label">
-          <span class="label-text">Display Name (Optional)</span>
+          <span class="label-text">{{ t('modal.idp.display_name') }}</span>
         </label>
         <input name="user_name" type="text" placeholder="John Doe" class="input input-bordered" />
       </div>
@@ -1279,9 +1279,9 @@
 
     <div class="modal-action">
       <form method="dialog">
-        <button class="btn">Cancel</button>
+        <button class="btn">{{ t('common.cancel') }}</button>
       </form>
-      <button class="btn btn-primary" onclick="addUser()">Add User</button>
+      <button class="btn btn-primary" onclick="addUser()">{{ t('settings.add_user') }}</button>
     </div>
   </div>
 </dialog>

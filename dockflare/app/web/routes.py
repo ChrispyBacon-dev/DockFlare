@@ -69,6 +69,7 @@ from app.core.utils import get_rule_key, normalize_path_value
 from app.core.container_name import build_cloudflared_container_name
 from app.core import backup_manager
 from app.web import config_loader
+from app.i18n import t as _t
 from cryptography.fernet import Fernet
 
 bp = Blueprint('web', __name__)
@@ -508,7 +509,7 @@ def access_policies_page():
             countries = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         countries = []
-        flash('Could not load country list for Access Group modal.', 'error')
+        flash(_t('flash.country_list_error'), 'error')
 
     cf_account_id = current_app.config.get('CF_ACCOUNT_ID', '')
 
@@ -575,10 +576,10 @@ def settings_page():
                 current_app.config['PRESERVE_UNMANAGED_CF_INGRESS_FIELDS'] = bool(config_data.get('preserve_unmanaged_cf_ingress_fields', False))
                 config_module.PRESERVE_UNMANAGED_CF_INGRESS_FIELDS = current_app.config['PRESERVE_UNMANAGED_CF_INGRESS_FIELDS']
 
-                flash('General settings updated successfully.', 'success')
+                flash(_t('flash.general_settings_updated'), 'success')
 
                 if tunnel_name_changed and not config.USE_EXTERNAL_CLOUDFLARED:
-                    flash('Tunnel name changed. Restarting the agent to apply changes...', 'info')
+                    flash(_t('flash.tunnel_name_changed'), 'info')
                     logging.info(f"Tunnel name changed from '{original_tunnel_name}' to '{new_tunnel_name}'. Triggering agent restart.")
                     
                     def restart_agent_task():
@@ -594,7 +595,7 @@ def settings_page():
                 return redirect(url_for('web.settings_page'))
             except Exception as e:
                 logging.error(f"Failed to update settings in config file: {e}", exc_info=True)
-                flash('An error occurred while saving settings.', 'danger')
+                flash(_t('flash.error_saving_settings'), 'danger')
         
         elif security_settings_form.submit_security_settings.data and security_settings_form.validate():
             data_path = os.path.dirname(config.STATE_FILE_PATH)
@@ -620,11 +621,11 @@ def settings_page():
 
                 current_app.config['DISABLE_PASSWORD_LOGIN'] = config_data['disable_password_login']
                 
-                flash('Security settings updated successfully.', 'success')
+                flash(_t('flash.security_settings_updated'), 'success')
                 return redirect(url_for('web.settings_page'))
             except Exception as e:
                 logging.error(f"Failed to update security settings in config file: {e}", exc_info=True)
-                flash('An error occurred while saving security settings.', 'danger')
+                flash(_t('flash.error_saving_security'), 'danger')
         
         elif cf_credentials_form.submit_cloudflare_credentials.data and cf_credentials_form.validate():
             data_path = os.path.dirname(config.STATE_FILE_PATH)
@@ -656,17 +657,17 @@ def settings_page():
                     encrypted_payload = fernet.encrypt(json.dumps(config_data).encode('utf-8'))
                     with open(config_file, 'wb') as f:
                         f.write(encrypted_payload)
-                    flash('Cloudflare credentials updated. Re-initializing tunnel...', 'success')
+                    flash(_t('flash.credentials_updated'), 'success')
                     
                     from threading import Thread
                     Thread(target=initialize_tunnel).start()
                 else:
-                    flash('No new credentials were provided.', 'info')
+                    flash(_t('flash.no_new_credentials'), 'info')
 
                 return redirect(url_for('web.settings_page'))
             except Exception as e:
                 logging.error(f"Failed to update Cloudflare credentials: {e}", exc_info=True)
-                flash('An error occurred while updating credentials.', 'danger')
+                flash(_t('flash.error_updating_credentials'), 'danger')
     
     if request.method == 'GET':
         settings_form.tunnel_name.data = current_app.config.get('TUNNEL_NAME')
@@ -736,23 +737,23 @@ def ui_delete_cloudflare_tunnel_route():
     confirmation = request.form.get('confirm_text', '').strip().lower()
 
     if not tunnel_id:
-        flash('Tunnel ID is required to delete a Cloudflare tunnel.', 'danger')
+        flash(_t('flash.tunnel_id_required'), 'danger')
         return redirect(url_for('web.settings_page') + '#cloudflare-tunnels')
 
     if confirmation != 'delete':
-        flash('Deletion cancelled. Type "delete" to confirm.', 'warning')
+        flash(_t('flash.deletion_cancelled'), 'warning')
         return redirect(url_for('web.settings_page') + '#cloudflare-tunnels')
 
     try:
         deletion_success = delete_tunnel_via_api(tunnel_id)
         if deletion_success:
             get_all_account_cloudflare_tunnels(force_refresh=True)
-            flash('Tunnel deleted successfully from Cloudflare.', 'success')
+            flash(_t('flash.tunnel_deleted'), 'success')
         else:
-            flash('Failed to delete the tunnel via Cloudflare API. Verify permissions and try again.', 'danger')
+            flash(_t('flash.tunnel_delete_failed'), 'danger')
     except Exception as deletion_error:
         logging.error(f"Error deleting Cloudflare tunnel {tunnel_id}: {deletion_error}", exc_info=True)
-        flash('Unexpected error deleting tunnel. Check logs for details.', 'danger')
+        flash(_t('flash.tunnel_delete_error'), 'danger')
 
     return redirect(url_for('web.settings_page') + '#cloudflare-tunnels')
 
@@ -794,13 +795,13 @@ def change_password():
 
 
                 current_app.config['DOCKFLARE_PASSWORD_HASH'] = config_data['password']
-                flash('Password changed successfully.', 'success')
+                flash(_t('flash.password_changed'), 'success')
 
             except Exception as e:
                 logging.error(f"Failed to update password in config file: {e}", exc_info=True)
-                flash('An error occurred while changing the password.', 'danger')
+                flash(_t('flash.error_changing_password'), 'danger')
         else:
-            flash('Incorrect current password.', 'danger')
+            flash(_t('flash.incorrect_password'), 'danger')
     else:
 
         for field, errors in form.errors.items():
@@ -1970,12 +1971,12 @@ def create_access_group():
     display_name = form.get('display_name', '').strip()
 
     if not group_id or not display_name:
-        flash("Error: Group ID and Display Name are required.", "error")
+        flash(_t('flash.access_group.create_required'), "error")
         return redirect(url_for('web.access_policies_page'))
 
     with state_lock:
         if group_id in access_groups:
-            flash(f"Error: Access Group with ID '{group_id}' already exists.", "error")
+            flash(_t('flash.access_group.create_exists', groupId=group_id), "error")
             return redirect(url_for('web.access_policies_page'))
 
         public_mode = form.get('public_mode', 'false').lower() == 'true'
@@ -1989,7 +1990,7 @@ def create_access_group():
                 public_mode=public_mode
             )
         except ValueError as e:
-            flash(f"Error: {str(e)}", "error")
+            flash(_t('flash.access_group.create_error', error=str(e)), "error")
             return redirect(url_for('web.access_policies_page'))
 
         new_group = {
@@ -2016,20 +2017,20 @@ def create_access_group():
 
         publish_state_event('snapshot_refresh')
 
-    flash(f"Success: Access Group '{display_name}' created.", "success")
+    flash(_t('flash.access_group.created', displayName=display_name), "success")
     return redirect(url_for('web.access_policies_page'))
 
 @bp.route('/ui/access-groups/edit/<group_id>', methods=['POST'])
 def edit_access_group(group_id):
     with state_lock:
         if group_id not in access_groups:
-            flash(f"Error: Access Group with ID '{group_id}' not found.", "error")
+            flash(_t('flash.access_group.update_not_found', groupId=group_id), "error")
             return redirect(url_for('web.access_policies_page'))
     
     form = request.form
     display_name = form.get('display_name', '').strip()
     if not display_name:
-        flash("Error: Display Name is required.", "error")
+        flash(_t('flash.access_group.update_required'), "error")
         return redirect(url_for('web.access_policies_page'))
     
     with state_lock:
@@ -2044,7 +2045,7 @@ def edit_access_group(group_id):
                 public_mode=public_mode
             )
         except ValueError as e:
-            flash(f"Error: {str(e)}", "error")
+            flash(_t('flash.access_group.update_error', error=str(e)), "error")
             return redirect(url_for('web.access_policies_page'))
 
         updated_group = {
@@ -2071,7 +2072,7 @@ def edit_access_group(group_id):
 
         publish_state_event('snapshot_refresh')
 
-    flash(f"Success: Access Group '{display_name}' updated. Triggering reconciliation.", "success")
+    flash(_t('flash.access_group.updated', displayName=display_name), "success")
     reconcile_state_threaded()
     return redirect(url_for('web.access_policies_page'))
 
@@ -2079,12 +2080,11 @@ def edit_access_group(group_id):
 def delete_access_group(group_id):
     with state_lock:
         if group_id not in access_groups:
-            flash(f"Error: Access Group with ID '{group_id}' not found.", "error")
+            flash(_t('flash.access_group.update_not_found', groupId=group_id), "error")
             return redirect(url_for('web.access_policies_page'))
 
-        # Check if this is a system policy that cannot be deleted
         if access_groups[group_id].get('system_policy') or not access_groups[group_id].get('deletable', True):
-            flash(f"Error: Cannot delete system policy '{access_groups[group_id]['display_name']}'.", "error")
+            flash(_t('flash.access_group.delete_system', displayName=access_groups[group_id]['display_name']), "error")
             return redirect(url_for('web.access_policies_page'))
 
         is_in_use = any(
@@ -2094,7 +2094,7 @@ def delete_access_group(group_id):
         )
 
         if is_in_use:
-            flash(f"Error: Cannot delete Access Group '{access_groups[group_id]['display_name']}' because it is currently in use.", "error")
+            flash(_t('flash.access_group.delete_in_use', displayName=access_groups[group_id]['display_name']), "error")
             return redirect(url_for('web.access_policies_page'))
 
         display_name = access_groups[group_id]['display_name']
@@ -2115,7 +2115,7 @@ def delete_access_group(group_id):
 
         publish_state_event('snapshot_refresh')
 
-    flash(f"Success: Access Group '{display_name}' has been deleted.", "success")
+    flash(_t('flash.access_group.deleted', displayName=display_name), "success")
     return redirect(url_for('web.access_policies_page'))
 
 @bp.route('/ui/zone-policies/create', methods=['POST'])
@@ -2126,12 +2126,12 @@ def create_zone_default_policy():
     access_group_id = request.form.get('access_group_id', '').strip()
 
     if not zone_name or not access_group_id:
-        flash("Error: Zone name and access policy are required.", "error")
+        flash(_t('flash.zone_policy.create_required'), "error")
         return redirect(url_for('web.access_policies_page'))
 
     with state_lock:
         if access_group_id not in access_groups:
-            flash(f"Error: Access policy '{access_group_id}' not found.", "error")
+            flash(_t('flash.zone_policy.policy_not_found', accessGroupId=access_group_id), "error")
             return redirect(url_for('web.access_policies_page'))
 
         group = access_groups[access_group_id]
@@ -2142,7 +2142,7 @@ def create_zone_default_policy():
         
         existing = find_cloudflare_access_application_by_domain(wildcard_hostname)
         if existing:
-            flash(f"A wildcard policy for '{wildcard_hostname}' already exists.", "warning")
+            flash(_t('flash.zone_policy.wildcard_exists', wildcardHostname=wildcard_hostname), "warning")
             return redirect(url_for('web.access_policies_page'))
         
         from app.core import reusable_policies
@@ -2170,7 +2170,7 @@ def create_zone_default_policy():
         )
 
         if app_result:
-            flash(f"Success: Created zone default policy for '{wildcard_hostname}'.", "success")
+            flash(_t('flash.zone_policy.created', wildcardHostname=wildcard_hostname), "success")
             logging.info(f"Created zone default policy for {wildcard_hostname} with Access App ID {app_result.get('id')}")
             
             try:
@@ -2183,11 +2183,11 @@ def create_zone_default_policy():
             except Exception as cache_err:
                 logging.warning(f"Failed to invalidate caches: {cache_err}")
         else:
-            flash(f"Error: Failed to create Access Application for '{wildcard_hostname}'.", "error")
+            flash(_t('flash.zone_policy.access_app_error', wildcardHostname=wildcard_hostname), "error")
 
     except Exception as e:
         logging.error(f"Error creating zone default policy for {wildcard_hostname}: {e}", exc_info=True)
-        flash(f"Error: Failed to create zone policy. {str(e)}", "error")
+        flash(_t('flash.zone_policy.create_error', error=str(e)), "error")
 
     return redirect(url_for('web.access_policies_page'))
 
@@ -2195,7 +2195,7 @@ def create_zone_default_policy():
 def sync_access_groups_from_cloudflare():
     from app import config
     if not config.USE_REUSABLE_POLICIES:
-        flash("Error: Reusable policies feature is not enabled.", "error")
+        flash(_t('flash.reusable_policies_not_enabled'), "error")
         return redirect(url_for('web.access_policies_page'))
 
     try:
@@ -2212,13 +2212,13 @@ def sync_access_groups_from_cloudflare():
         if imported > 0 or updated > 0:
             publish_state_event('snapshot_refresh')
             mode_text = "all policies" if sync_all else "DockFlare- prefixed policies"
-            flash(f"Success: Synced {imported} new and {updated} updated access groups from Cloudflare ({mode_text}). {skipped} skipped.", "success")
+            flash(_t('flash.access_groups_synced', imported=imported, updated=updated, modeText=mode_text, skipped=skipped), "success")
         else:
-            flash(f"No new access groups to import. {skipped} existing policies found.", "info")
+            flash(_t('flash.access_groups_no_new', skipped=skipped), "info")
 
     except Exception as e:
         logging.error(f"Error syncing access groups from Cloudflare: {e}", exc_info=True)
-        flash(f"Error: Failed to sync access groups from Cloudflare. Check logs for details.", "error")
+        flash(_t('flash.access_groups_sync_error'), "error")
 
     return redirect(url_for('web.access_policies_page'))
 
@@ -2300,7 +2300,7 @@ def login():
                 return redirect(next_page)
             return redirect(url_for('web.status_page'))
         else:
-            flash('Invalid username or password.', 'error')
+            flash(_t('flash.login_error'), 'error')
 
     oauth_providers = [
         p for p in current_app.config.get('OAUTH_PROVIDERS', []) if p.get('enabled', True)
@@ -2336,7 +2336,7 @@ def auth_callback(provider_id):
     expected_state = session.pop('oauth_state', None)
 
     if not received_state or not expected_state or received_state != expected_state:
-        flash('Invalid authentication state. Please try again.', 'error')
+        flash(_t('flash.auth_state_error'), 'error')
         return redirect(url_for('web.login'))
 
     from app import oauth
@@ -2364,17 +2364,17 @@ def auth_callback(provider_id):
 
     except Exception as e:
         logging.error(f"OAuth callback error for provider {provider_id}: {e}", exc_info=True)
-        flash('Authentication failed.', 'error')
+        flash(_t('flash.auth_failed'), 'error')
         return redirect(url_for('web.login'))
 
     user_email = userinfo.get('email')
     if not user_email:
-        flash('Could not retrieve email from provider. Cannot log in.', 'error')
+        flash(_t('flash.email_not_retrieved'), 'error')
         return redirect(url_for('web.login'))
 
     authorized_emails = current_app.config.get('OAUTH_AUTHORIZED_USERS', [])
     if user_email not in authorized_emails:
-        flash(f'Access denied for user {user_email}.', 'error')
+        flash(_t('flash.access_denied', userEmail=user_email), 'error')
         return redirect(url_for('web.login'))
 
     user = User(user_email, auth_method='oauth')
@@ -2393,7 +2393,7 @@ def logout():
     auth_method = getattr(current_user, 'auth_method', 'password')
     logout_user()
 
-    flash('You have been logged out.', 'success')
+    flash(_t('flash.logout'), 'success')
 
     if current_app.config.get('DISABLE_PASSWORD_LOGIN'):
         return redirect(url_for('web.status_page'))

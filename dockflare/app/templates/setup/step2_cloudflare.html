@@ -1,7 +1,7 @@
 {% extends "setup/base.html" %}
 
 {% block setup_content %}
-<p class="text-center text-gray-500 mb-6">Provide your Cloudflare API Token and Account ID. This is necessary for DockFlare to securely manage your tunnels and DNS records. You can find your Account ID in the Cloudflare dashboard, on the right side of the overview page for any of your domains. An API token can be created from the API Tokens page located in your profile.</p>
+<p class="text-center text-gray-500 mb-6">{{ t('setup.step2.desc') }}</p>
 
 <form method="POST" action="{{ url_for('setup.step2_api_credentials') }}" class="space-y-4">
     {{ form.hidden_tag() }}
@@ -10,7 +10,7 @@
         <label class="label">
             <span class="label-text">{{ form.cf_api_token.label }}</span>
         </label>
-        {{ form.cf_api_token(class="input input-bordered w-full", placeholder="Your Cloudflare API Token") }}
+        {{ form.cf_api_token(class="input input-bordered w-full", placeholder=t('setup.step2.token_placeholder')) }}
         {% for error in form.cf_api_token.errors %}
             <label class="label">
                 <span class="label-text-alt text-error">{{ error }}</span>
@@ -22,7 +22,7 @@
         <label class="label">
             <span class="label-text">{{ form.cf_account_id.label }}</span>
         </label>
-        {{ form.cf_account_id(class="input input-bordered w-full", placeholder="Your Cloudflare Account ID") }}
+        {{ form.cf_account_id(class="input input-bordered w-full", placeholder=t('setup.step2.account_id_placeholder')) }}
         {% for error in form.cf_account_id.errors %}
             <label class="label">
                 <span class="label-text-alt text-error">{{ error }}</span>
@@ -32,7 +32,7 @@
 
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-6">
         {{ form.submit(class="btn btn-primary w-full") }}
-        <a href="{{ url_for('setup.step1_admin_user') }}" class="btn btn-ghost w-full">Back to Step 1</a>
+        <a href="{{ url_for('setup.step1_admin_user') }}" class="btn btn-ghost w-full">{{ t('setup.step2.back') }}</a>
     </div>
 </form>
 {% endblock %}

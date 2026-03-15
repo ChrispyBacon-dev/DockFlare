@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Access Policies{% endblock %}
+{% block title %}{{ t('policies.title') }}{% endblock %}
 
 {% block content %}
     <!-- 1. Access Groups Section -->
@@ -9,33 +9,33 @@
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-base-300 pb-4 mb-4">
                 <div>
                     <h2 class="card-title text-2xl sm:text-3xl">
-                        Advanced Access Policies
+                        {{ t('policies.advanced_access_policies') }}
                         {% if ACCOUNT_ID_FOR_DISPLAY and ACCOUNT_ID_FOR_DISPLAY != "Not Configured" %}
-                            <a href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/access/apps" target="_blank" rel="noopener noreferrer" title="View Access Policies in Cloudflare Zero Trust" class="ml-2 inline-block align-middle transition-transform hover:scale-105">
+                            <a href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/access/apps" target="_blank" rel="noopener noreferrer" title="{{ t('policies.view_in_cf_zero_trust') }}" class="ml-2 inline-block align-middle transition-transform hover:scale-105">
                                 <img src="{{ url_for('static', filename='images/cloudflare-icon.svg') }}" alt="Cloudflare" class="inline h-5 w-5" />
-                                <span class="sr-only">Open in Cloudflare Zero Trust</span>
+                                <span class="sr-only">{{ t('policies.open_in_cf_zero_trust') }}</span>
                             </a>
                         {% endif %}
                     </h2>
-                    <p class="text-sm opacity-70 mt-1">Create reusable access policies to apply with a single label.</p>
+                    <p class="text-sm opacity-70 mt-1">{{ t('policies.create_reusable_desc') }}</p>
                     <div class="flex items-center gap-2 mt-2">
-                        <label class="text-xs opacity-60">Filter:</label>
+                        <label class="text-xs opacity-60">{{ t('policies.filter') }}</label>
                         <select id="policyFilter" class="select select-xs select-bordered">
-                            <option value="all">All Policies</option>
-                            <option value="dockflare">DockFlare-Managed</option>
-                            <option value="external">External</option>
-                            <option value="system">System</option>
+                            <option value="all">{{ t('policies.all_policies') }}</option>
+                            <option value="dockflare">{{ t('policies.dockflare_managed') }}</option>
+                            <option value="external">{{ t('policies.external') }}</option>
+                            <option value="system">{{ t('policies.system') }}</option>
                         </select>
                     </div>
                 </div>
                 <div class="flex gap-2 mt-4 sm:mt-0">
                     <button id="sync-cloudflare-btn" class="btn btn-sm btn-secondary">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
-                        Sync from Cloudflare
+                        {{ t('policies.sync_from_cloudflare') }}
                     </button>
                     <button id="create-access-group-btn" class="btn btn-sm btn-primary">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                        Create New Group
+                        {{ t('policies.create_new_group') }}
                     </button>
                 </div>
             </div>
@@ -52,11 +52,11 @@
                         </colgroup>
                         <thead>
                             <tr>
-                                <th class="px-4 py-3">Display Name</th>
-                                <th class="px-4 py-3">Group ID (for label)</th>
-                                <th class="px-4 py-3">Policy Summary</th>
-                                <th class="px-4 py-3">Policy Type</th>
-                                <th class="px-4 py-3 text-right">Actions</th>
+                                <th class="px-4 py-3">{{ t('policies.display_name') }}</th>
+                                <th class="px-4 py-3">{{ t('policies.group_id_label') }}</th>
+                                <th class="px-4 py-3">{{ t('policies.policy_summary') }}</th>
+                                <th class="px-4 py-3">{{ t('policies.policy_type') }}</th>
+                                <th class="px-4 py-3 text-right">{{ t('common.actions') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -77,7 +77,7 @@
                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3">
                                                     <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
                                                 </svg>
-                                                In use by {{ group_usage[group_id]|length }} service{{ '' if group_usage[group_id]|length == 1 else 's' }}
+                                                {{ t('policies.in_use_by') }} {{ group_usage[group_id]|length }} {{ t('policies.service') if group_usage[group_id]|length == 1 else t('policies.services') }}
                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3 chevron-icon">
                                                     <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
                                                 </svg>
@@ -89,24 +89,24 @@
                                         {% if details.policies %}
                                             {{ details.policies | length }} rule(s) defined
                                         {% else %}
-                                            <span class="italic opacity-60">No rules</span>
+                                            <span class="italic opacity-60">{{ t('policies.no_rules') }}</span>
                                         {% endif %}
                                     </td>
                                     <td class="px-4 py-3">
                                         {% if details.external_policy %}
                                             <span class="badge badge-sm badge-secondary df-badge">
                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
-                                                External
+                                                {{ t('policies.external') }}
                                             </span>
                                         {% elif details.system_policy %}
                                             <span class="badge badge-sm badge-success df-badge">
                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
-                                                System
+                                                {{ t('policies.system') }}
                                             </span>
                                         {% else %}
                                             <span class="badge badge-sm badge-warning df-badge">
                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
-                                                DockFlare
+                                                {{ t('policies.dockflare_managed') }}
                                             </span>
                                         {% endif %}
                                     </td>
@@ -121,35 +121,35 @@
                                                 <li>
                                                     <a class="edit-access-group-btn" data-group-id="{{ group_id }}" data-group-details="{{ details|tojson|forceescape }}" data-external="{{ 'true' if details.get('external_policy') else 'false' }}">
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>
-                                                        Edit
+                                                        {{ t('common.edit') }}
                                                     </a>
                                                 </li>
                                                 {% if details.cloudflare_policy_id and ACCOUNT_ID_FOR_DISPLAY and ACCOUNT_ID_FOR_DISPLAY != "Not Configured" %}
                                                 <li>
                                                     <a class="flex items-center gap-2" href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/access-controls/policies/{{ details.cloudflare_policy_id }}/edit" target="_blank" rel="noopener noreferrer">
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg>
-                                                        View in Cloudflare
+                                                        {{ t('policies.view_in_cloudflare') }}
                                                     </a>
                                                 </li>
                                                 {% endif %}
                                                 <div class="divider my-1"></div>
                                                 {% set is_disabled = details.get('system_policy') or not details.get('deletable', True) or group_id in used_group_ids %}
                                                 <li class="{{ 'disabled' if is_disabled else '' }}">
-                                                    <a class="text-error delete-access-group-btn {{ 'pointer-events-none cursor-not-allowed select-none' if is_disabled else '' }}" data-group-id="{{ group_id }}" data-group-name="{{ details.display_name }}" data-external="{{ 'true' if details.get('external_policy') else 'false' }}" data-disabled="{{ 'true' if is_disabled else 'false' }}" {{ 'title="Cannot delete: system policy"' if details.get('system_policy') or not details.get('deletable', True) else ('title="Cannot delete: group is in use"' if group_id in used_group_ids else '') }}>
+                                                    <a class="text-error delete-access-group-btn {{ 'pointer-events-none cursor-not-allowed select-none' if is_disabled else '' }}" data-group-id="{{ group_id }}" data-group-name="{{ details.display_name }}" data-external="{{ 'true' if details.get('external_policy') else 'false' }}" data-disabled="{{ 'true' if is_disabled else 'false' }}" {{ 'title="' + t("policies.cannot_delete_system") + '"' if details.get('system_policy') or not details.get('deletable', True) else ('title="' + t("policies.cannot_delete_in_use") + '"' if group_id in used_group_ids else '') }}>
                                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
                                                         {% if details.get('system_policy') or not details.get('deletable', True) %}
-                                                            <span class="opacity-50">Delete (system policy)</span>
+                                                            <span class="opacity-50">{{ t('common.delete') }} ({{ t('policies.system')|lower }} {{ t('policies.access_policy_label') }})</span>
                                                         {% elif group_id in used_group_ids %}
-                                                            <span class="opacity-50">Delete (policy is in use)</span>
+                                                            <span class="opacity-50">{{ t('common.delete') }} ({{ t('policies.policy_in_use') }})</span>
                                                         {% else %}
-                                                            Delete
+                                                            {{ t('common.delete') }}
                                                         {% endif %}
                                                     </a>
                                                 </li>
                                                 {% if group_id in used_group_ids %}
                                                 <div class="divider my-1"></div>
                                                 <li class="menu-title">
-                                                    <span class="text-xs opacity-70">Used by {{ group_usage[group_id]|length }} service{{ '' if group_usage[group_id]|length == 1 else 's' }}</span>
+                                                    <span class="text-xs opacity-70">{{ t('policies.used_by_count') }} {{ group_usage[group_id]|length }} {{ t('policies.service') if group_usage[group_id]|length == 1 else t('policies.services') }}</span>
                                                 </li>
                                                 {% endif %}
                                             </ul>
@@ -161,7 +161,7 @@
                                     <td colspan="5" class="p-0">
                                         <div class="bg-base-200/50 p-4 border-l-4 border-info">
                                             <div class="text-sm font-semibold mb-2 opacity-70">
-                                                Used by these services:
+                                                {{ t('policies.used_by_services') }}
                                             </div>
                                             <ul class="list-disc list-inside space-y-1 text-sm opacity-80">
                                                 {% for hostname in group_usage[group_id] %}
@@ -178,8 +178,8 @@
                 </div>
             {% else %}
                 <div class="text-center opacity-70 py-8">
-                    <p>No Access Groups have been created yet.</p>
-                    <p class="mt-2 text-sm">Click "Create New Group" to get started.</p>
+                    <p>{{ t('policies.no_groups_created') }}</p>
+                    <p class="mt-2 text-sm">{{ t('policies.click_create_group') }}</p>
                 </div>
             {% endif %}
         </div>
@@ -191,30 +191,30 @@
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-base-300 pb-4 mb-4">
                 <div>
                     <h2 class="card-title text-2xl sm:text-3xl">
-                        Identity Providers
+                        {{ t('policies.identity_providers') }}
                         {% if ACCOUNT_ID_FOR_DISPLAY and ACCOUNT_ID_FOR_DISPLAY != "Not Configured" %}
-                            <a href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/settings/authentication" target="_blank" rel="noopener noreferrer" title="View Identity Providers in Cloudflare Zero Trust" class="ml-2 inline-block align-middle transition-transform hover:scale-105">
+                            <a href="https://one.dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/settings/authentication" target="_blank" rel="noopener noreferrer" title="{{ t('policies.view_idps_in_cf') }}" class="ml-2 inline-block align-middle transition-transform hover:scale-105">
                                 <img src="{{ url_for('static', filename='images/cloudflare-icon.svg') }}" alt="Cloudflare" class="inline h-5 w-5" />
-                                <span class="sr-only">Open in Cloudflare Zero Trust</span>
+                                <span class="sr-only">{{ t('policies.open_in_cf_zero_trust') }}</span>
                             </a>
                         {% endif %}
                     </h2>
-                    <p class="text-sm opacity-70 mt-1">Configure OAuth/OIDC providers for Zero Trust authentication.</p>
+                    <p class="text-sm opacity-70 mt-1">{{ t('policies.configure_oauth_oidc') }}</p>
                 </div>
                 <div class="flex gap-2 mt-4 sm:mt-0">
                     <button id="sync-idps-btn" class="btn btn-sm btn-secondary">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
-                        Sync from Cloudflare
+                        {{ t('policies.sync_from_cloudflare') }}
                     </button>
                     <button id="create-idp-btn" class="btn btn-sm btn-primary">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
-                        Add Provider
+                        {{ t('policies.add_provider') }}
                     </button>
                 </div>
             </div>
 
             <div id="idp-table-container">
-                <p class="text-center opacity-70 py-8">Loading identity providers...</p>
+                <p class="text-center opacity-70 py-8">{{ t('policies.loading_idps') }}</p>
             </div>
         </div>
     </section>
@@ -225,16 +225,16 @@
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-base-300 pb-4 mb-4">
                 <div>
                     <h2 class="card-title text-2xl sm:text-3xl">
-                        Zone Default Policies (*.tld Wildcards)
+                        {{ t('policies.zone_default_policies') }}
                     </h2>
-                    <p class="text-sm opacity-70 mt-1">Protect all subdomains of your zones with a wildcard <code>*.domain.com</code> access policy.</p>
+                    <p class="text-sm opacity-70 mt-1">{{ t('policies.protect_all_subdomains') }} <code>*.domain.com</code> {{ t('policies.access_policy_label') }}</p>
                 </div>
             </div>
 
             <div id="zone-policies-container">
                 <div class="text-center opacity-70 py-8">
                     <span class="loading loading-spinner loading-lg"></span>
-                    <p class="mt-4">Loading zone policies...</p>
+                    <p class="mt-4">{{ t('policies.loading_zone_policies') }}</p>
                 </div>
             </div>
         </div>
@@ -251,7 +251,7 @@
             <form method="dialog">
                 <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
             </form>
-            <h3 class="font-bold text-lg mb-4">Create Zone Default Policy</h3>
+            <h3 class="font-bold text-lg mb-4">{{ t('policies.create_zone_default') }}</h3>
             <form method="POST" action="{{ url_for('web.create_zone_default_policy') }}" id="zone-policy-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                 <input type="hidden" name="zone_name" id="zone-policy-zone-name"/>
@@ -260,28 +260,28 @@
                 <div class="space-y-4">
                     <div class="alert alert-info">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span>This will create a wildcard Access Application for <strong><code id="zone-policy-hostname-display"></code></strong> to protect all subdomains.</span>
+                        <span>{{ t('policies.this_will_create_wildcard') }} <strong><code id="zone-policy-hostname-display"></code></strong> {{ t('policies.to_protect_all_subdomains') }}</span>
                     </div>
 
                     <div class="form-control">
                         <label class="label" for="zone-policy-access-group">
-                            <span class="label-text font-medium">Select Access Policy</span>
+                            <span class="label-text font-medium">{{ t('policies.select_access_policy') }}</span>
                         </label>
                         <select name="access_group_id" id="zone-policy-access-group" class="select select-bordered w-full" required>
-                            <option value="" disabled selected>-- Select an Access Policy --</option>
+                            <option value="" disabled selected>-- {{ t('policies.select_access_policy') }} --</option>
                             {% for group_id, details in access_groups.items()|sort %}
                                 <option value="{{ group_id }}">{{ details.display_name }}</option>
                             {% endfor %}
                         </select>
                         <div class="label">
-                            <span class="label-text-alt">The access policy that will protect <code>*.zone.com</code></span>
+                            <span class="label-text-alt">{{ t('policies.policy_protect_desc') }} <code>*.zone.com</code></span>
                         </div>
                     </div>
                 </div>
 
                 <div class="modal-action mt-6">
-                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('zone-policy-modal').close()">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Create Zone Policy</button>
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('zone-policy-modal').close()">{{ t('common.cancel') }}</button>
+                    <button type="submit" class="btn btn-primary">{{ t('policies.create_zone_policy') }}</button>
                 </div>
             </form>
         </div>
@@ -293,23 +293,23 @@
     <!-- Geo-fencing without auth confirmation modal -->
     <dialog id="geo-auth-confirm-modal" class="modal">
         <div class="modal-box">
-            <h3 class="font-bold text-lg mb-4">No Authentication Method Selected</h3>
+            <h3 class="font-bold text-lg mb-4">{{ t('policies.no_auth_method') }}</h3>
             <div class="space-y-4">
                 <div class="alert alert-warning">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                     <div>
-                        <div class="font-medium">You have selected geo-restrictions but no authentication method (email or identity provider).</div>
+                        <div class="font-medium">{{ t('policies.geo_no_auth_warning') }}</div>
                     </div>
                 </div>
-                <p class="text-sm">Did you want to create a <strong>Public Access rule with geo-restrictions</strong> instead?</p>
+                <p class="text-sm">{{ t('policies.did_you_want_to_create') }} <strong>{{ t('policies.public_access_geo') }}</strong> instead?</p>
                 <ul class="list-disc list-inside text-sm space-y-1 opacity-80">
-                    <li><strong>Public Access mode:</strong> Anyone can access except from blocked countries</li>
-                    <li><strong>Authenticated mode:</strong> Requires email or identity provider selection</li>
+                    <li><strong>{{ t('policies.public_access_mode') }}</strong> {{ t('policies.wildcard_geo_desc') }}</li>
+                    <li><strong>{{ t('policies.authenticated_mode') }}</strong> {{ t('policies.requires_email_or_identity') }}</li>
                 </ul>
             </div>
             <div class="modal-action">
-                <button type="button" class="btn btn-ghost" id="geo-auth-cancel-btn">Cancel - Add Authentication</button>
-                <button type="button" class="btn btn-warning" id="geo-auth-confirm-btn">Switch to Public Access</button>
+                <button type="button" class="btn btn-ghost" id="geo-auth-cancel-btn">{{ t('policies.cancel_add_auth') }}</button>
+                <button type="button" class="btn btn-warning" id="geo-auth-confirm-btn">{{ t('policies.switch_to_public') }}</button>
             </div>
         </div>
     </dialog>
@@ -320,7 +320,7 @@
             <form method="dialog">
                 <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
             </form>
-            <h3 class="font-bold text-lg mb-4">Sync Access Policies from Cloudflare</h3>
+            <h3 class="font-bold text-lg mb-4">{{ t('policies.sync_access_policies') }}</h3>
             <form method="POST" action="{{ url_for('web.sync_access_groups_from_cloudflare') }}" id="sync-cloudflare-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                 <input type="hidden" name="sync_all" id="sync-all-input" value="false"/>
@@ -328,15 +328,15 @@
                 <div class="space-y-4">
                     <div class="alert alert-info">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span>Import reusable Access Policies from your Cloudflare account.</span>
+                        <span>{{ t('policies.import_reusable_desc') }}</span>
                     </div>
 
                     <div class="form-control">
                         <label class="label cursor-pointer justify-start gap-4">
                             <input type="radio" name="sync_mode" value="dockflare" class="radio radio-primary" checked />
                             <div class="flex-1">
-                                <span class="label-text font-medium">DockFlare- prefix only (Recommended)</span>
-                                <p class="text-xs opacity-70 mt-1">Import only policies with <code class="bg-base-300 px-1 rounded">DockFlare-</code> prefix. This keeps your policy list clean and focused on container infrastructure.</p>
+                                <span class="label-text font-medium">{{ t('policies.dockflare_prefix_only') }}</span>
+                                <p class="text-xs opacity-70 mt-1">{{ t('policies.import_with_prefix') }} <code class="bg-base-300 px-1 rounded">{{ t('policies.dockflare_prefix') }}</code> {{ t('policies.keeps_list_clean') }}</p>
                             </div>
                         </label>
                     </div>
@@ -345,23 +345,23 @@
                         <label class="label cursor-pointer justify-start gap-4">
                             <input type="radio" name="sync_mode" value="all" class="radio radio-primary" />
                             <div class="flex-1">
-                                <span class="label-text font-medium">Sync all policies</span>
-                                <p class="text-xs opacity-70 mt-1">Import ALL policies from Cloudflare, including those created manually or by other tools. External policies will be marked with a purple badge.</p>
+                                <span class="label-text font-medium">{{ t('policies.sync_all_policies') }}</span>
+                                <p class="text-xs opacity-70 mt-1">{{ t('policies.import_policies_desc') }}</p>
                             </div>
                         </label>
                     </div>
 
                     <div class="alert alert-warning mt-4">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                        <span class="text-xs"><strong>Pro tip:</strong> You can rename policies in Cloudflare to use the <code>DockFlare-</code> prefix. This allows you to organize which policies appear in DockFlare without enabling full sync.</span>
+                        <span class="text-xs"><strong>{{ t('policies.pro_tip') }}</strong> {{ t('policies.rename_policies_desc') }} <code>{{ t('policies.dockflare_prefix') }}</code> {{ t('policies.allows_organize') }}</span>
                     </div>
                 </div>
 
                 <div class="modal-action mt-6">
-                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('sync-cloudflare-modal').close()">Cancel</button>
+                    <button type="button" class="btn btn-ghost" onclick="document.getElementById('sync-cloudflare-modal').close()">{{ t('common.cancel') }}</button>
                     <button type="submit" class="btn btn-primary">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
-                        Sync Now
+                        {{ t('policies.sync_now') }}
                     </button>
                 </div>
             </form>
@@ -494,7 +494,7 @@
                  plugins: {
                      'checkbox_options': {},
                      'remove_button': {
-                         title: 'Remove this item',
+                         title: '{{ t('policies.remove_this_item') }}',
                      }
                  },
                  create: false,
@@ -502,7 +502,7 @@
                      field: "text",
                      direction: "asc"
                  },
-                 placeholder: "Search and select countries to block...",
+                 placeholder: "{{ t('policies.search_select_countries') }}",
                  maxOptions: null,
                  render: {
                      item: function(data, escape) {
@@ -546,19 +546,19 @@
                 const helpText = document.getElementById('country-policy-help-text');
 
                 if (counter) {
-                    counter.textContent = `${selected} of ${total} countries selected`;
+                    counter.textContent = `${selected} {{ t('policies.countries_selected').replace('{total}', total) }}`;
                 }
 
                 if (helpText) {
                     if (selected === 0) {
-                        helpText.innerHTML = 'No countries blocked. <strong>All countries allowed</strong>.';
+                        helpText.innerHTML = '{{ t('policies.no_countries_blocked') }} <strong>{{ t('policies.all_countries_allowed') }}</strong>.';
                     } else if (selected === total) {
-                        helpText.innerHTML = '<strong>All countries blocked</strong>. No access allowed.';
+                        helpText.innerHTML = '<strong>{{ t('policies.all_countries_blocked') }}</strong>. {{ t('policies.no_access_allowed') }}';
                     } else if (selected === total - 1) {
-                        helpText.innerHTML = `Only <strong>1 country allowed</strong>. ${total - 1} countries blocked.`;
+                        helpText.innerHTML = `{{ t('policies.one_country_allowed') }} ${total - 1} {{ t('policies.countries_blocked') }}`;
                     } else {
                         const allowed = total - selected;
-                        helpText.innerHTML = `<strong>${selected} countries blocked</strong>. ${allowed} countries allowed.`;
+                        helpText.innerHTML = `<strong>${selected} {{ t('policies.countries_blocked') }}</strong> ${allowed} {{ t('policies.countries_allowed') }}`;
                     }
                 }
             }
@@ -698,7 +698,7 @@
                 plugins: {
                     'checkbox_options': {},
                     'remove_button': {
-                        title: 'Remove this item',
+                        title: '{{ t('policies.remove_this_item') }}',
                     }
                 },
                 create: false,
@@ -706,7 +706,7 @@
                     field: "text",
                     direction: "asc"
                 },
-                placeholder: "Select identity providers...",
+                placeholder: "{{ t('policies.select_identity_providers') }}",
                 maxOptions: null
             });
 
@@ -799,11 +799,11 @@
                     return;
                 }
 
-                let confirmMsg = `Are you sure you want to delete the Access Group '${groupName}'? This cannot be undone.`;
-                let confirmTitle = 'Delete Access Group';
+                let confirmMsg = `{{ t('policies.delete_group_confirm') }} '${groupName}'? {{ t('policies.cannot_be_undone') }}`;
+                let confirmTitle = '{{ t('js.confirm.delete_group_title') }}';
                 if (isExternal) {
-                    confirmMsg = `⚠️ WARNING: This is an EXTERNAL policy not created by DockFlare.\n\nDeleting '${groupName}' may affect services outside of DockFlare.\n\nAre you absolutely sure you want to delete this external policy?`;
-                    confirmTitle = 'Delete External Policy';
+                    confirmMsg = `⚠️ {{ t('policies.external_policy_warning') }}\n\n{{ t('policies.delete_group_confirm') }} '${groupName}' {{ t('policies.external_policy_affect') }}\n\n{{ t('policies.external_policy_confirm') }}`;
+                    confirmTitle = '{{ t('policies.delete_external_policy_title') }}';
                 }
 
                 const confirmed = await dfConfirm(confirmMsg, confirmTitle);
@@ -883,7 +883,7 @@
 
                     if (selectedIdps.length > 0 && !emailValue) {
                         e.preventDefault();
-                        await dfAlert('Security requirement: When using Identity Providers, you must specify allowed email addresses to prevent unauthorized access.', 'Security Requirement');
+                        await dfAlert('{{ t('policies.idp_email_required') }}', '{{ t('policies.security_requirement') }}');
                         return false;
                     }
                 }
@@ -899,14 +899,14 @@
                 const data = await response.json();
 
                 if (!data.success) {
-                    container.innerHTML = '<div class="text-center opacity-70 py-8"><p class="text-error">Failed to load zone policies</p></div>';
+                    container.innerHTML = '<div class="text-center opacity-70 py-8"><p class="text-error">{{ t('policies.failed_load_zone_policies') }}</p></div>';
                     return;
                 }
 
                 const zonePolicies = data.zone_policies || [];
 
                 if (zonePolicies.length === 0) {
-                    container.innerHTML = '<div class="text-center opacity-70 py-8"><p>No DNS zones found in your Cloudflare account.</p></div>';
+                    container.innerHTML = '<div class="text-center opacity-70 py-8"><p>{{ t('policies.no_dns_zones') }}</p></div>';
                     return;
                 }
 
@@ -919,11 +919,11 @@
                 html += '<col class="col-actions">';
                 html += '</colgroup>';
                 html += '<thead><tr>';
-                html += '<th class="px-4 py-3">Zone Name</th>';
-                html += '<th class="px-4 py-3">Zone ID</th>';
-                html += '<th class="px-4 py-3">Wildcard Hostname</th>';
-                html += '<th class="px-4 py-3">Status</th>';
-                html += '<th class="px-4 py-3 text-right">Actions</th>';
+                html += '<th class="px-4 py-3">{{ t('policies.zone_name') }}</th>';
+                html += '<th class="px-4 py-3">{{ t('policies.zone_id') }}</th>';
+                html += '<th class="px-4 py-3">{{ t('policies.wildcard_hostname') }}</th>';
+                html += '<th class="px-4 py-3">{{ t('common.status') }}</th>';
+                html += '<th class="px-4 py-3 text-right">{{ t('common.actions') }}</th>';
                 html += '</tr></thead><tbody>';
 
                 zonePolicies.forEach(zone => {
@@ -939,10 +939,10 @@
 
                     if (zone.has_default_policy) {
                         html += '<span class="badge badge-sm badge-success df-badge">';
-                        html += '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>Protected</span>';
+                        html += '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>{{ t('policies.protected') }}</span>';
                     } else {
                         html += '<span class="badge badge-sm badge-warning df-badge">';
-                        html += '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>Not Protected</span>';
+                        html += '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>{{ t('policies.not_protected') }}</span>';
                     }
 
                     html += '</td><td class="px-4 py-3 text-right">';
@@ -960,7 +960,7 @@
                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
                                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                                         </svg>
-                                        Create Policy
+                                        {{ t('policies.create_zone_policy') }}
                                     </a>
                                 </li>
                             </ul>
@@ -978,7 +978,7 @@
                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
                                             <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
                                         </svg>
-                                        View in Cloudflare
+                                        {{ t('policies.view_in_cloudflare') }}
                                     </a>
                                 </li>
                             </ul>
@@ -1006,7 +1006,7 @@
                 });
             } catch (error) {
                 console.error('Error loading zone policies:', error);
-                container.innerHTML = '<div class="text-center opacity-70 py-8"><p class="text-error">Failed to load zone policies</p></div>';
+                container.innerHTML = '<div class="text-center opacity-70 py-8"><p class="text-error">{{ t('policies.failed_load_zone_policies') }}</p></div>';
             }
         }
 

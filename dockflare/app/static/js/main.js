@@ -83,7 +83,7 @@ const themeManager = (function() {
 
     function setTheme(theme) {
         if (!availableThemes.includes(theme)) {
-            console.warn(`Theme "${theme}" not available, defaulting to light.`);
+            console.warn(t('js.text.theme_not_available', {theme: theme}));
             theme = 'light';
         }
         localStorage.setItem('theme', theme);
@@ -262,7 +262,7 @@ function initializeEditRuleModal() {
                 modal.showModal();
             } catch (e) {
                 console.error("Error populating edit modal:", e);
-                await dfAlert("Could not open the edit dialog due to an error. Please check the console.", 'Error');
+                await dfAlert(t('js.alert.edit_dialog_error'), t('js.alert.error_title'));
             }
         });
     });
@@ -489,7 +489,7 @@ function handleStructuredStateEvent(message) {
 
 function connectStateUpdateSource() {
     if (!window.EventSource) {
-        console.error("Browser doesn't support Server-Sent Events. State auto-refresh disabled.");
+        console.error(t('js.text.state_sse_not_supported'));
         return;
     }
 
@@ -540,7 +540,7 @@ function addLogLine(message, type = 'log') {
     if (!logOutput) {
         return;
     }
-    if (!initialConnectMessageCleared && logOutput.textContent.includes('Connecting to log stream...')) {
+    if (!initialConnectMessageCleared && logOutput.textContent.includes(t('js.text.connecting_logs'))) {
         logOutput.textContent = '';
         initialConnectMessageCleared = true;
     }
@@ -571,7 +571,7 @@ function setupLogControls() {
     enableBtn.addEventListener('click', () => {
         logsEnabled = true;
         logOutput.classList.remove('hidden');
-        logOutput.textContent = 'Connecting to log stream...';
+        logOutput.textContent = t('js.text.connecting_logs');
         connectEventSource();
         enableBtn.classList.add('hidden');
         disableBtn.classList.remove('hidden');
@@ -587,7 +587,7 @@ function setupLogControls() {
 
     clearBtn.addEventListener('click', () => {
         if (logOutput) {
-            logOutput.textContent = activeLogSource ? 'Log cleared...\n' : 'Click "Enable Logs" to start streaming...';
+            logOutput.textContent = activeLogSource ? t('js.text.log_cleared') + '\n' : t('js.text.enable_logs_prompt');
         }
     });
 }
@@ -613,7 +613,7 @@ function connectEventSource() {
         return;
     }
     if (!window.EventSource) {
-        addLogLine("Browser doesn't support Server-Sent Events.", 'error');
+        addLogLine(t('js.text.browser_sse_not_supported'), 'error');
         return;
     }
     if (activeLogSource) {
@@ -635,7 +635,7 @@ function connectEventSource() {
                 if (activeLogSource) {
                     activeLogSource.close();
                     activeLogSource = null;
-                    addLogLine("--- Log stream connection timeout. Reconnecting... ---", 'error');
+                    addLogLine(t('js.text.log_connection_timeout'), 'error');
                     setTimeout(connectEventSource, 2000);
                 }
             }, 10000);
@@ -644,7 +644,7 @@ function connectEventSource() {
 
         activeLogSource.onopen = function() {
             if (connectionTimeout) clearTimeout(connectionTimeout);
-            addLogLine("--- Log stream connected ---", 'connected');
+            addLogLine(t('js.text.log_connected'), 'connected');
         };
         activeLogSource.onmessage = function(event) {
             resetConnectionTimeout();
@@ -658,7 +658,7 @@ function connectEventSource() {
         activeLogSource.onerror = function(err) {
             if (connectionTimeout) clearTimeout(connectionTimeout);
             if (activeLogSource && activeLogSource.readyState !== EventSource.CLOSED) {
-                addLogLine("--- Log stream connection error. Retrying... ---", 'error');
+                addLogLine(t('js.text.log_connection_error'), 'error');
             }
             if (activeLogSource) {
                 activeLogSource.close();
@@ -672,7 +672,7 @@ function connectEventSource() {
             }
         };
     } catch (e) {
-        addLogLine(`--- Failed to establish log stream connection: ${e.message} ---`, 'error');
+        addLogLine(t('js.text.log_connection_failed', {error: e.message}), 'error');
         if (logsEnabled) {
             setTimeout(connectEventSource, 5000);
         }
@@ -681,7 +681,7 @@ function connectEventSource() {
     if (eventSourceHealthCheck) clearInterval(eventSourceHealthCheck);
     eventSourceHealthCheck = setInterval(() => {
         if (logsEnabled && (!activeLogSource || activeLogSource.readyState === EventSource.CLOSED)) {
-            addLogLine("--- Health check: Log stream disconnected. Reconnecting... ---", 'status');
+            addLogLine(t('js.text.log_health_check_error'), 'status');
             connectEventSource();
         }
     }, 15000);
@@ -719,7 +719,7 @@ function updateCountdowns() {
             
             if (diffMs < 0) {
                 
-                absoluteTimeSpan.textContent = "Expired";
+                absoluteTimeSpan.textContent = t('js.text.countdown_expired');
                 countdownSpan.textContent = "";
                 absoluteTimeSpan.className = 'absolute-time-display text-error font-bold';
             } else if (diffSeconds < 3600) {
@@ -728,9 +728,9 @@ function updateCountdowns() {
                 const seconds = diffSeconds % 60;
                 const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
-                absoluteTimeSpan.textContent = `Expires in ${timeStr}`;
+                absoluteTimeSpan.textContent = t('js.text.countdown_expires_in', {time: timeStr});
                 countdownSpan.textContent = "";
-                
+
                 if (diffSeconds <= 10) {
                     absoluteTimeSpan.className = 'absolute-time-display text-error font-bold animate-pulse';
                 } else if (diffSeconds <= 30) {
@@ -752,7 +752,7 @@ function updateCountdowns() {
                     timeStr = `${minutes}m`;
                 }
 
-                absoluteTimeSpan.textContent = `Expires in ${timeStr}`;
+                absoluteTimeSpan.textContent = t('js.text.countdown_expires_in', {time: timeStr});
                 countdownSpan.textContent = "";
                 absoluteTimeSpan.className = 'absolute-time-display text-base-content opacity-70';
             }
@@ -768,7 +768,7 @@ function updateCountdowns() {
             div.setAttribute('title', `Exact time: ${fullTimestamp}`);
 
         } catch (e) {
-            absoluteTimeSpan.textContent = "(Invalid Date)";
+            absoluteTimeSpan.textContent = t('js.text.invalid_date');
             countdownSpan.textContent = "";
             console.error("Error processing date for countdown:", deleteAtISO, e);
         }
@@ -798,12 +798,12 @@ function updateReconciliationStatus() {
                 messageElement.style.display = data.in_progress ? 'block' : 'none';
             }
             if (data.in_progress) {
-                statusElement.innerHTML = `<div role="alert" class="alert alert-warning shadow-md text-sm"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6 animate-spin"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6l4 2M21.56 10.5A10.001 10.001 0 0012 2a10 10 0 100 20 9.974 9.974 0 005.201-1.71l-.001-.001z"></path></svg><div><h3 class="font-bold">Reconciliation: ${data.progress}%</h3><div class="text-xs">Processing ${data.processed_items} of ${data.total_items} items...</div></div></div>`;
+                statusElement.innerHTML = `<div role="alert" class="alert alert-warning shadow-md text-sm"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6 animate-spin"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6l4 2M21.56 10.5A10.001 10.001 0 0012 2a10 10 0 100 20 9.974 9.974 0 005.201-1.71l-.001-.001z"></path></svg><div><h3 class="font-bold">${t('js.text.reconciliation_progress', {progress: data.progress})}</h3><div class="text-xs">${t('js.text.reconciliation_processing', {processed: data.processed_items, total: data.total_items})}</div></div></div>`;
             } else {
-                if (statusElement.innerHTML.includes('Reconciliation:')) {
-                    statusElement.innerHTML = `<div role="alert" class="alert alert-success shadow-md text-sm"><svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg><span>Reconciliation complete</span></div>`;
+                if (statusElement.innerHTML.includes('Reconciliation:') || statusElement.innerHTML.includes(t('js.text.reconciliation_progress', {progress: ''}))) {
+                    statusElement.innerHTML = `<div role="alert" class="alert alert-success shadow-md text-sm"><svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg><span>${t('js.text.reconciliation_complete')}</span></div>`;
                     setTimeout(() => {
-                        if (statusElement.innerHTML.includes('Reconciliation complete')) {
+                        if (statusElement.innerHTML.includes(t('js.text.reconciliation_complete'))) {
                             statusElement.innerHTML = '';
                             if (messageElement) messageElement.style.display = 'none';
                         }
@@ -941,24 +941,24 @@ function updateManualZoneUI(state, elements) {
             zoneIdInput.value = '';
             if (selectorWrapper) selectorWrapper.classList.add('hidden');
             hideBadge();
-            messageEl.textContent = 'Enter a hostname to auto-detect the Cloudflare zone.';
+            messageEl.textContent = t('js.text.zone_enter_hostname');
             break;
         case 'override':
             zoneIdInput.value = '';
             if (selectorWrapper) selectorWrapper.classList.add('hidden');
             if (state.zoneName) {
-                setZoneBadge(badgeEl, 'Override', 'info');
-                messageEl.textContent = `Using zone override: ${state.zoneName}`;
+                setZoneBadge(badgeEl, t('js.text.zone_badge_override'), 'info');
+                messageEl.textContent = t('js.text.zone_override', {zoneName: state.zoneName});
             } else {
                 hideBadge();
-                messageEl.textContent = 'Using zone override.';
+                messageEl.textContent = t('js.text.zone_override', {zoneName: ''});
             }
             break;
         case 'ok':
             zoneIdInput.value = state.zone && state.zone.id ? state.zone.id : '';
             if (selectorWrapper) selectorWrapper.classList.add('hidden');
-            setZoneBadge(badgeEl, 'Detected', 'success');
-            messageEl.textContent = state.zone && state.zone.name ? `Detected zone: ${state.zone.name}` : 'Detected zone from hostname.';
+            setZoneBadge(badgeEl, t('js.text.zone_badge_detected'), 'success');
+            messageEl.textContent = state.zone && state.zone.name ? t('js.text.zone_detected', {zoneName: state.zone.name}) : t('js.text.zone_detected', {zoneName: ''});
             break;
         case 'ambiguous':
             zoneIdInput.value = '';
@@ -966,8 +966,8 @@ function updateManualZoneUI(state, elements) {
                 populateZoneSelector(selectorEl, state.candidates, 'Select a matching zone...');
                 selectorWrapper.classList.remove('hidden');
             }
-            setZoneBadge(badgeEl, 'Select zone', 'warning');
-            messageEl.textContent = 'Multiple zones match this hostname. Choose the correct zone below.';
+            setZoneBadge(badgeEl, t('js.text.zone_badge_select'), 'warning');
+            messageEl.textContent = t('js.text.zone_select_multiple');
             break;
         case 'not_found':
             zoneIdInput.value = '';
@@ -975,14 +975,14 @@ function updateManualZoneUI(state, elements) {
                 populateZoneSelector(selectorEl, cachedZones || [], 'Select a zone...');
                 selectorWrapper.classList.remove('hidden');
             }
-            setZoneBadge(badgeEl, 'Zone required', 'warning');
-            messageEl.textContent = 'No zone matched this hostname. Select the appropriate zone manually.';
+            setZoneBadge(badgeEl, t('js.text.zone_badge_required'), 'warning');
+            messageEl.textContent = t('js.text.zone_not_found');
             break;
         case 'selected':
             zoneIdInput.value = state.zone && state.zone.id ? state.zone.id : '';
             if (selectorWrapper) selectorWrapper.classList.remove('hidden');
-            setZoneBadge(badgeEl, 'Selected', 'success');
-            messageEl.textContent = state.zone && state.zone.name ? `Zone selected: ${state.zone.name}` : 'Zone selected.';
+            setZoneBadge(badgeEl, t('js.text.zone_badge_selected'), 'success');
+            messageEl.textContent = state.zone && state.zone.name ? t('js.text.zone_selected', {zoneName: state.zone.name}) : t('js.text.zone_selected', {zoneName: ''});
             break;
         default:
             break;
@@ -1013,7 +1013,7 @@ async function populateManualTunnelOptions(feedbackEl) {
     } else {
         manualTunnelTomSelect.refreshOptions(false);
         if (feedbackEl) {
-            feedbackEl.textContent = 'No tunnels were found for this account. Configure a Cloudflare Tunnel before adding rules.';
+            feedbackEl.textContent = t('js.text.no_tunnels_found');
             feedbackEl.classList.remove('hidden');
             feedbackEl.classList.remove('alert-success', 'alert-error');
             feedbackEl.classList.add('alert-warning');
@@ -1105,7 +1105,7 @@ function openCreateAccessGroupModal() {
 
     form.reset();
     form.action = `${document.baseURI}ui/access-groups/create`;
-    title.textContent = 'Create New Access Group';
+    title.textContent = t('js.text.create_access_group_title');
     groupIdInput.disabled = false;
     document.getElementById('original_group_id').value = '';
 
@@ -1134,7 +1134,7 @@ async function openEditAccessGroupModal(groupId, details) {
 
     form.reset();
     form.action = `${document.baseURI}ui/access-groups/edit/${encodeURIComponent(groupId)}`;
-    title.textContent = `Edit Access Group: ${details.display_name}`;
+    title.textContent = t('js.text.edit_access_group_title', {displayName: details.display_name});
 
     document.getElementById('original_group_id').value = groupId;
     groupIdInput.value = groupId;
@@ -1440,7 +1440,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (collapseIcon) collapseIcon.classList.remove('hidden');
 
                 if (targetDiv.dataset.loaded !== 'true' || targetDiv.dataset.loaded === 'error') {
-                    targetDiv.innerHTML = '<p class="opacity-60 italic animate-pulse p-2">Loading DNS records...</p>';
+                    targetDiv.innerHTML = `<p class="opacity-60 italic animate-pulse p-2">${t('js.text.loading_dns')}</p>`;
                     dnsRecordsDisplayRow.classList.remove('hidden');
 
                     try {
@@ -1466,13 +1466,13 @@ document.addEventListener('DOMContentLoaded', function() {
                             currentTargetDiv.innerHTML = dnsHtml;
                             currentTargetDiv.dataset.loaded = 'true';
                         } else {
-                            currentTargetDiv.innerHTML = `<p class="opacity-60 italic p-2">${data.message || 'No CNAME records found.'}</p>`;
+                            currentTargetDiv.innerHTML = `<p class="opacity-60 italic p-2">${data.message || t('js.text.no_cname_records')}</p>`;
                             currentTargetDiv.dataset.loaded = 'true';
                         }
                     } catch (error) {
                         const errorTargetDiv = document.getElementById(`dns-records-${tunnelId}`);
                         if (errorTargetDiv) {
-                            errorTargetDiv.innerHTML = `<p class="text-error p-2">Error loading DNS records: ${error.message}</p>`;
+                            errorTargetDiv.innerHTML = `<p class="text-error p-2">${t('js.text.error_loading_dns', {error: error.message})}</p>`;
                             errorTargetDiv.dataset.loaded = 'error';
                         }
                     }
@@ -1565,12 +1565,12 @@ async function loadIdentityProviders() {
             renderIdPTable(data.identity_providers || {});
         } else {
             document.getElementById('idp-table-container').innerHTML =
-                '<p class="text-center text-error py-8">Failed to load identity providers</p>';
+                `<p class="text-center text-error py-8">${t('js.table.idp_failed_to_load')}</p>`;
         }
     } catch (error) {
         console.error('Error loading IdPs:', error);
         document.getElementById('idp-table-container').innerHTML =
-            '<p class="text-center text-error py-8">Error loading identity providers</p>';
+            `<p class="text-center text-error py-8">${t('js.table.idp_error_loading')}</p>`;
     }
 }
 
@@ -1578,7 +1578,7 @@ function renderIdPTable(idps) {
     const container = document.getElementById('idp-table-container');
 
     if (!idps || Object.keys(idps).length === 0) {
-        container.innerHTML = '<p class="text-center opacity-70 py-8">No identity providers configured. Click "Add Provider" to get started.</p>';
+        container.innerHTML = `<p class="text-center opacity-70 py-8">${t('js.table.idp_empty')}</p>`;
         return;
     }
 
@@ -1603,11 +1603,11 @@ function renderIdPTable(idps) {
             </colgroup>
             <thead>
                 <tr>
-                    <th class="p-3">Provider</th>
-                    <th class="p-3">Cloudflare ID</th>
-                    <th class="p-3">Connector</th>
-                    <th class="p-3">Status</th>
-                    <th class="p-3 text-right">Actions</th>
+                    <th class="p-3">${t('js.table.provider')}</th>
+                    <th class="p-3">${t('js.table.cloudflare_id')}</th>
+                    <th class="p-3">${t('js.table.connector')}</th>
+                    <th class="p-3">${t('js.table.status')}</th>
+                    <th class="p-3 text-right">${t('js.table.actions')}</th>
                 </tr>
             </thead>
             <tbody>`;
@@ -1616,8 +1616,8 @@ function renderIdPTable(idps) {
         const icon = typeIcons[idpData.type] || '<svg class="w-6 h-6" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>';
         const isSystem = idpData.system_managed || false;
         const statusBadge = isSystem ?
-            '<span class="badge badge-sm badge-success gap-2"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>System-managed</span>' :
-            '<span class="badge badge-sm badge-info gap-2"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>User-configured</span>';
+            `<span class="badge badge-sm badge-success gap-2"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>${t('js.table.system_managed')}</span>` :
+            `<span class="badge badge-sm badge-info gap-2"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>${t('js.table.user_configured')}</span>`;
 
         tableHTML += `
             <tr>
@@ -1647,7 +1647,7 @@ function renderIdPTable(idps) {
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
                                 </svg>
-                                Edit
+                                ${t('js.table.idp_edit')}
                             </a></li>`;
         }
 
@@ -1657,7 +1657,7 @@ function renderIdPTable(idps) {
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
-                                Test IdP
+                                ${t('js.table.idp_test')}
                             </a></li>`;
         }
 
@@ -1667,7 +1667,7 @@ function renderIdPTable(idps) {
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
                                 </svg>
-                                Delete
+                                ${t('js.table.idp_delete')}
                             </a></li>`;
         }
 
@@ -1688,7 +1688,7 @@ function renderIdPTable(idps) {
 async function syncIdentityProviders() {
     const btn = document.getElementById('sync-idps-btn');
     btn.disabled = true;
-    btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Syncing...';
+    btn.innerHTML = `<span class="loading loading-spinner loading-sm"></span> ${t('js.sync.syncing')}`;
 
     try {
         const response = await fetch('/api/v2/idp/sync', {
@@ -1701,14 +1701,14 @@ async function syncIdentityProviders() {
         if (data.success) {
             await loadIdentityProviders();
         } else {
-            await dfAlert('Error: ' + (data.error || 'Failed to sync identity providers'), 'Sync Error');
+            await dfAlert(t('js.alert.sync_error', {error: data.error || t('js.alert.sync_error_generic')}), t('js.alert.sync_error_title'));
         }
     } catch (error) {
         console.error('Error syncing IdPs:', error);
-        await dfAlert('Error syncing identity providers. Check console for details.', 'Error');
+        await dfAlert(t('js.alert.sync_error_generic'), t('js.alert.error_title'));
     } finally {
         btn.disabled = false;
-        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg> Sync from Cloudflare';
+        btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg> ${t('js.sync.default_text')}`;
     }
 }
 
@@ -1721,15 +1721,15 @@ function showIdPModal(mode, friendlyName = null) {
     document.getElementById('idp-mode').value = mode;
 
     form.reset();
-    document.getElementById('idp-config-fields').innerHTML = '<div class="alert alert-warning"><svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg><span>Select a provider type to configure credentials</span></div>';
+    document.getElementById('idp-config-fields').innerHTML = `<div class="alert alert-warning"><svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg><span>${t('js.modal.idp_select_type')}</span></div>`;
 
     if (mode === 'create') {
-        title.textContent = 'Add Identity Provider';
-        submitBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Create Provider';
+        title.textContent = t('js.modal.idp_title_create');
+        submitBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> ${t('js.modal.idp_btn_create')}`;
         document.getElementById('idp-friendly-name').disabled = false;
     } else if (mode === 'edit' && friendlyName) {
-        title.textContent = 'Edit Identity Provider';
-        submitBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Update Provider';
+        title.textContent = t('js.modal.idp_title_edit');
+        submitBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> ${t('js.modal.idp_btn_update')}`;
         document.getElementById('idp-friendly-name').disabled = true;
         document.getElementById('idp-edit-name').value = friendlyName;
 
@@ -1755,7 +1755,7 @@ function updateIdPFormFields() {
     const redirectInfo = document.getElementById('redirect-url-info');
 
     if (!type || !idpTypes[type]) {
-        container.innerHTML = '<div class="alert alert-warning"><svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg><span>Select a provider type to configure credentials</span></div>';
+        container.innerHTML = `<div class="alert alert-warning"><svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg><span>${t('js.modal.idp_select_type')}</span></div>`;
         redirectInfo.classList.add('hidden');
         return;
     }
@@ -1841,22 +1841,22 @@ async function handleIdPFormSubmit(e) {
             await loadIdentityProviders();
 
             if (data.test_url && mode === 'create') {
-                const shouldTest = await dfConfirm('Identity provider created successfully!\n\nWould you like to test this identity provider now?', 'Test Identity Provider');
+                const shouldTest = await dfConfirm(t('js.confirm.idp_test_success'), t('js.confirm.idp_test_title'));
                 if (shouldTest) {
                     window.open(data.test_url, '_blank');
                 }
             }
         } else {
-            await dfAlert('Error: ' + (data.error || 'Failed to save identity provider'), 'Save Error');
+            await dfAlert(t('js.alert.save_error', {error: data.error || t('js.alert.save_error_generic')}), t('js.alert.save_error_title'));
         }
     } catch (error) {
         console.error('Error saving IdP:', error);
-        await dfAlert('Error saving identity provider. Check console for details.', 'Error');
+        await dfAlert(t('js.alert.save_error_generic'), t('js.alert.error_title'));
     } finally {
         submitBtn.disabled = false;
         submitBtn.innerHTML = mode === 'create' ?
-            '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Create Provider' :
-            '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> Update Provider';
+            `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> ${t('js.modal.idp_btn_create')}` :
+            `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> ${t('js.modal.idp_btn_update')}`;
     }
 }
 
@@ -1876,12 +1876,12 @@ async function testIdP(idpId) {
         }
     } catch (error) {
         console.error('Error testing IdP:', error);
-        await dfAlert('Error opening test URL. Check console for details.', 'Error');
+        await dfAlert(t('js.alert.test_url_error'), t('js.alert.error_title'));
     }
 }
 
 async function deleteIdP(friendlyName) {
-    const confirmed = await dfConfirm(`Are you sure you want to delete the identity provider "${friendlyName}"? This will remove it from both DockFlare and Cloudflare.`, 'Delete Identity Provider');
+    const confirmed = await dfConfirm(t('js.confirm.idp_delete', {friendlyName: friendlyName}), t('js.confirm.idp_delete_title'));
     if (!confirmed) {
         return;
     }
@@ -1896,10 +1896,10 @@ async function deleteIdP(friendlyName) {
         if (data.success) {
             await loadIdentityProviders();
         } else {
-            await dfAlert('Error: ' + (data.error || 'Failed to delete identity provider'), 'Delete Error');
+            await dfAlert(t('js.alert.delete_error', {error: data.error || t('js.alert.delete_error_generic')}), t('js.alert.delete_error_title'));
         }
     } catch (error) {
         console.error('Error deleting IdP:', error);
-        await dfAlert('Error deleting identity provider. Check console for details.', 'Error');
+        await dfAlert(t('js.alert.delete_error_generic'), t('js.alert.error_title'));
     }
 }
