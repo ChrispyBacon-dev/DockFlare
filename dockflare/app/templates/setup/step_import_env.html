@@ -2,13 +2,13 @@
 
 {% block setup_content %}
 <div class="text-center">
-    <h2 class="text-xl font-bold">Migration Assistant</h2>
-    <p class="py-4">DockFlare has detected settings from a previous version (.env file). We've imported them for you.</p>
+    <h2 class="text-xl font-bold">{{ t('setup.import.title') }}</h2>
+    <p class="py-4">{{ t('setup.import.desc') }}</p>
 </div>
 
 <div class="card bg-base-200 shadow-xl">
     <div class="card-body">
-        <h3 class="card-title">Imported Settings</h3>
+        <h3 class="card-title">{{ t('setup.import.imported_settings') }}</h3>
         <div class="overflow-x-auto">
             <table class="table w-full">
                 <tbody>
@@ -25,14 +25,14 @@
 </div>
 
 <p class="text-center text-sm mt-4">
-    Please review the imported settings. If they are correct, proceed to the final step: creating your admin user account.
+    {{ t('setup.import.review_text') }}
 </p>
 
 <form method="POST" action="{{ url_for('setup.step_import_env') }}" class="mt-6">
     {{ form.hidden_tag() }}
     <div class="card-actions justify-center">
-        <button type="submit" name="submit" class="btn btn-primary">Proceed with Migration</button>
-        <button type="submit" name="cancel" class="btn btn-ghost">Create New Configuration</button>
+        <button type="submit" name="submit" class="btn btn-primary">{{ t('setup.import.proceed') }}</button>
+        <button type="submit" name="cancel" class="btn btn-ghost">{{ t('setup.import.cancel') }}</button>
     </div>
 </form>
 {% endblock %}

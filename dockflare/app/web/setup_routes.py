@@ -30,6 +30,7 @@ from werkzeug.security import generate_password_hash
 from app import config
 from app.core import backup_manager
 from app.core.container_name import build_cloudflared_container_name
+from app.i18n import t as _t
 from app.web import config_loader
 
 setup_bp = Blueprint('setup', __name__, url_prefix='/setup', template_folder='../templates')
@@ -111,7 +112,7 @@ def restore_from_backup():
     if request.method == 'POST':
         file = request.files.get('backup_file')
         if not file or file.filename == '':
-            flash('Please select a DockFlare backup archive (.zip).', 'danger')
+            flash(_t('flash.setup.restore_select_error'), 'danger')
             return redirect(url_for('setup.restore_from_backup'))
 
         try:
@@ -129,7 +130,7 @@ def restore_from_backup():
 
             config_payload = config_loader.load_encrypted_config()
             if not config_payload:
-                flash('Backup restored, but configuration could not be loaded. Check logs.', 'danger')
+                flash(_t('flash.setup.restore_config_error'), 'danger')
                 return redirect(url_for('setup.restore_from_backup'))
 
             config_loader.apply_config_to_app(current_app, config_payload)
@@ -141,7 +142,7 @@ def restore_from_backup():
             return redirect(url_for('auth.login'))
         except Exception as err:
             logging.error("SETUP_RESTORE: Failed restoring backup: %s", err, exc_info=True)
-            flash('Restore failed. Ensure you selected a DockFlare backup archive and try again.', 'danger')
+            flash(_t('flash.setup.restore_failed'), 'danger')
             return redirect(url_for('setup.restore_from_backup'))
 
     return render_template('setup/restore.html', title='Restore from Backup', current_step=0)
@@ -165,7 +166,7 @@ def step2_api_credentials():
             if response.status_code == 200:
                 session['cf_api_token'] = token
                 session['cf_account_id'] = account_id
-                flash('Credentials verified successfully.', 'success')
+                flash(_t('flash.setup.credentials_verified'), 'success')
                 return redirect(url_for('setup.step3_tunnel_config'))
             else:
                 error_message = "Invalid credentials or permissions."
@@ -173,9 +174,9 @@ def step2_api_credentials():
                     error_message = response.json().get('errors', [{}])[0].get('message', error_message)
                 except Exception:
                     pass
-                flash(f'Validation failed. Cloudflare API returned: {error_message}', 'danger')
+                flash(_t('flash.setup.validation_failed', errorMessage=error_message), 'danger')
         except requests.exceptions.RequestException as e:
-            flash(f'Could not connect to the Cloudflare API: {e}', 'danger')
+            flash(_t('flash.setup.api_connection_failed', error=str(e)), 'danger')
 
     return render_template('setup/step2_cloudflare.html', form=form, title="Step 2: Cloudflare Configuration", current_step=2)
 
@@ -273,7 +274,7 @@ def step4_finalize():
         init_thread.start()
 
         session.clear()
-        flash('Setup complete! Please log in to continue.', 'success')
+        flash(_t('flash.setup.setup_complete'), 'success')
         return redirect(url_for('web.login'))
 
     config_summary = {key: val for key, val in session.items() if key != 'csrf_token' and not key.startswith('_')}
@@ -299,7 +300,7 @@ def step_import_env():
         ]
         for key in keys_to_clear:
             session.pop(key, None)
-        flash('Migration cancelled. Please start the setup from scratch.', 'info')
+        flash(_t('flash.setup.migration_cancelled'), 'info')
         return redirect(url_for('setup.step1_admin_user'))
 
     if not session.get('is_env_import'):
@@ -311,12 +312,12 @@ def step_import_env():
     if form.validate_on_submit():
 
         if not session.get('cf_api_token') or not session.get('cf_account_id'):
-            flash('Critical information (API Token or Account ID) was missing from the import. Please configure manually.', 'danger')
+            flash(_t('flash.setup.critical_info_missing'), 'danger')
             session.clear()
 
             return redirect(url_for('setup.step2_api_credentials'))
 
-        flash('Settings confirmed. Please create an admin user to continue.', 'info')
+        flash(_t('flash.setup.settings_confirmed'), 'info')
         return redirect(url_for('setup.step1_admin_user'))
 
     imported_settings = {
@@ -329,6 +330,6 @@ def step_import_env():
     }
 
     if not session.get('cf_api_token') or not session.get('cf_account_id'):
-        flash('Warning: Missing required fields (CF_API_TOKEN or CF_ACCOUNT_ID). You will not be able to proceed.', 'warning')
+        flash(_t('flash.setup.required_fields_missing'), 'warning')
 
     return render_template('setup/step_import_env.html', form=form, title="Setup: Import from .env", summary=imported_settings)

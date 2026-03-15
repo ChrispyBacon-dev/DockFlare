@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v3.0.8] - 2026-03-15
+
+### Added
+- **Multi-Language Support (Docs/Help):** The Help Center documentation is now fully localized into 8 languages (EN, DE, FR, ES, PL, ZH, IT, JA, CH-Bärndütsch).
+  - All 33 Markdown help guides have been systematically translated and segregated into language-specific repositories.
+  - Implemented an intelligent fallback mechanism: if a localized page is unavailable, the system safely falls back to English to prevent 404 errors.
+- **Language Selector UI:** Added a new global language selector (globe icon) to the top navigation bar, allowing users to seamlessly transition between languages on the fly, storing preferences via session states.
+
+### Fixed
+- **Performance / Waitress Connection Exhaustion:** Resolved a critical bug resulting in UI 30-second delays or stalling connections after clicking through ~5 pages. 
+
+---
+
 ## [v3.0.7] - 2026-03-01
 
 ### Added

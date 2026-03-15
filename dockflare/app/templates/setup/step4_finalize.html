@@ -2,7 +2,7 @@
 
 {% block setup_content %}
 <div class="prose mb-6">
-    <p class="text-center text-gray-500 mb-6">Review your configuration details below before completing the setup. Once you finalize, DockFlare will begin managing your tunnels based on these settings, and you will be redirected to the login page.</p>
+    <p class="text-center text-gray-500 mb-6">{{ t('setup.step4.desc') }}</p>
 
     <div class="overflow-x-auto">
         <table class="table w-full">
@@ -10,7 +10,7 @@
                 {% for key, value in summary.items() %}
                 <tr>
                     <th class="font-semibold capitalize">{{ key.replace('_', ' ') }}</th>
-                    <td>{{ value if value else 'Not set' }}</td>
+                    <td>{{ value if value else t('common.not_set') }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -21,8 +21,8 @@
 <form method="POST" action="{{ url_for('setup.step4_finalize') }}">
     {{ form.hidden_tag() }}
     <div class="card-actions">
-        {{ form.submit(class="btn btn-primary w-full") }}
-        <a href="{{ url_for('setup.step3_tunnel_config') }}" class="btn btn-ghost w-full">Go Back</a>
+        <button type="submit" name="submit" class="btn btn-primary w-full">{{ t('form.setup.complete_setup') }}</button>
+        <a href="{{ url_for('setup.step3_tunnel_config') }}" class="btn btn-ghost w-full">{{ t('setup.step4.back') }}</a>
     </div>
 </form>
 {% endblock %}

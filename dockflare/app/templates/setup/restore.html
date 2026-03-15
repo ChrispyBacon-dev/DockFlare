@@ -2,32 +2,32 @@
 
 {% block setup_content %}
 <div class="text-center mb-6">
-    <h2 class="text-xl font-bold">Restore DockFlare Backup</h2>
-    <p class="py-4 text-gray-500">Upload a DockFlare backup archive (`.zip`) to restore configuration, state, and agent keys into this fresh deployment.</p>
+    <h2 class="text-xl font-bold">{{ t('setup.restore.title') }}</h2>
+    <p class="py-4 text-gray-500">{{ t('setup.restore.desc') }}</p>
 </div>
 
 <form method="POST" action="{{ url_for('setup.restore_from_backup') }}" enctype="multipart/form-data" class="space-y-4">
     <div class="form-control">
         <label class="label">
-            <span class="label-text">Backup Archive (.zip)</span>
+            <span class="label-text">{{ t('setup.restore.file_label') }}</span>
         </label>
         <input type="file" name="backup_file" accept=".zip" class="file-input file-input-bordered w-full" required>
         <label class="label">
-            <span class="label-text-alt">Backups must be generated from DockFlare ≥ 3.0.</span>
+            <span class="label-text-alt">{{ t('setup.restore.file_help') }}</span>
         </label>
     </div>
 
     <div class="alert alert-info">
-        <span>After a successful restore you will be redirected to the sign-in screen. Existing agents may take a moment to reconnect.</span>
+        <span>{{ t('setup.restore.info') }}</span>
     </div>
 
     <div class="card-actions mt-6">
-        <button type="submit" class="btn btn-primary w-full">Restore Backup</button>
+        <button type="submit" class="btn btn-primary w-full">{{ t('setup.restore.submit') }}</button>
     </div>
 </form>
 
 <div class="mt-6 text-center">
-    <a href="{{ url_for('setup.step1_admin_user') }}" class="link link-primary">Prefer to configure DockFlare manually?</a>
+    <a href="{{ url_for('setup.step1_admin_user') }}" class="link link-primary">{{ t('setup.restore.manual_link') }}</a>
 </div>
 {% endblock %}
 

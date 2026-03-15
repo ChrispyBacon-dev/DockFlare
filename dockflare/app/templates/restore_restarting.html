@@ -1,20 +1,20 @@
 {% extends "base.html" %}
 
-{% block title %}DockFlare is Restarting{% endblock %}
+{% block title %}{{ t('restore.title') }}{% endblock %}
 
 {% block content %}
 <div class="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-6">
   <img src="{{ url_for('static', filename='images/logo.gif') }}" alt="DockFlare Logo" class="w-24 h-24 animate-pulse" />
   <div class="space-y-2">
-    <h1 class="text-3xl font-semibold">Hold tight, DockFlare is rebooting...</h1>
-    <p class="text-lg opacity-80">We’re loading your restored configuration and giving the tunnel hamsters a quick pep talk.</p>
+    <h1 class="text-3xl font-semibold">{{ t('restore.hold_tight') }}</h1>
+    <p class="text-lg opacity-80">{{ t('restore.flavor_text') }}</p>
   </div>
   <div class="bg-base-200 rounded-box px-6 py-4 text-left">
-    <p class="font-medium">What’s happening?</p>
+    <p class="font-medium">{{ t('restore.whats_happening') }}</p>
     <ul class="list-disc list-inside opacity-80 text-left">
-      <li>Encrypted secrets were imported successfully.</li>
-      <li>Agents and rules are warming up.</li>
-      <li>We’ll refresh this page automatically in <span id="countdown">{{ countdown_seconds }}</span> seconds.</li>
+      <li>{{ t('restore.secrets_imported') }}</li>
+      <li>{{ t('restore.agents_warming_up') }}</li>
+      <li>{{ t('restore.refresh_in', seconds=countdown_seconds) }}</li>
     </ul>
   </div>
   <progress class="progress progress-primary w-64" value="0" max="{{ countdown_seconds }}" id="progress"></progress>
