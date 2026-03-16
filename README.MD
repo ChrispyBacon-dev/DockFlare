@@ -36,11 +36,12 @@ DockFlare is a self-hosted ingress and access-control plane for Cloudflare Tunne
 
 It was built to remove repetitive dashboard work from fast-changing self-hosted environments. Instead of manually updating DNS records, tunnel ingress rules, and Access applications, you define intent once and DockFlare reconciles it.
 
-The result is a set-it-and-forget-it workflow: less operational drift, more reliable service exposure, and one place to manage routing and access decisions.
+The result is a set-it-and-forget-it workflow with a fully localized native experience: less operational drift, more reliable service exposure, and one place to manage routing and access decisions.
 
 ## Core Capabilities
 
 - Automatic service discovery from Docker labels.
+- Native multi-language support (8+ languages) for the Web UI and Help Center.
 - Manual ingress rule management for non-Docker workloads.
 - Cloudflare Tunnel ingress orchestration, including advanced origin options.
 - Access Group and reusable policy management with application assignment.
@@ -314,6 +315,8 @@ curl http://localhost:5000/api/v2/overview
 ```
 
 ## Documentation Map
+
+*(Available in 8 languages directly within the DockFlare UI or online)*
 
 - Product docs: [https://dockflare.app/docs](https://dockflare.app/docs)
 - Source docs in repository:

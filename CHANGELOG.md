@@ -10,9 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [v3.0.8] - 2026-03-15
 
 ### Added
-- **Multi-Language Support (Docs/Help):** The Help Center documentation is now fully localized into 8 languages (EN, DE, FR, ES, PL, ZH, IT, JA, CH-Bärndütsch).
+- **Multi-Language Support (UI & Docs):** The entire DockFlare web UI and Help Center documentation are now fully localized into 8 languages (EN, DE, FR, ES, PL, ZH, IT, JA, CH-Bärndütsch).
+  - All UI elements, including the dashboard, settings, and modals, are now translated for a complete native experience.
   - All 33 Markdown help guides have been systematically translated and segregated into language-specific repositories.
-  - Implemented an intelligent fallback mechanism: if a localized page is unavailable, the system safely falls back to English to prevent 404 errors.
+  - Implemented an intelligent fallback mechanism: if a localized string or page is unavailable, the system safely falls back to English to prevent 404 errors or missing text.
 - **Language Selector UI:** Added a new global language selector (globe icon) to the top navigation bar, allowing users to seamlessly transition between languages on the fly, storing preferences via session states.
 
 ### Fixed

@@ -134,7 +134,7 @@ def get_display_token_ui(token_value):
 @bp.route('/set_language/<lang>')
 def set_language(lang):
     """Sets the user's preferred language in the session."""
-    if lang in ['en', 'de', 'fr', 'es', 'pl', 'zh', 'it', 'ja', 'ch-barnduetsch']:
+    if lang in ['en', 'de', 'fr', 'es', 'id', 'pl', 'zh', 'it', 'ja', 'ch-barnduetsch']:
         session['lang'] = lang
     return redirect(request.referrer or url_for('web.status_page'))
 
