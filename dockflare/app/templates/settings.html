@@ -98,7 +98,7 @@
                     </div>
                     
                     <div class="card-actions pt-4">
-                        <button type="submit" name="submit_settings" class="btn btn-primary">{{ t('form.settings.save_general') }}</button>
+                        {{ settings_form.submit_settings(class="btn btn-primary", value=t('form.settings.save_general')) }}
                     </div>
                 </form>
                 <div class="border-t border-base-300 mt-8 pt-8">
@@ -136,7 +136,7 @@
                             {% endfor %}
                         </div>
                         <div class="card-actions">
-                            <button type="submit" name="submit_cloudflare_credentials" class="btn btn-primary">{{ t('form.cloudflare.submit') }}</button>
+                            {{ cf_credentials_form.submit_cloudflare_credentials(class="btn btn-primary", value=t('form.cloudflare.submit')) }}
                         </div>
                     </form>
                 </div>
@@ -343,7 +343,7 @@
                             </div>
 
                             <div class="card-actions">
-                                 <button type="submit" name="submit_security_settings" class="btn btn-warning">{{ t('form.security.save') }}</button>
+                                 {{ security_settings_form.submit_security_settings(class="btn btn-warning", value=t('form.security.save')) }}
                             </div>
                         </form>
                         <div class="mt-6">

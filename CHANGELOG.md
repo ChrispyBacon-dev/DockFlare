@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Performance / Waitress Connection Exhaustion:** Resolved a critical bug resulting in UI 30-second delays or stalling connections after clicking through ~5 pages. 
 
+### Hotfix
+- **Settings Form Submit Regression:** Restored WTForms-backed submit buttons for the translated **General Settings**, **Cloudflare Credentials**, and **Security Settings** actions so the backend reliably detects which Settings form was submitted. Fixes the `Disable Password Login` toggle not persisting after the multi-language UI update.
+
 ### Security
 - **Dependency Security Refresh:** Updated frontend and Python dependencies to address known vulnerabilities identified by `npm audit` and `pip-audit`.
   - **Frontend lockfile updates:** Refreshed transitive npm dependencies to patched versions, including `glob` `10.5.0` and `minimatch` `9.0.9`, resulting in a clean `npm audit`.
