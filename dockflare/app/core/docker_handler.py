@@ -160,6 +160,7 @@ def process_container_start(container_obj):
             no_tls_verify_label = get_label(labels, "no_tls_verify", "false").lower() in ["true", "1", "t", "yes"]
             http2_origin_label = get_label(labels, "http2_origin", "false").lower() in ["true", "1", "t", "yes"]
             disable_chunked_encoding_label = get_label(labels, "disable_chunked_encoding", "false").lower() in ["true", "1", "t", "yes"]
+            match_sni_to_host_label = get_label(labels, "match_sni_to_host", "false").lower() in ["true", "1", "t", "yes"]
 
             if hostname_label and service_label:
                 if is_valid_hostname(hostname_label) and is_valid_service(service_label):
@@ -171,6 +172,7 @@ def process_container_start(container_obj):
                         "http_host_header": default_http_host_header_label.strip() if default_http_host_header_label else None,
                         "http2_origin": http2_origin_label,
                         "disable_chunked_encoding": disable_chunked_encoding_label,
+                        "match_sni_to_host": match_sni_to_host_label,
                         "access_group": default_access_group,
                         "access_policy_type": default_access_policy_type_label,
                         "access_app_name": default_access_app_name_label,
@@ -203,6 +205,8 @@ def process_container_start(container_obj):
                 http2_origin_indexed = http2_origin_indexed_val.lower() in ["true", "1", "t", "yes"]
                 disable_chunked_encoding_indexed_val = get_label(labels, f"{index}.disable_chunked_encoding", str(disable_chunked_encoding_label).lower())
                 disable_chunked_encoding_indexed = disable_chunked_encoding_indexed_val.lower() in ["true", "1", "t", "yes"]
+                match_sni_to_host_indexed_val = get_label(labels, f"{index}.match_sni_to_host", str(match_sni_to_host_label).lower())
+                match_sni_to_host_indexed = match_sni_to_host_indexed_val.lower() in ["true", "1", "t", "yes"]
 
                 access_groups_indexed = get_label(labels, f"{index}.access.groups")
                 raw_access_group_indexed = get_label(labels, f"{index}.access.group") if not access_groups_indexed else None
@@ -255,6 +259,7 @@ def process_container_start(container_obj):
                         "http_host_header": http_host_header_indexed_val.strip() if http_host_header_indexed_val else None,
                         "http2_origin": http2_origin_indexed,
                         "disable_chunked_encoding": disable_chunked_encoding_indexed,
+                        "match_sni_to_host": match_sni_to_host_indexed,
                         "access_group": access_group_indexed,
                         "access_policy_type": access_policy_type_indexed,
                         "access_app_name": access_app_name_indexed,
@@ -298,6 +303,7 @@ def process_container_start(container_obj):
                 http_host_header_from_item = config_item.get("http_host_header")
                 http2_origin_from_item = config_item.get("http2_origin", False)
                 disable_chunked_encoding_from_item = config_item.get("disable_chunked_encoding", False)
+                match_sni_to_host_from_item = config_item.get("match_sni_to_host", False)
 
                 target_zone_id = None
                 detected_zone_name = zone_name_from_item
@@ -368,6 +374,9 @@ def process_container_start(container_obj):
                         if existing_rule.get("disable_chunked_encoding") != disable_chunked_encoding_from_item:
                             existing_rule["disable_chunked_encoding"] = disable_chunked_encoding_from_item
                             rule_data_changed = True
+                        if existing_rule.get("match_sni_to_host") != match_sni_to_host_from_item:
+                            existing_rule["match_sni_to_host"] = match_sni_to_host_from_item
+                            rule_data_changed = True
 
                         existing_rule["source"] = "docker"
                         if master_tunnel_id and existing_rule.get("tunnel_id") != master_tunnel_id:
@@ -405,6 +414,7 @@ def process_container_start(container_obj):
                             "http_host_header": http_host_header_from_item,
                             "http2_origin": http2_origin_from_item,
                             "disable_chunked_encoding": disable_chunked_encoding_from_item,
+                            "match_sni_to_host": match_sni_to_host_from_item,
                             "access_app_id": None,
                             "access_policy_type": None,
                             "access_app_config_hash": None,
