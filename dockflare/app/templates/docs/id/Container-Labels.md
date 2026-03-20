@@ -18,6 +18,7 @@ Label berikut mengatur routing dasar dan definisi layanan untuk sebuah container
 | `dockflare.httpHostHeader` | Meng-override header `Host` yang dikirim `cloudflared` ke origin service. | `dockflare.httpHostHeader=custom-host.internal` |
 | `dockflare.http2_origin` | Jika `true`, mengaktifkan HTTP/2 antara `cloudflared` dan origin service. Diperlukan untuk layanan gRPC. Hanya berlaku untuk HTTP/HTTPS. | `dockflare.http2_origin=true` |
 | `dockflare.disable_chunked_encoding` | Jika `true`, menonaktifkan chunked transfer encoding pada HTTP/1.1. Berguna untuk server WSGI seperti Flask, Django, FastAPI, dan origin lain yang tidak mendukung chunked request dengan baik. | `dockflare.disable_chunked_encoding=true` |
+| `dockflare.match_sni_to_host` | Jika `true`, Cloudflare secara otomatis menetapkan Server Name Indication (SNI) selama TLS handshake agar sesuai dengan hostname dari permintaan yang masuk. | `dockflare.match_sni_to_host=true` |
 
 > **Tip:** Sejak DockFlare v3.0, Anda biasanya tidak perlu lagi mengisi `dockflare.zonename`. Master akan mendeteksi Cloudflare zone yang benar dari suffix hostname dan hanya memakai default zone bila tidak menemukan kecocokan.
 

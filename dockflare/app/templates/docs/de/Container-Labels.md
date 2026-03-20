@@ -18,6 +18,7 @@ Diese Labels steuern das grundlegende Routing und die Service-Definition für ei
 | `dockflare.httpHostHeader` | Überschreibt den `Host`-Header, der von `cloudflared` an Ihren Ursprungsdienst gesendet wird. | `dockflare.httpHostHeader=custom-host.internal` |
 | `dockflare.http2_origin` | Wenn auf `true` gesetzt, wird das HTTP/2 Protokoll für die Verbindung zwischen `cloudflared` und Ihrem Ursprung aktiviert. Gilt nur für HTTP/HTTPS-Dienste. Erforderlich für gRPC-Dienste. | `dockflare.http2_origin=true` |
 | `dockflare.disable_chunked_encoding` | Wenn auf `true` gesetzt, wird chunked transfer encoding über HTTP/1.1 deaktiviert. Nützlich für WSGI-Server (Flask, Django, FastAPI) u. a., die chunked-Anfragen nicht richtig unterstützen. Gilt nur für HTTP/HTTPS. | `dockflare.disable_chunked_encoding=true` |
+| `dockflare.match_sni_to_host` | Wenn auf `true` gesetzt, setzt Cloudflare beim TLS-Handshake automatisch den Server Name Indication (SNI) so, dass er mit dem Hostnamen der eingehenden Anfrage übereinstimmt. | `dockflare.match_sni_to_host=true` |
 
 > **Tipp:** Ab DockFlare v3.0 können Sie `dockflare.zonename` für die meisten Workloads weglassen. Der Master erkennt die korrekte Cloudflare-Zone durch Abgleich des Hostnamen-Suffixes. Nutzen Sie das Label nur, wenn Sie eine andere Zone gezielt ansteuern.
 

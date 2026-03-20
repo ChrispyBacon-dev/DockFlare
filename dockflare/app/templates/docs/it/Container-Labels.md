@@ -18,6 +18,7 @@ Queste etichette controllano il routing fondamentale e la definizione del serviz
 | `dockflare.httpHostHeader` | Sostituisce l'intestazione `Host` inviata da `cloudflared` al tuo servizio di origine. | `dockflare.httpHostHeader=custom-host.internal` |
 | `dockflare.http2_origin` | Se impostato su `true`, abilita il protocollo HTTP/2 per la connessione tra `cloudflared` e il tuo servizio di origine. Obbligatorio per i servizi gRPC. Si applica solo ai servizi HTTP/HTTPS. | `dockflare.http2_origin=true` |
 | `dockflare.disable_chunked_encoding` | Se impostato su `true`, disabilita la codifica del trasferimento in blocchi su HTTP/1.1. Utile per server WSGI (Flask, Django, FastAPI) e altre origini che non supportano correttamente le richieste in blocchi. Si applica solo ai servizi HTTP/HTTPS. | `dockflare.disable_chunked_encoding=true` |
+| `dockflare.match_sni_to_host` | Se impostato su `true`, Cloudflare imposta automaticamente il Server Name Indication (SNI) durante l'handshake TLS in modo che corrisponda al nome host della richiesta in arrivo. | `dockflare.match_sni_to_host=true` |
 
 > **Suggerimento:** a partire da DockFlare v3.0, puoi saltare `dockflare.zonename` per la maggior parte dei carichi di lavoro. Il Master rileva la zona Cloudflare corretta facendo corrispondere il suffisso del nome host e torna alla zona predefinita configurata solo quando non riesce a trovare una corrispondenza. Fornisci l'etichetta quando desideri inserire intenzionalmente un record in una zona diversa.
 
