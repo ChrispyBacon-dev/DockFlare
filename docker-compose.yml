@@ -32,12 +32,12 @@ services:
     restart: "no"
 
   dockflare:
-    #build: ./dockflare
-    image: alplat/dockflare:stable
+    build: ./dockflare
+    #image: alplat/dockflare:stable
     container_name: dockflare
     restart: unless-stopped
     ports:
-      - "5000:5000"
+      - "5001:5000"
     #labels: # -- Cloudflare Tunnel Configuration (via DockFlare) OPTIONAL --
       # Main DockFlare with access policy
       #- dockflare.enable=true
