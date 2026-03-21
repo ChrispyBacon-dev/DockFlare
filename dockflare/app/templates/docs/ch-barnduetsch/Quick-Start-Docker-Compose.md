@@ -2,12 +2,37 @@
 
 Die Aaleitig zeigt dr schnäuschti Wäg, wie du DockFlare mit em ghärtete Socket-Proxy u dr rootless Master-Konfiguration lafe lahsch.
 
+## Option A — Eizeiler-Installation (Empfohle)
+
+Dr schnäuschti Wäg, DockFlare zum Laufe z bringe, isch dr Installations-Skript uf [dockflare.app](https://dockflare.app):
+
+```bash
+curl -fsSL https://dockflare.app/install.sh | bash
+```
+
+Dr Skript macht Folgendes:
+1. Prüeft, ob Docker u Docker Compose verfüegbar si.
+2. Erstellt `~/dockflare/` u schrybt dort e `docker-compose.yml` ane.
+3. Erstellt s Docker-Netzwerk `cloudflare-net`, falls's no nid existiert.
+4. Ladet d Images abe u startet alli Dienscht.
+5. Zeigt d lokali URL aa, wenn's fertig isch.
+
+Sobald alles lauft, mach `http://<your-server-ip>:5000` uf u füehrt di dr Iirichtigsassistent dür.
+
+> **Optionali Yberschribige** — setz Umgebigsvariable vor em Pipe, zum d Installation aapasse:
+> ```bash
+> DOCKFLARE_PORT=8080 DOCKFLARE_DIR=/opt/dockflare curl -fsSL https://dockflare.app/install.sh | bash
+> ```
+
+---
+
+## Option B — Manuälli Docker-Compose-Irichtig
+
 ### 1. Erstell e `docker-compose.yml`
 
 Dr folgend Stack startet dr `docker-socket-proxy`, macht s persistänte Volume mit de richtige Rächt parat u startet DockFlare zäme mit Redis.
 
 ```yaml
-version: '3.8'
 services:
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy:v0.4.1
@@ -88,7 +113,15 @@ networks:
 - Wänn du statt named Volumes Bind-Mounts bruuchsch, mues s Zielverzeichnis für UID/GID 65532 beschrybbar si.
 - Dr externi Network `cloudflare-net` mues nume einisch erstellt wärde: `docker network create cloudflare-net`.
 
-### 2. DockFlare starte
+### 2. S externe Netzwerk erstelle
+
+Falls's no nid existiert:
+
+```bash
+docker network create cloudflare-net
+```
+
+### 3. DockFlare starte
 
 Start dr Stack im Hintergrund:
 
@@ -98,7 +131,7 @@ docker compose up -d
 
 Dä Befehl fährt dr Proxy u Redis hoch u startet nachhär DockFlare.
 
-### 3. Erstiirichtig abschliesse
+### 4. Erstiirichtig abschliesse
 
 Sobald d Dienscht laufe, mach im Browser `http://<your-server-ip>:5000` uf.
 
@@ -108,6 +141,6 @@ Dr **Erstiirichtigs-Assistent** füehrt di dür:
 3. dr erscht Tunnel konfiguriere
 4. optional es bestehends `dockflare_backup_*.zip` wiederherstelle
 
-### 4. Upgrade vo ältere Versione
+### 5. Upgrade vo ältere Versione
 
 Wänn du vo nere ältere Version upgradisch, erkennt DockFlare d alti `.env`, migriert dini Konfiguration i dr verschlüsslete Speicher u füehrt di dür d Passwort-Erstellige. Lah dr Socket-Proxy unveränderet; diräkti Mounts vo `/var/run/docker.sock` wärde nüm unterstützt.

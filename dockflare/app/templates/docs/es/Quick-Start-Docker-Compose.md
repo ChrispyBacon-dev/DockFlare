@@ -2,12 +2,37 @@
 
 Esta guía explica la forma más rápida de ejecutar DockFlare con el socket proxy reforzado y la configuración rootless del Master.
 
+## Opción A — Instalación en un solo comando (Recomendado)
+
+La forma más rápida de poner en marcha DockFlare es el script de instalación alojado en [dockflare.app](https://dockflare.app):
+
+```bash
+curl -fsSL https://dockflare.app/install.sh | bash
+```
+
+El script realizará lo siguiente:
+1. Comprobar que Docker y Docker Compose están disponibles.
+2. Crear `~/dockflare/` y escribir un archivo `docker-compose.yml` allí.
+3. Crear la red Docker `cloudflare-net` si no existe.
+4. Descargar las imágenes e iniciar todos los servicios.
+5. Mostrar la URL local al finalizar.
+
+Una vez en ejecución, abra `http://<your-server-ip>:5000` y complete el asistente de configuración.
+
+> **Opciones de personalización** — establezca variables de entorno antes de ejecutar el comando para controlar la instalación:
+> ```bash
+> DOCKFLARE_PORT=8080 DOCKFLARE_DIR=/opt/dockflare curl -fsSL https://dockflare.app/install.sh | bash
+> ```
+
+---
+
+## Opción B — Docker Compose manual
+
 ### 1. Cree el archivo `docker-compose.yml`
 
 La siguiente pila inicia Docker-socket-proxy, prepara el volumen persistente con la propiedad correcta e inicia DockFlare junto con Redis.
 
 ```yaml
-version: '3.8'
 services:
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy:v0.4.1
@@ -88,7 +113,15 @@ networks:
 - Cuando utilice montajes vinculados en lugar de volúmenes con nombre, asegúrese de que se pueda escribir en el directorio de destino mediante UID/GID 65532 (o sus valores anulados).
 - Crear la red externa una vez si no existe: `docker network create cloudflare-net`.
 
-### 2. Ejecute DockFlare
+### 2. Crear la red externa
+
+Si todavía no existe:
+
+```bash
+docker network create cloudflare-net
+```
+
+### 3. Ejecute DockFlare
 
 Inicie la pila en modo independiente:
 
@@ -98,7 +131,7 @@ docker compose up -d
 
 Esto abre el proxy, prepara el volumen e inicia DockFlare junto con Redis.
 
-### 3. Complete la configuración previa al vuelo
+### 4. Complete la configuración previa al vuelo
 
 Una vez que los servicios se estén ejecutando, abra su navegador en `http://<your-server-ip>:5000`.
 
@@ -108,6 +141,6 @@ El **asistente de configuración inicial** le guiará a través de:
 3. Configurar su túnel Cloudflare inicial.
 4. *(Opcional)* Restauración desde un archivo de copia de seguridad de DockFlare. Si ya tiene un `dockflare_backup_*.zip`, elija **Restaurar desde copia de seguridad** antes del Paso 1; el asistente importa su configuración y reinicia el contenedor automáticamente.
 
-### 4. Para usuarios existentes (actualización)
+### 5. Para usuarios existentes (actualización)
 
 Si está actualizando desde una versión anterior, DockFlare detecta el archivo `.env` heredado, migra su configuración al almacén cifrado y lo guía a través de la creación de contraseñas. Mantenga el proxy de socket en su lugar; ya no se admiten montajes directos de `/var/run/docker.sock`.

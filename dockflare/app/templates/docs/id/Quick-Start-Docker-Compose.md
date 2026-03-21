@@ -2,12 +2,37 @@
 
 Panduan ini menjelaskan cara tercepat untuk menjalankan DockFlare dengan socket proxy yang diperkeras dan konfigurasi master rootless.
 
+## Opsi A — Instalasi Satu Perintah (Direkomendasikan)
+
+Cara tercepat untuk menjalankan DockFlare adalah menggunakan skrip instalasi yang tersedia di [dockflare.app](https://dockflare.app):
+
+```bash
+curl -fsSL https://dockflare.app/install.sh | bash
+```
+
+Skrip akan melakukan hal berikut:
+1. Memeriksa bahwa Docker dan Docker Compose tersedia.
+2. Membuat `~/dockflare/` dan menulis file `docker-compose.yml` di sana.
+3. Membuat jaringan Docker `cloudflare-net` jika belum ada.
+4. Menarik image dan memulai semua layanan.
+5. Menampilkan URL lokal setelah selesai.
+
+Setelah berjalan, buka `http://<your-server-ip>:5000` dan selesaikan wizard pengaturan.
+
+> **Opsi kustomisasi** — atur variabel lingkungan sebelum menjalankan perintah untuk mengontrol instalasi:
+> ```bash
+> DOCKFLARE_PORT=8080 DOCKFLARE_DIR=/opt/dockflare curl -fsSL https://dockflare.app/install.sh | bash
+> ```
+
+---
+
+## Opsi B — Docker Compose Manual
+
 ### 1. Buat file `docker-compose.yml`
 
 Stack di bawah ini menjalankan `docker-socket-proxy`, menyiapkan persistent volume dengan ownership yang benar, dan menjalankan DockFlare bersama Redis.
 
 ```yaml
-version: '3.8'
 services:
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy:v0.4.1
@@ -88,7 +113,15 @@ networks:
 - Saat memakai bind mount alih-alih named volume, pastikan direktori target bisa ditulis oleh UID/GID 65532 atau nilai override Anda.
 - Buat external network sekali jika belum ada: `docker network create cloudflare-net`.
 
-### 2. Jalankan DockFlare
+### 2. Buat external network
+
+Jika belum ada:
+
+```bash
+docker network create cloudflare-net
+```
+
+### 3. Jalankan DockFlare
 
 Jalankan stack dalam mode detached:
 
@@ -98,7 +131,7 @@ docker compose up -d
 
 Perintah ini akan menyalakan proxy, menyiapkan volume, dan menjalankan DockFlare bersama Redis.
 
-### 3. Selesaikan Pre-Flight Setup
+### 4. Selesaikan Pre-Flight Setup
 
 Setelah service berjalan, buka browser ke `http://<your-server-ip>:5000`.
 
@@ -108,6 +141,6 @@ Setelah service berjalan, buka browser ke `http://<your-server-ip>:5000`.
 3. Mengonfigurasi Cloudflare Tunnel pertama Anda.
 4. *(Opsional)* Me-restore dari arsip backup DockFlare. Jika Anda sudah punya `dockflare_backup_*.zip`, pilih **Restore from backup** sebelum Step 1; wizard akan mengimpor konfigurasi dan merestart container secara otomatis.
 
-### 4. Untuk Pengguna Lama (Upgrade)
+### 5. Untuk Pengguna Lama (Upgrade)
 
 Jika Anda melakukan upgrade dari rilis lama, DockFlare akan mendeteksi file `.env` lama, memigrasikan konfigurasi ke encrypted store, dan memandu Anda membuat password. Tetap gunakan socket proxy; mount langsung `/var/run/docker.sock` sudah tidak didukung lagi.

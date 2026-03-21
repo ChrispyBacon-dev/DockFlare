@@ -2,12 +2,37 @@
 
 Ce guide présente le moyen le plus rapide d'exécuter DockFlare avec un socket-proxy renforcé et une configuration Master rootless.
 
+## Option A — Installation en une seule commande (Recommandé)
+
+La façon la plus rapide de démarrer DockFlare est d'utiliser le script d'installation hébergé sur [dockflare.app](https://dockflare.app) :
+
+```bash
+curl -fsSL https://dockflare.app/install.sh | bash
+```
+
+Le script va :
+1. Vérifier que Docker et Docker Compose sont disponibles.
+2. Créer `~/dockflare/` et y écrire un fichier `docker-compose.yml`.
+3. Créer le réseau Docker `cloudflare-net` s'il n'existe pas encore.
+4. Télécharger les images et démarrer tous les services.
+5. Afficher l'URL locale une fois terminé.
+
+Une fois démarré, ouvrez `http://<your-server-ip>:5000` et suivez l'assistant de configuration.
+
+> **Substitutions optionnelles** — définissez des variables d'environnement avant la commande pour personnaliser l'installation :
+> ```bash
+> DOCKFLARE_PORT=8080 DOCKFLARE_DIR=/opt/dockflare curl -fsSL https://dockflare.app/install.sh | bash
+> ```
+
+---
+
+## Option B — Configuration manuelle avec Docker Compose
+
 ### 1. Créez le fichier `docker-compose.yml`
 
 La stack ci-dessous lance `docker-socket-proxy`, initialise le volume persistant avec les bons droits, puis démarre DockFlare avec Redis.
 
 ```yaml
-version: '3.8'
 services:
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy:v0.4.1
@@ -82,15 +107,23 @@ networks:
     name: dockflare-internal
 ```
 
-**Remarques :**
+**Remarques :**
 - Le conteneur Master s'exécute en tant qu'utilisateur `dockflare` (UID/GID 65532). Si vous devez aligner des permissions côté hôte, définissez `DOCKFLARE_UID`/`DOCKFLARE_GID` et reconstruisez l'image, ou ajustez l'init job.
 - Le proxy est obligatoire. DockFlare ne monte jamais `/var/run/docker.sock` directement, ce qui limite strictement la surface de l'API Docker exposée au Master.
 - Lorsque vous utilisez des montages liés au lieu de volumes nommés, assurez-vous que le répertoire cible est accessible en écriture par l'UID/GID 65532 (ou vos valeurs remplacées).
 - Créez une seule fois le réseau externe s'il n'existe pas : `docker network create cloudflare-net`.
 
-### 2. Exécutez DockFlare
+### 2. Créer le réseau externe
 
-Démarrez la pile en mode détaché :
+S'il n'existe pas encore :
+
+```bash
+docker network create cloudflare-net
+```
+
+### 3. Exécutez DockFlare
+
+Démarrez la pile en mode détaché :
 
 ```bash
 docker compose up -d
@@ -98,16 +131,16 @@ docker compose up -d
 
 Cela fait apparaître le proxy, amorce le volume et lance DockFlare avec Redis.
 
-### 3. Terminez la configuration initiale
+### 4. Terminez la configuration initiale
 
 Une fois les services exécutés, ouvrez votre navigateur sur `http://<your-server-ip>:5000`.
 
-L'**assistant de configuration initiale** vous guide à travers :
+L'**assistant de configuration initiale** vous guide à travers :
 1. Création d'un mot de passe pour l'interface web.
 2. Saisie de vos informations d'identification Cloudflare (ID de compte, ID de zone, jeton API).
 3. Configuration de votre tunnel Cloudflare initial.
-4. *(Facultatif)* Restauration à partir d'une archive de sauvegarde DockFlare. Si vous disposez déjà d'un `dockflare_backup_*.zip`, choisissez **Restaurer à partir d'une sauvegarde** avant l'étape 1 ; l'assistant importe votre configuration et redémarre automatiquement le conteneur.
+4. *(Facultatif)* Restauration à partir d'une archive de sauvegarde DockFlare. Si vous disposez déjà d'un `dockflare_backup_*.zip`, choisissez **Restaurer à partir d'une sauvegarde** avant l'étape 1 ; l'assistant importe votre configuration et redémarre automatiquement le conteneur.
 
-### 4. Pour les utilisateurs existants (mise à niveau)
+### 5. Pour les utilisateurs existants (mise à niveau)
 
-Si vous effectuez une mise à niveau à partir d'une version antérieure, DockFlare détecte l'ancien fichier `.env`, migre votre configuration vers le magasin crypté et vous guide dans la création d'un mot de passe. Gardez le proxy de socket en place : les montages directs de `/var/run/docker.sock` ne sont plus pris en charge.
+Si vous effectuez une mise à niveau à partir d'une version antérieure, DockFlare détecte l'ancien fichier `.env`, migre votre configuration vers le magasin crypté et vous guide dans la création d'un mot de passe. Gardez le proxy de socket en place : les montages directs de `/var/run/docker.sock` ne sont plus pris en charge.

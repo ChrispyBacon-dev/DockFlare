@@ -2,12 +2,37 @@
 
 本指南介绍如何使用强化的 socket proxy 与 rootless 主控端配置，以最快方式运行 DockFlare。
 
+## 选项 A — 一键安装（推荐）
+
+启动 DockFlare 最快捷的方式是使用托管在 [dockflare.app](https://dockflare.app) 的安装脚本：
+
+```bash
+curl -fsSL https://dockflare.app/install.sh | bash
+```
+
+脚本将执行以下操作：
+1. 检查 Docker 和 Docker Compose 是否可用。
+2. 创建 `~/dockflare/` 目录并在其中写入 `docker-compose.yml`。
+3. 如果 `cloudflare-net` Docker 网络不存在则自动创建。
+4. 拉取镜像并启动所有服务。
+5. 完成后打印本地访问地址。
+
+启动后，打开 `http://<your-server-ip>:5000` 并完成设置向导。
+
+> **可选覆盖参数** — 在管道命令前设置环境变量以自定义安装行为：
+> ```bash
+> DOCKFLARE_PORT=8080 DOCKFLARE_DIR=/opt/dockflare curl -fsSL https://dockflare.app/install.sh | bash
+> ```
+
+---
+
+## 选项 B — 手动 Docker Compose
+
 ### 1. 创建 `docker-compose.yml` 文件
 
 下面的编排会启动 `docker-socket-proxy`，用正确的权限初始化持久化卷，并与 Redis 一起启动 DockFlare。
 
 ```yaml
-version: '3.8'
 services:
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy:v0.4.1
@@ -88,7 +113,15 @@ networks:
 - 如果使用 bind mount 而不是 named volume，请确保目标目录可由 UID/GID 65532（或您覆盖后的值）写入。
 - 如果外部网络不存在，则创建一次：`docker network create cloudflare-net`。
 
-### 2.运行 DockFlare
+### 2. 创建外部网络
+
+如果尚不存在：
+
+```bash
+docker network create cloudflare-net
+```
+
+### 3. 运行 DockFlare
 
 以分离模式启动服务栈：
 
@@ -98,7 +131,7 @@ docker compose up -d
 
 这将启动代理、启动卷并与 Redis 一起启动 DockFlare。
 
-### 3. 完成首次设置
+### 4. 完成首次设置
 
 服务运行后，打开浏览器并访问 `http://<your-server-ip>:5000`。
 
@@ -108,6 +141,6 @@ docker compose up -d
 3. 配置您的初始 Cloudflare 隧道。
 4. *（可选）* 从 DockFlare 备份存档中恢复。如果您已有 `dockflare_backup_*.zip`，请在步骤 1 之前选择 `Restore from backup`（从备份恢复）；向导会导入配置并自动重启容器。
 
-### 4. 对于现有用户（升级）
+### 5. 现有用户（升级）
 
 如果您从旧版本升级，DockFlare 会检测旧版 `.env` 文件，将配置迁移到加密存储中，并引导您完成密码创建。请保留 socket proxy，因为不再支持直接挂载 `/var/run/docker.sock`。
