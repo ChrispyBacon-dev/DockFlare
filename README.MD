@@ -14,7 +14,7 @@
 <a href="https://github.com/ChrispyBacon-dev/DockFlare/stargazers">
   <img src="https://img.shields.io/github/stars/ChrispyBacon-dev/DockFlare?style=for-the-badge" alt="Stars">
 </a>
-  <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases"><img src="https://img.shields.io/badge/Release-v3.0.8-blue.svg?style=for-the-badge" alt="Release"></a>
+  <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases"><img src="https://img.shields.io/badge/Release-v3.0.9-blue.svg?style=for-the-badge" alt="Release"></a>
   <a href="https://hub.docker.com/r/alplat/dockflare"><img src="https://img.shields.io/docker/pulls/alplat/dockflare?style=for-the-badge" alt="Docker Pulls"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Made%20with-Python-1f425f.svg?style=for-the-badge" alt="Python"></a>
   <a href="https://github.com/ChrispyBacon-dev/DockFlare/blob/main/LICENSE.MD"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg?style=for-the-badge" alt="License"></a>
@@ -41,13 +41,15 @@ The result is a set-it-and-forget-it workflow with a fully localized native expe
 ## Core Capabilities
 
 - Automatic service discovery from Docker labels.
-- Native multi-language support (8+ languages) for the Web UI and Help Center.
+- Native multi-language support (10 languages) for the Web UI and Help Center.
 - Manual ingress rule management for non-Docker workloads.
 - Cloudflare Tunnel ingress orchestration, including advanced origin options.
 - Access Group and reusable policy management with application assignment.
 - Cloudflare Access application lifecycle management.
 - Multi-zone DNS handling and zone-aware record placement.
 - Multi-host operation through a master and lightweight agents.
+- Cloudflare Zero Trust service token provisioning for secure agent communication.
+- One-liner deploy scripts for master and agent deployment.
 - Backup and restore of encrypted configuration and runtime state.
 - Deep-link shortcuts into Cloudflare Zero Trust pages from the DockFlare UI.
 
@@ -71,6 +73,14 @@ Detailed architecture guide: [https://dockflare.app/architecture](https://dockfl
 4. It updates local runtime state and keeps `cloudflared` aligned.
 
 ## Getting Started
+
+### One-Liner Install
+
+```bash
+curl -fsSL https://dockflare.app/install.sh | bash
+```
+
+The script checks prerequisites, creates `~/dockflare/`, writes a production-ready `docker-compose.yml`, and starts all services. Open `http://<your-server-ip>:5000` when it finishes and follow the setup wizard.
 
 For full setup documentation, use the project docs site:
 
@@ -109,7 +119,6 @@ docker network create cloudflare-net
 1. Create `docker-compose.yml`:
 
 ```yaml
-version: '3.8'
 services:
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy:v0.4.1
@@ -273,6 +282,7 @@ services:
 - Encourages Docker socket proxy for least-privilege Docker API exposure.
 - Runs containers as non-root (`UID/GID 65532`) in the reference setup.
 - Supports agent API key lifecycle controls and enrollment flow.
+- Optional Cloudflare Zero Trust service token authentication for all agent traffic, removing the need for a private network or VPN between master and agents.
 
 ## Operations and Day-2 Tasks
 
