@@ -47,7 +47,7 @@
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="10" class="opacity-30"/><path d="M12 8h.01" stroke-linecap="round" stroke-linejoin="round"/><path d="M11 12h1v4h1" stroke-linecap="round" stroke-linejoin="round"/></svg>
                     </button>
                 </h2>
-                <button class="btn btn-sm btn-primary ml-auto" onclick="document.getElementById('add_manual_rule_modal').showModal()">
+                <button class="btn btn-sm btn-primary w-full sm:w-auto mt-4 sm:mt-0" onclick="document.getElementById('add_manual_rule_modal').showModal()">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-1"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
                     {{ t('status.add_manual_rule') }}
                 </button>
@@ -151,7 +151,7 @@
                 </div>
 
                 <div class="overflow-x-auto pb-24">
-                    <table class="table table-zebra table-sm w-full">
+                    <table class="table table-zebra table-sm w-full table-responsive">
                         <thead>
                             <tr>
                                 <th class="p-3 w-auto">{{ t('common.status') }}</th>
@@ -167,7 +167,7 @@
                         <tbody>
                             {% for hostname, details in rules.items()|sort %}
                                 <tr data-rule-key="{{ hostname }}" data-rule-status="{{ details.status }}" data-rule-source="{{ details.source }}">
-                                    <td class="p-3 whitespace-nowrap" data-role="status-cell">
+                                    <td class="p-3 whitespace-nowrap" data-role="status-cell" data-label="{{ t('common.status') }}">
                                         {% if details.source == 'manual' %}
                                             <span class="badge badge-info badge-sm status-badge">{{ t('status.manual_rules') }}</span>
                                         {% else %}
@@ -177,7 +177,7 @@
                                             </span>
                                         {% endif %}
                                     </td>
-                                    <td class="p-3 whitespace-nowrap align-top" data-role="tunnel-name" data-tunnel-name="{{ details.tunnel_name or '' }}">
+                                    <td class="p-3 whitespace-nowrap align-top" data-role="tunnel-name" data-tunnel-name="{{ details.tunnel_name or '' }}" data-label="{{ t('status.tunnel_name') }}">
                                         <div class="flex flex-col">
                                             <span class="text-sm opacity-90">{{ details.tunnel_name or 'N/A' }}</span>
                                             <span class="text-xs opacity-60 mt-1">Zone: {{ details.zone_name or 'Unknown' }}</span>
@@ -188,16 +188,16 @@
                                             {% endif %}
                                         </div>
                                     </td>
-                                    <td class="p-3 whitespace-nowrap">
+                                    <td class="p-3 whitespace-nowrap" data-label="{{ t('status.hostname') }}">
                                     {% set display_hostname = details.hostname if details.hostname else hostname.split('|')[0] %}
                                     {% set display_path = details.path if details.path else (hostname.split('|')[1] if '|' in hostname else None) %}
                                     <a href="https://{{ display_hostname }}{% if display_path %}{{ display_path }}{% endif %}" target="_blank" rel="noopener noreferrer" title="{{ t('status.open_url', hostname=display_hostname, path=display_path if display_path else '') }}" class="link link-hover link-primary text-sm">
                                        {{ display_hostname }}
-                                   </a>
-                                   {% if display_hostname and display_hostname.startswith('*.') %}
-                                   <span class="badge badge-info badge-xs ml-2">wildcard</span>
-                                   {% endif %}
-                                   <div class="text-xs mt-1">
+                                    </a>
+                                    {% if display_hostname and display_hostname.startswith('*.') %}
+                                    <span class="badge badge-info badge-xs ml-2">wildcard</span>
+                                    {% endif %}
+                                    <div class="text-xs mt-1">
                                            {% if details.no_tls_verify %}
                                                <span class="badge badge-warning badge-xs" title="{{ t('status.tls_verification_disabled') }}">{{ t('status.no_tls_verify') }}</span>
                                            {% endif %}
@@ -217,16 +217,16 @@
                                                <span class="badge badge-info badge-xs ml-1" title="{{ t('status.match_sni_to_host_description') }}">{{ t('status.match_sni_to_host') }}</span>
                                            {% endif %}
                                        </div>
-                                   </td>
-                                   <td class="p-3 whitespace-nowrap">
+                                    </td>
+                                    <td class="p-3 whitespace-nowrap" data-label="{{ t('status.path') }}">
                                     {% if display_path and display_path.strip() %}
                                         <code class="text-xs opacity-70">{{ display_path }}</code>
                                     {% else %}
                                         <span class="text-xs opacity-50 italic">(root)</span>
                                     {% endif %}
                                     </td>
-                                    <td class="p-3 whitespace-nowrap"><code class="text-xs opacity-80">{{ details.service }}</code></td>
-                                    <td class="p-3 whitespace-nowrap text-sm opacity-80" id="access-policy-display-{{ details.source if details.source else 'docker' }}-{{ hostname | replace('.', '-') }}">
+                                    <td class="p-3 whitespace-nowrap" data-label="{{ t('status.service_target') }}"><code class="text-xs opacity-80">{{ details.service }}</code></td>
+                                    <td class="p-3 whitespace-nowrap text-sm opacity-80" id="access-policy-display-{{ details.source if details.source else 'docker' }}-{{ hostname | replace('.', '-') }}" data-label="{{ t('status.access_policy') }}">
                                         {% if details.access_policy_type == 'group' %}
                                             {% if details.access_group_id is iterable and details.access_group_id is not string %}
                                                 {% for group_id in details.access_group_id %}
@@ -252,7 +252,7 @@
                                             <span class="badge badge-error badge-xs ml-2 animate-pulse" title="{{ t('status.docker_rule_overridden') }}">{{ t('status.rule_ui_override') }}</span>
                                         {% endif %}
                                     </td>
-                                    <td class="p-3 whitespace-nowrap text-sm opacity-70" data-role="expires-cell">
+                                    <td class="p-3 whitespace-nowrap text-sm opacity-70" data-role="expires-cell" data-label="{{ t('status.expires_in') }}">
                                         {% if details.status=='pending_deletion' and details.delete_at %}
                                             <div data-delete-at="{{ details.delete_at.isoformat() }}">
                                                 <span class="absolute-time-display"></span>
@@ -262,7 +262,7 @@
                                             <span class="text-xs opacity-60">N/A</span>
                                         {% endif %}
                                     </td>
-                                    <td class="p-3">
+                                    <td class="p-3" data-label="{{ t('common.actions') }}">
                                         <div class="dropdown dropdown-end">
                                             <label tabindex="0" class="btn btn-ghost btn-sm">
                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">

@@ -28,12 +28,12 @@
                         </select>
                     </div>
                 </div>
-                <div class="flex gap-2 mt-4 sm:mt-0">
-                    <button id="sync-cloudflare-btn" class="btn btn-sm btn-secondary">
+                <div class="flex flex-col sm:flex-row gap-2 mt-4 sm:mt-0 w-full sm:w-auto">
+                    <button id="sync-cloudflare-btn" class="btn btn-sm btn-secondary w-full sm:w-auto">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
                         {{ t('policies.sync_from_cloudflare') }}
                     </button>
-                    <button id="create-access-group-btn" class="btn btn-sm btn-primary">
+                    <button id="create-access-group-btn" class="btn btn-sm btn-primary w-full sm:w-auto">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
                         {{ t('policies.create_new_group') }}
                     </button>
@@ -42,8 +42,8 @@
 
             {% if access_groups and access_groups.items() %}
                 <div class="overflow-x-auto table-container">
-                    <table class="table table-zebra policy-table w-full" id="access-groups-table">
-                        <colgroup>
+                    <table class="table table-zebra policy-table w-full table-responsive" id="access-groups-table">
+                        <colgroup class="hidden md:table-column-group">
                             <col class="col-primary">
                             <col class="col-secondary">
                             <col class="col-tertiary">
@@ -68,7 +68,7 @@
                                     {% set policy_type_label = 'system' %}
                                 {% endif %}
                                 <tr data-policy-type="{{ policy_type_label }}" data-group-id="{{ group_id }}">
-                                    <td class="px-4 py-3 cell-top">
+                                    <td class="px-4 py-3 cell-top" data-label="{{ t('policies.display_name') }}">
                                         <div class="font-medium flex items-center gap-2">
                                             {{ details.display_name }}
                                         </div>
@@ -84,15 +84,15 @@
                                             </button>
                                         {% endif %}
                                     </td>
-                                    <td class="px-4 py-3 cell-top"><code class="badge badge-sm badge-outline">{{ group_id }}</code></td>
-                                    <td class="px-4 py-3 text-xs opacity-80 cell-top">
+                                    <td class="px-4 py-3 cell-top" data-label="{{ t('policies.group_id_label') }}"><code class="badge badge-sm badge-outline">{{ group_id }}</code></td>
+                                    <td class="px-4 py-3 text-xs opacity-80 cell-top" data-label="{{ t('policies.policy_summary') }}">
                                         {% if details.policies %}
                                             {{ t('policies.rules_defined', count=details.policies | length) }}
                                         {% else %}
                                             <span class="italic opacity-60">{{ t('policies.no_rules') }}</span>
                                         {% endif %}
                                     </td>
-                                    <td class="px-4 py-3">
+                                    <td class="px-4 py-3" data-label="{{ t('policies.policy_type') }}">
                                         {% if details.external_policy %}
                                             <span class="badge badge-sm badge-secondary df-badge">
                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
@@ -110,7 +110,7 @@
                                             </span>
                                         {% endif %}
                                     </td>
-                                    <td class="px-4 py-3 text-right align-top">
+                                    <td class="px-4 py-3 text-right align-top" data-label="{{ t('common.actions') }}">
                                         <div class="dropdown dropdown-end">
                                             <label tabindex="0" class="btn btn-ghost btn-sm">
                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
@@ -404,28 +404,30 @@
     --policy-col-actions: 12%;
 }
 
-.policy-table {
-    table-layout: fixed;
-}
+@media (min-width: 769px) {
+    .policy-table {
+        table-layout: fixed;
+    }
 
-.policy-table col.col-primary {
-    width: var(--policy-col-primary);
-}
+    .policy-table col.col-primary {
+        width: var(--policy-col-primary);
+    }
 
-.policy-table col.col-secondary {
-    width: var(--policy-col-secondary);
-}
+    .policy-table col.col-secondary {
+        width: var(--policy-col-secondary);
+    }
 
-.policy-table col.col-tertiary {
-    width: var(--policy-col-tertiary);
-}
+    .policy-table col.col-tertiary {
+        width: var(--policy-col-tertiary);
+    }
 
-.policy-table col.col-status {
-    width: var(--policy-col-status);
-}
+    .policy-table col.col-status {
+        width: var(--policy-col-status);
+    }
 
-.policy-table col.col-actions {
-    width: var(--policy-col-actions);
+    .policy-table col.col-actions {
+        width: var(--policy-col-actions);
+    }
 }
 
 .policy-table th,

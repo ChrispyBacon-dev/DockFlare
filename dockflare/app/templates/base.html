@@ -30,6 +30,43 @@
         #log-output::-webkit-scrollbar-thumb:hover { background-color: rgba(156, 163, 175, 0.7); }
         html[data-theme="dark"] #log-output::-webkit-scrollbar-thumb { background-color: rgba(107, 114, 128, 0.5); }
         html[data-theme="dark"] #log-output::-webkit-scrollbar-thumb:hover { background-color: rgba(107, 114, 128, 0.7); }
+
+        /* Mobile Responsive Table Support */
+        @media (max-width: 768px) {
+            .table-responsive thead { display: none; }
+            .table-responsive tr { 
+                display: block; 
+                margin-bottom: 1rem; 
+                border: 1px solid hsl(var(--bc) / 0.1);
+                border-radius: var(--rounded-box, 1rem);
+                background-color: hsl(var(--b1));
+                padding: 0.5rem;
+                box-shadow: var(--shadow);
+            }
+            .table-responsive td { 
+                display: flex; 
+                justify-content: flex-end; 
+                align-items: center;
+                text-align: right; 
+                padding: 0.5rem 1rem !important;
+                border: none !important;
+                position: relative;
+                min-height: 2.5rem;
+            }
+            .table-responsive td::before { 
+                content: attr(data-label); 
+                position: absolute;
+                left: 1rem;
+                font-weight: 700;
+                text-transform: uppercase;
+                font-size: 0.65rem;
+                opacity: 0.6;
+            }
+            .table-responsive td:last-child { border-bottom: 0; }
+            
+            /* Specific overrides for status badges and links */
+            .table-responsive td > * { max-width: 60%; }
+        }
     </style>
 </head>
 

@@ -10,9 +10,9 @@
 
     <div class="flex flex-col sm:flex-row items-center justify-between border-b border-base-300 pb-3 mb-6">
         <h1 class="card-title text-2xl sm:text-3xl">{{ t('agents.agents_management') }}</h1>
-        <div class="flex items-center gap-2 mt-4 sm:mt-0">
-            <button id="btn-force-reconcile" class="btn btn-ghost btn-sm">{{ t('agents.force_reconciliation') }}</button>
-            <button id="btn-generate-key" class="btn btn-primary btn-sm">
+        <div class="flex flex-col sm:flex-row items-center gap-2 mt-4 sm:mt-0 w-full sm:w-auto">
+            <button id="btn-force-reconcile" class="btn btn-ghost btn-sm w-full sm:w-auto">{{ t('agents.force_reconciliation') }}</button>
+            <button id="btn-generate-key" class="btn btn-primary btn-sm w-full sm:w-auto">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v-2.25L15.188 8.43c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" /></svg>
                 {{ t('agents.generate_new_api_key') }}
             </button>
@@ -20,8 +20,8 @@
     </div>
 
     <div class="overflow-x-auto min-w-0 agents-table-container">
-      <table class="table table-zebra w-full">
-        <colgroup>
+      <table class="table table-zebra w-full table-responsive">
+        <colgroup class="hidden md:table-column-group">
           <col style="width:10%">
           <col style="width:13%">
           <col style="width:6%">
@@ -81,8 +81,8 @@
   <div class="card-body">
     <h2 class="card-title text-xl border-b border-base-300 pb-3 mb-6">{{ t('agents.active_api_keys') }}</h2>
     <div class="overflow-x-auto active-keys-table-container">
-      <table class="table table-zebra table-sm w-full api-keys-table">
-        <colgroup>
+      <table class="table table-zebra table-sm w-full api-keys-table table-responsive">
+        <colgroup class="hidden md:table-column-group">
           <col class="col-key">
           <col class="col-owner">
           <col class="col-created">
@@ -127,8 +127,8 @@
       </div>
     </div>
     <div class="overflow-x-auto revoked-keys-table-container">
-      <table class="table table-zebra table-sm w-full api-keys-table">
-        <colgroup>
+      <table class="table table-zebra table-sm w-full api-keys-table table-responsive">
+        <colgroup class="hidden md:table-column-group">
           <col class="col-key">
           <col class="col-owner">
           <col class="col-created">
@@ -700,27 +700,27 @@
       }
 
       tr.innerHTML = `
-        <td class="px-4 py-3 whitespace-nowrap">
+        <td class="px-4 py-3 whitespace-nowrap" data-label="${t('agents.agent_id')}">
           <span class="font-mono text-xs text-base-content/50 cursor-help" title="${agentId}">${agentId.substring(0, 8)}…</span>
         </td>
-        <td class="px-4 py-3 whitespace-nowrap">
+        <td class="px-4 py-3 whitespace-nowrap" data-label="${t('agents.display_name')}">
           <span class="text-sm font-medium">${agent.display_name || na}</span>
         </td>
-        <td class="px-4 py-3 whitespace-nowrap">
+        <td class="px-4 py-3 whitespace-nowrap" data-label="${t('agents.version')}">
           <span class="text-sm text-base-content/60">${agent.version || na}</span>
         </td>
-        <td class="px-4 py-3">
+        <td class="px-4 py-3" data-label="${t('agents.status')}">
           <div class="flex flex-wrap gap-1">${statusHtml}</div>
         </td>
-        <td class="px-4 py-3 text-center">${ledStripHtml}</td>
-        <td class="px-4 py-3 whitespace-nowrap">
+        <td class="px-4 py-3 text-center" data-label="${t('agents.heart_beat')}">${ledStripHtml}</td>
+        <td class="px-4 py-3 whitespace-nowrap" data-label="${t('agents.assigned_tunnel')}">
           <span class="text-sm">${agent.assigned_tunnel_name || na}</span>
         </td>
-        <td class="px-4 py-3">${migrationHtml}${migrationStatus && (migrationStatus.has_conflicts || migrationStatus.has_orphaned) ? `<button class="btn btn-xs btn-info ml-2 btn-migration-assistant" data-agent-id="${agentId}" title="Open Migration Assistant">Resolve</button>` : ''}</td>
-        <td class="px-4 py-3 whitespace-nowrap">${cloudflaredVersion}</td>
-        <td class="px-4 py-3 whitespace-nowrap">${originIp}</td>
-        <td class="px-4 py-3">${getTunnelStatusBadge(agent.tunnel_status)}</td>
-        <td class="px-4 py-3 text-center">
+        <td class="px-4 py-3" data-label="${t('agents.migration')}">${migrationHtml}${migrationStatus && (migrationStatus.has_conflicts || migrationStatus.has_orphaned) ? `<button class="btn btn-xs btn-info ml-2 btn-migration-assistant" data-agent-id="${agentId}" title="Open Migration Assistant">Resolve</button>` : ''}</td>
+        <td class="px-4 py-3 whitespace-nowrap" data-label="${t('agents.cloudflared_version')}">${cloudflaredVersion}</td>
+        <td class="px-4 py-3 whitespace-nowrap" data-label="${t('agents.origin_ip')}">${originIp}</td>
+        <td class="px-4 py-3" data-label="${t('agents.tunnel_status')}">${getTunnelStatusBadge(agent.tunnel_status)}</td>
+        <td class="px-4 py-3 text-center" data-label="${t('common.actions')}">
           <button class="btn btn-ghost btn-sm agent-action-trigger"
             data-agent-id="${agentId}"
             data-enrolled="${agent.status === 'enrolled'}"
@@ -781,14 +781,14 @@
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td class="px-4 py-3 whitespace-nowrap font-mono break-all">${keyId.substring(0, 8)}...</td>
-        <td class="px-4 py-3 whitespace-nowrap">${owner}</td>
-        <td class="px-4 py-3 whitespace-nowrap">${createdAt}</td>
-        <td class="px-4 py-3 whitespace-nowrap">
+        <td class="px-4 py-3 whitespace-nowrap font-mono break-all" data-label="${t('agents.key_partial')}">${keyId.substring(0, 8)}...</td>
+        <td class="px-4 py-3 whitespace-nowrap" data-label="${t('agents.owner')}">${owner}</td>
+        <td class="px-4 py-3 whitespace-nowrap" data-label="${t('agents.created_at')}">${createdAt}</td>
+        <td class="px-4 py-3 whitespace-nowrap" data-label="${t('common.status')}">
           <span class="badge badge-success badge-sm">Active</span>
           <br><small class="text-xs opacity-60">${lastUsed}</small>
         </td>
-        <td class="px-4 py-3 text-right">
+        <td class="px-4 py-3 text-right" data-label="${t('common.actions')}">
           <div class="dropdown dropdown-end">
             <label tabindex="0" class="btn btn-ghost btn-sm">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
@@ -857,22 +857,22 @@
       const tr = document.createElement('tr');
       tr.className = 'opacity-60 italic';
       tr.innerHTML = `
-        <td class="px-4 py-3 font-mono break-all text-sm">
+        <td class="px-4 py-3 font-mono break-all text-sm" data-label="${t('agents.full_api_key')}">
           <div class="bg-base-200 p-2 rounded border-2 border-dashed">
             <span class="text-xs opacity-75">Full Key:</span><br>
             <code class="text-xs">${keyId}</code>
             <button class="btn btn-xs btn-ghost ml-2 btn-copy-revoked-key" data-key="${keyId}">Copy</button>
           </div>
         </td>
-        <td class="px-4 py-3 whitespace-nowrap line-through">${owner}</td>
-        <td class="px-4 py-3 whitespace-nowrap">
+        <td class="px-4 py-3 whitespace-nowrap line-through" data-label="${t('agents.owner')}">${owner}</td>
+        <td class="px-4 py-3 whitespace-nowrap" data-label="${t('agents.revoked_at')}">
           <span class="badge badge-error badge-sm">Revoked</span>
           <br><small class="text-xs">${revokedAt}</small>
         </td>
-        <td class="px-4 py-3 whitespace-nowrap">
+        <td class="px-4 py-3 whitespace-nowrap" data-label="${t('agents.auto_delete')}">
           ${autoDeleteInfo}
         </td>
-        <td class="px-4 py-3 text-right">
+        <td class="px-4 py-3 text-right" data-label="${t('common.actions')}">
           <div class="dropdown dropdown-end">
             <label tabindex="0" class="btn btn-ghost btn-sm">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">

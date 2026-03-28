@@ -165,8 +165,8 @@
                     </p>
                     {% if all_account_tunnels is defined and all_account_tunnels %}
                         <div class="overflow-x-auto -mx-6 sm:-mx-8">
-                            <table class="table table-sm w-full">
-                                <thead>
+                            <table class="table table-sm w-full table-responsive">
+                                <thead class="hidden md:table-header-group">
                                     <tr>
                                         <th class="w-12">+/-</th>
                                         <th>{{ t('settings.tunnel_name') }}</th>
@@ -175,6 +175,32 @@
                                         <th>{{ t('settings.created_at') }}</th>
                                         <th class="w-32">{{ t('common.actions') }}</th>
                                     </tr>
+                                </thead>
+                                <tbody>
+                                    {% for tunnel in all_account_tunnels %}
+                                        <tr>
+                                            <td class="text-center" data-label="Expand">
+                                                <button type="button" class="btn btn-xs btn-ghost btn-circle tunnel-dns-toggle"
+                                                        data-tunnel-id="{{ tunnel.id | e }}" aria-expanded="false" aria-controls="dns-records-{{ tunnel.id | e }}" title="{{ t('settings.toggle_dns_records') }}">
+                                                    <svg class="w-4 h-4 expand-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                                    <svg class="w-4 h-4 collapse-icon hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" d="M18 12H6"></path></svg>
+                                                </button>
+                                            </td>
+                                            <td class="text-sm font-medium" data-label="{{ t('settings.tunnel_name') }}">{{ tunnel.name | e }}</td>
+                                            <td data-label="{{ t('settings.tunnel_id') }}"><code class="text-xs opacity-80">{{ tunnel.id | e }}</code></td>
+                                            <td data-label="{{ t('common.status') }}">
+                                                {% set status_color = 'badge-success' if tunnel.status | lower == 'healthy' else ('badge-warning' if tunnel.status | lower == 'degraded' else ('badge-error' if tunnel.status | lower == 'down' else 'badge-ghost')) %}
+                                                <span class="badge {{ status_color }} badge-sm">{{ tunnel.status | capitalize | e }}</span>
+                                            </td>
+                                            <td class="text-xs opacity-70" data-label="{{ t('settings.created_at') }}">{% if tunnel.created_at %}{{ tunnel.created_at.split('T')[0] | e }}{% else %}N/A{% endif %}</td>
+                                            <td class="text-xs" data-label="{{ t('common.actions') }}">
+                                                <button type="button" class="btn btn-xs btn-error delete-tunnel-btn"
+                                                        data-tunnel-id="{{ tunnel.id | e }}"
+                                                        data-tunnel-name="{{ tunnel.name | e }}">
+                                                    {{ t('common.delete') }}
+                                                </button>
+                                            </td>
+                                        </tr>
                                 </thead>
                                 <tbody>
                                     {% for tunnel in all_account_tunnels %}
