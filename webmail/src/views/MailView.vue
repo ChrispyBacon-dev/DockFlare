@@ -36,16 +36,26 @@ watch(() => [store.currentMailbox, store.currentFolder], async ([addr, folder]) 
 })
 
 watch(() => store.currentMessage, async (msg) => {
-  if (!msg || msg.html_body !== undefined) return
+  if (!msg || msg.attachments !== undefined) return
   try {
     const res = await mailApi.getMessage(store.currentMailbox, msg.id)
-    store.currentMessage = res.data
+    const fullMsg = res.data
+    store.currentMessage = fullMsg
+
     const idx = store.messages.findIndex((m: any) => m.id === msg.id)
     if (idx !== -1) {
-      store.messages[idx] = res.data
+      store.messages[idx] = fullMsg
+    }
+
+    if (!fullMsg.is_read) {
+      await mailApi.updateMessage(store.currentMailbox, msg.id, { is_read: true })
+      if (idx !== -1) {
+        store.messages[idx] = { ...store.messages[idx], is_read: 1 }
+      }
+      store.currentMessage = { ...store.currentMessage, is_read: 1 }
     }
   } catch (e) {
-    console.error('Failed to load message body', e)
+    console.error('Failed to load message', e)
   }
 })
 </script>

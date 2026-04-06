@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 
 export const useMailStore = defineStore('mail', () => {
   const mailboxes = ref<any[]>([])
@@ -11,11 +11,18 @@ export const useMailStore = defineStore('mail', () => {
   const isComposeOpen = ref(false)
   const composeDefaults = ref<{ to?: string; subject?: string; body?: string } | null>(null)
   const composeBody = ref('')
+  const activeTab = ref<'all' | 'unread'>('all')
+  const isCollapsed = ref(false)
+
+  const unreadMessages = computed(() =>
+    messages.value.filter((m: any) => !m.is_read)
+  )
 
   return {
     mailboxes, currentMailbox,
     folders, currentFolder,
     messages, currentMessage,
-    isComposeOpen, composeDefaults, composeBody
+    isComposeOpen, composeDefaults, composeBody,
+    activeTab, isCollapsed, unreadMessages,
   }
 })

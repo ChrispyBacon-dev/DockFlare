@@ -1,49 +1,78 @@
 <script setup lang="ts">
-import ResizablePanelGroup from '../ui/ResizablePanelGroup.vue'
-import ResizablePanel from '../ui/ResizablePanel.vue'
-import ResizableHandle from '../ui/ResizableHandle.vue'
+import {
+  SplitterGroup, SplitterPanel, SplitterResizeHandle,
+} from 'radix-vue'
+import { TooltipProvider } from 'radix-vue'
+import { cn } from '../../lib/utils'
+import Separator from '../ui/Separator.vue'
+import MailboxSelector from './MailboxSelector.vue'
 import FolderNav from './FolderNav.vue'
 import MessageList from './MessageList.vue'
 import MessageDisplay from './MessageDisplay.vue'
-import MailboxSelector from './MailboxSelector.vue'
-import SearchBar from './SearchBar.vue'
 import ComposeDialog from './ComposeDialog.vue'
-import Button from '../ui/Button.vue'
 import { useMailStore } from '../../stores/mail'
-import { useAuth } from '../../composables/useAuth'
 
 const store = useMailStore()
-const { logout } = useAuth()
+
+const onCollapse = () => { store.isCollapsed = true }
+const onExpand = () => { store.isCollapsed = false }
 </script>
 
 <template>
-  <div class="h-screen w-screen overflow-hidden bg-background flex flex-col">
-    <header class="flex h-14 items-center justify-between border-b px-4">
-      <div class="flex items-center gap-2 font-semibold">
-        DockFlare Webmail
-      </div>
-      <div class="flex items-center gap-2">
-        <Button variant="outline" size="sm" @click="store.isComposeOpen = true">Compose</Button>
-        <Button variant="ghost" size="sm" @click="logout">Logout</Button>
-      </div>
-    </header>
+  <TooltipProvider :delay-duration="0">
+    <SplitterGroup
+      id="mail-layout"
+      direction="horizontal"
+      class="h-screen w-screen items-stretch"
+    >
+      <SplitterPanel
+        id="sidebar"
+        :default-size="20"
+        :collapsed-size="4"
+        collapsible
+        :min-size="15"
+        :max-size="22"
+        :class="cn(
+          'flex flex-col',
+          store.isCollapsed && 'min-w-[50px] transition-all duration-300 ease-in-out',
+        )"
+        @collapse="onCollapse"
+        @expand="onExpand"
+      >
+        <MailboxSelector :is-collapsed="store.isCollapsed" />
+        <Separator />
+        <FolderNav :is-collapsed="store.isCollapsed" />
+      </SplitterPanel>
 
-    <ResizablePanelGroup class="flex-1">
-      <ResizablePanel :defaultSize="20" :minSize="15" class="border-r flex flex-col hidden md:flex">
-        <MailboxSelector />
-        <FolderNav @select="() => {}" class="flex-1 overflow-auto" />
-      </ResizablePanel>
-      <ResizableHandle />
-      <ResizablePanel :defaultSize="35" :minSize="25" class="border-r flex flex-col hidden sm:flex">
-        <SearchBar />
-        <MessageList class="flex-1 overflow-auto" />
-      </ResizablePanel>
-      <ResizableHandle />
-      <ResizablePanel :defaultSize="45" :minSize="30" class="flex-1">
+      <SplitterResizeHandle
+        id="sidebar-handle"
+        class="w-[3px] bg-border hover:bg-primary/50 active:bg-primary/70 transition-colors"
+      />
+
+      <SplitterPanel
+        id="mail-list"
+        :default-size="35"
+        :min-size="25"
+        class="flex flex-col overflow-hidden"
+      >
+        <MessageList />
+      </SplitterPanel>
+
+      <SplitterResizeHandle
+        id="display-handle"
+        class="w-[3px] bg-border hover:bg-primary/50 active:bg-primary/70 transition-colors"
+      />
+
+      <SplitterPanel
+        id="mail-display"
+        :default-size="45"
+        :min-size="30"
+        class="flex flex-col overflow-hidden"
+      >
         <MessageDisplay :message="store.currentMessage" />
-      </ResizablePanel>
-    </ResizablePanelGroup>
+      </SplitterPanel>
+    </SplitterGroup>
 
     <ComposeDialog />
-  </div>
+  </TooltipProvider>
 </template>
