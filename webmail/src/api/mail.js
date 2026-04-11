@@ -16,5 +16,7 @@ export const mailApi = {
     searchMessages: (address, params) => apiClient.get(`/mailboxes/${address}/search`, { params }),
     getAttachmentUrl: (id) => `/api/v1/attachments/${id}/download`,
     downloadAttachment: (id) => apiClient.get(`/attachments/${id}/download`, { responseType: 'blob' }).then(r => r.data),
+    createDraft: (address, data) => apiClient.post(`/mailboxes/${address}/drafts`, data),
+    updateDraft: (address, id, data) => apiClient.put(`/mailboxes/${address}/drafts/${id}`, data),
 };
 //# sourceMappingURL=mail.js.map

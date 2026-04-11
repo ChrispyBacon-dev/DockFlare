@@ -88,7 +88,8 @@ const replyTo = () => {
         subject: props.message.subject?.startsWith('Re:')
             ? props.message.subject
             : `Re: ${props.message.subject || ''}`,
-        body: quotedBody.value,
+        body: '',
+        quotedHtml: quotedBody.value,
     };
     store.isComposeOpen = true;
 };
@@ -105,7 +106,8 @@ const replyAll = () => {
         subject: props.message.subject?.startsWith('Re:')
             ? props.message.subject
             : `Re: ${props.message.subject || ''}`,
-        body: quotedBody.value,
+        body: '',
+        quotedHtml: quotedBody.value,
     };
     store.isComposeOpen = true;
 };
@@ -117,7 +119,8 @@ const forwardMsg = () => {
         subject: props.message.subject?.startsWith('Fwd:')
             ? props.message.subject
             : `Fwd: ${props.message.subject || ''}`,
-        body: quotedBody.value,
+        body: '',
+        quotedHtml: quotedBody.value,
     };
     store.isComposeOpen = true;
 };
@@ -1025,10 +1028,6 @@ var __VLS_256;
 var __VLS_224;
 var __VLS_220;
 var __VLS_205;
-/** @type {[typeof Separator, ]} */ ;
-// @ts-ignore
-const __VLS_281 = __VLS_asFunctionalComponent(Separator, new Separator({}));
-const __VLS_282 = __VLS_281({}, ...__VLS_functionalComponentArgsRest(__VLS_281));
 if (__VLS_ctx.message) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "print-header hidden print:block p-4 border-b" },
@@ -1053,12 +1052,12 @@ if (__VLS_ctx.message) {
     });
     /** @type {[typeof Avatar, ]} */ ;
     // @ts-ignore
-    const __VLS_284 = __VLS_asFunctionalComponent(Avatar, new Avatar({
+    const __VLS_281 = __VLS_asFunctionalComponent(Avatar, new Avatar({
         initials: (__VLS_ctx.message.from_name?.[0] || __VLS_ctx.message.from_address?.[0] || '?'),
     }));
-    const __VLS_285 = __VLS_284({
+    const __VLS_282 = __VLS_281({
         initials: (__VLS_ctx.message.from_name?.[0] || __VLS_ctx.message.from_address?.[0] || '?'),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_284));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_281));
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "grid gap-1" },
     });
@@ -1085,8 +1084,8 @@ if (__VLS_ctx.message) {
     }
     /** @type {[typeof Separator, ]} */ ;
     // @ts-ignore
-    const __VLS_287 = __VLS_asFunctionalComponent(Separator, new Separator({}));
-    const __VLS_288 = __VLS_287({}, ...__VLS_functionalComponentArgsRest(__VLS_287));
+    const __VLS_284 = __VLS_asFunctionalComponent(Separator, new Separator({}));
+    const __VLS_285 = __VLS_284({}, ...__VLS_functionalComponentArgsRest(__VLS_284));
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "flex-1 overflow-y-auto" },
     });
@@ -1110,20 +1109,20 @@ if (__VLS_ctx.message) {
     }
     /** @type {[typeof AttachmentBar, ]} */ ;
     // @ts-ignore
-    const __VLS_290 = __VLS_asFunctionalComponent(AttachmentBar, new AttachmentBar({
+    const __VLS_287 = __VLS_asFunctionalComponent(AttachmentBar, new AttachmentBar({
         attachments: (__VLS_ctx.message.attachments),
     }));
-    const __VLS_291 = __VLS_290({
+    const __VLS_288 = __VLS_287({
         attachments: (__VLS_ctx.message.attachments),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_290));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_287));
     /** @type {[typeof Separator, ]} */ ;
     // @ts-ignore
-    const __VLS_293 = __VLS_asFunctionalComponent(Separator, new Separator({
+    const __VLS_290 = __VLS_asFunctionalComponent(Separator, new Separator({
         ...{ class: "mt-auto print-hide" },
     }));
-    const __VLS_294 = __VLS_293({
+    const __VLS_291 = __VLS_290({
         ...{ class: "mt-auto print-hide" },
-    }, ...__VLS_functionalComponentArgsRest(__VLS_293));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_290));
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "p-4 print-hide" },
     });
@@ -1135,36 +1134,36 @@ if (__VLS_ctx.message) {
     });
     /** @type {[typeof Textarea, ]} */ ;
     // @ts-ignore
-    const __VLS_296 = __VLS_asFunctionalComponent(Textarea, new Textarea({
+    const __VLS_293 = __VLS_asFunctionalComponent(Textarea, new Textarea({
         modelValue: (__VLS_ctx.replyText),
         ...{ class: "p-4 min-h-[100px]" },
         placeholder: (`Reply ${__VLS_ctx.message.from_name || __VLS_ctx.message.from_address}...`),
     }));
-    const __VLS_297 = __VLS_296({
+    const __VLS_294 = __VLS_293({
         modelValue: (__VLS_ctx.replyText),
         ...{ class: "p-4 min-h-[100px]" },
         placeholder: (`Reply ${__VLS_ctx.message.from_name || __VLS_ctx.message.from_address}...`),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_296));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_293));
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "flex items-center" },
     });
     /** @type {[typeof Button, typeof Button, ]} */ ;
     // @ts-ignore
-    const __VLS_299 = __VLS_asFunctionalComponent(Button, new Button({
+    const __VLS_296 = __VLS_asFunctionalComponent(Button, new Button({
         type: "submit",
         size: "sm",
         ...{ class: "ml-auto" },
         disabled: (__VLS_ctx.sendingReply || !__VLS_ctx.replyText.trim()),
     }));
-    const __VLS_300 = __VLS_299({
+    const __VLS_297 = __VLS_296({
         type: "submit",
         size: "sm",
         ...{ class: "ml-auto" },
         disabled: (__VLS_ctx.sendingReply || !__VLS_ctx.replyText.trim()),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_299));
-    __VLS_301.slots.default;
+    }, ...__VLS_functionalComponentArgsRest(__VLS_296));
+    __VLS_298.slots.default;
     (__VLS_ctx.sendingReply ? 'Sending...' : 'Send');
-    var __VLS_301;
+    var __VLS_298;
 }
 else {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({

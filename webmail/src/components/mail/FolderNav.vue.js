@@ -152,9 +152,11 @@ for (const [f] of __VLS_getVForSourceType((__VLS_ctx.store.folders))) {
         // @ts-ignore
         const __VLS_9 = __VLS_asFunctionalComponent(__VLS_8, new __VLS_8({
             ...{ class: "size-4" },
+            ...{ style: (f.color && __VLS_ctx.store.currentFolder !== f.name ? `color:${f.color}` : '') },
         }));
         const __VLS_10 = __VLS_9({
             ...{ class: "size-4" },
+            ...{ style: (f.color && __VLS_ctx.store.currentFolder !== f.name ? `color:${f.color}` : '') },
         }, ...__VLS_functionalComponentArgsRest(__VLS_9));
         __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
             ...{ class: "sr-only" },
@@ -249,7 +251,7 @@ for (const [f] of __VLS_getVForSourceType((__VLS_ctx.store.folders))) {
     }
     else {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-            ...{ class: (__VLS_ctx.cn('group/row flex items-center gap-1 rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground', __VLS_ctx.store.currentFolder === f.name
+            ...{ class: (__VLS_ctx.cn('group/row relative flex items-center rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground', __VLS_ctx.store.currentFolder === f.name
                     ? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
                     : 'transparent')) },
         });
@@ -263,22 +265,16 @@ for (const [f] of __VLS_getVForSourceType((__VLS_ctx.store.folders))) {
                 } },
             ...{ class: "flex flex-1 items-center gap-3 px-3 py-2 text-left min-w-0" },
         });
-        if (f.color) {
-            __VLS_asFunctionalElement(__VLS_intrinsicElements.span)({
-                ...{ class: "inline-block h-2 w-2 rounded-full flex-shrink-0" },
-                ...{ style: (`background:${f.color}`) },
-            });
-        }
-        else {
-            const __VLS_20 = ((__VLS_ctx.getIcon(f.name)));
-            // @ts-ignore
-            const __VLS_21 = __VLS_asFunctionalComponent(__VLS_20, new __VLS_20({
-                ...{ class: "size-4 flex-shrink-0" },
-            }));
-            const __VLS_22 = __VLS_21({
-                ...{ class: "size-4 flex-shrink-0" },
-            }, ...__VLS_functionalComponentArgsRest(__VLS_21));
-        }
+        const __VLS_20 = ((__VLS_ctx.getIcon(f.name)));
+        // @ts-ignore
+        const __VLS_21 = __VLS_asFunctionalComponent(__VLS_20, new __VLS_20({
+            ...{ class: "size-4 flex-shrink-0" },
+            ...{ style: (f.color ? `color:${f.color}` : '') },
+        }));
+        const __VLS_22 = __VLS_21({
+            ...{ class: "size-4 flex-shrink-0" },
+            ...{ style: (f.color ? `color:${f.color}` : '') },
+        }, ...__VLS_functionalComponentArgsRest(__VLS_21));
         __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
             ...{ class: "truncate" },
         });
@@ -295,6 +291,9 @@ for (const [f] of __VLS_getVForSourceType((__VLS_ctx.store.folders))) {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
         (f.total_count || 0);
         if (!f.system_folder) {
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+                ...{ class: (__VLS_ctx.cn('absolute right-1 flex gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity rounded px-0.5', __VLS_ctx.store.currentFolder === f.name ? 'bg-primary' : 'bg-accent')) },
+            });
             __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
                 ...{ onClick: (...[$event]) => {
                         if (!!(__VLS_ctx.isCollapsed))
@@ -305,7 +304,7 @@ for (const [f] of __VLS_getVForSourceType((__VLS_ctx.store.folders))) {
                             return;
                         __VLS_ctx.startEdit(f);
                     } },
-                ...{ class: "opacity-0 group-hover/row:opacity-100 p-1 rounded hover:bg-accent/80" },
+                ...{ class: "p-1 rounded hover:bg-accent/80" },
                 title: "Rename / recolour",
             });
             __VLS_asFunctionalElement(__VLS_intrinsicElements.svg, __VLS_intrinsicElements.svg)({
@@ -331,7 +330,7 @@ for (const [f] of __VLS_getVForSourceType((__VLS_ctx.store.folders))) {
                             return;
                         __VLS_ctx.deleteFolder(f);
                     } },
-                ...{ class: "opacity-0 group-hover/row:opacity-100 p-1 rounded hover:text-destructive" },
+                ...{ class: "p-1 rounded hover:text-destructive" },
                 title: "Delete folder",
             });
             const __VLS_24 = {}.Trash2;
@@ -493,23 +492,14 @@ if (!__VLS_ctx.isCollapsed) {
 /** @type {__VLS_StyleScopedClasses['py-2']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-left']} */ ;
 /** @type {__VLS_StyleScopedClasses['min-w-0']} */ ;
-/** @type {__VLS_StyleScopedClasses['inline-block']} */ ;
-/** @type {__VLS_StyleScopedClasses['h-2']} */ ;
-/** @type {__VLS_StyleScopedClasses['w-2']} */ ;
-/** @type {__VLS_StyleScopedClasses['rounded-full']} */ ;
-/** @type {__VLS_StyleScopedClasses['flex-shrink-0']} */ ;
 /** @type {__VLS_StyleScopedClasses['size-4']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex-shrink-0']} */ ;
 /** @type {__VLS_StyleScopedClasses['truncate']} */ ;
 /** @type {__VLS_StyleScopedClasses['font-bold']} */ ;
-/** @type {__VLS_StyleScopedClasses['opacity-0']} */ ;
-/** @type {__VLS_StyleScopedClasses['group-hover/row:opacity-100']} */ ;
 /** @type {__VLS_StyleScopedClasses['p-1']} */ ;
 /** @type {__VLS_StyleScopedClasses['rounded']} */ ;
 /** @type {__VLS_StyleScopedClasses['hover:bg-accent/80']} */ ;
 /** @type {__VLS_StyleScopedClasses['size-3']} */ ;
-/** @type {__VLS_StyleScopedClasses['opacity-0']} */ ;
-/** @type {__VLS_StyleScopedClasses['group-hover/row:opacity-100']} */ ;
 /** @type {__VLS_StyleScopedClasses['p-1']} */ ;
 /** @type {__VLS_StyleScopedClasses['rounded']} */ ;
 /** @type {__VLS_StyleScopedClasses['hover:text-destructive']} */ ;

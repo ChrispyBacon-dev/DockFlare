@@ -82,7 +82,7 @@ const __VLS_17 = {
 };
 __VLS_12.slots.default;
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-    ...{ class: (__VLS_ctx.cn('h-[52px] flex items-center gap-1 px-2 border-b border-border flex-shrink-0', __VLS_ctx.store.isCollapsed ? 'flex-col justify-center py-1' : 'flex-row')) },
+    ...{ class: (__VLS_ctx.cn('h-[52px] flex items-center gap-1 px-2 flex-shrink-0', __VLS_ctx.store.isCollapsed ? 'flex-col justify-center py-1' : 'flex-row')) },
 });
 if (!__VLS_ctx.store.isCollapsed) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
@@ -540,11 +540,11 @@ const __VLS_171 = {}.SplitterResizeHandle;
 // @ts-ignore
 const __VLS_172 = __VLS_asFunctionalComponent(__VLS_171, new __VLS_171({
     id: "sidebar-handle",
-    ...{ class: "w-[3px] bg-border hover:bg-primary/50 active:bg-primary/70 transition-colors" },
+    ...{ class: "self-stretch w-[3px] bg-transparent hover:bg-border active:bg-primary/40 transition-colors" },
 }));
 const __VLS_173 = __VLS_172({
     id: "sidebar-handle",
-    ...{ class: "w-[3px] bg-border hover:bg-primary/50 active:bg-primary/70 transition-colors" },
+    ...{ class: "self-stretch w-[3px] bg-transparent hover:bg-border active:bg-primary/40 transition-colors" },
 }, ...__VLS_functionalComponentArgsRest(__VLS_172));
 if (__VLS_ctx.store.viewMode === 'split') {
     const __VLS_175 = {}.SplitterPanel;
@@ -573,11 +573,11 @@ if (__VLS_ctx.store.viewMode === 'split') {
     // @ts-ignore
     const __VLS_183 = __VLS_asFunctionalComponent(__VLS_182, new __VLS_182({
         id: "display-handle",
-        ...{ class: "w-[3px] bg-border hover:bg-primary/50 active:bg-primary/70 transition-colors" },
+        ...{ class: "self-stretch w-[3px] bg-transparent hover:bg-border active:bg-primary/40 transition-colors" },
     }));
     const __VLS_184 = __VLS_183({
         id: "display-handle",
-        ...{ class: "w-[3px] bg-border hover:bg-primary/50 active:bg-primary/70 transition-colors" },
+        ...{ class: "self-stretch w-[3px] bg-transparent hover:bg-border active:bg-primary/40 transition-colors" },
     }, ...__VLS_functionalComponentArgsRest(__VLS_183));
     const __VLS_186 = {}.SplitterPanel;
     /** @type {[typeof __VLS_components.SplitterPanel, typeof __VLS_components.SplitterPanel, ]} */ ;
@@ -595,56 +595,80 @@ if (__VLS_ctx.store.viewMode === 'split') {
         ...{ class: "flex flex-col overflow-hidden" },
     }, ...__VLS_functionalComponentArgsRest(__VLS_187));
     __VLS_189.slots.default;
-    /** @type {[typeof MessageDisplay, ]} */ ;
-    // @ts-ignore
-    const __VLS_190 = __VLS_asFunctionalComponent(MessageDisplay, new MessageDisplay({
-        message: (__VLS_ctx.store.currentMessage),
-    }));
-    const __VLS_191 = __VLS_190({
-        message: (__VLS_ctx.store.currentMessage),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_190));
-    var __VLS_189;
-}
-else {
-    const __VLS_193 = {}.SplitterPanel;
-    /** @type {[typeof __VLS_components.SplitterPanel, typeof __VLS_components.SplitterPanel, ]} */ ;
-    // @ts-ignore
-    const __VLS_194 = __VLS_asFunctionalComponent(__VLS_193, new __VLS_193({
-        id: "mail-content",
-        defaultSize: (80),
-        minSize: (30),
-        ...{ class: "flex flex-col overflow-hidden" },
-    }));
-    const __VLS_195 = __VLS_194({
-        id: "mail-content",
-        defaultSize: (80),
-        minSize: (30),
-        ...{ class: "flex flex-col overflow-hidden" },
-    }, ...__VLS_functionalComponentArgsRest(__VLS_194));
-    __VLS_196.slots.default;
-    if (!__VLS_ctx.store.currentMessage) {
-        /** @type {[typeof MessageList, ]} */ ;
+    if (__VLS_ctx.store.isComposeOpen && __VLS_ctx.store.isComposeFullView) {
+        /** @type {[typeof ComposeDialog, ]} */ ;
         // @ts-ignore
-        const __VLS_197 = __VLS_asFunctionalComponent(MessageList, new MessageList({}));
-        const __VLS_198 = __VLS_197({}, ...__VLS_functionalComponentArgsRest(__VLS_197));
+        const __VLS_190 = __VLS_asFunctionalComponent(ComposeDialog, new ComposeDialog({
+            panelMode: (true),
+        }));
+        const __VLS_191 = __VLS_190({
+            panelMode: (true),
+        }, ...__VLS_functionalComponentArgsRest(__VLS_190));
     }
     else {
         /** @type {[typeof MessageDisplay, ]} */ ;
         // @ts-ignore
-        const __VLS_200 = __VLS_asFunctionalComponent(MessageDisplay, new MessageDisplay({
+        const __VLS_193 = __VLS_asFunctionalComponent(MessageDisplay, new MessageDisplay({
             message: (__VLS_ctx.store.currentMessage),
         }));
-        const __VLS_201 = __VLS_200({
+        const __VLS_194 = __VLS_193({
             message: (__VLS_ctx.store.currentMessage),
+        }, ...__VLS_functionalComponentArgsRest(__VLS_193));
+    }
+    var __VLS_189;
+}
+else {
+    const __VLS_196 = {}.SplitterPanel;
+    /** @type {[typeof __VLS_components.SplitterPanel, typeof __VLS_components.SplitterPanel, ]} */ ;
+    // @ts-ignore
+    const __VLS_197 = __VLS_asFunctionalComponent(__VLS_196, new __VLS_196({
+        id: "mail-content",
+        defaultSize: (80),
+        minSize: (30),
+        ...{ class: "flex flex-col overflow-hidden" },
+    }));
+    const __VLS_198 = __VLS_197({
+        id: "mail-content",
+        defaultSize: (80),
+        minSize: (30),
+        ...{ class: "flex flex-col overflow-hidden" },
+    }, ...__VLS_functionalComponentArgsRest(__VLS_197));
+    __VLS_199.slots.default;
+    if (__VLS_ctx.store.isComposeOpen && __VLS_ctx.store.isComposeFullView) {
+        /** @type {[typeof ComposeDialog, ]} */ ;
+        // @ts-ignore
+        const __VLS_200 = __VLS_asFunctionalComponent(ComposeDialog, new ComposeDialog({
+            panelMode: (true),
+        }));
+        const __VLS_201 = __VLS_200({
+            panelMode: (true),
         }, ...__VLS_functionalComponentArgsRest(__VLS_200));
     }
-    var __VLS_196;
+    else {
+        if (!__VLS_ctx.store.currentMessage) {
+            /** @type {[typeof MessageList, ]} */ ;
+            // @ts-ignore
+            const __VLS_203 = __VLS_asFunctionalComponent(MessageList, new MessageList({}));
+            const __VLS_204 = __VLS_203({}, ...__VLS_functionalComponentArgsRest(__VLS_203));
+        }
+        else {
+            /** @type {[typeof MessageDisplay, ]} */ ;
+            // @ts-ignore
+            const __VLS_206 = __VLS_asFunctionalComponent(MessageDisplay, new MessageDisplay({
+                message: (__VLS_ctx.store.currentMessage),
+            }));
+            const __VLS_207 = __VLS_206({
+                message: (__VLS_ctx.store.currentMessage),
+            }, ...__VLS_functionalComponentArgsRest(__VLS_206));
+        }
+    }
+    var __VLS_199;
 }
 var __VLS_8;
 /** @type {[typeof ComposeDialog, ]} */ ;
 // @ts-ignore
-const __VLS_203 = __VLS_asFunctionalComponent(ComposeDialog, new ComposeDialog({}));
-const __VLS_204 = __VLS_203({}, ...__VLS_functionalComponentArgsRest(__VLS_203));
+const __VLS_209 = __VLS_asFunctionalComponent(ComposeDialog, new ComposeDialog({}));
+const __VLS_210 = __VLS_209({}, ...__VLS_functionalComponentArgsRest(__VLS_209));
 var __VLS_3;
 /** @type {__VLS_StyleScopedClasses['h-screen']} */ ;
 /** @type {__VLS_StyleScopedClasses['w-screen']} */ ;
@@ -789,18 +813,20 @@ var __VLS_3;
 /** @type {__VLS_StyleScopedClasses['text-sm']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-popover-foreground']} */ ;
 /** @type {__VLS_StyleScopedClasses['shadow-md']} */ ;
+/** @type {__VLS_StyleScopedClasses['self-stretch']} */ ;
 /** @type {__VLS_StyleScopedClasses['w-[3px]']} */ ;
-/** @type {__VLS_StyleScopedClasses['bg-border']} */ ;
-/** @type {__VLS_StyleScopedClasses['hover:bg-primary/50']} */ ;
-/** @type {__VLS_StyleScopedClasses['active:bg-primary/70']} */ ;
+/** @type {__VLS_StyleScopedClasses['bg-transparent']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:bg-border']} */ ;
+/** @type {__VLS_StyleScopedClasses['active:bg-primary/40']} */ ;
 /** @type {__VLS_StyleScopedClasses['transition-colors']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex-col']} */ ;
 /** @type {__VLS_StyleScopedClasses['overflow-hidden']} */ ;
+/** @type {__VLS_StyleScopedClasses['self-stretch']} */ ;
 /** @type {__VLS_StyleScopedClasses['w-[3px]']} */ ;
-/** @type {__VLS_StyleScopedClasses['bg-border']} */ ;
-/** @type {__VLS_StyleScopedClasses['hover:bg-primary/50']} */ ;
-/** @type {__VLS_StyleScopedClasses['active:bg-primary/70']} */ ;
+/** @type {__VLS_StyleScopedClasses['bg-transparent']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:bg-border']} */ ;
+/** @type {__VLS_StyleScopedClasses['active:bg-primary/40']} */ ;
 /** @type {__VLS_StyleScopedClasses['transition-colors']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex-col']} */ ;
