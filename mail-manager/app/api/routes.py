@@ -37,18 +37,6 @@ def _check_mailbox_access(address):
     return address in request.user.get('mailboxes', [])
 
 
-@api_bp.route('/health', methods=['GET'])
-def health():
-    db = get_db()
-    cur = db.execute("SELECT COUNT(*) FROM mailboxes")
-    count = cur.fetchone()[0]
-    return jsonify({
-        "status": "ok",
-        "version": config.APP_VERSION,
-        "mailboxes": count,
-    })
-
-
 @api_bp.route('/stats', methods=['GET'])
 @admin_required
 def stats():
@@ -154,10 +142,13 @@ def get_messages(address):
     offset = (page - 1) * per_page
 
     _SORT_COLS = {'received_at', 'sent_at', 'subject', 'from_address'}
-    sort_col = request.args.get('sort', 'received_at')
-    if sort_col not in _SORT_COLS:
-        sort_col = 'received_at'
+    sort_col = request.args.get('sort', 'default')
     order = 'ASC' if request.args.get('order', 'desc').lower() == 'asc' else 'DESC'
+
+    if sort_col not in _SORT_COLS:
+        sort_expr = "COALESCE(sent_at, received_at, created_at)"
+    else:
+        sort_expr = sort_col
 
     db = get_db()
     cur = db.execute(
@@ -176,7 +167,7 @@ def get_messages(address):
     total = cur.fetchone()[0]
 
     cur = db.execute(
-        f"SELECT * FROM messages WHERE folder_id=? ORDER BY {sort_col} {order} LIMIT ? OFFSET ?",
+        f"SELECT * FROM messages WHERE folder_id=? ORDER BY {sort_expr} {order} LIMIT ? OFFSET ?",
         (folder_id, per_page, offset),
     )
     msgs = [dict(row) for row in cur.fetchall()]
@@ -511,6 +502,37 @@ def search_messages(address):
     return _paginated(msgs, total, page, per_page)
 
 
+def _parse_email_address(raw):
+    m = re.search(r'<([^>]+)>', raw)
+    return m.group(1).strip() if m else raw.strip()
+
+
+def _local_deliver(db, recipient_addr, from_address, to_field, data, subject, text, html, msg_id, now):
+    cur = db.execute(
+        "SELECT id FROM folders WHERE mailbox_address=? AND name='Inbox'",
+        (recipient_addr,),
+    )
+    inbox = cur.fetchone()
+    if not inbox:
+        return
+    local_msg_id = f"<local-{uuid.uuid4()}@{msg_id.split('@')[-1].rstrip('>')}>"
+    db.execute("""
+        INSERT INTO messages (
+            message_id, mailbox_address, folder_id, from_address,
+            to_addresses, cc_addresses, subject, text_body, html_body,
+            received_at, is_read, is_starred, is_draft, in_reply_to,
+            reference_ids, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?)
+    """, (
+        local_msg_id, recipient_addr, inbox['id'], from_address,
+        json.dumps(to_field), json.dumps(data.get('cc') or []),
+        subject, text, html, now,
+        data.get('in_reply_to') or data.get('inReplyTo', ''),
+        data.get('references', ''), now,
+    ))
+    log.info("Local delivery: msg_id=%s to=%s", local_msg_id, recipient_addr)
+
+
 def _dispatch_send(address, data):
     allowed, reason = limiter.check_rate(address)
     if not allowed:
@@ -538,46 +560,58 @@ def _dispatch_send(address, data):
     now = datetime.now(timezone.utc).isoformat()
     msg_id = f"<{uuid.uuid4()}@{address.split('@')[1]}>"
 
-    worker_payload = {
-        "from": address,
-        "to": to_field,
-        "cc": data.get('cc'),
-        "bcc": data.get('bcc'),
-        "subject": subject,
-        "text": text,
-        "html": html,
-        "replyTo": data.get('reply_to') or data.get('replyTo'),
-        "inReplyTo": data.get('in_reply_to') or data.get('inReplyTo'),
-        "references": data.get('references'),
-        "messageId": msg_id,
-        "attachments": attachments,
-    }
+    db = get_db()
+
+    # Split recipients: local mailboxes get direct delivery, external go via CF worker
+    local_recipients = []
+    external_recipients = []
+    for recipient in to_field:
+        addr = _parse_email_address(recipient)
+        cur = db.execute("SELECT address FROM mailboxes WHERE address=? AND is_active=1", (addr,))
+        if cur.fetchone():
+            local_recipients.append(addr)
+        else:
+            external_recipients.append(recipient)
 
     status = 'sent'
     error_msg = None
     worker_resp = None
 
     outbound_url = config.OUTBOUND_WORKER_URL
-    if outbound_url:
-        try:
-            resp = http_requests.post(
-                outbound_url,
-                json=worker_payload,
-                headers={"Authorization": f"Bearer {config.OUTBOUND_AUTH_SECRET}"},
-                timeout=30,
-            )
-            worker_resp = resp.text
-            if not resp.ok:
+    if external_recipients:
+        worker_payload = {
+            "from": address,
+            "to": external_recipients,
+            "cc": data.get('cc'),
+            "bcc": data.get('bcc'),
+            "subject": subject,
+            "text": text,
+            "html": html,
+            "replyTo": data.get('reply_to') or data.get('replyTo'),
+            "inReplyTo": data.get('in_reply_to') or data.get('inReplyTo'),
+            "references": data.get('references'),
+            "messageId": msg_id,
+            "attachments": attachments,
+        }
+        if outbound_url:
+            try:
+                resp = http_requests.post(
+                    outbound_url,
+                    json=worker_payload,
+                    headers={"Authorization": f"Bearer {config.OUTBOUND_AUTH_SECRET}"},
+                    timeout=30,
+                )
+                worker_resp = resp.text
+                if not resp.ok:
+                    status = 'failed'
+                    error_msg = resp.text
+            except Exception as e:
                 status = 'failed'
-                error_msg = resp.text
-        except Exception as e:
+                error_msg = str(e)
+        else:
             status = 'failed'
-            error_msg = str(e)
-    else:
-        status = 'failed'
-        error_msg = 'Outbound worker not configured'
+            error_msg = 'Outbound worker not configured'
 
-    db = get_db()
     db.execute(
         "INSERT INTO send_log (message_id, from_address, to_addresses, subject, sent_at, status, error_message, worker_response) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (msg_id, address, json.dumps(to_field), subject, now, status, error_msg, worker_resp),
@@ -611,6 +645,9 @@ def _dispatch_send(address, data):
                     "INSERT INTO attachments (message_id, filename, content_type, size_bytes, storage_path, is_inline, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)",
                     (sent_msg_id, att['filename'], att['content_type'], att.get('size_bytes', 0), None, now),
                 )
+
+        for recipient_addr in local_recipients:
+            _local_deliver(db, recipient_addr, address, to_field, data, subject, text, html, msg_id, now)
 
     db.commit()
 

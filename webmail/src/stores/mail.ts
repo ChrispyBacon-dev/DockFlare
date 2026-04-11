@@ -9,7 +9,8 @@ export const useMailStore = defineStore('mail', () => {
   const messages = ref<any[]>([])
   const currentMessage = ref<any>(null)
   const isComposeOpen = ref(false)
-  const composeDefaults = ref<{ to?: string; subject?: string; body?: string } | null>(null)
+  const isComposeFullView = ref(false)
+  const composeDefaults = ref<{ to?: string; subject?: string; body?: string; quotedHtml?: string; draftId?: number } | null>(null)
   const composeBody = ref('')
   const activeTab = ref<'all' | 'unread' | 'starred'>('all')
   const isCollapsed = ref(false)
@@ -49,7 +50,7 @@ export const useMailStore = defineStore('mail', () => {
     mailboxes, currentMailbox,
     folders, currentFolder, currentFolderObj,
     messages, currentMessage,
-    isComposeOpen, composeDefaults, composeBody,
+    isComposeOpen, isComposeFullView, composeDefaults, composeBody,
     activeTab, isCollapsed,
     sortOrder, isDark, toggleTheme,
     viewMode, toggleViewMode,

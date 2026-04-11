@@ -50,7 +50,7 @@ const compose = () => {
         <!-- ── Single header row (same height as middle + right panel headers) ── -->
         <div
           :class="cn(
-            'h-[52px] flex items-center gap-1 px-2 border-b border-border flex-shrink-0',
+            'h-[52px] flex items-center gap-1 px-2 flex-shrink-0',
             store.isCollapsed ? 'flex-col justify-center py-1' : 'flex-row',
           )"
         >
@@ -166,7 +166,7 @@ const compose = () => {
 
       <SplitterResizeHandle
         id="sidebar-handle"
-        class="w-[3px] bg-border hover:bg-primary/50 active:bg-primary/70 transition-colors"
+        class="self-stretch w-[3px] bg-transparent hover:bg-border active:bg-primary/40 transition-colors"
       />
 
       <template v-if="store.viewMode === 'split'">
@@ -181,7 +181,7 @@ const compose = () => {
 
         <SplitterResizeHandle
           id="display-handle"
-          class="w-[3px] bg-border hover:bg-primary/50 active:bg-primary/70 transition-colors"
+          class="self-stretch w-[3px] bg-transparent hover:bg-border active:bg-primary/40 transition-colors"
         />
 
         <SplitterPanel
@@ -190,7 +190,8 @@ const compose = () => {
           :min-size="30"
           class="flex flex-col overflow-hidden"
         >
-          <MessageDisplay :message="store.currentMessage" />
+          <ComposeDialog v-if="store.isComposeOpen && store.isComposeFullView" :panel-mode="true" />
+          <MessageDisplay v-else :message="store.currentMessage" />
         </SplitterPanel>
       </template>
 
@@ -201,8 +202,13 @@ const compose = () => {
           :min-size="30"
           class="flex flex-col overflow-hidden"
         >
-          <MessageList v-if="!store.currentMessage" />
-          <MessageDisplay v-else :message="store.currentMessage" />
+          <template v-if="store.isComposeOpen && store.isComposeFullView">
+            <ComposeDialog :panel-mode="true" />
+          </template>
+          <template v-else>
+            <MessageList v-if="!store.currentMessage" />
+            <MessageDisplay v-else :message="store.currentMessage" />
+          </template>
         </SplitterPanel>
       </template>
     </SplitterGroup>

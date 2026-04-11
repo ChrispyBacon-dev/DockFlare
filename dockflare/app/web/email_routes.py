@@ -1,3 +1,5 @@
+import hmac
+import ipaddress
 import json
 import logging
 import os
@@ -340,8 +342,35 @@ def _generate_jwt(username):
     token = jwt.encode(payload, private_key, algorithm=config.EMAIL_JWT_ALGORITHM)
     return token
 
+def _check_internal_request():
+    # Block any request that carries Cloudflare edge headers (all public internet
+    # requests via the CF tunnel have CF-Ray; internal Docker requests never do)
+    if request.headers.get('CF-Ray') or request.headers.get('CF-Connecting-IP'):
+        return False
+
+    # Block non-private IPs
+    try:
+        ip = ipaddress.ip_address(request.remote_addr or '')
+        if not ip.is_private:
+            return False
+    except ValueError:
+        return False
+
+    # If a shared secret is configured, require it
+    expected = os.environ.get('INTERNAL_BOOTSTRAP_SECRET', '')
+    if expected:
+        provided = request.headers.get('X-Bootstrap-Token', '')
+        if not provided or not hmac.compare_digest(provided, expected):
+            return False
+
+    return True
+
+
 @email_bp.route('/internal/config', methods=['GET'])
 def internal_mail_config():
+    if not _check_internal_request():
+        return jsonify({'error': 'forbidden'}), 403
+
     cfg = config.EMAIL_CONFIG
     if not cfg or not cfg.get('enabled') or not cfg.get('domains'):
         return jsonify({'configured': False})

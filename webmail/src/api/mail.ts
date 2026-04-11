@@ -23,4 +23,8 @@ export const mailApi = {
   getAttachmentUrl: (id: string) => `/api/v1/attachments/${id}/download`,
   downloadAttachment: (id: number | string) =>
     apiClient.get(`/attachments/${id}/download`, { responseType: 'blob' }).then(r => r.data as Blob),
+  createDraft: (address: string, data: Record<string, any>) =>
+    apiClient.post(`/mailboxes/${address}/drafts`, data),
+  updateDraft: (address: string, id: number, data: Record<string, any>) =>
+    apiClient.put(`/mailboxes/${address}/drafts/${id}`, data),
 }

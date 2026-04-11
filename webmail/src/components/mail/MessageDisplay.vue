@@ -106,7 +106,8 @@ const replyTo = () => {
     subject: props.message.subject?.startsWith('Re:')
       ? props.message.subject
       : `Re: ${props.message.subject || ''}`,
-    body: quotedBody.value,
+    body: '',
+    quotedHtml: quotedBody.value,
   }
   store.isComposeOpen = true
 }
@@ -123,7 +124,8 @@ const replyAll = () => {
     subject: props.message.subject?.startsWith('Re:')
       ? props.message.subject
       : `Re: ${props.message.subject || ''}`,
-    body: quotedBody.value,
+    body: '',
+    quotedHtml: quotedBody.value,
   }
   store.isComposeOpen = true
 }
@@ -135,7 +137,8 @@ const forwardMsg = () => {
     subject: props.message.subject?.startsWith('Fwd:')
       ? props.message.subject
       : `Fwd: ${props.message.subject || ''}`,
-    body: quotedBody.value,
+    body: '',
+    quotedHtml: quotedBody.value,
   }
   store.isComposeOpen = true
 }
@@ -439,8 +442,6 @@ const sendInlineReply = async () => {
         </DropdownMenuPortal>
       </DropdownMenuRoot>
     </div>
-
-    <Separator />
 
     <template v-if="message">
       <!-- Print header (only visible when printing) -->

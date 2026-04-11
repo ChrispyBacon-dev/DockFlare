@@ -1068,20 +1068,6 @@ def version_check():
 
     return jsonify(result)
 
-@bp.route('/debug')
-def debug_info():
-    try:
-        headers = {k: v for k, v in request.headers.items()}
-        return jsonify({
-            "request": { "scheme": request.scheme, "is_secure": request.is_secure, "host": request.host, 
-                         "path": request.path, "url": request.url, "headers": headers },
-            "environment": { "wsgi.url_scheme": request.environ.get('wsgi.url_scheme'),
-                             "HTTP_X_FORWARDED_PROTO": request.environ.get('HTTP_X_FORWARDED_PROTO') },
-            "timestamp": int(time.time())
-        })
-    except Exception as e:
-        logging.error(f"Error in /debug route: {e}", exc_info=True)
-        return jsonify({ "error": "An internal error occurred.", "status": "error", "timestamp": int(time.time()) }), 500
 
 @bp.route('/reconciliation-status')
 def reconciliation_status_route(): 

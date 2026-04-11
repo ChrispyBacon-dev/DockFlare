@@ -57,6 +57,21 @@ const toggleSort = () => {
 }
 
 const selectMessage = (msg: any) => {
+  if (msg.is_draft) {
+    let parsed = msg.to_addresses
+    if (typeof parsed === 'string') {
+      try { parsed = JSON.parse(parsed) } catch { parsed = [parsed] }
+    }
+    const toAddr = Array.isArray(parsed) ? parsed.join(', ') : (parsed || '')
+    store.composeDefaults = {
+      draftId: msg.id,
+      to: toAddr,
+      subject: msg.subject || '',
+      body: msg.html_body || msg.text_body || '',
+    }
+    store.isComposeOpen = true
+    return
+  }
   store.currentMessage = msg
 }
 
@@ -122,7 +137,6 @@ const performEmptyTrash = async () => {
         </TabsList>
       </div>
     </div>
-    <Separator />
     <div class="bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div class="relative">
         <Search class="absolute left-2 top-2.5 size-4 text-muted-foreground" />

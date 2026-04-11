@@ -18,10 +18,14 @@ def bootstrap():
 
     import requests
 
+    bootstrap_secret = os.environ.get('INTERNAL_BOOTSTRAP_SECRET', '')
+    headers = {'X-Bootstrap-Token': bootstrap_secret} if bootstrap_secret else {}
+
     for attempt in range(15):
         try:
             r = requests.get(
                 f"{master_url}/email/internal/config",
+                headers=headers,
                 timeout=5,
                 allow_redirects=False,
             )

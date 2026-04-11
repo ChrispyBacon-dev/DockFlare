@@ -135,7 +135,7 @@ const confirmEdit = async () => {
               )"
               @click="selectFolder(f.name)"
             >
-              <component :is="getIcon(f.name)" class="size-4" />
+              <component :is="getIcon(f.name)" class="size-4" :style="f.color && store.currentFolder !== f.name ? `color:${f.color}` : ''" />
               <span class="sr-only">{{ f.name }}</span>
             </button>
           </TooltipTrigger>
@@ -186,7 +186,7 @@ const confirmEdit = async () => {
         <div
           v-else
           :class="cn(
-            'group/row flex items-center gap-1 rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground',
+            'group/row relative flex items-center rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground',
             store.currentFolder === f.name
               ? 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
               : 'transparent',
@@ -196,8 +196,7 @@ const confirmEdit = async () => {
             class="flex flex-1 items-center gap-3 px-3 py-2 text-left min-w-0"
             @click="selectFolder(f.name)"
           >
-            <span v-if="f.color" class="inline-block h-2 w-2 rounded-full flex-shrink-0" :style="`background:${f.color}`" />
-            <component v-else :is="getIcon(f.name)" class="size-4 flex-shrink-0" />
+            <component :is="getIcon(f.name)" class="size-4 flex-shrink-0" :style="f.color ? `color:${f.color}` : ''" />
             <span class="truncate">{{ f.name }}</span>
             <span
               :class="cn(
@@ -209,23 +208,29 @@ const confirmEdit = async () => {
               <span>{{ f.total_count || 0 }}</span>
             </span>
           </button>
-          <!-- Custom folder actions (on hover) -->
-          <template v-if="!f.system_folder">
+          <!-- Custom folder actions — absolutely positioned so they don't affect count alignment -->
+          <div
+            v-if="!f.system_folder"
+            :class="cn(
+              'absolute right-1 flex gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity rounded px-0.5',
+              store.currentFolder === f.name ? 'bg-primary' : 'bg-accent',
+            )"
+          >
             <button
-              class="opacity-0 group-hover/row:opacity-100 p-1 rounded hover:bg-accent/80"
+              class="p-1 rounded hover:bg-accent/80"
               title="Rename / recolour"
               @click.stop="startEdit(f)"
             >
               <svg class="size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             </button>
             <button
-              class="opacity-0 group-hover/row:opacity-100 p-1 rounded hover:text-destructive"
+              class="p-1 rounded hover:text-destructive"
               title="Delete folder"
               @click.stop="deleteFolder(f)"
             >
               <Trash2 class="size-3" />
             </button>
-          </template>
+          </div>
         </div>
       </template>
 
