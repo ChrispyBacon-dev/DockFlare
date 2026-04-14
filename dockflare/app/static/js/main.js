@@ -2309,20 +2309,102 @@ async function emailWipeLocal(domain) {
     }
 }
 
+const QUOTA_STEPS = [
+    { label: '100 MB', bytes: 104857600 },
+    { label: '250 MB', bytes: 262144000 },
+    { label: '500 MB', bytes: 524288000 },
+    { label: '1 GB',   bytes: 1073741824 },
+    { label: '2 GB',   bytes: 2147483648 },
+    { label: '5 GB',   bytes: 5368709120 },
+    { label: '10 GB',  bytes: 10737418240 },
+    { label: '25 GB',  bytes: 26843545600 },
+    { label: '50 GB',  bytes: 53687091200 },
+    { label: '100 GB', bytes: 107374182400 },
+    { label: 'Unlimited', bytes: 0 },
+];
+
+function _fmtBytes(b) {
+    if (!b || b === 0) return '0 B';
+    const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0;
+    while (b >= 1024 && i < 4) { b /= 1024; i++; }
+    return b.toFixed(1) + '\u00a0' + u[i];
+}
+
+function emailUpdateQuotaLabel(labelId, stepIndex) {
+    const el = document.getElementById(labelId);
+    if (el) el.textContent = QUOTA_STEPS[parseInt(stepIndex)]?.label ?? '10 GB';
+}
+
+function emailLoadStats() {
+    fetch('/email/mail-stats')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+            if (!d) return;
+            const r = document.getElementById('statReceived');
+            const s = document.getElementById('statSent');
+            const st = document.getElementById('statStorage');
+            const m = document.getElementById('statMailboxes');
+            if (r) r.textContent = d.total_messages ?? 0;
+            if (s) s.textContent = d.total_sent ?? 0;
+            if (st) st.textContent = _fmtBytes(d.disk_used_bytes);
+            if (m) m.textContent = d.mailbox_count ?? 0;
+        })
+        .catch(() => {});
+}
+
+async function emailLoadMailboxStats() {
+    try {
+        const resp = await fetch('/email/mailbox-stats', { headers: buildApiHeaders({}) });
+        if (!resp.ok) return;
+        const list = await resp.json();
+        for (const mb of list) {
+            const row = document.querySelector(`tr[data-mailbox="${CSS.escape(mb.address)}"]`);
+            if (!row) continue;
+            const rcv = row.querySelector('.mb-received');
+            const snt = row.querySelector('.mb-sent');
+            const bar = row.querySelector('.mb-storage-progress');
+            const txt = row.querySelector('.mb-storage-text');
+            const badge = row.querySelector('.mb-quota-badge');
+            if (rcv) { rcv.textContent = mb.received_count ?? 0; rcv.classList.remove('opacity-50'); }
+            if (snt) { snt.textContent = mb.sent_count ?? 0; snt.classList.remove('opacity-50'); }
+            const used = mb.storage_bytes ?? 0;
+            const quota = mb.quota_bytes ?? 0;
+            if (txt) txt.textContent = quota > 0 ? `${_fmtBytes(used)} / ${_fmtBytes(quota)}` : `${_fmtBytes(used)} / ∞`;
+            if (bar) {
+                const pct = quota > 0 ? Math.min(100, Math.round(used / quota * 100)) : 0;
+                bar.value = pct;
+                bar.className = 'progress w-28 block mb-storage-progress ' + (pct >= 90 ? 'progress-error' : pct >= 75 ? 'progress-warning' : 'progress-success');
+            }
+            if (badge) {
+                if (mb.quota_exceeded_count > 0) {
+                    badge.textContent = `⚠ Over quota (${mb.quota_exceeded_count}×)`;
+                    badge.classList.remove('hidden');
+                } else {
+                    badge.classList.add('hidden');
+                }
+            }
+        }
+    } catch (e) { console.error(e); }
+}
+
 async function emailCreateMailbox(event) {
-    const address = document.getElementById('newMailboxAddress').value;
+    const address = document.getElementById('newMailboxAddress').value.trim();
     const domain = document.getElementById('newMailboxDomain').value;
-    const name = document.getElementById('newMailboxName').value;
+    const name = document.getElementById('newMailboxName').value.trim();
+    const quotaStep = parseInt(document.getElementById('newMailboxQuota')?.value ?? '6');
+    const quota_bytes = QUOTA_STEPS[quotaStep]?.bytes ?? 10737418240;
     if (!address || !domain) return;
     const btn = event?.currentTarget;
     const originalHTML = btn?.innerHTML;
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'; }
+    document.getElementById('emailAddMailboxModal')?.close();
     emailProgressStart(EMAIL_OPERATION_STEPS.create_mailbox, t('email.progress.create_mailbox') || 'Creating mailbox');
     try {
         const response = await fetch('/email/mailbox/create', {
             method: 'POST',
             headers: buildApiHeaders({'Content-Type': 'application/json'}),
-            body: JSON.stringify({ address: address + '@' + domain, domain: domain, display_name: name })
+            body: JSON.stringify({ address: address + '@' + domain, domain: domain, display_name: name, quota_bytes })
         });
         const data = await response.json();
         if (data.success) {
@@ -2566,4 +2648,45 @@ async function emailRestoreBackup() {
         btn.textContent = t('email.restore_backup');
         console.error(e);
     }
+}
+
+function emailEditQuota(address, domain, currentQuotaBytes) {
+    const modal = document.getElementById('emailEditQuotaModal');
+    if (!modal) return;
+    document.getElementById('emailEditQuotaTarget').textContent = address;
+    const row = document.querySelector(`tr[data-mailbox="${CSS.escape(address)}"]`);
+    const usageText = row?.querySelector('.mb-storage-text')?.textContent ?? '';
+    document.getElementById('emailEditQuotaUsage').textContent = usageText ? `Current usage: ${usageText}` : '';
+    const stepIndex = QUOTA_STEPS.findIndex(s => s.bytes === currentQuotaBytes);
+    const slider = document.getElementById('editMailboxQuota');
+    slider.value = stepIndex >= 0 ? stepIndex : 6;
+    emailUpdateQuotaLabel('editMailboxQuotaLabel', slider.value);
+    const submitBtn = document.getElementById('emailEditQuotaSubmitBtn');
+    const handler = async () => {
+        submitBtn.removeEventListener('click', handler);
+        const quota_bytes = QUOTA_STEPS[parseInt(slider.value)]?.bytes ?? 10737418240;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="loading loading-spinner loading-sm"></span>';
+        try {
+            const resp = await fetch('/email/mailbox/set-quota', {
+                method: 'POST',
+                headers: buildApiHeaders({'Content-Type': 'application/json'}),
+                body: JSON.stringify({ address, domain, quota_bytes }),
+            });
+            const data = await resp.json();
+            modal.close();
+            if (data.success) {
+                await emailLoadMailboxStats();
+            } else {
+                await dfAlert(data.error || 'Failed to update quota', 'Error');
+            }
+        } catch (e) {
+            modal.close();
+            console.error(e);
+        }
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = 'Save';
+    };
+    submitBtn.addEventListener('click', handler);
+    modal.showModal();
 }

@@ -52,11 +52,24 @@ def stats():
     total_sent = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM mailboxes")
     mailbox_count = cur.fetchone()[0]
+    cur.execute("SELECT COALESCE(SUM(size_bytes), 0) FROM messages")
+    total_storage_bytes = cur.fetchone()[0]
+    data_dir_bytes = 0
+    for dirpath, _, filenames in os.walk(config.MAIL_DATA_PATH):
+        for f in filenames:
+            try:
+                data_dir_bytes += os.path.getsize(os.path.join(dirpath, f))
+            except OSError:
+                pass
+    disk = shutil.disk_usage(config.MAIL_DATA_PATH)
     return jsonify({
         "total_messages": total_messages,
         "unread_count": unread_count,
         "total_sent": total_sent,
         "mailbox_count": mailbox_count,
+        "total_storage_bytes": total_storage_bytes,
+        "disk_used_bytes": data_dir_bytes,
+        "disk_free_bytes": disk.free,
     })
 
 
@@ -148,8 +161,27 @@ def mailbox_status():
 @admin_required
 def get_mailboxes():
     db = get_db()
-    cur = db.execute("SELECT * FROM mailboxes")
-    return jsonify([dict(row) for row in cur.fetchall()])
+    mailboxes = [dict(r) for r in db.execute("SELECT * FROM mailboxes").fetchall()]
+    received = {r['mailbox_address']: r['cnt'] for r in db.execute("""
+        SELECT m.mailbox_address, COUNT(*) as cnt FROM messages m
+        JOIN folders f ON f.id = m.folder_id
+        WHERE m.is_draft=0 AND f.name != 'Sent'
+        GROUP BY m.mailbox_address
+    """).fetchall()}
+    storage = {r['mailbox_address']: r['bytes'] for r in db.execute("""
+        SELECT mailbox_address, COALESCE(SUM(size_bytes), 0) as bytes
+        FROM messages GROUP BY mailbox_address
+    """).fetchall()}
+    sent = {r['from_address']: r['cnt'] for r in db.execute("""
+        SELECT from_address, COUNT(*) as cnt FROM send_log
+        WHERE status='sent' GROUP BY from_address
+    """).fetchall()}
+    for mb in mailboxes:
+        addr = mb['address']
+        mb['received_count'] = received.get(addr, 0)
+        mb['sent_count'] = sent.get(addr, 0)
+        mb['storage_bytes'] = storage.get(addr, 0)
+    return jsonify(mailboxes)
 
 
 @api_bp.route('/mailboxes', methods=['POST'])
@@ -165,11 +197,12 @@ def create_mailbox():
 
     db = get_db()
     now = datetime.now(timezone.utc).isoformat()
+    quota_bytes = data.get('quota_bytes', 10737418240)
     try:
         db.execute(
-            "INSERT INTO mailboxes (address, display_name, domain, created_at, is_active) VALUES (?, ?, ?, ?, 1) "
-            "ON CONFLICT(address) DO UPDATE SET is_active=1, display_name=excluded.display_name",
-            (address, data.get('display_name', ''), domain, now),
+            "INSERT INTO mailboxes (address, display_name, domain, created_at, is_active, quota_bytes) VALUES (?, ?, ?, ?, 1, ?) "
+            "ON CONFLICT(address) DO UPDATE SET is_active=1, display_name=excluded.display_name, quota_bytes=excluded.quota_bytes",
+            (address, data.get('display_name', ''), domain, now, quota_bytes),
         )
         folder_count = db.execute(
             "SELECT COUNT(*) FROM folders WHERE mailbox_address=?", (address,)
@@ -196,6 +229,20 @@ def get_mailbox(address):
     if not row:
         return jsonify({"error": "not found"}), 404
     return jsonify(dict(row))
+
+
+@api_bp.route('/mailboxes/<address>', methods=['PATCH'])
+@admin_required
+def update_mailbox(address):
+    data = request.json or {}
+    db = get_db()
+    if not db.execute("SELECT 1 FROM mailboxes WHERE address=?", (address,)).fetchone():
+        return jsonify({"error": "not found"}), 404
+    if 'quota_bytes' in data:
+        db.execute("UPDATE mailboxes SET quota_bytes=? WHERE address=?", (data['quota_bytes'], address))
+    db.execute("UPDATE mailboxes SET quota_exceeded_count=0 WHERE address=?", (address,))
+    db.commit()
+    return jsonify({"status": "updated"})
 
 
 @api_bp.route('/mailboxes/<address>', methods=['DELETE'])
@@ -574,6 +621,12 @@ def empty_folder(address, fid):
     if row['name'] != 'Trash':
         return jsonify({"error": "can only empty Trash folder"}), 400
 
+    msg_rows = db.execute(
+        "SELECT id FROM messages WHERE folder_id=? AND mailbox_address=? AND has_attachments=1",
+        (fid, address),
+    ).fetchall()
+    for msg in msg_rows:
+        shutil.rmtree(os.path.join(config.ATTACHMENTS_PATH, str(msg['id'])), ignore_errors=True)
     db.execute("DELETE FROM messages WHERE folder_id=? AND mailbox_address=?", (fid, address))
     db.commit()
     return jsonify({"status": "emptied"})

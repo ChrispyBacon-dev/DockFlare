@@ -139,6 +139,23 @@ def inbound():
             ))
 
         db.commit()
+
+        quota_row = db.execute(
+            "SELECT quota_bytes FROM mailboxes WHERE address=?", (to_address,)
+        ).fetchone()
+        if quota_row and quota_row['quota_bytes'] and quota_row['quota_bytes'] > 0:
+            used = db.execute(
+                "SELECT COALESCE(SUM(size_bytes), 0) FROM messages WHERE mailbox_address=?",
+                (to_address,),
+            ).fetchone()[0]
+            if used > quota_row['quota_bytes']:
+                db.execute(
+                    "UPDATE mailboxes SET quota_exceeded_count = quota_exceeded_count + 1 WHERE address=?",
+                    (to_address,),
+                )
+                db.commit()
+                log.warning("Quota exceeded for %s: %d bytes used / %d bytes limit", to_address, used, quota_row['quota_bytes'])
+
         send_push_notifications(to_address, {
             'message_id': msg_id,
             'subject': parsed['subject'],

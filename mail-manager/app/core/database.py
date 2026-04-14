@@ -200,6 +200,8 @@ def _migrate(conn):
         "ALTER TABLE push_subscriptions ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0",
         "CREATE INDEX IF NOT EXISTS idx_push_subscriptions_endpoint ON push_subscriptions(endpoint)",
         "CREATE INDEX IF NOT EXISTS idx_push_subscriptions_last_success ON push_subscriptions(last_success_at)",
+        "ALTER TABLE mailboxes ADD COLUMN quota_bytes INTEGER NOT NULL DEFAULT 10737418240",
+        "ALTER TABLE mailboxes ADD COLUMN quota_exceeded_count INTEGER NOT NULL DEFAULT 0",
     ]:
         try:
             conn.execute(sql)
@@ -208,10 +210,14 @@ def _migrate(conn):
 
 
 def init_db():
+    import logging
     os.makedirs(os.path.dirname(config.DB_PATH), exist_ok=True)
     conn = _connect()
     conn.executescript(_SCHEMA)
     _migrate(conn)
+    result = conn.execute("PRAGMA quick_check").fetchone()
+    if result and result[0] != 'ok':
+        logging.getLogger('mail-manager').critical("SQLite integrity check failed: %s", result[0])
     conn.commit()
     conn.close()
 

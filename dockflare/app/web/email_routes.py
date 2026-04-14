@@ -388,6 +388,8 @@ def create_mailbox():
     display_name = data.get('display_name')
     domain = data.get('domain')
 
+    quota_bytes = data.get('quota_bytes', 10737418240)
+
     email_cfg = config.EMAIL_CONFIG.copy()
     if 'domains' not in email_cfg or domain not in email_cfg['domains']:
         return jsonify({'success': False, 'error': 'Domain not configured'}), 400
@@ -401,6 +403,7 @@ def create_mailbox():
         email_cfg['domains'][domain]['mailboxes'][address] = {
             'display_name': display_name,
             'routing_rule_id': rule_id,
+            'quota_bytes': quota_bytes,
             'created_at': time.time()
         }
         save_email_config(email_cfg)
@@ -432,6 +435,53 @@ def delete_mailbox():
             _redeploy_inbound_worker(email_cfg, domain)
             _restart_mail_container()
     return jsonify({'success': True})
+
+@email_bp.route('/mailbox/set-quota', methods=['POST'])
+@login_required
+def set_mailbox_quota():
+    import requests
+    data = request.get_json(force=True, silent=True) or {}
+    address = data.get('address')
+    domain = data.get('domain')
+    quota_bytes = data.get('quota_bytes')
+    if not address or not domain or quota_bytes is None:
+        return jsonify({'success': False, 'error': 'Missing required fields'}), 400
+    email_cfg = config.EMAIL_CONFIG.copy()
+    if 'domains' not in email_cfg or domain not in email_cfg['domains']:
+        return jsonify({'success': False, 'error': 'Domain not configured'}), 404
+    if address not in email_cfg['domains'][domain].get('mailboxes', {}):
+        return jsonify({'success': False, 'error': 'Mailbox not found'}), 404
+    email_cfg['domains'][domain]['mailboxes'][address]['quota_bytes'] = quota_bytes
+    save_email_config(email_cfg)
+    token = _generate_jwt(current_user.get_id(), role='admin')
+    if token:
+        try:
+            requests.patch(
+                f"{config.MAIL_MANAGER_INTERNAL_URL}/api/v1/mailboxes/{address}",
+                headers={'Authorization': f'Bearer {token}'},
+                json={'quota_bytes': quota_bytes},
+                timeout=5,
+            )
+        except Exception:
+            pass
+    return jsonify({'success': True})
+
+@email_bp.route('/mailbox-stats', methods=['GET'])
+@login_required
+def mailbox_stats():
+    import requests
+    token = _generate_jwt(current_user.get_id(), role='admin')
+    if not token:
+        return jsonify({'error': 'JWT configuration missing'}), 500
+    try:
+        resp = requests.get(
+            f"{config.MAIL_MANAGER_INTERNAL_URL}/api/v1/mailboxes",
+            headers={'Authorization': f'Bearer {token}'},
+            timeout=5,
+        )
+        return jsonify(resp.json()), resp.status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
 
 @email_bp.route('/redeploy-workers', methods=['POST'])
 @login_required
@@ -653,6 +703,24 @@ def email_restore():
             return jsonify({'success': False, 'error': err_data.get('error', str(e))}), 500
         except Exception:
             return jsonify({'success': False, 'error': str(e)}), 500
+
+@email_bp.route('/mail-stats', methods=['GET'])
+@login_required
+def mail_stats():
+    import requests
+    token = _generate_jwt(current_user.get_id(), role='admin')
+    if not token:
+        return jsonify({'error': 'JWT configuration missing'}), 500
+    try:
+        resp = requests.get(
+            f"{config.MAIL_MANAGER_INTERNAL_URL}/api/v1/stats",
+            headers={'Authorization': f'Bearer {token}'},
+            timeout=5,
+        )
+        return jsonify(resp.json()), resp.status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 502
+
 
 def _check_internal_request():
     # Block any request that carries Cloudflare edge headers (all public internet

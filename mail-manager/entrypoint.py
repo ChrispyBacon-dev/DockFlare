@@ -71,13 +71,16 @@ def _sync_mailboxes(bootstrap_data):
     try:
         for zone_name, d in bootstrap_data.get('domains', {}).items():
             for address, mbox in d.get('mailboxes', {}).items():
-                if not conn.execute(
+                quota_bytes = mbox.get('quota_bytes', 10737418240)
+                existed = conn.execute(
                     "SELECT 1 FROM mailboxes WHERE address=?", (address,)
-                ).fetchone():
-                    conn.execute(
-                        "INSERT INTO mailboxes (address, display_name, domain, created_at, is_active) VALUES (?, ?, ?, ?, 1)",
-                        (address, mbox.get('display_name', ''), zone_name, now),
-                    )
+                ).fetchone()
+                conn.execute(
+                    "INSERT INTO mailboxes (address, display_name, domain, created_at, is_active, quota_bytes) VALUES (?, ?, ?, ?, 1, ?) "
+                    "ON CONFLICT(address) DO UPDATE SET display_name=excluded.display_name, quota_bytes=excluded.quota_bytes",
+                    (address, mbox.get('display_name', ''), zone_name, now, quota_bytes),
+                )
+                if not existed:
                     for folder in ['Inbox', 'Sent', 'Drafts', 'Trash', 'Spam']:
                         conn.execute(
                             "INSERT OR IGNORE INTO folders (mailbox_address, name, system_folder, created_at) VALUES (?, ?, 1, ?)",
@@ -142,6 +145,86 @@ def _sync_domains(bootstrap_data):
         conn.close()
 
 
+def _cleanup_stale_mailboxes(bootstrap_data):
+    if not bootstrap_data or not bootstrap_data.get('configured'):
+        return
+    domains = bootstrap_data.get('domains', {})
+    total_expected = sum(len(d.get('mailboxes', {})) for d in domains.values())
+    if total_expected < 1:
+        return
+
+    import sqlite3, shutil
+
+    mail_data_path = os.environ.get('MAIL_DATA_PATH', '/data')
+    db_path = os.path.join(mail_data_path, 'db', 'mail.db')
+    att_path = os.path.join(mail_data_path, 'attachments')
+    if not os.path.exists(db_path):
+        return
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    try:
+        for zone_name, d in domains.items():
+            expected = set(d.get('mailboxes', {}).keys())
+            db_rows = conn.execute(
+                "SELECT address FROM mailboxes WHERE domain=?", (zone_name,)
+            ).fetchall()
+            for row in db_rows:
+                if row['address'] not in expected:
+                    msg_rows = conn.execute(
+                        "SELECT id FROM messages WHERE mailbox_address=? AND has_attachments=1",
+                        (row['address'],),
+                    ).fetchall()
+                    for m in msg_rows:
+                        shutil.rmtree(os.path.join(att_path, str(m['id'])), ignore_errors=True)
+                    conn.execute("DELETE FROM mailboxes WHERE address=?", (row['address'],))
+                    log.info("Removed stale mailbox: %s", row['address'])
+            conn.commit()
+    except Exception as e:
+        log.error("Stale mailbox cleanup failed: %s", e)
+    finally:
+        conn.close()
+
+
+def _heal_filesystem():
+    import sqlite3, shutil
+
+    mail_data_path = os.environ.get('MAIL_DATA_PATH', '/data')
+    db_path = os.path.join(mail_data_path, 'db', 'mail.db')
+    att_path = os.path.join(mail_data_path, 'attachments')
+
+    if not os.path.exists(att_path) or not os.path.exists(db_path):
+        return
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        for name in os.listdir(att_path):
+            dir_path = os.path.join(att_path, name)
+            if not os.path.isdir(dir_path):
+                continue
+            try:
+                msg_id = int(name)
+            except ValueError:
+                shutil.rmtree(dir_path, ignore_errors=True)
+                log.info("Purged non-integer attachment dir: %s", name)
+                continue
+            if not conn.execute("SELECT 1 FROM messages WHERE id=?", (msg_id,)).fetchone():
+                shutil.rmtree(dir_path, ignore_errors=True)
+                log.info("Purged orphan attachment dir: %s", name)
+
+        rows = conn.execute("SELECT id FROM messages WHERE has_attachments=1").fetchall()
+        for row in rows:
+            if not os.path.isdir(os.path.join(att_path, str(row['id']))):
+                conn.execute("UPDATE messages SET has_attachments=0 WHERE id=?", (row['id'],))
+        conn.commit()
+    except Exception as e:
+        log.error("Filesystem self-healing failed: %s", e)
+    finally:
+        conn.close()
+
+
 bootstrap_data = bootstrap()
 
 from waitress import serve
@@ -150,5 +233,7 @@ from app import create_app
 app = create_app()
 _sync_mailboxes(bootstrap_data)
 _sync_domains(bootstrap_data)
+_cleanup_stale_mailboxes(bootstrap_data)
+_heal_filesystem()
 log.info("Starting mail-manager on port 8025")
 serve(app, host='0.0.0.0', port=8025)

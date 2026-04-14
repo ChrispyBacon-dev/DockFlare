@@ -100,34 +100,17 @@
                     <p class="text-sm opacity-60 mt-1">{{ t('email.mailbox_description') }}</p>
                 </div>
             </div>
-            <div class="flex flex-wrap items-center gap-2 mb-6">
-                <div class="flex items-center gap-1 flex-1 min-w-48">
-                    <input type="text" id="newMailboxAddress" placeholder="{{ t('email.address') }}" class="input input-bordered input-sm w-32 flex-1" />
-                    <span class="text-sm opacity-40 select-none px-1">@</span>
-                    <select id="newMailboxDomain" class="select select-bordered select-sm">
-                        {% if email_config and email_config.domains %}
-                        {% for domain in email_config.domains %}
-                        <option value="{{ domain }}">{{ domain }}</option>
-                        {% endfor %}
-                        {% endif %}
-                    </select>
-                </div>
-                <input type="text" id="newMailboxName" placeholder="{{ t('email.display_name') }}" class="input input-bordered input-sm flex-1 min-w-32" />
-                <button class="btn btn-primary btn-sm shrink-0" onclick="emailCreateMailbox(event)">{{ t('email.add_mailbox') }}</button>
+            <div class="mb-6">
+                <button class="btn btn-primary btn-sm" onclick="document.getElementById('emailAddMailboxModal').showModal()">{{ t('email.add_mailbox') }}</button>
             </div>
             <div class="overflow-x-auto">
                 <table class="table table-zebra w-full">
-                    <colgroup>
-                        <col>
-                        <col class="w-36">
-                        <col class="w-32">
-                        <col class="w-40">
-                    </colgroup>
                     <thead>
                         <tr>
                             <th class="px-4 py-3">{{ t('email.address') }}</th>
-                            <th class="px-4 py-3">{{ t('email.display_name') }}</th>
-                            <th class="px-4 py-3">{{ t('email.domain') }}</th>
+                            <th class="px-4 py-3 text-center">{{ t('email.stats_received') }}</th>
+                            <th class="px-4 py-3 text-center">{{ t('email.stats_sent') }}</th>
+                            <th class="px-4 py-3">Storage / Quota</th>
                             <th class="px-4 py-3 text-right">{{ t('email.actions') }}</th>
                         </tr>
                     </thead>
@@ -135,13 +118,22 @@
                         {% if email_config and email_config.domains %}
                         {% for domain, cfg in email_config.domains.items() %}
                         {% for addr, mb in cfg.mailboxes.items() %}
-                        <tr>
-                            <td class="px-4 py-3 font-mono text-sm">{{ addr }}</td>
-                            <td class="px-4 py-3">{{ mb.display_name }}</td>
-                            <td class="px-4 py-3 opacity-50 text-sm">{{ domain }}</td>
+                        <tr data-mailbox="{{ addr }}">
                             <td class="px-4 py-3">
-                                <div class="flex items-center justify-end gap-1">
+                                <div class="font-mono text-sm">{{ addr }}</div>
+                                <div class="text-xs opacity-50">{{ mb.display_name }} &middot; {{ domain }}</div>
+                                <div class="badge badge-warning badge-sm mt-1 mb-quota-badge hidden"></div>
+                            </td>
+                            <td class="px-4 py-3 text-center text-sm mb-received opacity-50">—</td>
+                            <td class="px-4 py-3 text-center text-sm mb-sent opacity-50">—</td>
+                            <td class="px-4 py-3">
+                                <progress class="progress progress-success w-28 block mb-storage-progress" value="0" max="100"></progress>
+                                <span class="text-xs opacity-50 mb-storage-text">—</span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <div class="flex items-center justify-end gap-1 flex-wrap">
                                     <button class="btn btn-sm btn-outline" onclick="emailSetPassword('{{ addr }}', '{{ domain }}')">Set Password</button>
+                                    <button class="btn btn-sm btn-outline" onclick="emailEditQuota('{{ addr }}', '{{ domain }}', {{ mb.get('quota_bytes', 10737418240) }})">Quota</button>
                                     <button class="btn btn-sm btn-error btn-outline" onclick="emailDeleteMailbox('{{ addr }}', '{{ domain }}', event)">{{ t('email.delete') }}</button>
                                 </div>
                             </td>
@@ -149,7 +141,7 @@
                         {% endfor %}
                         {% endfor %}
                         {% else %}
-                        <tr><td colspan="4" class="px-4 py-8 text-center opacity-50">{{ t('email.no_mailboxes') }}</td></tr>
+                        <tr><td colspan="5" class="px-4 py-8 text-center opacity-50">{{ t('email.no_mailboxes') }}</td></tr>
                         {% endif %}
                     </tbody>
                 </table>
@@ -250,6 +242,61 @@
 
 </div>
 
+<dialog id="emailAddMailboxModal" class="modal">
+    <div class="modal-box">
+        <h3 class="font-bold text-lg mb-4">{{ t('email.add_mailbox') }}</h3>
+        <div class="space-y-4">
+            <div class="flex items-center gap-1">
+                <input type="text" id="newMailboxAddress" placeholder="{{ t('email.address') }}" class="input input-bordered input-sm flex-1" />
+                <span class="text-sm opacity-40 px-1">@</span>
+                <select id="newMailboxDomain" class="select select-bordered select-sm">
+                    {% if email_config and email_config.domains %}
+                    {% for domain in email_config.domains %}
+                    <option value="{{ domain }}">{{ domain }}</option>
+                    {% endfor %}
+                    {% endif %}
+                </select>
+            </div>
+            <input type="text" id="newMailboxName" placeholder="{{ t('email.display_name') }}" class="input input-bordered input-sm w-full" />
+            <div>
+                <label class="text-sm font-medium mb-2 block">Storage Quota</label>
+                <input type="range" id="newMailboxQuota" min="0" max="10" step="1" value="6" class="range range-sm w-full" oninput="emailUpdateQuotaLabel('newMailboxQuotaLabel', this.value)" />
+                <div class="flex justify-between text-xs mt-1">
+                    <span class="opacity-50">100 MB</span>
+                    <span id="newMailboxQuotaLabel" class="font-semibold">10 GB</span>
+                    <span class="opacity-50">Unlimited</span>
+                </div>
+            </div>
+        </div>
+        <div class="modal-action">
+            <form method="dialog"><button class="btn btn-ghost">Cancel</button></form>
+            <button class="btn btn-primary" id="emailAddMailboxSubmitBtn" onclick="emailCreateMailbox(event)">{{ t('email.add_mailbox') }}</button>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<dialog id="emailEditQuotaModal" class="modal">
+    <div class="modal-box">
+        <h3 class="font-bold text-lg mb-1">Edit Storage Quota</h3>
+        <p class="text-sm opacity-60 mb-1" id="emailEditQuotaTarget"></p>
+        <p class="text-sm mb-4" id="emailEditQuotaUsage"></p>
+        <div>
+            <input type="range" id="editMailboxQuota" min="0" max="10" step="1" value="6" class="range range-sm w-full" oninput="emailUpdateQuotaLabel('editMailboxQuotaLabel', this.value)" />
+            <div class="flex justify-between text-xs mt-1">
+                <span class="opacity-50">100 MB</span>
+                <span id="editMailboxQuotaLabel" class="font-semibold">10 GB</span>
+                <span class="opacity-50">Unlimited</span>
+            </div>
+        </div>
+        <div class="modal-action">
+            <form method="dialog"><button class="btn btn-ghost">Cancel</button></form>
+            <button class="btn btn-primary" id="emailEditQuotaSubmitBtn">Save</button>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
 <dialog id="emailSetPasswordModal" class="modal">
     <div class="modal-box">
         <h3 class="font-bold text-lg mb-1">Set Password</h3>
@@ -280,6 +327,8 @@
 </div>
 
 {% block scripts %}
-<script>document.addEventListener('DOMContentLoaded', () => { emailCheckPermissions(); emailLoadOrphanedDomains(); });</script>
+<script>
+document.addEventListener('DOMContentLoaded', () => { emailCheckPermissions(); emailLoadOrphanedDomains(); emailLoadStats(); emailLoadMailboxStats(); });
+</script>
 {% endblock %}
 {% endblock %}
