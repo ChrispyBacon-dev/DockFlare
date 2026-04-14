@@ -28,7 +28,7 @@ charset-normalizer==3.4.2
     # via requests
 click==8.2.1
     # via flask
-cryptography==46.0.5
+cryptography==46.0.7
     # via
     #   -r dockflare/requirements.in
     #   authlib
@@ -81,7 +81,7 @@ packaging==26.0
     # via limits
 pycparser==3.0
     # via cffi
-pygments==2.19.2
+pygments==2.20.0
     # via
     #   -r dockflare/requirements.in
     #   rich
@@ -93,7 +93,7 @@ pyyaml==6.0.3
     # via pymdown-extensions
 redis==4.5.5
     # via -r dockflare/requirements.in
-requests==2.32.4
+requests==2.33.1
     # via
     #   -r dockflare/requirements.in
     #   docker
@@ -119,4 +119,5 @@ wrapt==2.1.2
     # via deprecated
 wtforms==3.2.1
     # via flask-wtf
-PyJWT[crypto]>=2.8.0
+pyjwt[crypto]==2.12.1
+    # via -r dockflare/requirements.in
