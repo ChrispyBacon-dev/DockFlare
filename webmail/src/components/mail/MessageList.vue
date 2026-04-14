@@ -82,15 +82,17 @@ const emptyTrash = () => {
 }
 
 const performEmptyTrash = async () => {
-  if (store.currentFolderObj) {
-    try {
-      await mailApi.emptyFolder(store.currentMailbox, store.currentFolderObj.id)
-      store.messages = []
-      store.currentMessage = null
-    } catch (e) {
-    } finally {
-      showTrashConfirm.value = false
-    }
+  if (!store.currentFolderObj) return
+  try {
+    await mailApi.emptyFolder(store.currentMailbox, store.currentFolderObj.id)
+    store.messages = []
+    store.currentMessage = null
+    const fRes = await mailApi.getFolders(store.currentMailbox)
+    store.folders = fRes.data
+  } catch {
+    store.showToast('Failed to empty trash')
+  } finally {
+    showTrashConfirm.value = false
   }
 }
 </script>
@@ -148,19 +150,24 @@ const performEmptyTrash = async () => {
       <ScrollAreaRoot class="h-full">
         <ScrollAreaViewport class="h-full">
           <div class="flex flex-col gap-2 p-4 pt-0">
-            <TransitionGroup name="list" appear>
-              <MessageListItem
-                v-for="msg in displayMessages"
-                :key="msg.id"
-                :message="msg"
-                :selected="store.currentMessage?.id === msg.id"
-                :folder-color="folderColor"
-                @click="selectMessage(msg)"
-              />
-            </TransitionGroup>
-            <div v-if="displayMessages.length === 0" class="p-8 text-center text-muted-foreground">
-              No messages found.
-            </div>
+            <template v-if="store.messagesLoading">
+              <div v-for="n in 6" :key="n" class="h-16 rounded-lg bg-muted animate-pulse" />
+            </template>
+            <template v-else>
+              <TransitionGroup name="list" appear>
+                <MessageListItem
+                  v-for="msg in displayMessages"
+                  :key="msg.id"
+                  :message="msg"
+                  :selected="store.currentMessage?.id === msg.id"
+                  :folder-color="folderColor"
+                  @click="selectMessage(msg)"
+                />
+              </TransitionGroup>
+              <div v-if="displayMessages.length === 0" class="p-8 text-center text-muted-foreground">
+                No messages found.
+              </div>
+            </template>
           </div>
         </ScrollAreaViewport>
         <ScrollAreaScrollbar orientation="vertical" class="flex touch-none select-none bg-transparent p-0.5 transition-colors w-2.5">
@@ -173,19 +180,24 @@ const performEmptyTrash = async () => {
       <ScrollAreaRoot class="h-full">
         <ScrollAreaViewport class="h-full">
           <div class="flex flex-col gap-2 p-4 pt-0">
-            <TransitionGroup name="list" appear>
-              <MessageListItem
-                v-for="msg in displayMessages"
-                :key="msg.id"
-                :message="msg"
-                :selected="store.currentMessage?.id === msg.id"
-                :folder-color="folderColor"
-                @click="selectMessage(msg)"
-              />
-            </TransitionGroup>
-            <div v-if="displayMessages.length === 0" class="p-8 text-center text-muted-foreground">
-              No unread messages.
-            </div>
+            <template v-if="store.messagesLoading">
+              <div v-for="n in 6" :key="n" class="h-16 rounded-lg bg-muted animate-pulse" />
+            </template>
+            <template v-else>
+              <TransitionGroup name="list" appear>
+                <MessageListItem
+                  v-for="msg in displayMessages"
+                  :key="msg.id"
+                  :message="msg"
+                  :selected="store.currentMessage?.id === msg.id"
+                  :folder-color="folderColor"
+                  @click="selectMessage(msg)"
+                />
+              </TransitionGroup>
+              <div v-if="displayMessages.length === 0" class="p-8 text-center text-muted-foreground">
+                No unread messages.
+              </div>
+            </template>
           </div>
         </ScrollAreaViewport>
         <ScrollAreaScrollbar orientation="vertical" class="flex touch-none select-none bg-transparent p-0.5 transition-colors w-2.5">
@@ -198,19 +210,24 @@ const performEmptyTrash = async () => {
       <ScrollAreaRoot class="h-full">
         <ScrollAreaViewport class="h-full">
           <div class="flex flex-col gap-2 p-4 pt-0">
-            <TransitionGroup name="list" appear>
-              <MessageListItem
-                v-for="msg in displayMessages"
-                :key="msg.id"
-                :message="msg"
-                :selected="store.currentMessage?.id === msg.id"
-                :folder-color="folderColor"
-                @click="selectMessage(msg)"
-              />
-            </TransitionGroup>
-            <div v-if="displayMessages.length === 0" class="p-8 text-center text-muted-foreground">
-              No starred messages.
-            </div>
+            <template v-if="store.messagesLoading">
+              <div v-for="n in 6" :key="n" class="h-16 rounded-lg bg-muted animate-pulse" />
+            </template>
+            <template v-else>
+              <TransitionGroup name="list" appear>
+                <MessageListItem
+                  v-for="msg in displayMessages"
+                  :key="msg.id"
+                  :message="msg"
+                  :selected="store.currentMessage?.id === msg.id"
+                  :folder-color="folderColor"
+                  @click="selectMessage(msg)"
+                />
+              </TransitionGroup>
+              <div v-if="displayMessages.length === 0" class="p-8 text-center text-muted-foreground">
+                No starred messages.
+              </div>
+            </template>
           </div>
         </ScrollAreaViewport>
         <ScrollAreaScrollbar orientation="vertical" class="flex touch-none select-none bg-transparent p-0.5 transition-colors w-2.5">

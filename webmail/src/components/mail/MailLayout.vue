@@ -220,7 +220,7 @@ const compose = () => {
           class="flex flex-col overflow-hidden"
         >
           <ComposeDialog v-if="store.isComposeOpen && store.isComposeFullView" :panel-mode="true" />
-          <MessageDisplay v-else :message="store.currentMessage" />
+          <MessageDisplay v-else :message="store.currentMessage ?? undefined" />
         </SplitterPanel>
       </template>
 
@@ -236,7 +236,7 @@ const compose = () => {
           </template>
           <template v-else>
             <MessageList v-if="!store.currentMessage" />
-            <MessageDisplay v-else :message="store.currentMessage" />
+            <MessageDisplay v-else :message="store.currentMessage ?? undefined" />
           </template>
         </SplitterPanel>
       </template>

@@ -14,7 +14,6 @@ apiClient.interceptors.request.use(config => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
-  // Let the browser set Content-Type (with boundary) for FormData
   if (config.data instanceof FormData) {
     delete config.headers['Content-Type']
   }
@@ -26,6 +25,10 @@ apiClient.interceptors.response.use(
   error => {
     if (error.response?.status === 401) {
       localStorage.removeItem('jwt_token')
+      import('../stores/auth').then(({ useAuthStore }) => {
+        const authStore = useAuthStore()
+        authStore.token = ''
+      })
       router.push('/login')
     }
     return Promise.reject(error)

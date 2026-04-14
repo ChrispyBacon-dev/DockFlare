@@ -22,6 +22,7 @@ import Textarea from '../ui/Textarea.vue'
 import AttachmentBar from './AttachmentBar.vue'
 import { useMailStore } from '../../stores/mail'
 import { mailApi } from '../../api/mail'
+import type { Message } from '../../types/mail'
 
 const props = defineProps({
   message: { type: Object, default: null },
@@ -114,10 +115,14 @@ const replyTo = () => {
 
 const replyAll = () => {
   if (!props.message) return
+  let toList: string[] = []
+  let ccList: string[] = []
+  try { toList = JSON.parse(props.message.to_addresses || '[]') } catch { toList = [] }
+  try { ccList = JSON.parse(props.message.cc_addresses || '[]') } catch { ccList = [] }
   const allAddresses = [
     props.message.from_address,
-    ...(JSON.parse(props.message.to_addresses || '[]')),
-    ...(JSON.parse(props.message.cc_addresses || '[]')),
+    ...toList,
+    ...ccList,
   ].filter((a: string) => a && a !== store.currentMailbox)
   store.composeDefaults = {
     to: allAddresses.join(', '),
@@ -155,8 +160,8 @@ const trash = async () => {
     store.currentMessage = null
     const fRes = await mailApi.getFolders(store.currentMailbox)
     store.folders = fRes.data
-  } catch (e) {
-    console.error('Failed to trash message', e)
+  } catch {
+    store.showToast('Failed to move message to trash')
   }
 }
 
@@ -166,11 +171,11 @@ const markUnread = async () => {
     await mailApi.updateMessage(store.currentMailbox, props.message.id, { is_read: false })
     const idx = store.messages.findIndex((m: any) => m.id === props.message!.id)
     if (idx !== -1) store.messages[idx] = { ...store.messages[idx], is_read: 0 }
-    store.currentMessage = { ...store.currentMessage, is_read: 0 }
+    store.currentMessage = { ...store.currentMessage!, is_read: 0 } as Message
     const fRes = await mailApi.getFolders(store.currentMailbox)
     store.folders = fRes.data
-  } catch (e) {
-    console.error('Failed to mark unread', e)
+  } catch {
+    store.showToast('Failed to mark as unread')
   }
 }
 
@@ -180,11 +185,11 @@ const markRead = async () => {
     await mailApi.updateMessage(store.currentMailbox, props.message.id, { is_read: true })
     const idx = store.messages.findIndex((m: any) => m.id === props.message!.id)
     if (idx !== -1) store.messages[idx] = { ...store.messages[idx], is_read: 1 }
-    store.currentMessage = { ...store.currentMessage, is_read: 1 }
+    store.currentMessage = { ...store.currentMessage!, is_read: 1 } as Message
     const fRes = await mailApi.getFolders(store.currentMailbox)
     store.folders = fRes.data
-  } catch (e) {
-    console.error('Failed to mark read', e)
+  } catch {
+    store.showToast('Failed to mark as read')
   }
 }
 
@@ -196,8 +201,8 @@ const toggleStar = async () => {
     const idx = store.messages.findIndex((m: any) => m.id === props.message!.id)
     if (idx !== -1) store.messages[idx] = { ...store.messages[idx], is_starred: newVal }
     if (store.currentMessage) store.currentMessage = { ...store.currentMessage, is_starred: newVal }
-  } catch (e) {
-    console.error('Failed to toggle star', e)
+  } catch {
+    store.showToast('Failed to update star')
   }
 }
 
@@ -212,17 +217,21 @@ const moveToFolder = async (targetFolder: any) => {
     store.currentMessage = null
     const fRes = await mailApi.getFolders(store.currentMailbox)
     store.folders = fRes.data
-  } catch (e) {
-    console.error('Failed to move message', e)
+  } catch {
+    store.showToast('Failed to move message')
   }
 }
 
+const escapeHtml = (str: string) =>
+  str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
 const printMessage = () => {
   if (!props.message) return
-  
+
   const from = props.message.from_name ? `${props.message.from_name} <${props.message.from_address}>` : props.message.from_address
-  const toRaw = JSON.parse(props.message.to_addresses || '[]')
-  const to = Array.isArray(toRaw) ? toRaw.join(', ') : toRaw
+  let toRaw: string[] = []
+  try { toRaw = JSON.parse(props.message.to_addresses || '[]') } catch { toRaw = [] }
+  const to = Array.isArray(toRaw) ? toRaw.join(', ') : String(toRaw)
   const date = displayTimestamp.value
   const subject = props.message.subject || '(No Subject)'
   
@@ -259,9 +268,9 @@ const printMessage = () => {
       </head>
       <body>
         <div class="header">
-          <h1 class="subject">${subject}</h1>
-          <div class="meta"><div class="label">From:</div><div class="val">${from.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></div>
-          <div class="meta"><div class="label">To:</div><div class="val">${to.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></div>
+          <h1 class="subject">${escapeHtml(subject)}</h1>
+          <div class="meta"><div class="label">From:</div><div class="val">${escapeHtml(from)}</div></div>
+          <div class="meta"><div class="label">To:</div><div class="val">${escapeHtml(to)}</div></div>
           <div class="meta"><div class="label">Date:</div><div class="val">${date}</div></div>
         </div>
         <div class="content">
@@ -284,6 +293,7 @@ const printMessage = () => {
 
 const sendInlineReply = async () => {
   if (!props.message || !store.currentMailbox || !replyText.value.trim()) return
+  if (!props.message.from_address) return
   sendingReply.value = true
   try {
     await mailApi.sendMessage(store.currentMailbox, {
@@ -296,8 +306,8 @@ const sendInlineReply = async () => {
       in_reply_to: props.message.message_id,
     })
     replyText.value = ''
-  } catch (e) {
-    console.error('Failed to send reply', e)
+  } catch {
+    store.showToast('Failed to send reply')
   } finally {
     sendingReply.value = false
   }

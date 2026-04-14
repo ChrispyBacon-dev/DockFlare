@@ -65,6 +65,19 @@ const editor = useEditor({
   },
 })
 
+const reset = () => {
+  to.value = ''
+  subject.value = ''
+  attachments.value = []
+  error.value = ''
+  minimized.value = false
+  draftId.value = null
+  savedDraft.value = false
+  quotedHtml.value = ''
+  editor.value?.commands.clearContent()
+  store.composeDefaults = null
+}
+
 watch(() => store.isComposeOpen, async (open) => {
   if (open && store.composeDefaults) {
     to.value = store.composeDefaults.to || ''
@@ -104,19 +117,6 @@ watch(quotedHtml, (val) => {
 })
 
 onUnmounted(() => editor.value?.destroy())
-
-const reset = () => {
-  to.value = ''
-  subject.value = ''
-  attachments.value = []
-  error.value = ''
-  minimized.value = false
-  draftId.value = null
-  savedDraft.value = false
-  quotedHtml.value = ''
-  editor.value?.commands.clearContent()
-  store.composeDefaults = null
-}
 
 const close = () => {
   store.isComposeOpen = false

@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useMail } from '../composables/useMail'
 import { useMailPolling } from '../composables/useMailPolling'
 import { useNotificationsStore } from '../stores/notifications'
 import { mailApi } from '../api/mail'
 import MailLayout from '../components/mail/MailLayout.vue'
+import type { Message } from '../types/mail'
 
 const route = useRoute()
-const router = useRouter()
 const { store, loadMailboxes } = useMail()
 const mailStore = store
 const notificationsStore = useNotificationsStore()
@@ -16,15 +16,20 @@ useMailPolling()
 
 const showNotifPrompt = ref(false)
 
+let mailboxLoadSeq = 0
+
 const loadMessages = async (addr: string, folder: string) => {
   if (!addr || !folder) return
+  store.messagesLoading = true
   try {
     const mRes = await mailApi.getMessages(addr, { folder, order: store.sortOrder })
     const payload = mRes.data
     store.messages = Array.isArray(payload) ? payload : payload.items || []
     store.currentMessage = null
-  } catch (e) {
-    console.error('Failed to load messages', e)
+  } catch {
+    store.showToast('Failed to load messages')
+  } finally {
+    store.messagesLoading = false
   }
 }
 
@@ -47,7 +52,7 @@ onMounted(async () => {
 
   const mailboxParam = route.query.mailbox as string | undefined
   if (mailboxParam) {
-    const found = store.mailboxes.find((b: any) => b.address === mailboxParam)
+    const found = store.mailboxes.find((b) => b.address === mailboxParam)
     if (found) store.currentMailbox = mailboxParam
   }
 
@@ -76,15 +81,18 @@ onMounted(async () => {
 
 watch(() => store.currentMailbox, async (addr) => {
   if (!addr) return
+  const seq = ++mailboxLoadSeq
   try {
     const fRes = await mailApi.getFolders(addr)
+    if (seq !== mailboxLoadSeq) return
     store.folders = fRes.data
     if (store.folders.length > 0) {
-      const inbox = store.folders.find((f: any) => f.name.toLowerCase() === 'inbox')
+      const inbox = store.folders.find((f) => f.name.toLowerCase() === 'inbox')
       store.currentFolder = inbox ? inbox.name : store.folders[0].name
     }
-  } catch (e) {
-    console.error('Failed to load folders', e)
+  } catch {
+    if (seq !== mailboxLoadSeq) return
+    store.showToast('Failed to load folders')
   }
 })
 
@@ -96,11 +104,15 @@ watch(() => store.sortOrder, () => {
   loadMessages(store.currentMailbox, store.currentFolder)
 })
 
+let openedMessageId: string | null = null
+
 watch(() => store.currentMessage, async (msg) => {
   if (!msg) return
   try {
-    const idx = store.messages.findIndex((m: any) => m.id === msg.id)
+    const idx = store.messages.findIndex((m) => m.id === msg.id)
     let fullMsg = msg
+
+    const isUserOpen = msg.attachments === undefined || msg.id !== openedMessageId
 
     if (msg.attachments === undefined) {
       const res = await mailApi.getMessage(store.currentMailbox, msg.id)
@@ -109,17 +121,20 @@ watch(() => store.currentMessage, async (msg) => {
       if (idx !== -1) store.messages[idx] = fullMsg
     }
 
-    if (!fullMsg.is_read) {
+    if (!fullMsg.is_read && isUserOpen) {
+      openedMessageId = msg.id
       await mailApi.updateMessage(store.currentMailbox, msg.id, { is_read: true })
       if (idx !== -1) {
         store.messages[idx] = { ...store.messages[idx], is_read: 1 }
       }
-      store.currentMessage = { ...store.currentMessage, is_read: 1 }
+      store.currentMessage = { ...store.currentMessage!, is_read: 1 } as Message
       const fRes = await mailApi.getFolders(store.currentMailbox)
       store.folders = fRes.data
+    } else {
+      openedMessageId = msg.id
     }
-  } catch (e) {
-    console.error('Failed to load message', e)
+  } catch {
+    store.showToast('Failed to load message')
   }
 })
 </script>
@@ -146,6 +161,20 @@ watch(() => store.currentMessage, async (msg) => {
         >
           Dismiss
         </button>
+      </div>
+    </Transition>
+
+    <Transition name="slide-up">
+      <div
+        v-if="store.toast"
+        class="fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-xl border px-5 py-3.5 text-sm shadow-lg"
+        :class="store.toast.type === 'error'
+          ? 'bg-destructive text-destructive-foreground border-destructive'
+          : store.toast.type === 'success'
+            ? 'bg-green-600 text-white border-green-700'
+            : 'bg-background text-foreground border-border'"
+      >
+        {{ store.toast.message }}
       </div>
     </Transition>
   </div>

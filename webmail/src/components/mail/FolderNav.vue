@@ -59,8 +59,8 @@ const confirmNewFolder = async () => {
     const res = await mailApi.getFolders(store.currentMailbox)
     store.folders = res.data
     showNewFolder.value = false
-  } catch (e) {
-    console.error('Failed to create folder', e)
+  } catch {
+    store.showToast('Failed to create folder')
   } finally {
     creatingFolder.value = false
   }
@@ -77,8 +77,8 @@ const deleteFolder = async (f: any) => {
     if (store.currentFolder === f.name) {
       store.currentFolder = store.folders[0]?.name || ''
     }
-  } catch (e) {
-    console.error('Failed to delete folder', e)
+  } catch {
+    store.showToast('Failed to delete folder')
   }
 }
 
@@ -109,8 +109,8 @@ const confirmEdit = async () => {
       store.currentFolder = name
     }
     editingFolder.value = null
-  } catch (e) {
-    console.error('Failed to rename folder', e)
+  } catch {
+    store.showToast('Failed to rename folder')
   }
 }
 </script>

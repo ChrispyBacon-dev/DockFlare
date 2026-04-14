@@ -96,6 +96,6 @@ export function useMailPolling() {
     { immediate: true }
   )
 
-  const interval = setInterval(poll, 60_000)
+  const interval = setInterval(poll, 30_000)
   onUnmounted(() => clearInterval(interval))
 }
