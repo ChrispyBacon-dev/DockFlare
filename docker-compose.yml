@@ -32,8 +32,8 @@ services:
     restart: "no"
 
   dockflare:
-    build: ./dockflare
-    #image: alplat/dockflare:stable
+    #build: ./dockflare
+    image: alplat/dockflare:unstable
     container_name: dockflare
     restart: unless-stopped
     ports:
@@ -87,8 +87,8 @@ services:
       - dockflare-internal
 
   dockflare-mail-manager:
-    build: ./mail-manager
-    #image: alplat/dockflare-mail-manager:stable
+    #build: ./mail-manager
+    image: alplat/dockflare-mail-manager:unstable
     container_name: dockflare-mail-manager
     restart: unless-stopped
     profiles: ["email"]
@@ -105,8 +105,8 @@ services:
       - dockflare-internal
 
   dockflare-webmail:
-    build: ./webmail
-    #image: alplat/dockflare-webmail:stable
+    #build: ./webmail
+    image: alplat/dockflare-webmail:unstable
     container_name: dockflare-webmail
     restart: unless-stopped
     profiles: ["email"]
