@@ -92,3 +92,4 @@ data/state.json
 logs/
 DockFlare-Agent-prd/
 unstable-compose.yml
+unstable-local.yml
