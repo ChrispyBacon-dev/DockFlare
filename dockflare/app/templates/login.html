@@ -128,6 +128,13 @@
                 </div>
             </form>
             {% endif %}
+
+            {% if email_enabled and webmail_available %}
+            <div class="divider">OR</div>
+            <a href="{{ webmail_url }}" class="btn btn-outline w-full mb-4">
+                {{ t('email.webmail_link') }}
+            </a>
+            {% endif %}
         </div>
     </div>
 </body>

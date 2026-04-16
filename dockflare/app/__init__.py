@@ -25,6 +25,7 @@ from flask import Flask
 from flask_wtf.csrf import CSRFProtect
 from flask_login import LoginManager
 from authlib.integrations.flask_client import OAuth
+from flask import request as flask_request
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
@@ -44,10 +45,16 @@ log_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', dat
 
 oauth = None
 
+def _get_real_ip():
+    return (
+        flask_request.headers.get('CF-Connecting-IP') or
+        get_remote_address()
+    )
+
 limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=_get_real_ip,
     default_limits=[],
-    storage_uri="memory://"
+    storage_uri=os.environ.get('REDIS_URL', 'memory://')
 )
 
 class QueueLogHandler(logging.Handler):
@@ -250,6 +257,11 @@ def create_app():
         from .web.help_routes import help_bp
         app_instance.register_blueprint(help_bp)
         logging.info("Help blueprint registered.")
+
+        from .web.email_routes import email_bp
+        csrf.exempt(email_bp)
+        app_instance.register_blueprint(email_bp)
+        logging.info("Email blueprint registered.")
 
     return app_instance
 

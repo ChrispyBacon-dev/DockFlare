@@ -85,7 +85,8 @@
                         <li><a href="{{ url_for('web.access_policies_page') }}" class="{{ 'active' if request.endpoint == 'web.access_policies_page' else '' }}">{{ t('nav.access_policies') }}</a></li>
                         <li><a href="{{ url_for('web.agents_page') }}" class="{{ 'active' if request.endpoint == 'web.agents_page' else '' }}">{{ t('nav.agents') }}</a></li>
                         <li><a href="{{ url_for('web.settings_page') }}" class="{{ 'active' if request.endpoint == 'web.settings_page' else '' }}">{{ t('nav.settings') }}</a></li>
-                        <li><a href="{{ url_for('help.help_page') }}" class="{{ 'active' if request.endpoint.startswith('help.') else '' }}">{{ t('nav.help') }}</a></li>
+<li><a href="{{ url_for('email.email_page') }}" class="{{ 'active' if request.endpoint == 'email.email_page' else '' }}">{{ t('nav.email') }}</a></li>
+<li><a href="{{ url_for('help.help_page') }}" class="{{ 'active' if request.endpoint.startswith('help.') else '' }}">{{ t('nav.help') }}</a></li>
                     </ul>
                 </div>
                 <a href="{{ url_for('web.status_page') }}" class="px-2" title="Now you're thinking with tunnels">
@@ -99,6 +100,7 @@
                     <li><a href="{{ url_for('web.access_policies_page') }}" class="{{ 'active' if request.endpoint == 'web.access_policies_page' else '' }}">{{ t('nav.access_policies') }}</a></li>
                     <li><a href="{{ url_for('web.agents_page') }}" class="{{ 'active' if request.endpoint == 'web.agents_page' else '' }}">{{ t('nav.agents') }}</a></li>
                     <li><a href="{{ url_for('web.settings_page') }}" class="{{ 'active' if request.endpoint == 'web.settings_page' else '' }}">{{ t('nav.settings') }}</a></li>
+                    <li><a href="{{ url_for('email.email_page') }}" class="{{ 'active' if request.endpoint == 'email.email_page' else '' }}">{{ t('nav.email') }}</a></li>
                     <li><a href="{{ url_for('help.help_page') }}" class="{{ 'active' if request.endpoint.startswith('help.') else '' }}">{{ t('nav.help') }}</a></li>
                 </ul>
               </div>

@@ -333,7 +333,8 @@ def main_application_entrypoint():
             'host': config.WAITRESS_HOST,
             'port': config.WAITRESS_PORT,
             'threads': config.WAITRESS_THREADS,
-            'expose_tracebacks': False
+            'expose_tracebacks': False,
+            'send_bytes': 1,
         }
 
         if config.WAITRESS_CONNECTION_LIMIT:

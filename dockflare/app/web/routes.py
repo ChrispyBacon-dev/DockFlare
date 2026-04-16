@@ -149,7 +149,7 @@ def gating_logic():
 
     if not is_configured:
 
-        if request.endpoint and not request.endpoint.startswith('setup.') and request.endpoint != 'static' and not request.endpoint.startswith('api_v2.'):
+        if request.endpoint and not request.endpoint.startswith('setup.') and request.endpoint != 'static' and not request.endpoint.startswith('api_v2.') and request.endpoint != 'email.internal_mail_config':
             try:
                 if getattr(current_app, 'import_from_env', False):
 
@@ -188,7 +188,7 @@ def gating_logic():
             return
 
         if not current_user.is_authenticated:
-            exempt_endpoints = ['static', 'web.ping', 'web.cloudflare_ping_route', 'setup.step_import_env']
+            exempt_endpoints = ['static', 'web.ping', 'web.cloudflare_ping_route', 'setup.step_import_env', 'email.internal_mail_config', 'email.mailbox_login', 'email.quota_kv_sync']
             oauth_endpoints = ['web.login_provider', 'web.auth_callback', 'web.login']
             if request.endpoint and not request.endpoint.startswith('auth.') and request.endpoint not in exempt_endpoints and request.endpoint not in oauth_endpoints:
                 try:
@@ -229,7 +229,7 @@ def add_security_headers_bp(response):
         "style-src": ["'self'", "'unsafe-inline'", "https://rsms.me", "https://cdn.jsdelivr.net"],
         "img-src": ["'self'", "data:", "https://img.shields.io"],
         "font-src": ["'self'", "https://rsms.me"],
-        "connect-src": ["'self'", "https://cdn.jsdelivr.net"],
+        "connect-src": ["'self'", "https://cdn.jsdelivr.net", "https://mail.*"],
         "frame-src": ["'none'"]
     }
     if is_https:
@@ -455,7 +455,6 @@ def access_policies_page():
         policy = access_groups[default_bypass_id]
         cf_policy_id = policy.get("cf_policy_id")
 
-        # If no Cloudflare policy ID, create it now
         if not cf_policy_id or cf_policy_id == default_bypass_id:
             try:
                 cf_policy = reusable_policies.create_reusable_policy(
@@ -1068,20 +1067,6 @@ def version_check():
 
     return jsonify(result)
 
-@bp.route('/debug')
-def debug_info():
-    try:
-        headers = {k: v for k, v in request.headers.items()}
-        return jsonify({
-            "request": { "scheme": request.scheme, "is_secure": request.is_secure, "host": request.host, 
-                         "path": request.path, "url": request.url, "headers": headers },
-            "environment": { "wsgi.url_scheme": request.environ.get('wsgi.url_scheme'),
-                             "HTTP_X_FORWARDED_PROTO": request.environ.get('HTTP_X_FORWARDED_PROTO') },
-            "timestamp": int(time.time())
-        })
-    except Exception as e:
-        logging.error(f"Error in /debug route: {e}", exc_info=True)
-        return jsonify({ "error": "An internal error occurred.", "status": "error", "timestamp": int(time.time()) }), 500
 
 @bp.route('/reconciliation-status')
 def reconciliation_status_route(): 
@@ -2311,12 +2296,20 @@ def login():
         p for p in current_app.config.get('OAUTH_PROVIDERS', []) if p.get('enabled', True)
     ]
 
+    from .email_routes import _get_webmail_hostname
+    webmail_hostname = _get_webmail_hostname()
+    webmail_available = bool(webmail_hostname)
+    webmail_url = f"https://{webmail_hostname}" if webmail_available else url_for('email.sso_callback')
+
     return render_template(
         'login.html',
         title="Login",
         form=form,
         password_login_enabled=password_login_enabled,
-        oauth_providers=oauth_providers
+        oauth_providers=oauth_providers,
+        email_enabled=current_app.config.get('EMAIL_ENABLED', False),
+        webmail_url=webmail_url,
+        webmail_available=webmail_available
     )
 
 @bp.route('/login/<provider_id>')

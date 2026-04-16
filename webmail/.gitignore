@@ -1,0 +1,7 @@
+# Unignore src/lib — root .gitignore excludes lib/ (Python convention)
+!src/lib/
+!src/lib/**
+
+# Exclude compiled artifacts
+src/lib/*.js
+src/lib/*.js.map

@@ -17,6 +17,18 @@ module.exports = {
     'inline-block',
     'mr-1',
     'text-info',
+    'bottom-4',
+    'right-4',
+    'w-80',
+    'z-50',
+    'translate-y-4',
+    'translate-y-0',
+    'opacity-0',
+    'opacity-100',
+    'pointer-events-none',
+    'pointer-events-auto',
+    'space-y-1',
+    'shrink-0',
   ],
   daisyui: {
       themes: [ 

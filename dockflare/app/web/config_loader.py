@@ -128,6 +128,12 @@ def apply_config_to_app(flask_app, config_data: Dict) -> None:
     config.MASTER_API_KEY = effective_master_key
     config.DOCKFLARE_PUBLIC_URL = effective_public_url
 
+    email_config = config_data.get('email_config', {})
+    flask_app.config['EMAIL_ENABLED'] = email_config.get('enabled', False)
+    flask_app.config['EMAIL_CONFIG'] = email_config
+    config.EMAIL_ENABLED = flask_app.config['EMAIL_ENABLED']
+    config.EMAIL_CONFIG = flask_app.config['EMAIL_CONFIG']
+
     if flask_app.config['CF_API_TOKEN']:
         config.CF_HEADERS['Authorization'] = f"Bearer {flask_app.config['CF_API_TOKEN']}"
     else:

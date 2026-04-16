@@ -1,20 +1,29 @@
-# .github/docker-image.yml
-name: Docker Image Build and Push
+# .github/workflows/docker-image.yml
+name: Docker Image - DockFlare
 
 on:
   push:
     branches:
-      - "stable"       # For 'latest' and 'stable' tags
-      - "unstable"     # For 'unstable' tag
-      - "dev"          # For 'dev' tag
+      - "stable"
+      - "unstable"
+      - "dev"
+      - "dockflare-mail"
     tags:
-      - "v*.*.*"       # Trigger on semantic version tags like v1.2.3
-      - "v*.*.*-*"     # Trigger on pre-release semver tags like v1.2.3-beta.1
+      - "v*.*.*"
+      - "v*.*.*-*"
+    paths:
+      - "dockflare/**"
   pull_request:
     branches:
       - "stable"
       - "unstable"
-      - "dev"          # For pull requests on 'dev' branch
+      - "dev"
+      - "dockflare-mail"
+    paths:
+      - "dockflare/**"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: read
@@ -22,7 +31,7 @@ permissions:
 jobs:
   build_self_hosted:
     runs-on: self-hosted
-    
+
     timeout-minutes: 3
     steps:
       - name: Checkout repository
@@ -55,7 +64,7 @@ jobs:
             type=ref,event=branch,pattern=stable,value=latest
             type=ref,event=branch,pattern=stable,value=stable
             type=ref,event=branch,pattern=unstable,value=unstable
-            type=ref,event=branch,pattern=dev,value=dev     
+            type=ref,event=branch,pattern=dev,value=dev
             type=sha,format=short
             type=ref,event=tag
             type=ref,event=branch
@@ -105,7 +114,7 @@ jobs:
             type=ref,event=branch,pattern=stable,value=latest
             type=ref,event=branch,pattern=stable,value=stable
             type=ref,event=branch,pattern=unstable,value=unstable
-            type=ref,event=branch,pattern=dev,value=dev     # Added for 'dev' branch
+            type=ref,event=branch,pattern=dev,value=dev
             type=sha,format=short
             type=ref,event=tag
             type=ref,event=branch

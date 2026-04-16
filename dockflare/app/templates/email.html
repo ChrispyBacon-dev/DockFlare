@@ -1,0 +1,660 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+        <div>
+            <h1 class="text-3xl font-bold">{{ t('email.title') }}</h1>
+            <p class="text-sm opacity-60 mt-1">{{ t('email.title_description') }}</p>
+        </div>
+        {% if email_enabled %}
+        <div class="flex gap-2 shrink-0">
+            <button class="btn btn-outline btn-sm" onclick="emailRedeployWorkers()">Redeploy Workers</button>
+            <button class="btn btn-primary btn-sm" onclick="emailOpenWebmail()">{{ t('email.webmail_link') }}</button>
+        </div>
+        {% endif %}
+    </div>
+
+    <div id="emailPermissionsBanner" class="alert alert-warning shadow-lg mb-8 hidden">
+        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+        <div>
+            <h3 class="font-bold">{{ t('email.permissions_title') }}</h3>
+            <div class="text-sm mt-1">
+                <span id="permEmailRouting"></span> {{ t('email.permission_email_routing') }}<br>
+                <span id="permWorkers"></span> {{ t('email.permission_workers') }}<br>
+                <span id="permR2"></span> {{ t('email.permission_r2') }}<br>
+                <span id="permKv"></span> {{ t('email.permission_kv') }}
+            </div>
+        </div>
+        <button class="btn btn-sm btn-ghost" onclick="emailCheckPermissions()">{{ t('email.recheck_permissions') }}</button>
+    </div>
+
+    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+        <div class="card-body overflow-visible">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-base-300 pb-4 mb-6 gap-4">
+                <div>
+                    <h2 class="card-title text-2xl sm:text-3xl">{{ t('email.domain_setup') }}</h2>
+                    <p class="text-sm opacity-60 mt-1">{{ t('email.domain_setup_description') }}</p>
+                </div>
+                <div class="flex items-center gap-2 w-full sm:w-auto">
+                    <select id="emailZoneSelect" class="select select-bordered select-sm flex-1 sm:w-56">
+                        <option disabled selected>{{ t('email.choose_domain') }}</option>
+                        {% for zone in zones %}
+                        <option value="{{ zone.id }}">{{ zone.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <button id="emailSetupBtn" class="btn btn-primary btn-sm shrink-0" onclick="emailSetupDomain(event)" disabled>{{ t('email.setup_email') }}</button>
+                </div>
+            </div>
+            <table class="table table-zebra w-full">
+                <colgroup>
+                    <col>
+                    <col class="w-36">
+                    <col class="w-64">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th class="px-4 py-3">{{ t('email.domain') }}</th>
+                        <th class="px-4 py-3">{{ t('email.status') }}</th>
+                        <th class="px-4 py-3 text-right">{{ t('email.actions') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if email_config.domains %}
+                    {% for domain, cfg in email_config.domains.items() %}
+                    <tr>
+                        <td class="px-4 py-3">
+                            <div>{{ domain }}</div>
+                            <div class="text-xs opacity-50 mt-1" id="catchAllStatus_{{ domain | replace('.', '_') }}">Catch-All: loading…</div>
+                        </td>
+                        <td class="px-4 py-3"><div class="badge badge-success badge-sm">{{ t('email.setup_complete') }}</div></td>
+                        <td class="px-4 py-3">
+                            <div class="flex items-center justify-end gap-1">
+                                <button class="btn btn-sm btn-ghost" onclick="emailVerifyDns('{{ domain }}', event)">{{ t('email.dns_verify') }}</button>
+                                <button class="btn btn-sm btn-ghost" onclick="emailRepairDns('{{ domain }}', event)">Repair DNS</button>
+                                <div class="dropdown dropdown-end">
+                                    <button tabindex="0" class="btn btn-sm btn-ghost px-2">⋮</button>
+                                    <ul tabindex="0" class="dropdown-content z-50 menu menu-sm p-2 shadow-lg bg-base-100 border border-base-200 rounded-box w-56">
+                                        <li><button onclick="emailOpenCatchAllModal('{{ domain }}')">Catch-All Routing</button></li>
+                                        <li><button onclick="emailUpdateR2('{{ domain }}', event)">R2 Credentials</button></li>
+                                        <li class="menu-title">Danger zone</li>
+                                        <li><button onclick="emailTeardownPartial('{{ domain }}', event)" class="text-warning">{{ t('email.teardown_partial') }}</button></li>
+                                        <li><button onclick="emailTeardownComplete('{{ domain }}', event)" class="text-error">{{ t('email.teardown_complete') }}</button></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% else %}
+                    <tr><td colspan="3" class="px-4 py-8 text-center opacity-50">{{ t('email.no_domains') }}</td></tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    {% if email_enabled %}
+
+    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+        <div class="card-body">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-base-300 pb-4 mb-6 gap-4">
+                <div>
+                    <h2 class="card-title text-2xl sm:text-3xl">{{ t('email.mailbox_management') }}</h2>
+                    <p class="text-sm opacity-60 mt-1">{{ t('email.mailbox_description') }}</p>
+                </div>
+            </div>
+            <div class="mb-6">
+                <button class="btn btn-primary btn-sm" onclick="document.getElementById('emailAddMailboxModal').showModal()">{{ t('email.add_mailbox') }}</button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="table table-zebra w-full">
+                    <thead>
+                        <tr>
+                            <th class="px-4 py-3">{{ t('email.address') }}</th>
+                            <th class="px-4 py-3 text-center">{{ t('email.stats_received') }}</th>
+                            <th class="px-4 py-3 text-center">{{ t('email.stats_sent') }}</th>
+                            <th class="px-4 py-3">Storage / Quota</th>
+                            <th class="px-4 py-3 text-right">{{ t('email.actions') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if email_config and email_config.domains %}
+                        {% for domain, cfg in email_config.domains.items() %}
+                        {% for addr, mb in cfg.mailboxes.items() %}
+                        <tr data-mailbox="{{ addr }}">
+                            <td class="px-4 py-3">
+                                <div class="font-mono text-sm">{{ addr }}</div>
+                                <div class="text-xs opacity-50">{{ mb.display_name }} &middot; {{ domain }}</div>
+                                <div class="flex gap-1 mt-1 flex-wrap">
+                                    <div class="badge badge-warning badge-sm mb-quota-badge hidden"></div>
+                                    <div class="badge badge-info badge-sm mb-ar-badge hidden">Out of Office</div>
+                                </div>
+                            </td>
+                            <td class="px-4 py-3 text-center text-sm mb-received opacity-50">—</td>
+                            <td class="px-4 py-3 text-center text-sm mb-sent opacity-50">—</td>
+                            <td class="px-4 py-3">
+                                <progress class="progress progress-success w-28 block mb-storage-progress" value="0" max="100"></progress>
+                                <span class="text-xs opacity-50 mb-storage-text">—</span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <div class="flex items-center justify-end gap-1 flex-wrap">
+                                    <button class="btn btn-sm btn-outline" onclick="emailSetPassword('{{ addr }}', '{{ domain }}')">Set Password</button>
+                                    <button class="btn btn-sm btn-outline" onclick="emailEditQuota('{{ addr }}', '{{ domain }}', {{ mb.get('quota_bytes', 10737418240) }})">Quota</button>
+                                    <button class="btn btn-sm btn-outline" onclick="emailOpenAutoResponderModal('{{ addr }}', '{{ domain }}')">Auto-Responder</button>
+                                    <button class="btn btn-sm btn-error btn-outline" onclick="emailDeleteMailbox('{{ addr }}', '{{ domain }}', event)">{{ t('email.delete') }}</button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% endfor %}
+                        {% else %}
+                        <tr><td colspan="5" class="px-4 py-8 text-center opacity-50">{{ t('email.no_mailboxes') }}</td></tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+        <div class="card-body">
+            <div class="border-b border-base-300 pb-4 mb-6">
+                <h2 class="card-title text-2xl sm:text-3xl">{{ t('email.statistics') }}</h2>
+                <p class="text-sm opacity-60 mt-1">{{ t('email.statistics_description') }}</p>
+            </div>
+            <div class="stats stats-horizontal shadow w-full">
+                <div class="stat">
+                    <div class="stat-title">{{ t('email.stats_received') }}</div>
+                    <div class="stat-value text-primary" id="statReceived">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-title">{{ t('email.stats_sent') }}</div>
+                    <div class="stat-value text-secondary" id="statSent">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-title">{{ t('email.stats_storage') }}</div>
+                    <div class="stat-value text-accent" id="statStorage">0</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-title">{{ t('email.stats_mailboxes') }}</div>
+                    <div class="stat-value text-info" id="statMailboxes">0</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+        <div class="card-body">
+            <div class="border-b border-base-300 pb-4 mb-6 flex items-start justify-between gap-4">
+                <div>
+                    <h2 class="card-title text-2xl sm:text-3xl">Delivery Logs</h2>
+                    <p class="text-sm opacity-60 mt-1">Outbound send history and bounce tracking.</p>
+                </div>
+                <button class="btn btn-outline btn-sm shrink-0 mt-1" onclick="emailOpenLogsModal()">Investigate</button>
+            </div>
+            <div class="stats stats-horizontal shadow w-full flex-wrap">
+                <div class="stat">
+                    <div class="stat-title">Total Sent</div>
+                    <div class="stat-value text-success" id="dlStatSent">-</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-title">Failed</div>
+                    <div class="stat-value text-error" id="dlStatFailed">-</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-title">Bounced</div>
+                    <div class="stat-value text-warning" id="dlStatBounced">-</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-title">Bounce Rate</div>
+                    <div class="stat-value text-info" id="dlStatRate">-</div>
+                </div>
+            </div>
+            <div id="dlTopReasons" class="mt-4"></div>
+        </div>
+    </section>
+
+    <dialog id="logsModal" class="modal" onclose="sessionStorage.removeItem('logsModalOpen')">
+        <div class="modal-box w-screen max-w-none h-screen max-h-none rounded-none m-0 flex flex-col">
+            <div class="flex items-center justify-between mb-4 shrink-0">
+                <h3 class="font-bold text-xl">Delivery Log Investigation</h3>
+                <button class="btn btn-sm btn-ghost" onclick="document.getElementById('logsModal').close()">✕</button>
+            </div>
+            <div role="tablist" class="tabs tabs-bordered mb-4 shrink-0">
+                <button role="tab" id="logTabOutbound" class="tab tab-active" onclick="emailSwitchLogTab('outbound')">Outbound Log</button>
+                <button role="tab" id="logTabBounce" class="tab" onclick="emailSwitchLogTab('bounce')">Bounce Log</button>
+            </div>
+            <div class="flex flex-wrap gap-3 mb-4 shrink-0 items-end">
+                <div class="form-control">
+                    <label class="label py-0"><span class="label-text text-xs">From date</span></label>
+                    <input type="date" id="logDateFrom" class="input input-bordered input-sm" onchange="emailLoadCurrentLog()" />
+                </div>
+                <div class="form-control">
+                    <label class="label py-0"><span class="label-text text-xs">To date</span></label>
+                    <input type="date" id="logDateTo" class="input input-bordered input-sm" onchange="emailLoadCurrentLog()" />
+                </div>
+                <div class="form-control" id="logStatusFilterWrap">
+                    <label class="label py-0"><span class="label-text text-xs">Status</span></label>
+                    <select id="logStatus" class="select select-bordered select-sm" onchange="emailLoadCurrentLog()">
+                        <option value="">All</option>
+                        <option value="sent">Sent</option>
+                        <option value="failed">Failed</option>
+                    </select>
+                </div>
+                <div class="form-control hidden" id="logBounceTypeFilterWrap">
+                    <label class="label py-0"><span class="label-text text-xs">Bounce type</span></label>
+                    <select id="logBounceType" class="select select-bordered select-sm" onchange="emailLoadCurrentLog()">
+                        <option value="">All</option>
+                        <option value="permanent">Permanent</option>
+                        <option value="temporary">Temporary</option>
+                    </select>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto">
+                <div id="logPanelOutbound">
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead class="sticky top-0 bg-base-100">
+                                <tr>
+                                    <th>Date</th>
+                                    <th>From</th>
+                                    <th>To</th>
+                                    <th>Subject</th>
+                                    <th>Status</th>
+                                    <th>Error</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logBodyOutbound"></tbody>
+                        </table>
+                    </div>
+                    <p id="logEmptyOutbound" class="text-center opacity-50 py-6 hidden">No outbound records found.</p>
+                </div>
+                <div id="logPanelBounce" class="hidden">
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                            <thead class="sticky top-0 bg-base-100">
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Recipient</th>
+                                    <th>Type</th>
+                                    <th>Reason</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logBodyBounce"></tbody>
+                        </table>
+                    </div>
+                    <p id="logEmptyBounce" class="text-center opacity-50 py-6 hidden">No bounce records found.</p>
+                </div>
+            </div>
+            <div class="flex gap-2 justify-center pt-4 shrink-0 items-center border-t border-base-300 mt-2">
+                <button class="btn btn-sm btn-ghost" id="logPrevBtn" onclick="emailLogPrevPage()">←</button>
+                <span id="logPageInfo" class="text-sm opacity-60"></span>
+                <button class="btn btn-sm btn-ghost" id="logNextBtn" onclick="emailLogNextPage()">→</button>
+            </div>
+        </div>
+    </dialog>
+
+    <section class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+        <div class="card-body">
+            <div class="border-b border-base-300 pb-4 mb-6">
+                <h2 class="card-title text-2xl sm:text-3xl">{{ t('email.backup_restore') }}</h2>
+                <p class="text-sm opacity-60 mt-1">{{ t('email.backup_restore_description') }}</p>
+            </div>
+            <div class="grid sm:grid-cols-2 gap-8">
+                <div>
+                    <h3 class="font-semibold mb-1">{{ t('email.backup_title') }}</h3>
+                    <p class="text-sm opacity-60 mb-3">{{ t('email.backup_description') }}</p>
+                    <p class="text-xs text-warning font-medium mb-4">⚠ {{ t('email.backup_security_warning') }}</p>
+                    <a href="{{ url_for('email.email_backup') }}" class="btn btn-primary btn-sm">{{ t('email.download_backup') }}</a>
+                </div>
+                <div>
+                    <h3 class="font-semibold mb-1">{{ t('email.restore_title') }}</h3>
+                    <p class="text-sm opacity-60 mb-3">{{ t('email.restore_description') }}</p>
+                    <p class="text-xs text-error font-medium mb-4">⚠ {{ t('email.restore_warning') }}</p>
+                    <div class="flex gap-2 items-center">
+                        <label class="btn btn-outline btn-sm" for="emailRestoreFile">Choose file</label>
+                        <span id="emailRestoreFileName" class="text-sm opacity-50 truncate flex-1">No file chosen</span>
+                        <input type="file" id="emailRestoreFile" accept=".zip" class="hidden" onchange="document.getElementById('emailRestoreFileName').textContent = this.files[0]?.name || 'No file chosen'" />
+                        <button class="btn btn-error btn-sm shrink-0" id="emailRestoreBtn" onclick="emailRestoreBackup()">{{ t('email.restore_backup') }}</button>
+                    </div>
+                    <p id="emailRestoreFeedback" class="text-sm mt-2 font-semibold hidden"></p>
+                </div>
+            </div>
+            <div id="emailOrphanedSection" class="hidden mt-6">
+                <div class="divider"></div>
+                <h3 class="font-semibold mb-1">{{ t('email.orphaned_data_title') }}</h3>
+                <p class="text-sm opacity-60 mb-3">{{ t('email.orphaned_data_description') }}</p>
+                <div id="emailOrphanedList"></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="card bg-base-100 shadow-xl border border-error mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+        <div class="card-body">
+            <div class="border-b border-error border-opacity-30 pb-4 mb-6">
+                <h2 class="card-title text-2xl sm:text-3xl text-error">{{ t('email.nuke_all_title') }}</h2>
+                <p class="text-sm opacity-60 mt-1">{{ t('email.nuke_all_description') }}</p>
+            </div>
+            <div class="flex gap-2">
+                <button class="btn btn-warning btn-sm" onclick="emailNukeAll(false, event)">{{ t('email.nuke_all_partial') }}</button>
+                <button class="btn btn-error btn-sm" onclick="emailNukeAll(true, event)">{{ t('email.nuke_all_complete') }}</button>
+            </div>
+            <p id="emailNukeFeedback" class="text-sm mt-2 font-semibold hidden"></p>
+        </div>
+    </section>
+
+    {% else %}
+
+    {% if mail_manager_state in ('missing', 'stopped') %}
+    <section class="card bg-base-100 shadow-xl mb-8">
+        <div class="card-body">
+            {% if mail_manager_state == 'missing' %}
+            <div class="alert alert-warning">
+                <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                <div>
+                    <span class="font-semibold">{{ t('email.container_missing_title') }}</span><br>
+                    <span class="text-sm">{{ t('email.container_missing_desc') }} <button class="link link-warning font-medium" onclick="document.getElementById('composeModal').showModal()">{{ t('email.container_missing_compose_btn') }}</button></span><br>
+                    <code class="text-sm mt-2 block">docker compose --profile email up -d</code>
+                </div>
+            </div>
+            {% else %}
+            <div class="alert alert-info">
+                <div>
+                    <span>{{ t('email.container_stopped') }}</span><br>
+                    <code class="text-sm mt-2 block">docker compose --profile email up -d</code>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </section>
+    {% endif %}
+
+    {% endif %}
+
+<dialog id="catchAllModal" class="modal">
+    <div class="modal-box max-w-md">
+        <h3 class="font-bold text-lg mb-4">Catch-All Routing</h3>
+        <p class="text-sm opacity-60 mb-4">Route all unmatched addresses on <strong id="catchAllDomainLabel"></strong> to a designated mailbox.</p>
+        <input type="hidden" id="catchAllDomain" />
+        <div class="form-control mb-4">
+            <label class="label"><span class="label-text">Target mailbox</span></label>
+            <select id="catchAllTarget" class="select select-bordered select-sm w-full"></select>
+        </div>
+        <div class="modal-action">
+            <form method="dialog"><button class="btn btn-ghost btn-sm">Cancel</button></form>
+            <button class="btn btn-error btn-sm" onclick="emailDisableCatchAll()">Disable</button>
+            <button class="btn btn-primary btn-sm" onclick="emailSaveCatchAll()">Save</button>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<dialog id="autoResponderModal" class="modal">
+    <div class="modal-box max-w-lg">
+        <h3 class="font-bold text-lg mb-1">Auto-Responder</h3>
+        <p class="text-sm opacity-60 mb-4" id="autoResponderMailboxLabel"></p>
+        <input type="hidden" id="arAddress" />
+        <input type="hidden" id="arDomain" />
+        <div class="form-control mb-3">
+            <label class="label py-1"><span class="label-text text-xs">Status</span></label>
+            <label class="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" id="arIsActive" class="toggle toggle-primary toggle-sm" />
+                <span class="text-sm" id="arActiveLabel">Enabled</span>
+            </label>
+        </div>
+        <div class="form-control mb-3">
+            <label class="label py-1"><span class="label-text text-xs">Subject</span></label>
+            <input type="text" id="arSubject" class="input input-bordered input-sm w-full" placeholder="Auto Reply" />
+        </div>
+        <div class="form-control mb-3">
+            <label class="label py-1"><span class="label-text text-xs">Message body</span></label>
+            <textarea id="arBody" class="textarea textarea-bordered textarea-sm w-full h-28" placeholder="I am currently out of office…"></textarea>
+        </div>
+        <div class="grid grid-cols-2 gap-3 mb-3">
+            <div class="form-control">
+                <label class="label py-1"><span class="label-text text-xs">Start date (optional)</span></label>
+                <input type="date" id="arStartDate" class="input input-bordered input-sm w-full" />
+            </div>
+            <div class="form-control">
+                <label class="label py-1"><span class="label-text text-xs">End date (optional)</span></label>
+                <input type="date" id="arEndDate" class="input input-bordered input-sm w-full" />
+            </div>
+        </div>
+        <div class="form-control mb-4">
+            <label class="label py-1"><span class="label-text text-xs">Reply interval (hours) — min time between replies to same sender</span></label>
+            <input type="number" id="arInterval" class="input input-bordered input-sm w-32" value="24" min="1" max="168" />
+        </div>
+        <p id="arFeedback" class="text-sm font-semibold mb-2 hidden"></p>
+        <div class="modal-action">
+            <form method="dialog"><button class="btn btn-ghost btn-sm">Cancel</button></form>
+            <button class="btn btn-error btn-sm" id="arDeleteBtn" onclick="emailDeleteAutoResponder()">Delete</button>
+            <button class="btn btn-primary btn-sm" onclick="emailSaveAutoResponder()">Save</button>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<dialog id="emailAddMailboxModal" class="modal">
+    <div class="modal-box">
+        <h3 class="font-bold text-lg mb-4">{{ t('email.add_mailbox') }}</h3>
+        <div class="space-y-4">
+            <div class="flex items-center gap-1">
+                <input type="text" id="newMailboxAddress" placeholder="{{ t('email.address') }}" class="input input-bordered input-sm flex-1" />
+                <span class="text-sm opacity-40 px-1">@</span>
+                <select id="newMailboxDomain" class="select select-bordered select-sm">
+                    {% if email_config and email_config.domains %}
+                    {% for domain in email_config.domains %}
+                    <option value="{{ domain }}">{{ domain }}</option>
+                    {% endfor %}
+                    {% endif %}
+                </select>
+            </div>
+            <input type="text" id="newMailboxName" placeholder="{{ t('email.display_name') }}" class="input input-bordered input-sm w-full" />
+            <div>
+                <label class="text-sm font-medium mb-2 block">Storage Quota</label>
+                <input type="range" id="newMailboxQuota" min="0" max="10" step="1" value="6" class="range range-sm w-full" oninput="emailUpdateQuotaLabel('newMailboxQuotaLabel', this.value)" />
+                <div class="flex justify-between text-xs mt-1">
+                    <span class="opacity-50">100 MB</span>
+                    <span id="newMailboxQuotaLabel" class="font-semibold">10 GB</span>
+                    <span class="opacity-50">Unlimited</span>
+                </div>
+            </div>
+        </div>
+        <div class="modal-action">
+            <form method="dialog"><button class="btn btn-ghost">Cancel</button></form>
+            <button class="btn btn-primary" id="emailAddMailboxSubmitBtn" onclick="emailCreateMailbox(event)">{{ t('email.add_mailbox') }}</button>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<dialog id="emailEditQuotaModal" class="modal">
+    <div class="modal-box">
+        <h3 class="font-bold text-lg mb-1">Edit Storage Quota</h3>
+        <p class="text-sm opacity-60 mb-1" id="emailEditQuotaTarget"></p>
+        <p class="text-sm mb-4" id="emailEditQuotaUsage"></p>
+        <div>
+            <input type="range" id="editMailboxQuota" min="0" max="10" step="1" value="6" class="range range-sm w-full" oninput="emailUpdateQuotaLabel('editMailboxQuotaLabel', this.value, 'emailEditQuotaGraceInfo')" />
+            <div class="flex justify-between text-xs mt-1">
+                <span class="opacity-50">100 MB</span>
+                <span id="editMailboxQuotaLabel" class="font-semibold">10 GB</span>
+                <span class="opacity-50">Unlimited</span>
+            </div>
+            <p id="emailEditQuotaGraceInfo" class="text-xs opacity-50 mt-1"></p>
+        </div>
+        <div class="modal-action">
+            <form method="dialog"><button class="btn btn-ghost">Cancel</button></form>
+            <button class="btn btn-primary" id="emailEditQuotaSubmitBtn">Save</button>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<dialog id="emailSetPasswordModal" class="modal">
+    <div class="modal-box">
+        <h3 class="font-bold text-lg mb-1">Set Password</h3>
+        <p class="text-sm opacity-60 mb-4" id="emailSetPasswordTarget"></p>
+        <div class="space-y-3">
+            <input type="password" id="emailSetPasswordNew" placeholder="New password (min 8 characters)" class="input input-bordered w-full" autocomplete="new-password" />
+            <input type="password" id="emailSetPasswordConfirm" placeholder="Confirm password" class="input input-bordered w-full" autocomplete="new-password" />
+            <p id="emailSetPasswordError" class="text-error text-sm hidden"></p>
+        </div>
+        <div class="modal-action">
+            <form method="dialog"><button class="btn btn-ghost">Cancel</button></form>
+            <button class="btn btn-primary" id="emailSetPasswordSubmitBtn">Set Password</button>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<div id="emailProgressPanel" class="fixed bottom-4 right-4 w-80 z-50 transition-all duration-300 translate-y-4 opacity-0 pointer-events-none">
+    <div class="card bg-base-200 shadow-xl border border-base-300">
+        <div class="card-body p-4 gap-2">
+            <div class="flex items-center justify-between">
+                <h3 class="font-bold text-sm" id="emailProgressTitle"></h3>
+                <button class="btn btn-ghost btn-xs btn-circle" id="emailProgressClose">✕</button>
+            </div>
+            <ul id="emailProgressSteps" class="space-y-1 text-sm"></ul>
+        </div>
+    </div>
+</div>
+
+<dialog id="composeModal" class="modal">
+    <div class="modal-box max-w-3xl">
+        <h3 class="font-bold text-lg mb-1">docker-compose.yml</h3>
+        <p class="text-sm opacity-60 mb-4">Copy this file, replace the <code>TLD</code> placeholders with your domain, then run <code>docker compose --profile email up -d</code>.</p>
+        <div class="relative">
+            <button onclick="emailCopyCompose(this)" class="btn btn-xs btn-ghost absolute top-2 right-2 z-10 opacity-70 hover:opacity-100">Copy</button>
+            <pre id="composeContent" class="bg-base-200 rounded-lg p-4 text-xs overflow-x-auto overflow-y-auto max-h-[60vh] whitespace-pre">version: '3.8'
+
+services:
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.4.1
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    logging:
+      driver: "none"
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - CONTAINERS=1
+      - EVENTS=1
+      - NETWORKS=1
+      - IMAGES=1
+      - POST=1
+      - PING=1
+      - INFO=1
+      - EXEC=1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - dockflare-internal
+
+  dockflare-init:
+    image: alpine:3.20
+    command: ["sh", "-c", "chown -R ${DOCKFLARE_UID:-65532}:${DOCKFLARE_GID:-65532} /app/data"]
+    volumes:
+      - dockflare_data:/app/data
+    networks:
+      - dockflare-internal
+    restart: "no"
+
+  dockflare:
+    image: alplat/dockflare:stable
+    container_name: dockflare
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    labels:
+      - dockflare.enable=true
+      - dockflare.hostname=dockflare.TLD  # replace with your domain
+      - dockflare.service=http://dockflare:5000
+    volumes:
+      - dockflare_data:/app/data
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_DB_INDEX=0
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
+    depends_on:
+      docker-socket-proxy:
+        condition: service_started
+      dockflare-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+    networks:
+      - cloudflare-net
+      - dockflare-internal
+
+  redis:
+    image: redis:7-alpine
+    container_name: dockflare-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    logging:
+      driver: "none"
+    volumes:
+      - dockflare_redis:/data
+    networks:
+      - dockflare-internal
+
+  dockflare-mail-manager:
+    image: alplat/dockflare-mail-manager:stable
+    container_name: dockflare-mail-manager
+    restart: unless-stopped
+    profiles: ["email"]
+    environment:
+      - DOCKFLARE_MASTER_URL=http://dockflare:5000
+      - MAIL_DATA_PATH=/data
+    volumes:
+      - mail_data:/data
+    depends_on:
+      dockflare:
+        condition: service_started
+    networks:
+      - cloudflare-net
+      - dockflare-internal
+
+  dockflare-webmail:
+    image: alplat/dockflare-webmail:stable
+    container_name: dockflare-webmail
+    restart: unless-stopped
+    profiles: ["email"]
+    environment:
+      - DOCKFLARE_MASTER_URL=https://dockflare.TLD  # replace with your domain
+    labels:
+      - dockflare.enable=true
+      - dockflare.hostname=mail.dockflare.TLD  # replace with your domain
+      - dockflare.service=http://dockflare-webmail:80
+    depends_on:
+      dockflare-mail-manager:
+        condition: service_started
+    networks:
+      - cloudflare-net
+      - dockflare-internal
+
+volumes:
+  dockflare_data:
+  dockflare_redis:
+  mail_data:
+
+networks:
+  cloudflare-net:
+    name: cloudflare-net
+    external: true
+  dockflare-internal:
+    name: dockflare-internal</pre>
+        </div>
+        <div class="modal-action">
+            <form method="dialog"><button class="btn btn-ghost btn-sm">Close</button></form>
+            <button onclick="emailCopyCompose(this)" class="btn btn-primary btn-sm">Copy to Clipboard</button>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => { emailCheckPermissions(); emailLoadOrphanedDomains(); emailLoadStats(); emailLoadMailboxStats(); emailLoadDeliveryStats(); emailLoadAllCatchAllStatuses(); emailLoadAutoResponderBadges(); if (sessionStorage.getItem('logsModalOpen')) emailOpenLogsModal(); });
+</script>
+{% endblock %}
+{% endblock %}

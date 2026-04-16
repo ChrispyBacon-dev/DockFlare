@@ -35,7 +35,7 @@ def _get_int_env(name, default, minimum=None):
         return default
 
 # --- DockFlare Version ---
-APP_VERSION = "v3.0.9"
+APP_VERSION = "v3.1.0"
 # --- web: https://dockflare.app ---
 # --- github: https://github.com/ChrispyBacon-dev/DockFlare ---
 
@@ -145,3 +145,12 @@ SYNC_ALL_CLOUDFLARE_POLICIES = os.getenv('SYNC_ALL_CLOUDFLARE_POLICIES', 'false'
 PRESERVE_UNMANAGED_CF_INGRESS_FIELDS = False
 
 DOCKFLARE_PUBLIC_URL = os.getenv('DOCKFLARE_PUBLIC_URL', '')
+
+EMAIL_ENABLED = False
+EMAIL_CONFIG = {}
+MAIL_MANAGER_INTERNAL_URL = os.getenv('MAIL_MANAGER_INTERNAL_URL', 'http://dockflare-mail-manager:8025')
+EMAIL_JWT_ALGORITHM = 'EdDSA'
+EMAIL_JWT_ISSUER = 'dockflare-master'
+EMAIL_JWT_AUDIENCE = 'dockflare-mail'
+EMAIL_JWT_EXPIRY_SECONDS = 3600
+

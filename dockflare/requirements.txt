@@ -6,6 +6,16 @@
 #
 authlib==1.6.9
     # via -r dockflare/requirements.in
+boto3==1.42.83
+    # via -r dockflare/requirements.in
+botocore==1.42.88
+    # via boto3
+jmespath==1.1.0
+    # via boto3, botocore
+python-dateutil==2.9.0.post0
+    # via botocore
+s3transfer==0.16.0
+    # via boto3
 blinker==1.9.0
     # via flask
 cachelib==0.9.0
@@ -18,7 +28,7 @@ charset-normalizer==3.4.2
     # via requests
 click==8.2.1
     # via flask
-cryptography==46.0.5
+cryptography==46.0.7
     # via
     #   -r dockflare/requirements.in
     #   authlib
@@ -71,11 +81,11 @@ packaging==26.0
     # via limits
 pycparser==3.0
     # via cffi
-pygments==2.19.2
+pygments==2.20.0
     # via
     #   -r dockflare/requirements.in
     #   rich
-pymdown-extensions==10.16.1
+pymdown-extensions==10.21.2
     # via -r dockflare/requirements.in
 python-dotenv==1.1.1
     # via -r dockflare/requirements.in
@@ -83,7 +93,7 @@ pyyaml==6.0.3
     # via pymdown-extensions
 redis==4.5.5
     # via -r dockflare/requirements.in
-requests==2.32.4
+requests==2.33.1
     # via
     #   -r dockflare/requirements.in
     #   docker
@@ -109,3 +119,5 @@ wrapt==2.1.2
     # via deprecated
 wtforms==3.2.1
     # via flask-wtf
+pyjwt[crypto]==2.12.1
+    # via -r dockflare/requirements.in

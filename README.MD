@@ -14,7 +14,7 @@
 <a href="https://github.com/ChrispyBacon-dev/DockFlare/stargazers">
   <img src="https://img.shields.io/github/stars/ChrispyBacon-dev/DockFlare?style=for-the-badge" alt="Stars">
 </a>
-  <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases"><img src="https://img.shields.io/badge/Release-v3.0.9-blue.svg?style=for-the-badge" alt="Release"></a>
+  <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases"><img src="https://img.shields.io/badge/Release-v3.1.0-blue.svg?style=for-the-badge" alt="Release"></a>
   <a href="https://hub.docker.com/r/alplat/dockflare"><img src="https://img.shields.io/docker/pulls/alplat/dockflare?style=for-the-badge" alt="Docker Pulls"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Made%20with-Python-1f425f.svg?style=for-the-badge" alt="Python"></a>
   <a href="https://github.com/ChrispyBacon-dev/DockFlare/blob/main/LICENSE.MD"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg?style=for-the-badge" alt="License"></a>
@@ -40,18 +40,20 @@ The result is a set-it-and-forget-it workflow with a fully localized native expe
 
 ## Core Capabilities
 
-- Automatic service discovery from Docker labels.
-- Native multi-language support (10 languages) for the Web UI and Help Center.
-- Manual ingress rule management for non-Docker workloads.
-- Cloudflare Tunnel ingress orchestration, including advanced origin options.
-- Access Group and reusable policy management with application assignment.
-- Cloudflare Access application lifecycle management.
-- Multi-zone DNS handling and zone-aware record placement.
-- Multi-host operation through a master and lightweight agents.
-- Cloudflare Zero Trust service token provisioning for secure agent communication.
-- One-liner deploy scripts for master and agent deployment.
-- Backup and restore of encrypted configuration and runtime state.
-- Deep-link shortcuts into Cloudflare Zero Trust pages from the DockFlare UI.
+- **Automatic service discovery** from Docker labels.
+- **Sovereign Email Suite**: A fully self-hosted email system using Cloudflare Email Routing as a stateless delivery layer with local data sovereignty.
+- **Multi-Domain Email Support**: Manage inbound and outbound email for an unlimited number of domains simultaneously.
+- **PWA-Ready Webmail**: Modern, installable Vue 3 webmail client with offline support and desktop/mobile push notifications.
+- **Automated Infrastructure Provisioning**: One-click setup for Cloudflare Workers, R2 buckets, and Email Routing.
+- **Advanced DNS & DKIM Management**: Automatic zone-aware record placement with authoritative DKIM key handling.
+- **Native Multi-Language Support** (13 languages) for the Web UI and Help Center.
+- **Manual Ingress Rule Management** for non-Docker workloads.
+- **Cloudflare Tunnel Ingress Orchestration**, including advanced origin options.
+- **Access Group & Reusable Policy Management** with application assignment.
+- **Cloudflare Access Application Lifecycle Management**.
+- **Multi-Host Operation** through a master and lightweight agents.
+- **Secure Agent Communication** via Cloudflare Zero Trust service tokens.
+- **Backup & Restore** of encrypted configuration, runtime state, and email data.
 
 ## Architecture Overview
 
@@ -60,10 +62,12 @@ Detailed architecture guide: [https://dockflare.app/architecture](https://dockfl
 | Component | Purpose |
 | --- | --- |
 | DockFlare Master | Web UI, encrypted config/state, reconciliation, Cloudflare API orchestration |
+| DockFlare Mail Manager | Sovereign email backend, SQLite storage, R2 integration, and webhook handling |
+| DockFlare Webmail | PWA-ready mail client with push notification support |
 | Redis | Shared cache, coordination, and pub/sub signaling |
 | DockFlare Agent | Remote host watcher and command executor for distributed deployments |
 | cloudflared | Tunnel connector runtime managed per deployment mode |
-| Cloudflare API | Source of truth for Tunnel, DNS, and Access resources |
+| Cloudflare API | Source of truth for Tunnel, DNS, Email, and Access resources |
 
 ### Reconciliation Flow
 
@@ -102,6 +106,10 @@ For full setup documentation, use the project docs site:
   - `Account:Account Settings:Read`
   - `Account:Access: Apps and Policies:Edit`
   - `Account:Access: Service Tokens:Edit`
+  - `Account:Email:Edit`
+  - `Account:Workers Scripts:Edit`
+  - `Account:Workers KV Storage:Edit`
+  - `Account:R2:Edit`
   - `Zone:Zone:Read`
   - `Zone:DNS:Edit`
 
@@ -328,6 +336,18 @@ curl http://localhost:5000/api/v2/overview
 ## Documentation Map
 
 *(Available in 8 languages directly within the DockFlare UI or online)*
+
+- Product docs: [https://dockflare.app/docs](https://dockflare.app/docs)
+- Source docs in repository:
+  - [Multi-Server Agent Guide](dockflare/app/templates/docs/Multi-Server-Agent.md)
+  - [Using the Web UI](dockflare/app/templates/docs/Using-the-Web-UI.md)
+  - [Managing DNS Zones](dockflare/app/templates/docs/Managing-DNS-Zones.md)
+  - [Identity Providers](dockflare/app/templates/docs/Identity-Providers.md)
+
+## Changelog
+
+Release notes are maintained in [CHANGELOG.md](CHANGELOG.md).
+ailable in 8 languages directly within the DockFlare UI or online)*
 
 - Product docs: [https://dockflare.app/docs](https://dockflare.app/docs)
 - Source docs in repository:

@@ -38,11 +38,11 @@ services:
     restart: unless-stopped
     ports:
       - "5000:5000"
-    #labels: # -- Cloudflare Tunnel Configuration (via DockFlare) OPTIONAL --
+    labels: # -- Cloudflare Tunnel Configuration (via DockFlare) OPTIONAL --
       # Main DockFlare with access policy
-      #- dockflare.enable=true
-      #- dockflare.hostname=dockflare.example.tld
-      #- dockflare.service=http://dockflare:5000
+      - dockflare.enable=true
+      - dockflare.hostname=dockflare.TLD  # replace with your domain
+      - dockflare.service=http://dockflare:5000
       #- dockflare.access.group=YOUR-ACCESS-GROUP-ID  # your custom access policy
       # -- OAuth Callback Path (Bypass Access Policy) OPTIONAL --
       # Required if using OAuth authentication with access policies on main interface
@@ -86,9 +86,47 @@ services:
     networks:
       - dockflare-internal
 
+  dockflare-mail-manager:
+    #build: ./mail-manager
+    image: alplat/dockflare-mail-manager:stable
+    container_name: dockflare-mail-manager
+    restart: unless-stopped
+    profiles: ["email"]
+    environment:
+      - DOCKFLARE_MASTER_URL=http://dockflare:5000
+      - MAIL_DATA_PATH=/data
+    volumes:
+      - mail_data:/data
+    depends_on:
+      dockflare:
+        condition: service_started
+    networks:
+      - cloudflare-net
+      - dockflare-internal
+
+  dockflare-webmail:
+    #build: ./webmail
+    image: alplat/dockflare-webmail:stable
+    container_name: dockflare-webmail
+    restart: unless-stopped
+    profiles: ["email"]
+    environment:
+      - DOCKFLARE_MASTER_URL=https://dockflare.TLD  # replace with your domain
+    labels:
+      - dockflare.enable=true
+      - dockflare.hostname=mail.dockflare.TLD  # replace with your domain
+      - dockflare.service=http://dockflare-webmail:80
+    depends_on:
+      dockflare-mail-manager:
+        condition: service_started
+    networks:
+      - cloudflare-net
+      - dockflare-internal
+
 volumes:
   dockflare_data:
   dockflare_redis:
+  mail_data:
 
 networks:
   cloudflare-net:

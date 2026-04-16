@@ -456,6 +456,170 @@ function findRowByRuleKey(ruleId) {
     return null;
 }
 
+const emailProgressState = {
+    steps: [],
+    timers: [],
+    autoCloseTimer: null,
+    activeIndex: -1,
+};
+
+const EMAIL_OPERATION_STEPS = {
+    setup_domain: [
+        { key: 'email.progress.step_enable_routing', ms: 3000 },
+        { key: 'email.progress.step_dns_records',    ms: 4000 },
+        { key: 'email.progress.step_r2_bucket',      ms: 3000 },
+        { key: 'email.progress.step_r2_credentials', ms: 2000 },
+        { key: 'email.progress.step_generate_keys',  ms: 2000 },
+        { key: 'email.progress.step_deploy_inbound', ms: 6000 },
+        { key: 'email.progress.step_deploy_outbound',ms: 6000 },
+        { key: 'email.progress.step_restart_container', ms: 3000 },
+    ],
+    create_mailbox: [
+        { key: 'email.progress.step_create_rule',    ms: 3000 },
+        { key: 'email.progress.step_redeploy_inbound', ms: 6000 },
+        { key: 'email.progress.step_restart_container', ms: 3000 },
+    ],
+    delete_mailbox: [
+        { key: 'email.progress.step_remove_rule',    ms: 3000 },
+        { key: 'email.progress.step_redeploy_inbound', ms: 6000 },
+        { key: 'email.progress.step_restart_container', ms: 3000 },
+    ],
+    repair_dns: [
+        { key: 'email.progress.step_repair_dns',     ms: 5000 },
+    ],
+    teardown_domain: [
+        { key: 'email.progress.step_remove_rule',    ms: 3000 },
+        { key: 'email.progress.step_delete_workers', ms: 4000 },
+        { key: 'email.progress.step_remove_dns',     ms: 3000 },
+        { key: 'email.progress.step_restart_container', ms: 2000 },
+    ],
+    teardown_all: [
+        { key: 'email.progress.step_remove_rule',    ms: 5000 },
+        { key: 'email.progress.step_delete_workers', ms: 5000 },
+        { key: 'email.progress.step_remove_dns',     ms: 4000 },
+        { key: 'email.progress.step_restart_container', ms: 2000 },
+    ],
+    update_r2: [
+        { key: 'email.progress.step_save_credentials', ms: 2000 },
+        { key: 'email.progress.step_restart_container', ms: 3000 },
+    ],
+    redeploy_workers: [
+        { key: 'email.progress.step_deploy_inbound', ms: 6000 },
+        { key: 'email.progress.step_deploy_outbound',ms: 6000 },
+    ],
+};
+
+function emailProgressShowPanel(title) {
+    const panel = document.getElementById('emailProgressPanel');
+    if (!panel) return;
+    const titleEl = document.getElementById('emailProgressTitle');
+    if (titleEl) titleEl.textContent = title;
+    document.getElementById('emailProgressSteps').innerHTML = '';
+    panel.classList.remove('translate-y-4', 'opacity-0', 'pointer-events-none');
+    panel.classList.add('translate-y-0', 'opacity-100', 'pointer-events-auto');
+}
+
+function emailProgressHidePanel() {
+    const panel = document.getElementById('emailProgressPanel');
+    if (!panel) return;
+    emailProgressState.timers.forEach(t => clearTimeout(t));
+    emailProgressState.timers = [];
+    if (emailProgressState.autoCloseTimer) {
+        clearTimeout(emailProgressState.autoCloseTimer);
+        emailProgressState.autoCloseTimer = null;
+    }
+    emailProgressState.steps = [];
+    emailProgressState.activeIndex = -1;
+    panel.classList.add('translate-y-4', 'opacity-0', 'pointer-events-none');
+    panel.classList.remove('translate-y-0', 'opacity-100', 'pointer-events-auto');
+}
+
+function emailProgressRenderSteps() {
+    const list = document.getElementById('emailProgressSteps');
+    if (!list) return;
+    list.innerHTML = '';
+    for (const step of emailProgressState.steps) {
+        const li = document.createElement('li');
+        const iconSpan = document.createElement('span');
+        iconSpan.className = 'w-4 text-center shrink-0 inline-flex items-center justify-center';
+        if (step.status === 'done') {
+            li.className = 'flex items-center gap-2 text-success';
+            iconSpan.textContent = '✓';
+        } else if (step.status === 'error') {
+            li.className = 'flex items-center gap-2 text-error';
+            iconSpan.textContent = '✗';
+        } else if (step.status === 'active') {
+            li.className = 'flex items-center gap-2 text-primary';
+            const spinner = document.createElement('span');
+            spinner.className = 'loading loading-spinner loading-xs';
+            iconSpan.appendChild(spinner);
+        } else {
+            li.className = 'flex items-center gap-2 opacity-40';
+            iconSpan.textContent = '·';
+        }
+        const labelSpan = document.createElement('span');
+        labelSpan.textContent = t(step.key) || step.key;
+        li.appendChild(iconSpan);
+        li.appendChild(labelSpan);
+        list.appendChild(li);
+    }
+}
+
+function _emailProgressActivateStep(index, stepDefs) {
+    if (index >= emailProgressState.steps.length) return;
+    emailProgressState.activeIndex = index;
+    emailProgressState.steps[index].status = 'active';
+    emailProgressRenderSteps();
+    const timer = setTimeout(() => {
+        if (emailProgressState.steps[index]) {
+            emailProgressState.steps[index].status = 'done';
+            emailProgressRenderSteps();
+        }
+        _emailProgressActivateStep(index + 1, stepDefs);
+    }, stepDefs[index].ms);
+    emailProgressState.timers.push(timer);
+}
+
+function emailProgressStart(stepDefs, title) {
+    emailProgressHidePanel();
+    emailProgressState.steps = stepDefs.map(s => ({ key: s.key, status: 'pending' }));
+    emailProgressShowPanel(title);
+    emailProgressRenderSteps();
+    _emailProgressActivateStep(0, stepDefs);
+}
+
+function emailProgressFinish(success) {
+    emailProgressState.timers.forEach(t => clearTimeout(t));
+    emailProgressState.timers = [];
+    if (success) {
+        let delay = 0;
+        for (let i = 0; i < emailProgressState.steps.length; i++) {
+            if (emailProgressState.steps[i].status !== 'done') {
+                const idx = i;
+                const timer = setTimeout(() => {
+                    if (emailProgressState.steps[idx]) {
+                        emailProgressState.steps[idx].status = 'done';
+                        emailProgressRenderSteps();
+                    }
+                }, delay);
+                emailProgressState.timers.push(timer);
+                delay += 150;
+            }
+        }
+        emailProgressState.autoCloseTimer = setTimeout(() => {
+            emailProgressHidePanel();
+            location.reload();
+        }, delay + 1500);
+    } else {
+        const active = emailProgressState.steps.findIndex(s => s.status === 'active');
+        if (active >= 0) emailProgressState.steps[active].status = 'error';
+        for (let i = active + 1; i < emailProgressState.steps.length; i++) {
+            emailProgressState.steps[i].status = 'pending';
+        }
+        emailProgressRenderSteps();
+    }
+}
+
 function handleStructuredStateEvent(message) {
     const eventType = message.type;
     const data = message.data || {};
@@ -493,7 +657,7 @@ function connectStateUpdateSource() {
         return;
     }
 
-    const streamUrl = `${document.baseURI}stream-state-updates`;
+    const streamUrl = `${window.location.origin}/stream-state-updates`;
     if (activeStateEventSource) {
         activeStateEventSource.close();
     }
@@ -1296,7 +1460,7 @@ document.addEventListener('DOMContentLoaded', function() {
     fixResourcesAndBase();
     themeManager.initialize();
     initializeAllTomSelects();
-      
+
     const manualServiceTypeSelect = document.getElementById('manual_service_type');
     if (manualServiceTypeSelect) {
         manualServiceTypeSelect.addEventListener('change', updateManualRuleServiceFields);
@@ -1523,6 +1687,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     connectStateUpdateSource();
     scheduleServicesSnapshotRefresh();
+
+    document.getElementById('emailProgressClose')?.addEventListener('click', emailProgressHidePanel);
 
     startServerPing();
 
@@ -1902,4 +2068,975 @@ async function deleteIdP(friendlyName) {
         console.error('Error deleting IdP:', error);
         await dfAlert(t('js.alert.delete_error_generic'), t('js.alert.error_title'));
     }
+}
+
+async function emailCopyCompose(btn) {
+    const content = document.getElementById('composeContent').innerText;
+    await navigator.clipboard.writeText(content);
+    const original = btn.innerText;
+    btn.innerText = 'Copied!';
+    setTimeout(() => { btn.innerText = original; }, 2000);
+}
+
+async function emailCheckPermissions() {
+    try {
+        const response = await fetch('/email/check-permissions', {
+            method: 'POST',
+            headers: buildApiHeaders()
+        });
+        const data = await response.json();
+        if (data.success) {
+            const p = data.permissions;
+            document.getElementById('permEmailRouting').innerText = p.email_routing ? '✅' : '❌';
+            document.getElementById('permWorkers').innerText = p.workers ? '✅' : '❌';
+            const r2Label = p.r2 ? '✅' : (p.r2_note ? '❌ ' + p.r2_note : '❌');
+            document.getElementById('permR2').innerText = r2Label;
+            document.getElementById('permKv').innerText = p.workers_kv ? '✅' : '❌';
+            const allGranted = p.email_routing && p.workers && p.r2 && p.workers_kv;
+            const banner = document.getElementById('emailPermissionsBanner');
+            if (banner) {
+                banner.classList.toggle('hidden', allGranted);
+            }
+            const setupBtn = document.getElementById('emailSetupBtn');
+            if (setupBtn) {
+                setupBtn.disabled = !allGranted;
+            }
+        }
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function emailSetupDomain(event) {
+    const select = document.getElementById('emailZoneSelect');
+    if (!select || !select.value) return;
+    const zoneId = select.value;
+    const zoneName = select.options[select.selectedIndex].text;
+    const btn = event?.currentTarget;
+    const originalHTML = btn?.innerHTML;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'; }
+    const title = (t('email.progress.setup_domain') || 'Setting up {zone}').replace('{zone}', zoneName);
+    emailProgressStart(EMAIL_OPERATION_STEPS.setup_domain, title);
+    try {
+        const response = await fetch('/email/setup-domain', {
+            method: 'POST',
+            headers: buildApiHeaders({'Content-Type': 'application/json'}),
+            body: JSON.stringify({ zone_id: zoneId, zone_name: zoneName })
+        });
+        const data = await response.json();
+        if (data.success) {
+            emailProgressFinish(true);
+        } else {
+            if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+            emailProgressFinish(false);
+            await dfAlert(data.error || 'Error', 'Error');
+        }
+    } catch (e) {
+        if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+        emailProgressFinish(false);
+        console.error(e);
+    }
+}
+
+async function dfConfirmTyped(message, expectedValue, title) {
+    title = title || t('common.confirm');
+    return new Promise((resolve) => {
+        const modal = document.getElementById('dockflare-prompt-modal');
+        const titleEl = document.getElementById('dockflare-prompt-title');
+        const messageEl = document.getElementById('dockflare-prompt-message');
+        const inputEl = document.getElementById('dockflare-prompt-input');
+        const okBtn = document.getElementById('dockflare-prompt-ok');
+        const cancelBtn = document.getElementById('dockflare-prompt-cancel');
+
+        titleEl.textContent = title;
+        messageEl.textContent = message;
+        inputEl.value = '';
+        okBtn.disabled = true;
+        okBtn.classList.add('btn-disabled');
+
+        const checkInput = () => {
+            const match = inputEl.value === expectedValue;
+            okBtn.disabled = !match;
+            okBtn.classList.toggle('btn-disabled', !match);
+        };
+
+        const handleOk = () => {
+            if (inputEl.value !== expectedValue) return;
+            modal.close();
+            cleanup();
+            resolve(true);
+        };
+
+        const handleCancel = () => {
+            modal.close();
+            cleanup();
+            resolve(false);
+        };
+
+        const handleEnter = (e) => {
+            if (e.key === 'Enter' && inputEl.value === expectedValue) handleOk();
+        };
+
+        const cleanup = () => {
+            okBtn.disabled = false;
+            okBtn.classList.remove('btn-disabled');
+            okBtn.removeEventListener('click', handleOk);
+            cancelBtn.removeEventListener('click', handleCancel);
+            inputEl.removeEventListener('input', checkInput);
+            inputEl.removeEventListener('keypress', handleEnter);
+        };
+
+        okBtn.addEventListener('click', handleOk);
+        cancelBtn.addEventListener('click', handleCancel);
+        inputEl.addEventListener('input', checkInput);
+        inputEl.addEventListener('keypress', handleEnter);
+
+        modal.showModal();
+        setTimeout(() => inputEl.focus(), 100);
+    });
+}
+
+async function emailTeardownPartial(domain, event) {
+    if (!await dfConfirm(t('email.teardown_confirm_remote').replace('{domain}', domain), t('email.teardown_partial'))) return;
+    await _emailTeardown(domain, false, event);
+}
+
+async function emailTeardownComplete(domain, event) {
+    if (!await dfConfirm(t('email.teardown_confirm_local').replace('{domain}', domain), t('email.teardown_complete'))) return;
+    if (!await dfConfirmTyped(t('email.teardown_type_to_confirm').replace('{domain}', domain), domain, t('email.teardown_complete'))) return;
+    await _emailTeardown(domain, true, event);
+}
+
+async function _emailTeardown(domain, includeLocalData, event) {
+    const btn = event?.currentTarget;
+    const originalHTML = btn?.innerHTML;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'; }
+    const title = (t('email.progress.teardown_domain') || 'Tearing down {zone}').replace('{zone}', domain);
+    emailProgressStart(EMAIL_OPERATION_STEPS.teardown_domain, title);
+    try {
+        const response = await fetch('/email/teardown-domain', {
+            method: 'POST',
+            headers: buildApiHeaders({'Content-Type': 'application/json'}),
+            body: JSON.stringify({ zone_name: domain, include_local_data: includeLocalData })
+        });
+        const data = await response.json();
+        if (data.success) {
+            emailProgressFinish(true);
+            if (data.errors && data.errors.length > 0) {
+                await dfAlert(t('email.teardown_errors') + '\n' + data.errors.join('\n'), t('email.teardown_complete'));
+            }
+        } else {
+            if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+            emailProgressFinish(false);
+        }
+    } catch (e) {
+        if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+        emailProgressFinish(false);
+        console.error(e);
+    }
+}
+
+async function emailNukeAll(includeLocalData, event) {
+    if (includeLocalData) {
+        if (!await dfConfirm(t('email.nuke_all_confirm_1'), t('email.nuke_all_complete'))) return;
+        if (!await dfConfirm(t('email.nuke_all_confirm_2'), t('email.nuke_all_complete'))) return;
+        if (!await dfConfirmTyped(t('email.nuke_all_type_to_confirm'), 'NUKE ALL', t('email.nuke_all_complete'))) return;
+    } else {
+        if (!await dfConfirm(t('email.nuke_all_confirm_1'), t('email.nuke_all_partial'))) return;
+    }
+    const btn = event?.currentTarget;
+    const originalHTML = btn?.innerHTML;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'; }
+    emailProgressStart(EMAIL_OPERATION_STEPS.teardown_all, t('email.progress.teardown_all') || 'Removing all domains');
+    try {
+        const response = await fetch('/email/teardown-all', {
+            method: 'POST',
+            headers: buildApiHeaders({'Content-Type': 'application/json'}),
+            body: JSON.stringify({ include_local_data: includeLocalData })
+        });
+        const data = await response.json();
+        if (data.success) {
+            emailProgressFinish(true);
+            if (data.errors && data.errors.length > 0) {
+                const feedback = document.getElementById('emailNukeFeedback');
+                feedback.classList.remove('hidden', 'text-error', 'text-success');
+                feedback.classList.add('text-error');
+                feedback.textContent = t('email.teardown_errors') + data.errors.join(', ');
+            }
+        } else {
+            if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+            emailProgressFinish(false);
+        }
+    } catch (e) {
+        if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+        emailProgressFinish(false);
+        const feedback = document.getElementById('emailNukeFeedback');
+        feedback.classList.remove('hidden', 'text-error', 'text-success');
+        feedback.classList.add('text-error');
+        feedback.textContent = e.message;
+        console.error(e);
+    }
+}
+
+async function emailLoadOrphanedDomains() {
+    try {
+        const response = await fetch('/email/local-domains', { headers: buildApiHeaders() });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!data.orphaned || data.orphaned.length === 0) return;
+        const section = document.getElementById('emailOrphanedSection');
+        const list = document.getElementById('emailOrphanedList');
+        section.classList.remove('hidden');
+        list.innerHTML = data.orphaned.map(d => `
+            <div class="flex items-center gap-4 py-2">
+                <div class="flex-1">
+                    <span class="font-mono font-semibold">${d.domain}</span>
+                    <span class="text-sm opacity-70 ml-2">${d.mailbox_count} mailbox(es), ${d.message_count} message(s)</span>
+                </div>
+                <a href="/email/backup" class="btn btn-xs btn-outline">${t('email.download_backup')}</a>
+                <button class="btn btn-xs btn-error" onclick="emailWipeLocal('${d.domain}')">${t('email.wipe_local_data')}</button>
+            </div>
+        `).join('');
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function emailWipeLocal(domain) {
+    if (!await dfConfirmTyped(t('email.wipe_local_confirm').replace('{domain}', domain), domain, t('email.wipe_local_data'))) return;
+    try {
+        const response = await fetch('/email/wipe-local', {
+            method: 'POST',
+            headers: buildApiHeaders({'Content-Type': 'application/json'}),
+            body: JSON.stringify({ domain })
+        });
+        const data = await response.json();
+        if (data.success) location.reload();
+        else await dfAlert('Error: ' + (data.error || 'Unknown error'));
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+const QUOTA_STEPS = [
+    { label: '100 MB', bytes: 104857600 },
+    { label: '250 MB', bytes: 262144000 },
+    { label: '500 MB', bytes: 524288000 },
+    { label: '1 GB',   bytes: 1073741824 },
+    { label: '2 GB',   bytes: 2147483648 },
+    { label: '5 GB',   bytes: 5368709120 },
+    { label: '10 GB',  bytes: 10737418240 },
+    { label: '25 GB',  bytes: 26843545600 },
+    { label: '50 GB',  bytes: 53687091200 },
+    { label: '100 GB', bytes: 107374182400 },
+    { label: 'Unlimited', bytes: 0 },
+];
+
+function _fmtBytes(b) {
+    if (!b || b === 0) return '0 B';
+    const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0;
+    while (b >= 1024 && i < 4) { b /= 1024; i++; }
+    return b.toFixed(1) + '\u00a0' + u[i];
+}
+
+function _calcGrace(quotaBytes) {
+    if (!quotaBytes || quotaBytes <= 0) return 0;
+    return Math.max(Math.round(quotaBytes * 0.15), 10 * 1024 * 1024);
+}
+
+function emailUpdateQuotaLabel(labelId, stepIndex, graceInfoId) {
+    const el = document.getElementById(labelId);
+    const step = QUOTA_STEPS[parseInt(stepIndex)];
+    if (el) el.textContent = step?.label ?? '10 GB';
+    if (graceInfoId) {
+        const graceEl = document.getElementById(graceInfoId);
+        if (graceEl) {
+            const quota = step?.bytes ?? 0;
+            if (quota > 0) {
+                const grace = _calcGrace(quota);
+                graceEl.textContent = `Hard limit: ${_fmtBytes(quota + grace)} (includes ${_fmtBytes(grace)} grace buffer)`;
+            } else {
+                graceEl.textContent = '';
+            }
+        }
+    }
+}
+
+function emailLoadStats() {
+    fetch('/email/mail-stats')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+            if (!d) return;
+            const r = document.getElementById('statReceived');
+            const s = document.getElementById('statSent');
+            const st = document.getElementById('statStorage');
+            const m = document.getElementById('statMailboxes');
+            if (r) r.textContent = d.total_messages ?? 0;
+            if (s) s.textContent = d.total_sent ?? 0;
+            if (st) st.textContent = _fmtBytes(d.disk_used_bytes);
+            if (m) m.textContent = d.mailbox_count ?? 0;
+        })
+        .catch(() => {});
+}
+
+async function emailLoadMailboxStats() {
+    try {
+        const resp = await fetch('/email/mailbox-stats', { headers: buildApiHeaders({}) });
+        if (!resp.ok) return;
+        const list = await resp.json();
+        for (const mb of list) {
+            const row = document.querySelector(`tr[data-mailbox="${CSS.escape(mb.address)}"]`);
+            if (!row) continue;
+            const rcv = row.querySelector('.mb-received');
+            const snt = row.querySelector('.mb-sent');
+            const bar = row.querySelector('.mb-storage-progress');
+            const txt = row.querySelector('.mb-storage-text');
+            const badge = row.querySelector('.mb-quota-badge');
+            if (rcv) { rcv.textContent = mb.received_count ?? 0; rcv.classList.remove('opacity-50'); }
+            if (snt) { snt.textContent = mb.sent_count ?? 0; snt.classList.remove('opacity-50'); }
+            const used = mb.storage_bytes ?? 0;
+            const quota = mb.quota_bytes ?? 0;
+            if (txt) txt.textContent = quota > 0 ? `${_fmtBytes(used)} / ${_fmtBytes(quota)}` : `${_fmtBytes(used)} / ∞`;
+            if (bar) {
+                const pct = quota > 0 ? Math.min(100, Math.round(used / quota * 100)) : 0;
+                bar.value = pct;
+                bar.className = 'progress w-28 block mb-storage-progress ' + (pct >= 90 ? 'progress-error' : pct >= 75 ? 'progress-warning' : 'progress-success');
+            }
+            if (badge) {
+                if (mb.quota_exceeded_count > 0) {
+                    badge.textContent = `⚠ Over quota (${mb.quota_exceeded_count}×)`;
+                    badge.classList.remove('hidden');
+                } else {
+                    badge.classList.add('hidden');
+                }
+            }
+        }
+    } catch (e) { console.error(e); }
+}
+
+async function emailCreateMailbox(event) {
+    const address = document.getElementById('newMailboxAddress').value.trim();
+    const domain = document.getElementById('newMailboxDomain').value;
+    const name = document.getElementById('newMailboxName').value.trim();
+    const quotaStep = parseInt(document.getElementById('newMailboxQuota')?.value ?? '6');
+    const quota_bytes = QUOTA_STEPS[quotaStep]?.bytes ?? 10737418240;
+    if (!address || !domain) return;
+    const btn = event?.currentTarget;
+    const originalHTML = btn?.innerHTML;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'; }
+    document.getElementById('emailAddMailboxModal')?.close();
+    emailProgressStart(EMAIL_OPERATION_STEPS.create_mailbox, t('email.progress.create_mailbox') || 'Creating mailbox');
+    try {
+        const response = await fetch('/email/mailbox/create', {
+            method: 'POST',
+            headers: buildApiHeaders({'Content-Type': 'application/json'}),
+            body: JSON.stringify({ address: address + '@' + domain, domain: domain, display_name: name, quota_bytes })
+        });
+        const data = await response.json();
+        if (data.success) {
+            emailProgressFinish(true);
+        } else {
+            if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+            emailProgressFinish(false);
+            if (data.error) await dfAlert(data.error, 'Error');
+        }
+    } catch (e) {
+        if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+        emailProgressFinish(false);
+        console.error(e);
+    }
+}
+
+async function emailDeleteMailbox(address, domain, event) {
+    if (!await dfConfirm('Delete mailbox?', 'Delete')) return;
+    const btn = event?.currentTarget;
+    const originalHTML = btn?.innerHTML;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'; }
+    emailProgressStart(EMAIL_OPERATION_STEPS.delete_mailbox, t('email.progress.delete_mailbox') || 'Deleting mailbox');
+    try {
+        const response = await fetch('/email/mailbox/delete', {
+            method: 'POST',
+            headers: buildApiHeaders({'Content-Type': 'application/json'}),
+            body: JSON.stringify({ address: address, domain: domain })
+        });
+        const data = await response.json();
+        if (data.success) {
+            emailProgressFinish(true);
+        } else {
+            if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+            emailProgressFinish(false);
+        }
+    } catch (e) {
+        if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+        emailProgressFinish(false);
+        console.error(e);
+    }
+}
+
+async function emailVerifyDns(domain, event) {
+    const btn = event?.currentTarget;
+    const originalHTML = btn?.innerHTML;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'; }
+    try {
+        const response = await fetch('/email/verify-dns', {
+            method: 'POST',
+            headers: buildApiHeaders({'Content-Type': 'application/json'}),
+            body: JSON.stringify({ zone_name: domain })
+        });
+        const data = await response.json();
+        if (data.success) {
+            await dfAlert(JSON.stringify(data.status), 'DNS Status');
+        }
+    } catch (e) {
+        console.error(e);
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+    }
+}
+
+async function emailUpdateR2(domain, event) {
+    const accessKeyId = prompt('R2 Access Key ID (from CF Dashboard → R2 → Manage R2 API Tokens):');
+    if (!accessKeyId) return;
+    const secretAccessKey = prompt('R2 Secret Access Key:');
+    if (!secretAccessKey) return;
+    const btn = event?.currentTarget;
+    const originalHTML = btn?.innerHTML;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'; }
+    emailProgressStart(EMAIL_OPERATION_STEPS.update_r2, t('email.progress.update_r2') || 'Updating R2 credentials');
+    try {
+        const response = await fetch('/email/update-r2-credentials', {
+            method: 'POST',
+            headers: buildApiHeaders({'Content-Type': 'application/json'}),
+            body: JSON.stringify({ zone_name: domain, r2_access_key_id: accessKeyId, r2_secret_access_key: secretAccessKey })
+        });
+        const data = await response.json();
+        if (data.success) {
+            emailProgressFinish(true);
+        } else {
+            emailProgressFinish(false);
+            await dfAlert('Error: ' + (data.error || 'Unknown'), 'Failed');
+        }
+    } catch (e) {
+        emailProgressFinish(false);
+        console.error(e);
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+    }
+}
+
+async function emailLoadAllCatchAllStatuses() {
+    const statusEls = document.querySelectorAll('[id^="catchAllStatus_"]');
+    for (const el of statusEls) {
+        const domain = el.id.replace('catchAllStatus_', '').replace(/_/g, '.');
+        try {
+            const resp = await fetch(`/email/catch-all/status?domain=${encodeURIComponent(domain)}`, { headers: buildApiHeaders({}) });
+            if (!resp.ok) { el.textContent = 'Catch-All: —'; continue; }
+            const data = await resp.json();
+            el.textContent = data.catch_all_mailbox ? `Catch-All → ${data.catch_all_mailbox}` : 'Catch-All: disabled';
+        } catch { el.textContent = 'Catch-All: —'; }
+    }
+}
+
+async function emailOpenCatchAllModal(domain) {
+    document.getElementById('catchAllDomain').value = domain;
+    document.getElementById('catchAllDomainLabel').textContent = domain;
+    const sel = document.getElementById('catchAllTarget');
+    sel.innerHTML = '';
+    const rows = document.querySelectorAll('tr[data-mailbox]');
+    let current = '';
+    try {
+        const resp = await fetch(`/email/catch-all/status?domain=${encodeURIComponent(domain)}`, { headers: buildApiHeaders({}) });
+        if (resp.ok) { const d = await resp.json(); current = d.catch_all_mailbox || ''; }
+    } catch {}
+    rows.forEach(row => {
+        const addr = row.dataset.mailbox;
+        const opt = document.createElement('option');
+        opt.value = addr;
+        opt.textContent = addr;
+        if (addr === current) opt.selected = true;
+        sel.appendChild(opt);
+    });
+    document.getElementById('catchAllModal').showModal();
+}
+
+async function emailSaveCatchAll() {
+    const domain = document.getElementById('catchAllDomain').value;
+    const target = document.getElementById('catchAllTarget').value;
+    try {
+        const resp = await fetch('/email/catch-all/enable', {
+            method: 'POST',
+            headers: buildApiHeaders({'Content-Type': 'application/json'}),
+            body: JSON.stringify({ domain, target_address: target }),
+        });
+        const data = await resp.json();
+        document.getElementById('catchAllModal').close();
+        emailLoadAllCatchAllStatuses();
+        if (!data.status && !data.catch_all_mailbox) await dfAlert(data.error || 'Failed', 'Error');
+    } catch (e) { console.error(e); }
+}
+
+async function emailDisableCatchAll() {
+    const domain = document.getElementById('catchAllDomain').value;
+    try {
+        await fetch('/email/catch-all/disable', {
+            method: 'POST',
+            headers: buildApiHeaders({'Content-Type': 'application/json'}),
+            body: JSON.stringify({ domain }),
+        });
+        document.getElementById('catchAllModal').close();
+        emailLoadAllCatchAllStatuses();
+    } catch (e) { console.error(e); }
+}
+
+async function emailLoadAutoResponderBadges() {
+    try {
+        const resp = await fetch('/email/auto-responders', { headers: buildApiHeaders({}) });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const active = new Set((data.auto_responders || []).filter(r => r.is_active).map(r => r.mailbox_address));
+        document.querySelectorAll('tr[data-mailbox]').forEach(row => {
+            const badge = row.querySelector('.mb-ar-badge');
+            if (badge) badge.classList.toggle('hidden', !active.has(row.dataset.mailbox));
+        });
+    } catch {}
+}
+
+async function emailOpenAutoResponderModal(address, domain) {
+    document.getElementById('arAddress').value = address;
+    document.getElementById('arDomain').value = domain;
+    document.getElementById('autoResponderMailboxLabel').textContent = address;
+    document.getElementById('arFeedback').classList.add('hidden');
+    document.getElementById('arSubject').value = 'Auto Reply';
+    document.getElementById('arBody').value = '';
+    document.getElementById('arStartDate').value = '';
+    document.getElementById('arEndDate').value = '';
+    document.getElementById('arInterval').value = '24';
+    document.getElementById('arIsActive').checked = true;
+    document.getElementById('arDeleteBtn').classList.add('hidden');
+    try {
+        const resp = await fetch(`/email/mailbox/auto-responder?address=${encodeURIComponent(address)}`, { headers: buildApiHeaders({}) });
+        if (resp.ok) {
+            const data = await resp.json();
+            if (data.auto_responder) {
+                const ar = data.auto_responder;
+                document.getElementById('arSubject').value = ar.subject || 'Auto Reply';
+                document.getElementById('arBody').value = ar.message_body || '';
+                document.getElementById('arStartDate').value = ar.start_date || '';
+                document.getElementById('arEndDate').value = ar.end_date || '';
+                document.getElementById('arInterval').value = ar.reply_interval_hours || 24;
+                document.getElementById('arIsActive').checked = !!ar.is_active;
+                document.getElementById('arDeleteBtn').classList.remove('hidden');
+            }
+        }
+    } catch {}
+    document.getElementById('autoResponderModal').showModal();
+}
+
+async function emailSaveAutoResponder() {
+    const address = document.getElementById('arAddress').value;
+    const feedback = document.getElementById('arFeedback');
+    const payload = {
+        address,
+        subject: document.getElementById('arSubject').value.trim() || 'Auto Reply',
+        message_body: document.getElementById('arBody').value.trim(),
+        start_date: document.getElementById('arStartDate').value || null,
+        end_date: document.getElementById('arEndDate').value || null,
+        reply_interval_hours: parseInt(document.getElementById('arInterval').value) || 24,
+        is_active: document.getElementById('arIsActive').checked,
+    };
+    if (!payload.message_body) {
+        feedback.textContent = 'Message body is required.';
+        feedback.className = 'text-sm font-semibold mb-2 text-error';
+        feedback.classList.remove('hidden');
+        return;
+    }
+    try {
+        const resp = await fetch('/email/mailbox/auto-responder', {
+            method: 'POST',
+            headers: buildApiHeaders({'Content-Type': 'application/json'}),
+            body: JSON.stringify(payload),
+        });
+        const data = await resp.json();
+        if (data.auto_responder) {
+            document.getElementById('autoResponderModal').close();
+            emailLoadAutoResponderBadges();
+        } else {
+            feedback.textContent = data.error || 'Failed to save.';
+            feedback.className = 'text-sm font-semibold mb-2 text-error';
+            feedback.classList.remove('hidden');
+        }
+    } catch (e) { console.error(e); }
+}
+
+async function emailDeleteAutoResponder() {
+    const address = document.getElementById('arAddress').value;
+    try {
+        await fetch('/email/mailbox/auto-responder', {
+            method: 'DELETE',
+            headers: buildApiHeaders({'Content-Type': 'application/json'}),
+            body: JSON.stringify({ address }),
+        });
+        document.getElementById('autoResponderModal').close();
+        emailLoadAutoResponderBadges();
+    } catch (e) { console.error(e); }
+}
+
+let _logCurrentTab = 'outbound';
+let _logCurrentPage = 1;
+
+function emailOpenLogsModal() {
+    _logCurrentTab = 'outbound';
+    _logCurrentPage = 1;
+    document.getElementById('logTabOutbound')?.classList.add('tab-active');
+    document.getElementById('logTabBounce')?.classList.remove('tab-active');
+    document.getElementById('logPanelOutbound')?.classList.remove('hidden');
+    document.getElementById('logPanelBounce')?.classList.add('hidden');
+    document.getElementById('logStatusFilterWrap')?.classList.remove('hidden');
+    document.getElementById('logBounceTypeFilterWrap')?.classList.add('hidden');
+    sessionStorage.setItem('logsModalOpen', '1');
+    document.getElementById('logsModal')?.showModal();
+    emailLoadSendLog(1);
+}
+
+function emailSwitchLogTab(tab) {
+    _logCurrentTab = tab;
+    _logCurrentPage = 1;
+    ['outbound', 'bounce'].forEach(t => {
+        document.getElementById('logTab' + t.charAt(0).toUpperCase() + t.slice(1))?.classList.toggle('tab-active', t === tab);
+        const panel = document.getElementById('logPanel' + t.charAt(0).toUpperCase() + t.slice(1));
+        if (panel) panel.classList.toggle('hidden', t !== tab);
+    });
+    document.getElementById('logStatusFilterWrap')?.classList.toggle('hidden', tab !== 'outbound');
+    document.getElementById('logBounceTypeFilterWrap')?.classList.toggle('hidden', tab !== 'bounce');
+    emailLoadCurrentLog();
+}
+
+function emailLoadCurrentLog() {
+    if (_logCurrentTab === 'outbound') emailLoadSendLog(_logCurrentPage);
+    else if (_logCurrentTab === 'bounce') emailLoadBounceLog(_logCurrentPage);
+}
+
+function emailLogPrevPage() {
+    if (_logCurrentPage > 1) { _logCurrentPage--; emailLoadCurrentLog(); }
+}
+
+function emailLogNextPage() {
+    _logCurrentPage++;
+    emailLoadCurrentLog();
+}
+
+function _logFmtDate(iso) {
+    if (!iso) return '';
+    try { return new Date(iso).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }); }
+    catch { return iso; }
+}
+
+function _logUpdatePagination(total, page, limit) {
+    const pages = Math.max(1, Math.ceil(total / limit));
+    const info = document.getElementById('logPageInfo');
+    if (info) info.textContent = `Page ${page} of ${pages} (${total} total)`;
+    const prev = document.getElementById('logPrevBtn');
+    const next = document.getElementById('logNextBtn');
+    if (prev) prev.disabled = page <= 1;
+    if (next) next.disabled = page >= pages;
+    document.getElementById('logPagination')?.classList.remove('hidden');
+}
+
+async function emailLoadSendLog(page) {
+    page = page || 1;
+    const params = new URLSearchParams({ page, limit: 50 });
+    const dateFrom = document.getElementById('logDateFrom')?.value;
+    const dateTo = document.getElementById('logDateTo')?.value;
+    const status = document.getElementById('logStatus')?.value;
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+    if (status) params.set('status', status);
+    try {
+        const resp = await fetch('/email/logs/send-log?' + params.toString(), { headers: buildApiHeaders({}) });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const tbody = document.getElementById('logBodyOutbound');
+        const empty = document.getElementById('logEmptyOutbound');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        if (!data.logs || data.logs.length === 0) {
+            if (empty) empty.classList.remove('hidden');
+            _logUpdatePagination(0, page, 50);
+            return;
+        }
+        if (empty) empty.classList.add('hidden');
+        for (const row of data.logs) {
+            const toList = Array.isArray(row.to_addresses) ? row.to_addresses.join(', ') : (row.to_addresses || '');
+            const statusBadge = row.status === 'sent'
+                ? '<span class="badge badge-success badge-sm">sent</span>'
+                : '<span class="badge badge-error badge-sm">failed</span>';
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="text-xs opacity-70 whitespace-nowrap">${_logFmtDate(row.sent_at)}</td>
+                <td class="text-xs max-w-32 truncate">${row.from_address || ''}</td>
+                <td class="text-xs max-w-32 truncate">${toList}</td>
+                <td class="text-xs max-w-40 truncate">${row.subject || ''}</td>
+                <td>${statusBadge}</td>
+                <td class="text-xs max-w-40 truncate opacity-60">${row.error_message || ''}</td>
+            `;
+            tbody.appendChild(tr);
+        }
+        _logUpdatePagination(data.total, page, data.limit);
+    } catch (e) { console.error(e); }
+}
+
+async function emailLoadBounceLog(page) {
+    page = page || 1;
+    const params = new URLSearchParams({ page, limit: 50 });
+    const dateFrom = document.getElementById('logDateFrom')?.value;
+    const dateTo = document.getElementById('logDateTo')?.value;
+    const bounceType = document.getElementById('logBounceType')?.value;
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+    if (bounceType) params.set('bounce_type', bounceType);
+    try {
+        const resp = await fetch('/email/logs/bounce-log?' + params.toString(), { headers: buildApiHeaders({}) });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const tbody = document.getElementById('logBodyBounce');
+        const empty = document.getElementById('logEmptyBounce');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        if (!data.logs || data.logs.length === 0) {
+            if (empty) empty.classList.remove('hidden');
+            _logUpdatePagination(0, page, 50);
+            return;
+        }
+        if (empty) empty.classList.add('hidden');
+        for (const row of data.logs) {
+            const typeBadge = row.bounce_type === 'permanent'
+                ? '<span class="badge badge-error badge-sm">permanent</span>'
+                : '<span class="badge badge-warning badge-sm">temporary</span>';
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="text-xs opacity-70 whitespace-nowrap">${_logFmtDate(row.received_at)}</td>
+                <td class="text-xs max-w-40 truncate">${row.recipient || ''}</td>
+                <td>${typeBadge}</td>
+                <td class="text-xs max-w-60 truncate opacity-70">${row.reason || ''}</td>
+            `;
+            tbody.appendChild(tr);
+        }
+        _logUpdatePagination(data.total, page, data.limit);
+    } catch (e) { console.error(e); }
+}
+
+async function emailLoadDeliveryStats() {
+    try {
+        const resp = await fetch('/email/logs/stats', { headers: buildApiHeaders({}) });
+        if (!resp.ok) return;
+        const d = await resp.json();
+        const el = id => document.getElementById(id);
+        if (el('dlStatSent')) el('dlStatSent').textContent = d.total_sent ?? 0;
+        if (el('dlStatFailed')) el('dlStatFailed').textContent = d.total_failed ?? 0;
+        if (el('dlStatBounced')) el('dlStatBounced').textContent = d.total_bounced ?? 0;
+        if (el('dlStatRate')) el('dlStatRate').textContent = (d.bounce_rate ?? 0) + '%';
+        const reasons = document.getElementById('dlTopReasons');
+        if (reasons && d.top_bounce_reasons?.length > 0) {
+            reasons.innerHTML = '<p class="text-sm font-semibold mb-2 opacity-70">Top bounce reasons</p>' +
+                d.top_bounce_reasons.map(r =>
+                    `<div class="flex justify-between text-sm py-1 border-b border-base-300 opacity-70"><span class="truncate mr-4">${r.reason}</span><span class="shrink-0">${r.count}</span></div>`
+                ).join('');
+        } else if (reasons) {
+            reasons.innerHTML = '<p class="text-sm opacity-50">No bounce data yet.</p>';
+        }
+    } catch (e) { console.error(e); }
+}
+
+function emailOpenWebmail() {
+    window.location.href = '/email/sso/callback';
+}
+
+async function emailRepairDns(domain, event) {
+    if (!confirm(`Re-apply all required DNS records for ${domain}? Missing records (including DKIM) will be added.`)) return;
+    const btn = event?.currentTarget;
+    const originalHTML = btn?.innerHTML;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'; }
+    emailProgressStart(EMAIL_OPERATION_STEPS.repair_dns, t('email.progress.repair_dns') || 'Repairing DNS');
+    try {
+        const response = await fetch('/email/repair-dns', {
+            method: 'POST',
+            headers: buildApiHeaders({'Content-Type': 'application/json'}),
+            body: JSON.stringify({ zone_name: domain })
+        });
+        const data = await response.json();
+        if (data.success) {
+            emailProgressFinish(true);
+        } else {
+            emailProgressFinish(false);
+            await dfAlert('Error: ' + (data.error || 'Unknown'), 'Failed');
+        }
+    } catch (e) {
+        emailProgressFinish(false);
+        console.error(e);
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = originalHTML; }
+    }
+}
+
+async function emailSetPassword(address, domain) {
+    const modal = document.getElementById('emailSetPasswordModal');
+    if (!modal) return;
+    const targetEl = document.getElementById('emailSetPasswordTarget');
+    const newPwEl = document.getElementById('emailSetPasswordNew');
+    const confirmEl = document.getElementById('emailSetPasswordConfirm');
+    const errorEl = document.getElementById('emailSetPasswordError');
+    const submitBtn = document.getElementById('emailSetPasswordSubmitBtn');
+
+    if (targetEl) targetEl.textContent = address;
+    if (newPwEl) newPwEl.value = '';
+    if (confirmEl) confirmEl.value = '';
+    if (errorEl) errorEl.classList.add('hidden');
+
+    modal.showModal();
+    setTimeout(() => newPwEl?.focus(), 100);
+
+    const handler = async () => {
+        submitBtn.removeEventListener('click', handler);
+        const password = newPwEl.value;
+        const confirmed = confirmEl.value;
+        errorEl.classList.add('hidden');
+        if (password.length < 8) {
+            errorEl.textContent = 'Password must be at least 8 characters.';
+            errorEl.classList.remove('hidden');
+            submitBtn.addEventListener('click', handler);
+            return;
+        }
+        if (password !== confirmed) {
+            errorEl.textContent = 'Passwords do not match.';
+            errorEl.classList.remove('hidden');
+            submitBtn.addEventListener('click', handler);
+            return;
+        }
+        modal.close();
+        try {
+            const response = await fetch('/email/mailbox/set-password', {
+                method: 'POST',
+                headers: buildApiHeaders({'Content-Type': 'application/json'}),
+                body: JSON.stringify({ address, domain, password })
+            });
+            const data = await response.json();
+            if (data.success) {
+                await dfAlert(`Password updated for ${address}.`, 'Success');
+            } else {
+                await dfAlert('Error: ' + (data.error || 'Unknown'), 'Error');
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    };
+    submitBtn.addEventListener('click', handler);
+}
+
+async function emailRedeployWorkers() {
+    if (!confirm('Redeploy all inbound and outbound workers? This will push the latest worker code and bindings to Cloudflare.')) return;
+    emailProgressStart(EMAIL_OPERATION_STEPS.redeploy_workers, t('email.progress.redeploy_workers') || 'Redeploying workers');
+    try {
+        const response = await fetch('/email/redeploy-workers', {
+            method: 'POST',
+            headers: buildApiHeaders({'Content-Type': 'application/json'})
+        });
+        const data = await response.json();
+        if (data.success) {
+            emailProgressFinish(true);
+        } else {
+            emailProgressFinish(false);
+            await dfAlert('Error: ' + (data.error || 'Unknown'), 'Failed');
+        }
+    } catch (e) {
+        emailProgressFinish(false);
+        console.error(e);
+    }
+}
+
+async function emailRestoreBackup() {
+    const fileInput = document.getElementById('emailRestoreFile');
+    if (!fileInput.files || fileInput.files.length === 0) {
+        return;
+    }
+    if (!await dfConfirm(t('email.restore_confirm'), t('email.restore_title'))) {
+        return;
+    }
+    const btn = document.getElementById('emailRestoreBtn');
+    const feedback = document.getElementById('emailRestoreFeedback');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> ' + t('common.loading');
+    feedback.classList.remove('hidden', 'text-error', 'text-success');
+    feedback.textContent = 'Uploading and restoring...';
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    try {
+        const response = await fetch('/email/restore', {
+            method: 'POST',
+            headers: buildApiHeaders(),
+            body: formData
+        });
+        const data = await response.json();
+        if (data.success) {
+            feedback.classList.add('text-success');
+            feedback.textContent = t('email.restore_success');
+            setTimeout(() => {
+                location.reload();
+            }, 3000);
+        } else {
+            feedback.classList.add('text-error');
+            feedback.textContent = 'Error: ' + (data.error || 'Unknown error');
+            btn.disabled = false;
+            btn.textContent = t('email.restore_backup');
+        }
+    } catch (e) {
+        feedback.classList.add('text-error');
+        feedback.textContent = 'Error: ' + e.message;
+        btn.disabled = false;
+        btn.textContent = t('email.restore_backup');
+        console.error(e);
+    }
+}
+
+function emailEditQuota(address, domain, currentQuotaBytes) {
+    const modal = document.getElementById('emailEditQuotaModal');
+    if (!modal) return;
+    document.getElementById('emailEditQuotaTarget').textContent = address;
+    const row = document.querySelector(`tr[data-mailbox="${CSS.escape(address)}"]`);
+    const usageText = row?.querySelector('.mb-storage-text')?.textContent ?? '';
+    document.getElementById('emailEditQuotaUsage').textContent = usageText ? `Current usage: ${usageText}` : '';
+    const stepIndex = QUOTA_STEPS.findIndex(s => s.bytes === currentQuotaBytes);
+    const slider = document.getElementById('editMailboxQuota');
+    slider.value = stepIndex >= 0 ? stepIndex : 6;
+    emailUpdateQuotaLabel('editMailboxQuotaLabel', slider.value, 'emailEditQuotaGraceInfo');
+    const submitBtn = document.getElementById('emailEditQuotaSubmitBtn');
+    const handler = async () => {
+        submitBtn.removeEventListener('click', handler);
+        const quota_bytes = QUOTA_STEPS[parseInt(slider.value)]?.bytes ?? 10737418240;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="loading loading-spinner loading-sm"></span>';
+        try {
+            const resp = await fetch('/email/mailbox/set-quota', {
+                method: 'POST',
+                headers: buildApiHeaders({'Content-Type': 'application/json'}),
+                body: JSON.stringify({ address, domain, quota_bytes }),
+            });
+            const data = await resp.json();
+            modal.close();
+            if (data.success) {
+                await emailLoadMailboxStats();
+            } else {
+                await dfAlert(data.error || 'Failed to update quota', 'Error');
+            }
+        } catch (e) {
+            modal.close();
+            console.error(e);
+        }
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = 'Save';
+    };
+    submitBtn.addEventListener('click', handler);
+    modal.showModal();
 }
