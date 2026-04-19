@@ -4,7 +4,7 @@
 #
 #    pip-compile --output-file=dockflare/requirements.txt dockflare/requirements.in
 #
-authlib==1.6.9
+authlib==1.6.11
     # via -r dockflare/requirements.in
 boto3==1.42.83
     # via -r dockflare/requirements.in

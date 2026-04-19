@@ -1,4 +1,4 @@
-Authlib==1.6.9
+Authlib==1.6.11
 boto3
 cryptography==46.0.7
 docker==7.1.0
