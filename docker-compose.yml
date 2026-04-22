@@ -37,7 +37,7 @@ services:
     container_name: dockflare
     restart: unless-stopped
     ports:
-      - "5000:5000"
+      - "5000:5000" # Optional: comment out once exposed via Cloudflare Tunnel with an Access Policy to restrict access to tunnel-only
     labels: # -- Cloudflare Tunnel Configuration (via DockFlare) OPTIONAL --
       # Main DockFlare with access policy
       - dockflare.enable=true
