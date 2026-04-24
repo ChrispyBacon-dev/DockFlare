@@ -48,8 +48,8 @@ const confirmNewFolder = async () => {
         store.folders = res.data;
         showNewFolder.value = false;
     }
-    catch (e) {
-        console.error('Failed to create folder', e);
+    catch {
+        store.showToast('Failed to create folder');
     }
     finally {
         creatingFolder.value = false;
@@ -69,8 +69,8 @@ const deleteFolder = async (f) => {
             store.currentFolder = store.folders[0]?.name || '';
         }
     }
-    catch (e) {
-        console.error('Failed to delete folder', e);
+    catch {
+        store.showToast('Failed to delete folder');
     }
 };
 // ── Folder rename / colour edit ──────────────────────────────────────
@@ -100,8 +100,8 @@ const confirmEdit = async () => {
         }
         editingFolder.value = null;
     }
-    catch (e) {
-        console.error('Failed to rename folder', e);
+    catch {
+        store.showToast('Failed to rename folder');
     }
 };
 debugger; /* PartiallyEnd: #3632/scriptSetup.vue */
@@ -182,17 +182,19 @@ for (const [f] of __VLS_getVForSourceType((__VLS_ctx.store.folders))) {
         }, ...__VLS_functionalComponentArgsRest(__VLS_17));
         __VLS_19.slots.default;
         (f.name);
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: "ml-auto text-muted-foreground flex gap-1" },
-        });
-        if (f.unread_count) {
+        if (f.total_count > 0) {
             __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-                ...{ class: "font-bold" },
+                ...{ class: "ml-auto text-muted-foreground flex gap-1" },
             });
-            (f.unread_count);
+            if (f.unread_count) {
+                __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+                    ...{ class: "font-bold" },
+                });
+                (f.unread_count);
+            }
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
+            (f.total_count);
         }
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
-        (f.total_count || 0);
         var __VLS_19;
         var __VLS_15;
         var __VLS_3;
@@ -279,17 +281,19 @@ for (const [f] of __VLS_getVForSourceType((__VLS_ctx.store.folders))) {
             ...{ class: "truncate" },
         });
         (f.name);
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: (__VLS_ctx.cn('ml-auto text-xs flex-shrink-0 flex gap-1', __VLS_ctx.store.currentFolder === f.name ? 'text-primary-foreground' : 'text-muted-foreground')) },
-        });
-        if (f.unread_count) {
+        if (f.total_count > 0) {
             __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-                ...{ class: "font-bold" },
+                ...{ class: (__VLS_ctx.cn('ml-auto text-xs flex-shrink-0 flex gap-1', __VLS_ctx.store.currentFolder === f.name ? 'text-primary-foreground' : 'text-muted-foreground')) },
             });
-            (f.unread_count);
+            if (f.unread_count) {
+                __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+                    ...{ class: "font-bold" },
+                });
+                (f.unread_count);
+            }
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
+            (f.total_count);
         }
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({});
-        (f.total_count || 0);
         if (!f.system_folder) {
             __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
                 ...{ class: (__VLS_ctx.cn('absolute right-1 flex gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity rounded px-0.5', __VLS_ctx.store.currentFolder === f.name ? 'bg-primary' : 'bg-accent')) },
@@ -372,6 +376,16 @@ if (__VLS_ctx.showNewFolder && !__VLS_ctx.isCollapsed) {
             ...{ style: (`background:${c}; border-color:${__VLS_ctx.newFolderColor === c ? '#000' : 'transparent'}`) },
         });
     }
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+        ...{ onClick: (...[$event]) => {
+                if (!(__VLS_ctx.showNewFolder && !__VLS_ctx.isCollapsed))
+                    return;
+                __VLS_ctx.newFolderColor = '';
+            } },
+        ...{ class: "h-5 w-5 rounded-full border-2 text-xs flex items-center justify-center text-muted-foreground hover:bg-accent" },
+        ...{ style: (`border-color:${!__VLS_ctx.newFolderColor ? '#888' : 'transparent'}`) },
+        title: "No colour",
+    });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "flex gap-1 justify-end" },
     });
@@ -531,6 +545,16 @@ if (!__VLS_ctx.isCollapsed) {
 /** @type {__VLS_StyleScopedClasses['border-2']} */ ;
 /** @type {__VLS_StyleScopedClasses['transition-transform']} */ ;
 /** @type {__VLS_StyleScopedClasses['hover:scale-110']} */ ;
+/** @type {__VLS_StyleScopedClasses['h-5']} */ ;
+/** @type {__VLS_StyleScopedClasses['w-5']} */ ;
+/** @type {__VLS_StyleScopedClasses['rounded-full']} */ ;
+/** @type {__VLS_StyleScopedClasses['border-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-xs']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex']} */ ;
+/** @type {__VLS_StyleScopedClasses['items-center']} */ ;
+/** @type {__VLS_StyleScopedClasses['justify-center']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:bg-accent']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex']} */ ;
 /** @type {__VLS_StyleScopedClasses['gap-1']} */ ;
 /** @type {__VLS_StyleScopedClasses['justify-end']} */ ;

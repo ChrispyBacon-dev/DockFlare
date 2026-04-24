@@ -5,7 +5,8 @@ import time
 
 log = logging.getLogger(__name__)
 
-_INTERVAL = 7 * 24 * 3600
+_CLEANUP_INTERVAL = 7 * 24 * 3600
+_ALIAS_EXPIRY_INTERVAL = 3600
 
 
 def _run_cleanup():
@@ -47,12 +48,23 @@ def _run_cleanup():
 
 def _scheduler_loop():
     while True:
-        time.sleep(_INTERVAL)
+        time.sleep(_CLEANUP_INTERVAL)
         log.info("Scheduler: running push subscription cleanup")
         try:
             _run_cleanup()
         except Exception:
             log.exception("Scheduler: unhandled error in cleanup run")
+
+
+def _alias_expiry_loop():
+    time.sleep(300)
+    while True:
+        try:
+            from app.core.alias_expiry import expire_aliases
+            expire_aliases()
+        except Exception:
+            log.exception("Scheduler: unhandled error in alias expiry run")
+        time.sleep(_ALIAS_EXPIRY_INTERVAL)
 
 
 def start_scheduler():
@@ -61,3 +73,6 @@ def start_scheduler():
     t = threading.Thread(target=_scheduler_loop, daemon=True, name="push-cleanup-scheduler")
     t.start()
     log.info("Scheduler: push subscription cleanup scheduled every 7 days")
+    a = threading.Thread(target=_alias_expiry_loop, daemon=True, name="alias-expiry-scheduler")
+    a.start()
+    log.info("Scheduler: alias expiry scheduled every hour")

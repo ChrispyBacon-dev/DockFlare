@@ -3,10 +3,9 @@ import {
   SplitterGroup, SplitterPanel, SplitterResizeHandle,
   TooltipProvider, TooltipRoot, TooltipTrigger, TooltipContent, TooltipPortal,
 } from 'radix-vue'
-import { defineAsyncComponent } from 'vue'
-import { PenSquare, Sun, Moon, LogOut, Settings, Columns2, Maximize2 } from 'lucide-vue-next'
+import { defineAsyncComponent, ref, watch, computed } from 'vue'
+import { PenSquare, Sun, Moon, LogOut, Settings, Columns2, Maximize2, ChevronLeft, Menu } from 'lucide-vue-next'
 import { cn } from '../../lib/utils'
-import Separator from '../ui/Separator.vue'
 import MailboxSelector from './MailboxSelector.vue'
 import FolderNav from './FolderNav.vue'
 import MessageList from './MessageList.vue'
@@ -14,11 +13,13 @@ import MessageDisplay from './MessageDisplay.vue'
 import ComposeDialog from './ComposeDialog.vue'
 import { useMailStore } from '../../stores/mail'
 import { useAuth } from '../../composables/useAuth'
+import { useBreakpoint } from '../../composables/useBreakpoint'
 
 const SettingsDialog = defineAsyncComponent(() => import('./SettingsDialog.vue'))
 
 const store = useMailStore()
 const { logout } = useAuth()
+const { isMobile } = useBreakpoint()
 
 const onCollapse = () => { store.isCollapsed = true }
 const onExpand = () => { store.isCollapsed = false }
@@ -27,11 +28,134 @@ const compose = () => {
   store.composeDefaults = null
   store.isComposeOpen = true
 }
+
+// ── Mobile navigation stack ──────────────────────────────────────────
+type MobilePanel = 'folders' | 'list' | 'detail'
+const mobilePanel = ref<MobilePanel>('list')
+
+watch(() => store.currentFolder, () => {
+  if (isMobile.value) mobilePanel.value = 'list'
+})
+
+watch(() => store.currentMessage, (msg) => {
+  if (isMobile.value && msg) mobilePanel.value = 'detail'
+})
+
+const goBack = () => {
+  if (mobilePanel.value === 'detail') {
+    store.currentMessage = null
+    mobilePanel.value = 'list'
+  } else if (mobilePanel.value === 'list') {
+    mobilePanel.value = 'folders'
+  }
+}
+
+const mobileTitle = computed(() => {
+  if (mobilePanel.value === 'folders') return store.currentMailbox || 'Folders'
+  if (mobilePanel.value === 'list') return store.currentFolder || 'Inbox'
+  return store.currentMessage?.subject || 'Message'
+})
 </script>
 
 <template>
   <TooltipProvider :delay-duration="0">
+
+    <!-- ══════════════════════════════════════════════════════════
+         MOBILE LAYOUT  (< 768px)
+    ══════════════════════════════════════════════════════════ -->
+    <div v-if="isMobile" class="flex flex-col h-[100dvh] w-screen bg-background overflow-hidden">
+
+      <!-- Top bar -->
+      <div class="h-14 flex items-center gap-2 px-3 border-b border-border flex-shrink-0 bg-background">
+        <button
+          v-if="mobilePanel !== 'folders'"
+          class="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent transition-colors flex-shrink-0"
+          @click="goBack"
+        >
+          <ChevronLeft class="size-5" />
+        </button>
+        <button
+          v-else
+          class="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent transition-colors flex-shrink-0"
+          @click="store.isSettingsOpen = true"
+        >
+          <Settings class="size-4" />
+        </button>
+
+        <span class="flex-1 text-base font-semibold truncate">{{ mobileTitle }}</span>
+
+        <button
+          class="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent transition-colors flex-shrink-0"
+          @click="store.toggleTheme()"
+        >
+          <Sun v-if="store.isDark" class="size-4" />
+          <Moon v-else class="size-4" />
+        </button>
+
+        <button
+          class="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent transition-colors flex-shrink-0"
+          @click="logout"
+        >
+          <LogOut class="size-4" />
+        </button>
+      </div>
+
+      <!-- Panel content -->
+      <div class="flex-1 min-h-0 overflow-hidden">
+
+        <!-- Folders panel -->
+        <div v-if="mobilePanel === 'folders'" class="h-full flex flex-col overflow-y-auto">
+          <div class="px-3 py-3 border-b border-border">
+            <MailboxSelector :is-collapsed="false" />
+          </div>
+          <FolderNav :is-collapsed="false" />
+        </div>
+
+        <!-- Message list panel -->
+        <div v-else-if="mobilePanel === 'list'" class="h-full flex flex-col overflow-hidden">
+          <MessageList />
+        </div>
+
+        <!-- Message detail panel -->
+        <div v-else-if="mobilePanel === 'detail'" class="h-full flex flex-col overflow-hidden">
+          <MessageDisplay :message="store.currentMessage ?? undefined" />
+        </div>
+      </div>
+
+      <!-- Bottom nav bar -->
+      <div class="h-16 flex items-center justify-around border-t border-border flex-shrink-0 bg-background pb-safe">
+        <button
+          class="flex flex-col items-center gap-0.5 px-4 py-2 rounded-lg transition-colors"
+          :class="mobilePanel === 'folders' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'"
+          @click="mobilePanel = 'folders'"
+        >
+          <Menu class="size-5" />
+          <span class="text-[10px] font-medium">Folders</span>
+        </button>
+
+        <button
+          class="flex items-center justify-center h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-colors"
+          @click="compose"
+        >
+          <PenSquare class="size-5" />
+        </button>
+
+        <button
+          class="flex flex-col items-center gap-0.5 px-4 py-2 rounded-lg transition-colors"
+          :class="mobilePanel === 'list' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'"
+          @click="mobilePanel = 'list'"
+        >
+          <Columns2 class="size-5" />
+          <span class="text-[10px] font-medium">Mail</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════
+         DESKTOP LAYOUT  (≥ 768px)  — unchanged
+    ══════════════════════════════════════════════════════════ -->
     <SplitterGroup
+      v-else
       id="mail-layout"
       direction="horizontal"
       class="h-screen w-screen items-stretch"
@@ -50,7 +174,6 @@ const compose = () => {
         @collapse="onCollapse"
         @expand="onExpand"
       >
-        <!-- ── Single header row (same height as middle + right panel headers) ── -->
         <div
           :class="cn(
             'h-[52px] flex items-center gap-1 px-2 flex-shrink-0',
@@ -58,11 +181,9 @@ const compose = () => {
           )"
         >
           <template v-if="!store.isCollapsed">
-            <!-- Mailbox selector fills available space -->
             <div class="flex-1 min-w-0">
               <MailboxSelector :is-collapsed="false" />
             </div>
-            <!-- Compose -->
             <TooltipRoot :delay-duration="0">
               <TooltipTrigger as-child>
                 <button
@@ -74,7 +195,6 @@ const compose = () => {
                 </button>
               </TooltipTrigger>
             </TooltipRoot>
-            <!-- View Mode toggle -->
             <TooltipRoot :delay-duration="0">
               <TooltipTrigger as-child>
                 <button
@@ -91,7 +211,6 @@ const compose = () => {
                 </TooltipContent>
               </TooltipPortal>
             </TooltipRoot>
-            <!-- Theme toggle -->
             <TooltipRoot :delay-duration="0">
               <TooltipTrigger as-child>
                 <button
@@ -108,7 +227,6 @@ const compose = () => {
                 </TooltipContent>
               </TooltipPortal>
             </TooltipRoot>
-            <!-- Settings -->
             <TooltipRoot :delay-duration="0">
               <TooltipTrigger as-child>
                 <button
@@ -124,7 +242,6 @@ const compose = () => {
                 </TooltipContent>
               </TooltipPortal>
             </TooltipRoot>
-            <!-- Logout -->
             <TooltipRoot :delay-duration="0">
               <TooltipTrigger as-child>
                 <button
@@ -142,7 +259,6 @@ const compose = () => {
             </TooltipRoot>
           </template>
 
-          <!-- Collapsed: stacked icon buttons -->
           <template v-else>
             <TooltipRoot :delay-duration="0">
               <TooltipTrigger as-child>
@@ -185,7 +301,6 @@ const compose = () => {
                 <TooltipContent side="right" class="z-50 rounded-md border bg-popover px-3 py-1.5 text-sm text-popover-foreground shadow-md">Logout</TooltipContent>
               </TooltipPortal>
             </TooltipRoot>
-            <!-- Collapsed mailbox icon below -->
             <MailboxSelector :is-collapsed="true" />
           </template>
         </div>
@@ -242,7 +357,15 @@ const compose = () => {
       </template>
     </SplitterGroup>
 
-    <ComposeDialog />
+    <!-- Floating compose (desktop only) + settings dialog -->
+    <template v-if="!isMobile">
+      <ComposeDialog />
+    </template>
+    <Teleport v-else to="body">
+      <div v-if="store.isComposeOpen" class="fixed inset-0 z-50 flex flex-col bg-background">
+        <ComposeDialog :panel-mode="true" />
+      </div>
+    </Teleport>
     <SettingsDialog />
   </TooltipProvider>
 </template>

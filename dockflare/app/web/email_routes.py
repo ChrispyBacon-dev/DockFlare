@@ -399,15 +399,15 @@ def _redeploy_inbound_worker(email_cfg, domain):
 
     kv_ns_id = d.get('quota_kv_namespace_id')
     if not kv_ns_id:
-        try:
-            kv_ns_id = email_manager.create_kv_namespace(
-                f"dockflare-quota-{domain.replace('.', '-')}"
-            )
+        kv_ns_id = email_manager.get_or_create_kv_namespace(
+            f"dockflare-quota-{domain.replace('.', '-')}"
+        )
+        if kv_ns_id:
             email_cfg['domains'][domain]['quota_kv_namespace_id'] = kv_ns_id
             save_email_config(email_cfg)
-            logging.info(f"Created quota KV namespace for existing domain {domain}: {kv_ns_id}")
-        except Exception as e:
-            logging.warning(f"Could not create quota KV namespace for {domain}: {e}")
+            logging.info(f"Resolved quota KV namespace for {domain}: {kv_ns_id}")
+        else:
+            logging.warning(f"Could not resolve quota KV namespace for {domain}")
 
     catch_all_address = d.get('catch_all_address', '')
     catch_all_enabled = 'true' if catch_all_address else 'false'
@@ -1188,6 +1188,78 @@ def quota_kv_sync():
         logging.warning(f"quota-kv-sync {action} failed for {address}: {e}")
         return jsonify({'error': str(e)}), 500
     return jsonify({'status': 'ok', 'action': action})
+
+
+@email_bp.route('/internal/alias-kv-sync', methods=['POST'])
+def alias_kv_sync():
+    if not _check_internal_request():
+        return jsonify({'error': 'forbidden'}), 403
+    data = request.get_json(force=True, silent=True) or {}
+    domain = data.get('domain')
+    alias_address = data.get('alias_address')
+    action = data.get('action')
+    mailbox_address = data.get('mailbox_address')
+    if not domain or not alias_address or action not in ('put', 'delete'):
+        return jsonify({'error': 'missing domain, alias_address, or valid action'}), 400
+    if action == 'put' and not mailbox_address:
+        return jsonify({'error': 'mailbox_address required for put'}), 400
+    cfg = config.EMAIL_CONFIG
+    if not cfg or domain not in cfg.get('domains', {}):
+        return jsonify({'status': 'domain_not_found'}), 200
+    kv_ns_id = cfg['domains'][domain].get('quota_kv_namespace_id')
+    if not kv_ns_id:
+        return jsonify({'status': 'no_kv'}), 200
+    kv_key = f"alias::{alias_address}"
+    try:
+        if action == 'put':
+            email_manager.update_kv_entry(kv_ns_id, kv_key, {"mailbox": mailbox_address})
+        else:
+            email_manager.delete_kv_entry(kv_ns_id, kv_key)
+    except Exception as e:
+        logging.warning(f"alias-kv-sync {action} failed for {alias_address}: {e}")
+        return jsonify({'error': str(e)}), 500
+    return jsonify({'status': 'ok', 'action': action})
+
+
+@email_bp.route('/domain/<domain>/aliases', methods=['GET'])
+@login_required
+def domain_aliases(domain):
+    import requests as req_lib
+    token = _generate_jwt(current_user.get_id(), role='admin')
+    if not token:
+        return jsonify({'error': 'JWT configuration missing'}), 500
+    try:
+        resp = req_lib.get(
+            f"{config.MAIL_MANAGER_INTERNAL_URL}/api/v1/system/aliases",
+            headers={'Authorization': f'Bearer {token}'},
+            params={'domain': domain},
+            timeout=10,
+        )
+        if resp.ok:
+            return jsonify(resp.json())
+        return jsonify({'error': 'mail-manager unreachable'}), 502
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@email_bp.route('/alias/<path:address>/delete', methods=['POST'])
+@login_required
+def admin_delete_alias(address):
+    import requests as req_lib
+    token = _generate_jwt(current_user.get_id(), role='admin')
+    if not token:
+        return jsonify({'error': 'JWT configuration missing'}), 500
+    try:
+        resp = req_lib.delete(
+            f"{config.MAIL_MANAGER_INTERNAL_URL}/api/v1/aliases/{address}",
+            headers={'Authorization': f'Bearer {token}'},
+            timeout=10,
+        )
+        if resp.ok:
+            return jsonify({'status': 'deleted'})
+        return jsonify({'error': resp.text[:200]}), resp.status_code
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 def _restart_mail_container():

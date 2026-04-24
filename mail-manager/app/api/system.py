@@ -147,6 +147,32 @@ def wipe_all():
         config.IN_MAINTENANCE = False
         return jsonify({"error": str(e)}), 500
 
+@system_bp.route('/aliases', methods=['GET'])
+@admin_required
+def list_aliases_system():
+    domain = request.args.get('domain', '').strip()
+    db_path = config.DB_PATH
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        if domain:
+            rows = conn.execute(
+                "SELECT * FROM aliases WHERE domain=? ORDER BY use_count DESC, created_at DESC",
+                (domain,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM aliases ORDER BY use_count DESC, created_at DESC"
+            ).fetchall()
+        conn.close()
+        aliases = [dict(r) for r in rows]
+        for a in aliases:
+            a['is_active'] = bool(a['is_active'])
+        return jsonify({"domain": domain or None, "aliases": aliases, "total": len(aliases)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 def _schedule_restart():
     def restart():
         import time

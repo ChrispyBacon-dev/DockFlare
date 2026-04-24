@@ -9,5 +9,17 @@ export const authApi = {
         });
         return response.json();
     },
+    changePassword: async (currentPassword, newPassword) => {
+        const token = localStorage.getItem('jwt_token');
+        const response = await fetch('/email/auth/change-password', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+        });
+        return response.json();
+    },
 };
 //# sourceMappingURL=auth.js.map

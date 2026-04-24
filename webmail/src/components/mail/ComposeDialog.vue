@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onUnmounted } from 'vue'
+import { ref, watch, nextTick, onUnmounted, onMounted, type Ref, computed } from 'vue'
+import { useBreakpoint } from '../../composables/useBreakpoint'
 import {
   Paperclip, X, Bold as BoldIcon, Italic as ItalicIcon, Link2, List as ListIcon, ListOrdered, Minus,
   Underline as UnderlineIcon, AlignLeft as AlignLeftIcon, AlignCenter as AlignCenterIcon, AlignRight as AlignRightIcon, AlignJustify as AlignJustifyIcon,
-  Quote as QuoteIcon, RemoveFormatting, Baseline, Trash2, Strikethrough as StrikethroughIcon, Type, BookmarkCheck, Maximize2, Minimize2
+  Quote as QuoteIcon, RemoveFormatting, Baseline, Trash2, Strikethrough as StrikethroughIcon, Type, BookmarkCheck, Maximize2, Minimize2, Smile
 } from 'lucide-vue-next'
 import { useEditor, EditorContent } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
@@ -22,11 +23,25 @@ import { useMailStore } from '../../stores/mail'
 import Button from '../ui/Button.vue'
 import Input from '../ui/Input.vue'
 
-defineProps({ panelMode: { type: Boolean, default: false } })
+const props = defineProps({ panelMode: { type: Boolean, default: false } })
 
 const store = useMailStore()
+const { isMobile } = useBreakpoint()
+const effectivePanelMode = computed(() => props.panelMode || isMobile.value)
 
-const to = ref('')
+const _EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+const toTags = ref<string[]>([])
+const toInput = ref('')
+const ccTags = ref<string[]>([])
+const ccInput = ref('')
+const bccTags = ref<string[]>([])
+const bccInput = ref('')
+const showCc = ref(false)
+const showBcc = ref(false)
+
+const fromAddress = ref('')
+const aliases = ref<string[]>([])
 const subject = ref('')
 const attachments = ref<File[]>([])
 const sending = ref(false)
@@ -65,8 +80,24 @@ const editor = useEditor({
   },
 })
 
+const loadAliases = async () => {
+  if (!store.currentMailbox) return
+  try {
+    const res = await mailApi.getAliases(store.currentMailbox)
+    aliases.value = (res.data.aliases || []).map((a: any) => a.address)
+  } catch { aliases.value = [] }
+}
+
 const reset = () => {
-  to.value = ''
+  toTags.value = []
+  toInput.value = ''
+  ccTags.value = []
+  ccInput.value = ''
+  bccTags.value = []
+  bccInput.value = ''
+  showCc.value = false
+  showBcc.value = false
+  fromAddress.value = store.currentMailbox || ''
   subject.value = ''
   attachments.value = []
   error.value = ''
@@ -78,17 +109,67 @@ const reset = () => {
   store.composeDefaults = null
 }
 
+const addTag = (tags: Ref<string[]>, input: Ref<string>) => {
+  const val = input.value.trim().replace(/[,;]+$/, '')
+  if (val && _EMAIL_RE.test(val) && !tags.value.includes(val)) {
+    tags.value.push(val)
+  }
+  input.value = ''
+}
+
+const makeTagHandlers = (tags: Ref<string[]>, input: Ref<string>) => ({
+  onKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' || e.key === ',' || e.key === 'Tab') {
+      e.preventDefault()
+      addTag(tags, input)
+    } else if (e.key === 'Backspace' && !input.value && tags.value.length) {
+      tags.value.pop()
+    }
+  },
+  onBlur() { addTag(tags, input) },
+  onPaste(e: ClipboardEvent) {
+    e.preventDefault()
+    const text = e.clipboardData?.getData('text') || ''
+    for (const addr of text.split(/[,;\s]+/)) {
+      const trimmed = addr.trim()
+      if (trimmed && _EMAIL_RE.test(trimmed) && !tags.value.includes(trimmed)) {
+        tags.value.push(trimmed)
+      }
+    }
+  },
+})
+
+const toHandlers = makeTagHandlers(toTags, toInput)
+const ccHandlers = makeTagHandlers(ccTags, ccInput)
+const bccHandlers = makeTagHandlers(bccTags, bccInput)
+
+onMounted(loadAliases)
+
 watch(() => store.isComposeOpen, async (open) => {
-  if (open && store.composeDefaults) {
-    to.value = store.composeDefaults.to || ''
-    subject.value = store.composeDefaults.subject || ''
-    quotedHtml.value = store.composeDefaults.quotedHtml || ''
-    if (store.composeDefaults.draftId) {
-      draftId.value = store.composeDefaults.draftId
+  if (open) {
+    await loadAliases()
+    if (store.composeDefaults) {
+      const rawTo = store.composeDefaults.to || ''
+      if (rawTo) {
+        for (const addr of rawTo.split(',').map((s: string) => s.trim()).filter(Boolean)) {
+          if (_EMAIL_RE.test(addr) && !toTags.value.includes(addr)) toTags.value.push(addr)
+        }
+      }
+      subject.value = store.composeDefaults.subject || ''
+      quotedHtml.value = store.composeDefaults.quotedHtml || ''
+      if (store.composeDefaults.draftId) {
+        draftId.value = store.composeDefaults.draftId
+      }
+      const requestedFrom = store.composeDefaults.from
+      fromAddress.value = (requestedFrom && aliases.value.includes(requestedFrom))
+        ? requestedFrom
+        : (store.currentMailbox || '')
+    } else {
+      fromAddress.value = store.currentMailbox || ''
     }
     minimized.value = false
     await nextTick()
-    if (store.composeDefaults.body) {
+    if (store.composeDefaults?.body) {
       editor.value?.commands.setContent(store.composeDefaults.body)
     } else {
       editor.value?.commands.clearContent()
@@ -97,24 +178,6 @@ watch(() => store.isComposeOpen, async (open) => {
     reset()
   }
 }, { immediate: true })
-
-watch(to, (val) => {
-  if (store.composeDefaults !== null) {
-    store.composeDefaults = { ...store.composeDefaults, to: val }
-  }
-})
-
-watch(subject, (val) => {
-  if (store.composeDefaults !== null) {
-    store.composeDefaults = { ...store.composeDefaults, subject: val }
-  }
-})
-
-watch(quotedHtml, (val) => {
-  if (store.composeDefaults !== null) {
-    store.composeDefaults = { ...store.composeDefaults, quotedHtml: val }
-  }
-})
 
 onUnmounted(() => editor.value?.destroy())
 
@@ -167,24 +230,44 @@ const formatBytes = (bytes: number) => {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-const setLink = () => {
-  const prev = editor.value?.getAttributes('link').href || ''
-  const url = window.prompt('Enter URL', prev)
-  if (url === null) return
-  if (url === '') {
+const showLinkPopover = ref(false)
+const linkInput = ref('')
+
+const openLinkPopover = () => {
+  linkInput.value = editor.value?.getAttributes('link').href || ''
+  showLinkPopover.value = true
+  nextTick(() => {
+    const el = document.getElementById('compose-link-input')
+    el?.focus()
+  })
+}
+
+const applyLink = () => {
+  const url = linkInput.value.trim()
+  if (!url) {
     editor.value?.chain().focus().unsetLink().run()
   } else {
-    editor.value?.chain().focus().setLink({ href: url }).run()
+    const href = url.startsWith('http') ? url : `https://${url}`
+    editor.value?.chain().focus().setLink({ href }).run()
   }
+  showLinkPopover.value = false
+}
+
+const onLinkKeydown = (e: KeyboardEvent) => {
+  if (e.key === 'Enter') { e.preventDefault(); applyLink() }
+  if (e.key === 'Escape') { showLinkPopover.value = false }
 }
 
 const saveDraft = async () => {
   if (!store.currentMailbox || !editor.value) return
+  toHandlers.onBlur()
   savingDraft.value = true
   error.value = ''
   try {
     const payload = {
-      to: to.value ? to.value.split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+      to: toTags.value,
+      cc: ccTags.value,
+      bcc: bccTags.value,
       subject: subject.value,
       html_body: editor.value.getHTML() + (quotedHtml.value || ''),
       text_body: editor.value.getText(),
@@ -209,6 +292,12 @@ const saveDraft = async () => {
 const send = async () => {
   if (!store.currentMailbox || !editor.value) return
 
+  toHandlers.onBlur()
+  if (!toTags.value.length) {
+    error.value = 'Please add at least one recipient.'
+    return
+  }
+
   const totalSize = attachments.value.reduce((sum, f) => sum + f.size, 0)
   if (totalSize > MAX_ATTACHMENT_BYTES) {
     error.value = `Attachments exceed 10 MB limit (${formatBytes(totalSize)} total).`
@@ -221,10 +310,15 @@ const send = async () => {
     const html = editor.value.getHTML() + (quotedHtml.value || '')
     const text = editor.value.getText()
     const formData = new FormData()
-    formData.append('to', to.value)
+    for (const addr of toTags.value) formData.append('to', addr)
+    for (const addr of ccTags.value) formData.append('cc', addr)
+    for (const addr of bccTags.value) formData.append('bcc', addr)
     formData.append('subject', subject.value)
     formData.append('html', html)
     formData.append('text', text)
+    if (fromAddress.value && fromAddress.value !== store.currentMailbox) {
+      formData.append('from_address', fromAddress.value)
+    }
     for (const file of attachments.value) {
       formData.append('attachments', file)
     }
@@ -266,18 +360,55 @@ const setHighlight = (e: Event) => {
   const target = e.target as HTMLInputElement
   editor.value?.chain().focus().setHighlight({ color: target.value }).run()
 }
+
+const showEmojiPicker = ref(false)
+const emojiPickerContainer = ref<HTMLElement | null>(null)
+
+const openEmojiPicker = async () => {
+  showEmojiPicker.value = !showEmojiPicker.value
+  if (!showEmojiPicker.value) return
+  await nextTick()
+  if (!emojiPickerContainer.value) return
+  emojiPickerContainer.value.innerHTML = ''
+  const { Picker } = await import('emoji-mart')
+  const data = (await import('@emoji-mart/data')).default
+  new Picker({
+    data,
+    onEmojiSelect: (emoji: any) => {
+      editor.value?.chain().focus().insertContent(emoji.native).run()
+      showEmojiPicker.value = false
+    },
+    parent: emojiPickerContainer.value,
+    theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+  })
+}
+
+const onEmojiClickOutside = (e: MouseEvent) => {
+  if (!emojiPickerContainer.value) return
+  const wrapper = emojiPickerContainer.value.closest('.emoji-picker-wrapper')
+  if (wrapper && !wrapper.contains(e.target as Node)) {
+    showEmojiPicker.value = false
+  }
+}
+
+watch(showEmojiPicker, (val) => {
+  if (val) document.addEventListener('mousedown', onEmojiClickOutside)
+  else document.removeEventListener('mousedown', onEmojiClickOutside)
+})
+
+onUnmounted(() => document.removeEventListener('mousedown', onEmojiClickOutside))
 </script>
 
 <template>
   <div
-    v-if="store.isComposeOpen && (panelMode || !store.isComposeFullView)"
-    :class="panelMode
+    v-if="store.isComposeOpen && (effectivePanelMode || !store.isComposeFullView)"
+    :class="effectivePanelMode
       ? 'flex flex-col h-full w-full bg-background'
       : 'fixed bottom-0 right-6 z-50 flex flex-col rounded-t-xl shadow-2xl border border-border bg-background'"
-    :style="!panelMode ? (minimized ? 'width:320px' : 'width:560px') : ''"
+    :style="!effectivePanelMode ? (minimized ? 'width:320px' : 'width:620px') : ''"
   >
     <!-- Panel mode title bar -->
-    <div v-if="panelMode" class="h-[52px] flex items-center gap-2 px-4 border-b border-border flex-shrink-0">
+    <div v-if="effectivePanelMode" class="h-[52px] flex items-center gap-2 px-4 border-b border-border flex-shrink-0">
       <span class="flex-1 text-base font-semibold truncate">{{ subject || 'New Message' }}</span>
       <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors" title="Pop out" @click="toggleFullView">
         <Minimize2 class="size-4" />
@@ -288,7 +419,7 @@ const setHighlight = (e: Event) => {
     </div>
 
     <!-- Popup mode title bar -->
-    <div v-else class="flex items-center gap-2 rounded-t-xl bg-primary px-4 py-2.5 cursor-pointer select-none" @click="toggleMinimize">
+    <div v-else-if="!effectivePanelMode" class="flex items-center gap-2 rounded-t-xl bg-primary px-4 py-2.5 cursor-pointer select-none" @click="toggleMinimize">
       <span class="flex-1 text-sm font-semibold text-primary-foreground truncate">{{ subject || 'New Message' }}</span>
       <button type="button" class="rounded p-0.5 text-primary-foreground/70 hover:text-primary-foreground hover:bg-white/10 transition-colors" title="Full view" @click.stop="toggleFullView">
         <Maximize2 class="size-4" />
@@ -301,14 +432,94 @@ const setHighlight = (e: Event) => {
       </button>
     </div>
 
-    <!-- Body — always visible in panel mode, hidden when minimized in popup mode -->
+    <!-- Body -->
     <div
-      v-show="panelMode || !minimized"
-      :class="panelMode ? 'flex flex-col flex-1 overflow-hidden' : 'flex flex-col flex-1 overflow-hidden max-h-[80vh]'"
+      v-show="effectivePanelMode || !minimized"
+      :class="effectivePanelMode ? 'flex flex-col flex-1 overflow-hidden' : 'flex flex-col flex-1 overflow-hidden max-h-[80vh]'"
     >
       <!-- Fields -->
       <div class="flex flex-col border-b border-border flex-shrink-0">
-        <input v-model="to" placeholder="To" class="w-full border-b border-border px-4 py-2 text-sm bg-background text-foreground placeholder:text-muted-foreground focus:outline-none" />
+
+        <!-- To row -->
+        <div class="flex items-start border-b border-border min-h-[36px]">
+          <span class="px-4 py-2 text-sm text-muted-foreground shrink-0 leading-5">To</span>
+          <div class="flex flex-wrap items-center gap-1 flex-1 py-1.5 pr-2 min-w-0">
+            <span
+              v-for="(tag, i) in toTags" :key="tag"
+              class="flex items-center gap-1 bg-muted rounded-full px-2 py-0.5 text-xs text-foreground border border-border"
+            >
+              {{ tag }}
+              <button type="button" @click="toTags.splice(i, 1)" class="hover:text-destructive leading-none"><X :size="10" /></button>
+            </span>
+            <input
+              v-model="toInput"
+              placeholder="Add recipient…"
+              class="flex-1 min-w-[120px] bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none py-0.5"
+              @keydown="toHandlers.onKeydown"
+              @blur="toHandlers.onBlur"
+              @paste="toHandlers.onPaste"
+            />
+          </div>
+          <div class="flex items-center gap-2 px-3 py-2 shrink-0">
+            <button v-if="!showCc" type="button" class="text-xs text-muted-foreground hover:text-foreground transition-colors" @click="showCc = true">Cc</button>
+            <button v-if="!showBcc" type="button" class="text-xs text-muted-foreground hover:text-foreground transition-colors" @click="showBcc = true">Bcc</button>
+          </div>
+        </div>
+
+        <!-- Cc row -->
+        <div v-if="showCc" class="flex items-start border-b border-border min-h-[36px]">
+          <span class="px-4 py-2 text-sm text-muted-foreground shrink-0 leading-5">Cc</span>
+          <div class="flex flex-wrap items-center gap-1 flex-1 py-1.5 pr-2 min-w-0">
+            <span
+              v-for="(tag, i) in ccTags" :key="tag"
+              class="flex items-center gap-1 bg-muted rounded-full px-2 py-0.5 text-xs text-foreground border border-border"
+            >
+              {{ tag }}
+              <button type="button" @click="ccTags.splice(i, 1)" class="hover:text-destructive leading-none"><X :size="10" /></button>
+            </span>
+            <input
+              v-model="ccInput"
+              placeholder="Add Cc…"
+              class="flex-1 min-w-[120px] bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none py-0.5"
+              @keydown="ccHandlers.onKeydown"
+              @blur="ccHandlers.onBlur"
+              @paste="ccHandlers.onPaste"
+            />
+          </div>
+        </div>
+
+        <!-- Bcc row -->
+        <div v-if="showBcc" class="flex items-start border-b border-border min-h-[36px]">
+          <span class="px-4 py-2 text-sm text-muted-foreground shrink-0 leading-5">Bcc</span>
+          <div class="flex flex-wrap items-center gap-1 flex-1 py-1.5 pr-2 min-w-0">
+            <span
+              v-for="(tag, i) in bccTags" :key="tag"
+              class="flex items-center gap-1 bg-muted rounded-full px-2 py-0.5 text-xs text-foreground border border-border"
+            >
+              {{ tag }}
+              <button type="button" @click="bccTags.splice(i, 1)" class="hover:text-destructive leading-none"><X :size="10" /></button>
+            </span>
+            <input
+              v-model="bccInput"
+              placeholder="Add Bcc…"
+              class="flex-1 min-w-[120px] bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none py-0.5"
+              @keydown="bccHandlers.onKeydown"
+              @blur="bccHandlers.onBlur"
+              @paste="bccHandlers.onPaste"
+            />
+          </div>
+        </div>
+
+        <!-- From row (aliases) -->
+        <div v-if="aliases.length" class="flex items-center border-b border-border">
+          <span class="px-4 py-2 text-sm text-muted-foreground shrink-0">From</span>
+          <select v-model="fromAddress" class="flex-1 px-2 py-2 text-sm bg-background text-foreground focus:outline-none">
+            <option :value="store.currentMailbox">{{ store.currentMailbox }}</option>
+            <option v-for="alias in aliases" :key="alias" :value="alias">{{ alias }} (alias)</option>
+          </select>
+        </div>
+
+        <!-- Subject -->
         <input v-model="subject" placeholder="Subject" class="w-full px-4 py-2 text-sm bg-background text-foreground placeholder:text-muted-foreground focus:outline-none" />
       </div>
 
@@ -330,7 +541,7 @@ const setHighlight = (e: Event) => {
 
       <div v-if="error" class="px-4 py-1 text-xs text-red-500 flex-shrink-0">{{ error }}</div>
 
-      <!-- Formatting Toolbar (Collapsible) -->
+      <!-- Formatting Toolbar -->
       <div v-if="showFormatting" class="flex flex-wrap items-center gap-1 border-t border-border bg-muted/30 px-3 py-1.5 flex-shrink-0">
         <select @change="setFont" class="text-xs bg-transparent border-none focus:ring-0 text-foreground cursor-pointer mr-1 max-w-[100px]">
           <option value="">Default Font</option>
@@ -364,12 +575,18 @@ const setHighlight = (e: Event) => {
       <!-- Bottom Action Bar -->
       <div class="flex items-center justify-between gap-2 border-t border-border px-4 py-2.5 flex-shrink-0 bg-background">
         <div class="flex items-center gap-1">
-          <Button as="button" type="button" size="sm" class="rounded-full px-5 font-semibold tracking-wide" @click.prevent="send" :disabled="sending || !to">
+          <Button as="button" type="button" size="sm" class="rounded-full px-5 font-semibold tracking-wide" @click.prevent="send" :disabled="sending || (!toTags.length && !toInput)">
             {{ sending ? 'Sending…' : 'Send' }}
           </Button>
           <button type="button" class="ml-1 rounded p-1.5 transition-colors" :class="savedDraft ? 'text-green-500' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'" :disabled="savingDraft" title="Save draft" @click="saveDraft">
             <BookmarkCheck class="size-4" />
           </button>
+          <div class="relative emoji-picker-wrapper">
+            <button type="button" class="rounded p-1.5 transition-colors" :class="showEmojiPicker ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'" @click="openEmojiPicker" title="Insert emoji">
+              <Smile class="size-4" />
+            </button>
+            <div v-if="showEmojiPicker" class="absolute bottom-10 left-0 z-50 shadow-xl rounded-xl overflow-hidden" ref="emojiPickerContainer" />
+          </div>
           <button type="button" class="ml-1 rounded p-1.5 hover:bg-accent transition-colors" :class="showFormatting ? 'bg-accent text-accent-foreground' : 'text-muted-foreground'" @click="showFormatting = !showFormatting" title="Formatting options">
             <Type class="size-4" />
           </button>
@@ -377,9 +594,26 @@ const setHighlight = (e: Event) => {
             <Paperclip class="size-4" />
             <input type="file" multiple class="hidden" @change="onFileChange" />
           </label>
-          <button type="button" class="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors" @click="setLink" title="Insert link">
-            <Link2 class="size-4" />
-          </button>
+          <div class="relative">
+            <button type="button" class="rounded p-1.5 transition-colors" :class="showLinkPopover ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'" @click="openLinkPopover" title="Insert link">
+              <Link2 class="size-4" />
+            </button>
+            <div v-if="showLinkPopover" class="absolute bottom-10 left-0 z-50 w-72 rounded-lg border border-border bg-background shadow-xl p-3 flex flex-col gap-2">
+              <label class="text-xs font-medium text-muted-foreground">Insert link</label>
+              <input
+                id="compose-link-input"
+                v-model="linkInput"
+                type="url"
+                placeholder="https://example.com"
+                class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                @keydown="onLinkKeydown"
+              />
+              <div class="flex gap-2 justify-end">
+                <button type="button" class="rounded-md px-3 py-1 text-xs text-muted-foreground hover:bg-accent transition-colors" @click="showLinkPopover = false">Cancel</button>
+                <button type="button" class="rounded-md px-3 py-1 text-xs bg-primary text-primary-foreground hover:bg-primary/90 transition-colors" @click="applyLink">Apply</button>
+              </div>
+            </div>
+          </div>
         </div>
         <button type="button" class="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-destructive transition-colors" :title="draftId ? 'Delete draft' : 'Discard'" @click="discardDraft">
           <Trash2 class="size-4" />
@@ -390,7 +624,6 @@ const setHighlight = (e: Event) => {
 </template>
 
 <style>
-/* Tiptap editor inside compose */
 .compose-editor {
   display: flex;
   flex-direction: column;
@@ -433,7 +666,6 @@ const setHighlight = (e: Event) => {
   cursor: pointer;
 }
 
-/* Pop-up animation */
 .compose-pop-enter-active { transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.18s ease; }
 .compose-pop-leave-active { transition: transform 0.14s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.14s ease; }
 .compose-pop-enter-from  { transform: translateY(24px) scale(0.95); opacity: 0; }

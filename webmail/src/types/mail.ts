@@ -28,6 +28,7 @@ export interface Message {
   from_address: string
   to_addresses: string
   cc_addresses: string
+  bcc_addresses: string
   subject: string | null
   text_body: string | null
   html_body: string | null
@@ -36,7 +37,21 @@ export interface Message {
   is_read: 0 | 1
   is_starred: 0 | 1
   is_draft: boolean
+  received_via_alias: string | null
   attachments?: Attachment[]
+}
+
+export interface Alias {
+  address: string
+  mailbox_address: string
+  domain: string
+  label: string | null
+  description: string | null
+  is_active: boolean
+  expires_at: string | null
+  created_at: string
+  use_count: number
+  last_use_at: string | null
 }
 
 export interface Toast {
@@ -46,6 +61,7 @@ export interface Toast {
 
 export interface ComposeDefaults {
   to?: string
+  from?: string
   subject?: string
   body?: string
   quotedHtml?: string

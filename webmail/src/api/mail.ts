@@ -37,4 +37,16 @@ export const mailApi = {
     apiClient.post(`/mailboxes/${address}/auto-responder`, data),
   deleteAutoResponder: (address: string) =>
     apiClient.delete(`/mailboxes/${address}/auto-responder`),
+  getAliases: (mailbox: string) =>
+    apiClient.get('/aliases', { params: { mailbox, active: 1 } }),
+  getAllAliases: (mailbox: string) =>
+    apiClient.get('/aliases', { params: { mailbox } }),
+  createAlias: (data: Record<string, any>) =>
+    apiClient.post('/aliases', data),
+  updateAlias: (address: string, data: Record<string, any>) =>
+    apiClient.patch(`/aliases/${encodeURIComponent(address)}`, data),
+  deleteAlias: (address: string) =>
+    apiClient.delete(`/aliases/${encodeURIComponent(address)}`),
+  generateAlias: (mailbox: string, domain: string, style?: string) =>
+    apiClient.post('/aliases/generate', { mailbox_address: mailbox, domain, style: style || 'word-word-num' }),
 }

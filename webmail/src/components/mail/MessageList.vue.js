@@ -1,31 +1,21 @@
 /// <reference types="../../../node_modules/.vue-global-types/vue_3.5_0_0_0.d.ts" />
 import { ref, computed } from 'vue';
-import { Search, ArrowDownUp, Trash2 } from 'lucide-vue-next';
+import { ArrowDownUp, Trash2 } from 'lucide-vue-next';
 import { TabsRoot, TabsList, TabsTrigger, TabsContent, } from 'radix-vue';
 import { ScrollAreaRoot, ScrollAreaViewport, ScrollAreaScrollbar, ScrollAreaThumb, } from 'radix-vue';
 import { useMailStore } from '../../stores/mail';
 import { mailApi } from '../../api/mail';
 import MessageListItem from './MessageListItem.vue';
-import Input from '../ui/Input.vue';
+import SearchBar from './SearchBar.vue';
 import Dialog from '../ui/Dialog.vue';
 import Button from '../ui/Button.vue';
 const store = useMailStore();
-const searchValue = ref('');
 const showTrashConfirm = ref(false);
 const folderColor = computed(() => store.currentFolderObj?.color || '');
-const filteredMessages = computed(() => {
-    const q = searchValue.value.trim().toLowerCase();
-    if (!q)
-        return store.messages;
-    return store.messages.filter((m) => (m.from_name || '').toLowerCase().includes(q) ||
-        (m.from_address || '').toLowerCase().includes(q) ||
-        (m.subject || '').toLowerCase().includes(q) ||
-        (m.text_body || '').toLowerCase().includes(q));
-});
-const unreadMessages = computed(() => filteredMessages.value.filter((m) => !m.is_read));
-const starredMessages = computed(() => filteredMessages.value.filter((m) => m.is_starred));
+const unreadMessages = computed(() => store.messages.filter((m) => !m.is_read));
+const starredMessages = computed(() => store.messages.filter((m) => m.is_starred));
 const displayMessages = computed(() => {
-    let msgs = filteredMessages.value;
+    let msgs = store.messages;
     if (store.activeTab === 'unread')
         msgs = unreadMessages.value;
     else if (store.activeTab === 'starred')
@@ -68,17 +58,20 @@ const emptyTrash = () => {
     }
 };
 const performEmptyTrash = async () => {
-    if (store.currentFolderObj) {
-        try {
-            await mailApi.emptyFolder(store.currentMailbox, store.currentFolderObj.id);
-            store.messages = [];
-            store.currentMessage = null;
-        }
-        catch (e) {
-        }
-        finally {
-            showTrashConfirm.value = false;
-        }
+    if (!store.currentFolderObj)
+        return;
+    try {
+        await mailApi.emptyFolder(store.currentMailbox, store.currentFolderObj.id);
+        store.messages = [];
+        store.currentMessage = null;
+        const fRes = await mailApi.getFolders(store.currentMailbox);
+        store.folders = fRes.data;
+    }
+    catch {
+        store.showToast('Failed to empty trash');
+    }
+    finally {
+        showTrashConfirm.value = false;
     }
 };
 debugger; /* PartiallyEnd: #3632/scriptSetup.vue */
@@ -195,44 +188,34 @@ var __VLS_15;
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
     ...{ class: "bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/60" },
 });
-__VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-    ...{ class: "relative" },
-});
-const __VLS_28 = {}.Search;
-/** @type {[typeof __VLS_components.Search, ]} */ ;
+/** @type {[typeof SearchBar, ]} */ ;
 // @ts-ignore
-const __VLS_29 = __VLS_asFunctionalComponent(__VLS_28, new __VLS_28({
-    ...{ class: "absolute left-2 top-2.5 size-4 text-muted-foreground" },
-}));
-const __VLS_30 = __VLS_29({
-    ...{ class: "absolute left-2 top-2.5 size-4 text-muted-foreground" },
-}, ...__VLS_functionalComponentArgsRest(__VLS_29));
-/** @type {[typeof Input, ]} */ ;
-// @ts-ignore
-const __VLS_32 = __VLS_asFunctionalComponent(Input, new Input({
-    modelValue: (__VLS_ctx.searchValue),
-    placeholder: "Search",
-    ...{ class: "pl-8" },
-}));
-const __VLS_33 = __VLS_32({
-    modelValue: (__VLS_ctx.searchValue),
-    placeholder: "Search",
-    ...{ class: "pl-8" },
-}, ...__VLS_functionalComponentArgsRest(__VLS_32));
-const __VLS_35 = {}.TabsContent;
+const __VLS_28 = __VLS_asFunctionalComponent(SearchBar, new SearchBar({}));
+const __VLS_29 = __VLS_28({}, ...__VLS_functionalComponentArgsRest(__VLS_28));
+const __VLS_31 = {}.TabsContent;
 /** @type {[typeof __VLS_components.TabsContent, typeof __VLS_components.TabsContent, ]} */ ;
 // @ts-ignore
-const __VLS_36 = __VLS_asFunctionalComponent(__VLS_35, new __VLS_35({
+const __VLS_32 = __VLS_asFunctionalComponent(__VLS_31, new __VLS_31({
     value: "all",
     ...{ class: "m-0 flex-1 overflow-hidden" },
 }));
-const __VLS_37 = __VLS_36({
+const __VLS_33 = __VLS_32({
     value: "all",
     ...{ class: "m-0 flex-1 overflow-hidden" },
+}, ...__VLS_functionalComponentArgsRest(__VLS_32));
+__VLS_34.slots.default;
+const __VLS_35 = {}.ScrollAreaRoot;
+/** @type {[typeof __VLS_components.ScrollAreaRoot, typeof __VLS_components.ScrollAreaRoot, ]} */ ;
+// @ts-ignore
+const __VLS_36 = __VLS_asFunctionalComponent(__VLS_35, new __VLS_35({
+    ...{ class: "h-full" },
+}));
+const __VLS_37 = __VLS_36({
+    ...{ class: "h-full" },
 }, ...__VLS_functionalComponentArgsRest(__VLS_36));
 __VLS_38.slots.default;
-const __VLS_39 = {}.ScrollAreaRoot;
-/** @type {[typeof __VLS_components.ScrollAreaRoot, typeof __VLS_components.ScrollAreaRoot, ]} */ ;
+const __VLS_39 = {}.ScrollAreaViewport;
+/** @type {[typeof __VLS_components.ScrollAreaViewport, typeof __VLS_components.ScrollAreaViewport, ]} */ ;
 // @ts-ignore
 const __VLS_40 = __VLS_asFunctionalComponent(__VLS_39, new __VLS_39({
     ...{ class: "h-full" },
@@ -241,103 +224,129 @@ const __VLS_41 = __VLS_40({
     ...{ class: "h-full" },
 }, ...__VLS_functionalComponentArgsRest(__VLS_40));
 __VLS_42.slots.default;
-const __VLS_43 = {}.ScrollAreaViewport;
-/** @type {[typeof __VLS_components.ScrollAreaViewport, typeof __VLS_components.ScrollAreaViewport, ]} */ ;
-// @ts-ignore
-const __VLS_44 = __VLS_asFunctionalComponent(__VLS_43, new __VLS_43({
-    ...{ class: "h-full" },
-}));
-const __VLS_45 = __VLS_44({
-    ...{ class: "h-full" },
-}, ...__VLS_functionalComponentArgsRest(__VLS_44));
-__VLS_46.slots.default;
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
     ...{ class: "flex flex-col gap-2 p-4 pt-0" },
 });
-const __VLS_47 = {}.TransitionGroup;
-/** @type {[typeof __VLS_components.TransitionGroup, typeof __VLS_components.TransitionGroup, ]} */ ;
-// @ts-ignore
-const __VLS_48 = __VLS_asFunctionalComponent(__VLS_47, new __VLS_47({
-    name: "list",
-    appear: true,
-}));
-const __VLS_49 = __VLS_48({
-    name: "list",
-    appear: true,
-}, ...__VLS_functionalComponentArgsRest(__VLS_48));
-__VLS_50.slots.default;
-for (const [msg] of __VLS_getVForSourceType((__VLS_ctx.displayMessages))) {
-    /** @type {[typeof MessageListItem, ]} */ ;
+if (__VLS_ctx.store.messagesLoading) {
+    for (const [n] of __VLS_getVForSourceType((6))) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div)({
+            key: (n),
+            ...{ class: "h-16 rounded-lg bg-muted animate-pulse" },
+        });
+    }
+}
+else {
+    const __VLS_43 = {}.TransitionGroup;
+    /** @type {[typeof __VLS_components.TransitionGroup, typeof __VLS_components.TransitionGroup, ]} */ ;
     // @ts-ignore
-    const __VLS_51 = __VLS_asFunctionalComponent(MessageListItem, new MessageListItem({
-        ...{ 'onClick': {} },
-        key: (msg.id),
-        message: (msg),
-        selected: (__VLS_ctx.store.currentMessage?.id === msg.id),
-        folderColor: (__VLS_ctx.folderColor),
+    const __VLS_44 = __VLS_asFunctionalComponent(__VLS_43, new __VLS_43({
+        name: "list",
+        appear: true,
     }));
-    const __VLS_52 = __VLS_51({
-        ...{ 'onClick': {} },
-        key: (msg.id),
-        message: (msg),
-        selected: (__VLS_ctx.store.currentMessage?.id === msg.id),
-        folderColor: (__VLS_ctx.folderColor),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_51));
-    let __VLS_54;
-    let __VLS_55;
-    let __VLS_56;
-    const __VLS_57 = {
-        onClick: (...[$event]) => {
-            __VLS_ctx.selectMessage(msg);
-        }
-    };
-    var __VLS_53;
+    const __VLS_45 = __VLS_44({
+        name: "list",
+        appear: true,
+    }, ...__VLS_functionalComponentArgsRest(__VLS_44));
+    __VLS_46.slots.default;
+    for (const [msg] of __VLS_getVForSourceType((__VLS_ctx.displayMessages))) {
+        /** @type {[typeof MessageListItem, ]} */ ;
+        // @ts-ignore
+        const __VLS_47 = __VLS_asFunctionalComponent(MessageListItem, new MessageListItem({
+            ...{ 'onClick': {} },
+            key: (msg.id),
+            message: (msg),
+            selected: (__VLS_ctx.store.currentMessage?.id === msg.id),
+            folderColor: (__VLS_ctx.folderColor),
+        }));
+        const __VLS_48 = __VLS_47({
+            ...{ 'onClick': {} },
+            key: (msg.id),
+            message: (msg),
+            selected: (__VLS_ctx.store.currentMessage?.id === msg.id),
+            folderColor: (__VLS_ctx.folderColor),
+        }, ...__VLS_functionalComponentArgsRest(__VLS_47));
+        let __VLS_50;
+        let __VLS_51;
+        let __VLS_52;
+        const __VLS_53 = {
+            onClick: (...[$event]) => {
+                if (!!(__VLS_ctx.store.messagesLoading))
+                    return;
+                __VLS_ctx.selectMessage(msg);
+            }
+        };
+        var __VLS_49;
+    }
+    var __VLS_46;
+    if (__VLS_ctx.displayMessages.length === 0) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "p-8 text-center text-muted-foreground" },
+        });
+    }
+    if (__VLS_ctx.store.hasMoreMessages && !__VLS_ctx.store.messagesLoading) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!!(__VLS_ctx.store.messagesLoading))
+                        return;
+                    if (!(__VLS_ctx.store.hasMoreMessages && !__VLS_ctx.store.messagesLoading))
+                        return;
+                    __VLS_ctx.store.loadMore();
+                } },
+            ...{ class: "w-full py-2 text-sm text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50" },
+            disabled: (__VLS_ctx.store.isFetchingNextPage),
+        });
+        (__VLS_ctx.store.isFetchingNextPage ? 'Loading…' : 'Load more');
+    }
 }
-var __VLS_50;
-if (__VLS_ctx.displayMessages.length === 0) {
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "p-8 text-center text-muted-foreground" },
-    });
-}
-var __VLS_46;
-const __VLS_58 = {}.ScrollAreaScrollbar;
+var __VLS_42;
+const __VLS_54 = {}.ScrollAreaScrollbar;
 /** @type {[typeof __VLS_components.ScrollAreaScrollbar, typeof __VLS_components.ScrollAreaScrollbar, ]} */ ;
 // @ts-ignore
-const __VLS_59 = __VLS_asFunctionalComponent(__VLS_58, new __VLS_58({
+const __VLS_55 = __VLS_asFunctionalComponent(__VLS_54, new __VLS_54({
     orientation: "vertical",
     ...{ class: "flex touch-none select-none bg-transparent p-0.5 transition-colors w-2.5" },
 }));
-const __VLS_60 = __VLS_59({
+const __VLS_56 = __VLS_55({
     orientation: "vertical",
     ...{ class: "flex touch-none select-none bg-transparent p-0.5 transition-colors w-2.5" },
-}, ...__VLS_functionalComponentArgsRest(__VLS_59));
-__VLS_61.slots.default;
-const __VLS_62 = {}.ScrollAreaThumb;
+}, ...__VLS_functionalComponentArgsRest(__VLS_55));
+__VLS_57.slots.default;
+const __VLS_58 = {}.ScrollAreaThumb;
 /** @type {[typeof __VLS_components.ScrollAreaThumb, ]} */ ;
 // @ts-ignore
-const __VLS_63 = __VLS_asFunctionalComponent(__VLS_62, new __VLS_62({
+const __VLS_59 = __VLS_asFunctionalComponent(__VLS_58, new __VLS_58({
     ...{ class: "relative flex-1 rounded-full bg-border" },
 }));
-const __VLS_64 = __VLS_63({
+const __VLS_60 = __VLS_59({
     ...{ class: "relative flex-1 rounded-full bg-border" },
-}, ...__VLS_functionalComponentArgsRest(__VLS_63));
-var __VLS_61;
-var __VLS_42;
+}, ...__VLS_functionalComponentArgsRest(__VLS_59));
+var __VLS_57;
 var __VLS_38;
-const __VLS_66 = {}.TabsContent;
+var __VLS_34;
+const __VLS_62 = {}.TabsContent;
 /** @type {[typeof __VLS_components.TabsContent, typeof __VLS_components.TabsContent, ]} */ ;
 // @ts-ignore
-const __VLS_67 = __VLS_asFunctionalComponent(__VLS_66, new __VLS_66({
+const __VLS_63 = __VLS_asFunctionalComponent(__VLS_62, new __VLS_62({
     value: "unread",
     ...{ class: "m-0 flex-1 overflow-hidden" },
 }));
-const __VLS_68 = __VLS_67({
+const __VLS_64 = __VLS_63({
     value: "unread",
     ...{ class: "m-0 flex-1 overflow-hidden" },
+}, ...__VLS_functionalComponentArgsRest(__VLS_63));
+__VLS_65.slots.default;
+const __VLS_66 = {}.ScrollAreaRoot;
+/** @type {[typeof __VLS_components.ScrollAreaRoot, typeof __VLS_components.ScrollAreaRoot, ]} */ ;
+// @ts-ignore
+const __VLS_67 = __VLS_asFunctionalComponent(__VLS_66, new __VLS_66({
+    ...{ class: "h-full" },
+}));
+const __VLS_68 = __VLS_67({
+    ...{ class: "h-full" },
 }, ...__VLS_functionalComponentArgsRest(__VLS_67));
 __VLS_69.slots.default;
-const __VLS_70 = {}.ScrollAreaRoot;
-/** @type {[typeof __VLS_components.ScrollAreaRoot, typeof __VLS_components.ScrollAreaRoot, ]} */ ;
+const __VLS_70 = {}.ScrollAreaViewport;
+/** @type {[typeof __VLS_components.ScrollAreaViewport, typeof __VLS_components.ScrollAreaViewport, ]} */ ;
 // @ts-ignore
 const __VLS_71 = __VLS_asFunctionalComponent(__VLS_70, new __VLS_70({
     ...{ class: "h-full" },
@@ -346,103 +355,129 @@ const __VLS_72 = __VLS_71({
     ...{ class: "h-full" },
 }, ...__VLS_functionalComponentArgsRest(__VLS_71));
 __VLS_73.slots.default;
-const __VLS_74 = {}.ScrollAreaViewport;
-/** @type {[typeof __VLS_components.ScrollAreaViewport, typeof __VLS_components.ScrollAreaViewport, ]} */ ;
-// @ts-ignore
-const __VLS_75 = __VLS_asFunctionalComponent(__VLS_74, new __VLS_74({
-    ...{ class: "h-full" },
-}));
-const __VLS_76 = __VLS_75({
-    ...{ class: "h-full" },
-}, ...__VLS_functionalComponentArgsRest(__VLS_75));
-__VLS_77.slots.default;
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
     ...{ class: "flex flex-col gap-2 p-4 pt-0" },
 });
-const __VLS_78 = {}.TransitionGroup;
-/** @type {[typeof __VLS_components.TransitionGroup, typeof __VLS_components.TransitionGroup, ]} */ ;
-// @ts-ignore
-const __VLS_79 = __VLS_asFunctionalComponent(__VLS_78, new __VLS_78({
-    name: "list",
-    appear: true,
-}));
-const __VLS_80 = __VLS_79({
-    name: "list",
-    appear: true,
-}, ...__VLS_functionalComponentArgsRest(__VLS_79));
-__VLS_81.slots.default;
-for (const [msg] of __VLS_getVForSourceType((__VLS_ctx.displayMessages))) {
-    /** @type {[typeof MessageListItem, ]} */ ;
+if (__VLS_ctx.store.messagesLoading) {
+    for (const [n] of __VLS_getVForSourceType((6))) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div)({
+            key: (n),
+            ...{ class: "h-16 rounded-lg bg-muted animate-pulse" },
+        });
+    }
+}
+else {
+    const __VLS_74 = {}.TransitionGroup;
+    /** @type {[typeof __VLS_components.TransitionGroup, typeof __VLS_components.TransitionGroup, ]} */ ;
     // @ts-ignore
-    const __VLS_82 = __VLS_asFunctionalComponent(MessageListItem, new MessageListItem({
-        ...{ 'onClick': {} },
-        key: (msg.id),
-        message: (msg),
-        selected: (__VLS_ctx.store.currentMessage?.id === msg.id),
-        folderColor: (__VLS_ctx.folderColor),
+    const __VLS_75 = __VLS_asFunctionalComponent(__VLS_74, new __VLS_74({
+        name: "list",
+        appear: true,
     }));
-    const __VLS_83 = __VLS_82({
-        ...{ 'onClick': {} },
-        key: (msg.id),
-        message: (msg),
-        selected: (__VLS_ctx.store.currentMessage?.id === msg.id),
-        folderColor: (__VLS_ctx.folderColor),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_82));
-    let __VLS_85;
-    let __VLS_86;
-    let __VLS_87;
-    const __VLS_88 = {
-        onClick: (...[$event]) => {
-            __VLS_ctx.selectMessage(msg);
-        }
-    };
-    var __VLS_84;
+    const __VLS_76 = __VLS_75({
+        name: "list",
+        appear: true,
+    }, ...__VLS_functionalComponentArgsRest(__VLS_75));
+    __VLS_77.slots.default;
+    for (const [msg] of __VLS_getVForSourceType((__VLS_ctx.displayMessages))) {
+        /** @type {[typeof MessageListItem, ]} */ ;
+        // @ts-ignore
+        const __VLS_78 = __VLS_asFunctionalComponent(MessageListItem, new MessageListItem({
+            ...{ 'onClick': {} },
+            key: (msg.id),
+            message: (msg),
+            selected: (__VLS_ctx.store.currentMessage?.id === msg.id),
+            folderColor: (__VLS_ctx.folderColor),
+        }));
+        const __VLS_79 = __VLS_78({
+            ...{ 'onClick': {} },
+            key: (msg.id),
+            message: (msg),
+            selected: (__VLS_ctx.store.currentMessage?.id === msg.id),
+            folderColor: (__VLS_ctx.folderColor),
+        }, ...__VLS_functionalComponentArgsRest(__VLS_78));
+        let __VLS_81;
+        let __VLS_82;
+        let __VLS_83;
+        const __VLS_84 = {
+            onClick: (...[$event]) => {
+                if (!!(__VLS_ctx.store.messagesLoading))
+                    return;
+                __VLS_ctx.selectMessage(msg);
+            }
+        };
+        var __VLS_80;
+    }
+    var __VLS_77;
+    if (__VLS_ctx.displayMessages.length === 0) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "p-8 text-center text-muted-foreground" },
+        });
+    }
+    if (__VLS_ctx.store.hasMoreMessages && !__VLS_ctx.store.messagesLoading) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!!(__VLS_ctx.store.messagesLoading))
+                        return;
+                    if (!(__VLS_ctx.store.hasMoreMessages && !__VLS_ctx.store.messagesLoading))
+                        return;
+                    __VLS_ctx.store.loadMore();
+                } },
+            ...{ class: "w-full py-2 text-sm text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50" },
+            disabled: (__VLS_ctx.store.isFetchingNextPage),
+        });
+        (__VLS_ctx.store.isFetchingNextPage ? 'Loading…' : 'Load more');
+    }
 }
-var __VLS_81;
-if (__VLS_ctx.displayMessages.length === 0) {
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "p-8 text-center text-muted-foreground" },
-    });
-}
-var __VLS_77;
-const __VLS_89 = {}.ScrollAreaScrollbar;
+var __VLS_73;
+const __VLS_85 = {}.ScrollAreaScrollbar;
 /** @type {[typeof __VLS_components.ScrollAreaScrollbar, typeof __VLS_components.ScrollAreaScrollbar, ]} */ ;
 // @ts-ignore
-const __VLS_90 = __VLS_asFunctionalComponent(__VLS_89, new __VLS_89({
+const __VLS_86 = __VLS_asFunctionalComponent(__VLS_85, new __VLS_85({
     orientation: "vertical",
     ...{ class: "flex touch-none select-none bg-transparent p-0.5 transition-colors w-2.5" },
 }));
-const __VLS_91 = __VLS_90({
+const __VLS_87 = __VLS_86({
     orientation: "vertical",
     ...{ class: "flex touch-none select-none bg-transparent p-0.5 transition-colors w-2.5" },
-}, ...__VLS_functionalComponentArgsRest(__VLS_90));
-__VLS_92.slots.default;
-const __VLS_93 = {}.ScrollAreaThumb;
+}, ...__VLS_functionalComponentArgsRest(__VLS_86));
+__VLS_88.slots.default;
+const __VLS_89 = {}.ScrollAreaThumb;
 /** @type {[typeof __VLS_components.ScrollAreaThumb, ]} */ ;
 // @ts-ignore
-const __VLS_94 = __VLS_asFunctionalComponent(__VLS_93, new __VLS_93({
+const __VLS_90 = __VLS_asFunctionalComponent(__VLS_89, new __VLS_89({
     ...{ class: "relative flex-1 rounded-full bg-border" },
 }));
-const __VLS_95 = __VLS_94({
+const __VLS_91 = __VLS_90({
     ...{ class: "relative flex-1 rounded-full bg-border" },
-}, ...__VLS_functionalComponentArgsRest(__VLS_94));
-var __VLS_92;
-var __VLS_73;
+}, ...__VLS_functionalComponentArgsRest(__VLS_90));
+var __VLS_88;
 var __VLS_69;
-const __VLS_97 = {}.TabsContent;
+var __VLS_65;
+const __VLS_93 = {}.TabsContent;
 /** @type {[typeof __VLS_components.TabsContent, typeof __VLS_components.TabsContent, ]} */ ;
 // @ts-ignore
-const __VLS_98 = __VLS_asFunctionalComponent(__VLS_97, new __VLS_97({
+const __VLS_94 = __VLS_asFunctionalComponent(__VLS_93, new __VLS_93({
     value: "starred",
     ...{ class: "m-0 flex-1 overflow-hidden" },
 }));
-const __VLS_99 = __VLS_98({
+const __VLS_95 = __VLS_94({
     value: "starred",
     ...{ class: "m-0 flex-1 overflow-hidden" },
+}, ...__VLS_functionalComponentArgsRest(__VLS_94));
+__VLS_96.slots.default;
+const __VLS_97 = {}.ScrollAreaRoot;
+/** @type {[typeof __VLS_components.ScrollAreaRoot, typeof __VLS_components.ScrollAreaRoot, ]} */ ;
+// @ts-ignore
+const __VLS_98 = __VLS_asFunctionalComponent(__VLS_97, new __VLS_97({
+    ...{ class: "h-full" },
+}));
+const __VLS_99 = __VLS_98({
+    ...{ class: "h-full" },
 }, ...__VLS_functionalComponentArgsRest(__VLS_98));
 __VLS_100.slots.default;
-const __VLS_101 = {}.ScrollAreaRoot;
-/** @type {[typeof __VLS_components.ScrollAreaRoot, typeof __VLS_components.ScrollAreaRoot, ]} */ ;
+const __VLS_101 = {}.ScrollAreaViewport;
+/** @type {[typeof __VLS_components.ScrollAreaViewport, typeof __VLS_components.ScrollAreaViewport, ]} */ ;
 // @ts-ignore
 const __VLS_102 = __VLS_asFunctionalComponent(__VLS_101, new __VLS_101({
     ...{ class: "h-full" },
@@ -451,99 +486,115 @@ const __VLS_103 = __VLS_102({
     ...{ class: "h-full" },
 }, ...__VLS_functionalComponentArgsRest(__VLS_102));
 __VLS_104.slots.default;
-const __VLS_105 = {}.ScrollAreaViewport;
-/** @type {[typeof __VLS_components.ScrollAreaViewport, typeof __VLS_components.ScrollAreaViewport, ]} */ ;
-// @ts-ignore
-const __VLS_106 = __VLS_asFunctionalComponent(__VLS_105, new __VLS_105({
-    ...{ class: "h-full" },
-}));
-const __VLS_107 = __VLS_106({
-    ...{ class: "h-full" },
-}, ...__VLS_functionalComponentArgsRest(__VLS_106));
-__VLS_108.slots.default;
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
     ...{ class: "flex flex-col gap-2 p-4 pt-0" },
 });
-const __VLS_109 = {}.TransitionGroup;
-/** @type {[typeof __VLS_components.TransitionGroup, typeof __VLS_components.TransitionGroup, ]} */ ;
-// @ts-ignore
-const __VLS_110 = __VLS_asFunctionalComponent(__VLS_109, new __VLS_109({
-    name: "list",
-    appear: true,
-}));
-const __VLS_111 = __VLS_110({
-    name: "list",
-    appear: true,
-}, ...__VLS_functionalComponentArgsRest(__VLS_110));
-__VLS_112.slots.default;
-for (const [msg] of __VLS_getVForSourceType((__VLS_ctx.displayMessages))) {
-    /** @type {[typeof MessageListItem, ]} */ ;
+if (__VLS_ctx.store.messagesLoading) {
+    for (const [n] of __VLS_getVForSourceType((6))) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div)({
+            key: (n),
+            ...{ class: "h-16 rounded-lg bg-muted animate-pulse" },
+        });
+    }
+}
+else {
+    const __VLS_105 = {}.TransitionGroup;
+    /** @type {[typeof __VLS_components.TransitionGroup, typeof __VLS_components.TransitionGroup, ]} */ ;
     // @ts-ignore
-    const __VLS_113 = __VLS_asFunctionalComponent(MessageListItem, new MessageListItem({
-        ...{ 'onClick': {} },
-        key: (msg.id),
-        message: (msg),
-        selected: (__VLS_ctx.store.currentMessage?.id === msg.id),
-        folderColor: (__VLS_ctx.folderColor),
+    const __VLS_106 = __VLS_asFunctionalComponent(__VLS_105, new __VLS_105({
+        name: "list",
+        appear: true,
     }));
-    const __VLS_114 = __VLS_113({
-        ...{ 'onClick': {} },
-        key: (msg.id),
-        message: (msg),
-        selected: (__VLS_ctx.store.currentMessage?.id === msg.id),
-        folderColor: (__VLS_ctx.folderColor),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_113));
-    let __VLS_116;
-    let __VLS_117;
-    let __VLS_118;
-    const __VLS_119 = {
-        onClick: (...[$event]) => {
-            __VLS_ctx.selectMessage(msg);
-        }
-    };
-    var __VLS_115;
+    const __VLS_107 = __VLS_106({
+        name: "list",
+        appear: true,
+    }, ...__VLS_functionalComponentArgsRest(__VLS_106));
+    __VLS_108.slots.default;
+    for (const [msg] of __VLS_getVForSourceType((__VLS_ctx.displayMessages))) {
+        /** @type {[typeof MessageListItem, ]} */ ;
+        // @ts-ignore
+        const __VLS_109 = __VLS_asFunctionalComponent(MessageListItem, new MessageListItem({
+            ...{ 'onClick': {} },
+            key: (msg.id),
+            message: (msg),
+            selected: (__VLS_ctx.store.currentMessage?.id === msg.id),
+            folderColor: (__VLS_ctx.folderColor),
+        }));
+        const __VLS_110 = __VLS_109({
+            ...{ 'onClick': {} },
+            key: (msg.id),
+            message: (msg),
+            selected: (__VLS_ctx.store.currentMessage?.id === msg.id),
+            folderColor: (__VLS_ctx.folderColor),
+        }, ...__VLS_functionalComponentArgsRest(__VLS_109));
+        let __VLS_112;
+        let __VLS_113;
+        let __VLS_114;
+        const __VLS_115 = {
+            onClick: (...[$event]) => {
+                if (!!(__VLS_ctx.store.messagesLoading))
+                    return;
+                __VLS_ctx.selectMessage(msg);
+            }
+        };
+        var __VLS_111;
+    }
+    var __VLS_108;
+    if (__VLS_ctx.displayMessages.length === 0) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "p-8 text-center text-muted-foreground" },
+        });
+    }
+    if (__VLS_ctx.store.hasMoreMessages && !__VLS_ctx.store.messagesLoading) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!!(__VLS_ctx.store.messagesLoading))
+                        return;
+                    if (!(__VLS_ctx.store.hasMoreMessages && !__VLS_ctx.store.messagesLoading))
+                        return;
+                    __VLS_ctx.store.loadMore();
+                } },
+            ...{ class: "w-full py-2 text-sm text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50" },
+            disabled: (__VLS_ctx.store.isFetchingNextPage),
+        });
+        (__VLS_ctx.store.isFetchingNextPage ? 'Loading…' : 'Load more');
+    }
 }
-var __VLS_112;
-if (__VLS_ctx.displayMessages.length === 0) {
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "p-8 text-center text-muted-foreground" },
-    });
-}
-var __VLS_108;
-const __VLS_120 = {}.ScrollAreaScrollbar;
+var __VLS_104;
+const __VLS_116 = {}.ScrollAreaScrollbar;
 /** @type {[typeof __VLS_components.ScrollAreaScrollbar, typeof __VLS_components.ScrollAreaScrollbar, ]} */ ;
 // @ts-ignore
-const __VLS_121 = __VLS_asFunctionalComponent(__VLS_120, new __VLS_120({
+const __VLS_117 = __VLS_asFunctionalComponent(__VLS_116, new __VLS_116({
     orientation: "vertical",
     ...{ class: "flex touch-none select-none bg-transparent p-0.5 transition-colors w-2.5" },
 }));
-const __VLS_122 = __VLS_121({
+const __VLS_118 = __VLS_117({
     orientation: "vertical",
     ...{ class: "flex touch-none select-none bg-transparent p-0.5 transition-colors w-2.5" },
-}, ...__VLS_functionalComponentArgsRest(__VLS_121));
-__VLS_123.slots.default;
-const __VLS_124 = {}.ScrollAreaThumb;
+}, ...__VLS_functionalComponentArgsRest(__VLS_117));
+__VLS_119.slots.default;
+const __VLS_120 = {}.ScrollAreaThumb;
 /** @type {[typeof __VLS_components.ScrollAreaThumb, ]} */ ;
 // @ts-ignore
-const __VLS_125 = __VLS_asFunctionalComponent(__VLS_124, new __VLS_124({
+const __VLS_121 = __VLS_asFunctionalComponent(__VLS_120, new __VLS_120({
     ...{ class: "relative flex-1 rounded-full bg-border" },
 }));
-const __VLS_126 = __VLS_125({
+const __VLS_122 = __VLS_121({
     ...{ class: "relative flex-1 rounded-full bg-border" },
-}, ...__VLS_functionalComponentArgsRest(__VLS_125));
-var __VLS_123;
-var __VLS_104;
+}, ...__VLS_functionalComponentArgsRest(__VLS_121));
+var __VLS_119;
 var __VLS_100;
+var __VLS_96;
 var __VLS_3;
 /** @type {[typeof Dialog, typeof Dialog, ]} */ ;
 // @ts-ignore
-const __VLS_128 = __VLS_asFunctionalComponent(Dialog, new Dialog({
+const __VLS_124 = __VLS_asFunctionalComponent(Dialog, new Dialog({
     open: (__VLS_ctx.showTrashConfirm),
 }));
-const __VLS_129 = __VLS_128({
+const __VLS_125 = __VLS_124({
     open: (__VLS_ctx.showTrashConfirm),
-}, ...__VLS_functionalComponentArgsRest(__VLS_128));
-__VLS_130.slots.default;
+}, ...__VLS_functionalComponentArgsRest(__VLS_124));
+__VLS_126.slots.default;
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
     ...{ class: "space-y-4" },
 });
@@ -558,43 +609,43 @@ __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.d
 });
 /** @type {[typeof Button, typeof Button, ]} */ ;
 // @ts-ignore
-const __VLS_131 = __VLS_asFunctionalComponent(Button, new Button({
+const __VLS_127 = __VLS_asFunctionalComponent(Button, new Button({
     ...{ 'onClick': {} },
     variant: "outline",
 }));
-const __VLS_132 = __VLS_131({
+const __VLS_128 = __VLS_127({
     ...{ 'onClick': {} },
     variant: "outline",
-}, ...__VLS_functionalComponentArgsRest(__VLS_131));
-let __VLS_134;
-let __VLS_135;
-let __VLS_136;
-const __VLS_137 = {
+}, ...__VLS_functionalComponentArgsRest(__VLS_127));
+let __VLS_130;
+let __VLS_131;
+let __VLS_132;
+const __VLS_133 = {
     onClick: (...[$event]) => {
         __VLS_ctx.showTrashConfirm = false;
     }
 };
-__VLS_133.slots.default;
-var __VLS_133;
+__VLS_129.slots.default;
+var __VLS_129;
 /** @type {[typeof Button, typeof Button, ]} */ ;
 // @ts-ignore
-const __VLS_138 = __VLS_asFunctionalComponent(Button, new Button({
+const __VLS_134 = __VLS_asFunctionalComponent(Button, new Button({
     ...{ 'onClick': {} },
     variant: "destructive",
 }));
-const __VLS_139 = __VLS_138({
+const __VLS_135 = __VLS_134({
     ...{ 'onClick': {} },
     variant: "destructive",
-}, ...__VLS_functionalComponentArgsRest(__VLS_138));
-let __VLS_141;
-let __VLS_142;
-let __VLS_143;
-const __VLS_144 = {
+}, ...__VLS_functionalComponentArgsRest(__VLS_134));
+let __VLS_137;
+let __VLS_138;
+let __VLS_139;
+const __VLS_140 = {
     onClick: (__VLS_ctx.performEmptyTrash)
 };
-__VLS_140.slots.default;
-var __VLS_140;
-var __VLS_130;
+__VLS_136.slots.default;
+var __VLS_136;
+var __VLS_126;
 /** @type {__VLS_StyleScopedClasses['flex']} */ ;
 /** @type {__VLS_StyleScopedClasses['h-full']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex-col']} */ ;
@@ -697,13 +748,6 @@ var __VLS_130;
 /** @type {__VLS_StyleScopedClasses['p-4']} */ ;
 /** @type {__VLS_StyleScopedClasses['backdrop-blur']} */ ;
 /** @type {__VLS_StyleScopedClasses['supports-[backdrop-filter]:bg-background/60']} */ ;
-/** @type {__VLS_StyleScopedClasses['relative']} */ ;
-/** @type {__VLS_StyleScopedClasses['absolute']} */ ;
-/** @type {__VLS_StyleScopedClasses['left-2']} */ ;
-/** @type {__VLS_StyleScopedClasses['top-2.5']} */ ;
-/** @type {__VLS_StyleScopedClasses['size-4']} */ ;
-/** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
-/** @type {__VLS_StyleScopedClasses['pl-8']} */ ;
 /** @type {__VLS_StyleScopedClasses['m-0']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex-1']} */ ;
 /** @type {__VLS_StyleScopedClasses['overflow-hidden']} */ ;
@@ -714,9 +758,20 @@ var __VLS_130;
 /** @type {__VLS_StyleScopedClasses['gap-2']} */ ;
 /** @type {__VLS_StyleScopedClasses['p-4']} */ ;
 /** @type {__VLS_StyleScopedClasses['pt-0']} */ ;
+/** @type {__VLS_StyleScopedClasses['h-16']} */ ;
+/** @type {__VLS_StyleScopedClasses['rounded-lg']} */ ;
+/** @type {__VLS_StyleScopedClasses['bg-muted']} */ ;
+/** @type {__VLS_StyleScopedClasses['animate-pulse']} */ ;
 /** @type {__VLS_StyleScopedClasses['p-8']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-center']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['w-full']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-sm']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:text-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['transition-colors']} */ ;
+/** @type {__VLS_StyleScopedClasses['disabled:opacity-50']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex']} */ ;
 /** @type {__VLS_StyleScopedClasses['touch-none']} */ ;
 /** @type {__VLS_StyleScopedClasses['select-none']} */ ;
@@ -738,9 +793,20 @@ var __VLS_130;
 /** @type {__VLS_StyleScopedClasses['gap-2']} */ ;
 /** @type {__VLS_StyleScopedClasses['p-4']} */ ;
 /** @type {__VLS_StyleScopedClasses['pt-0']} */ ;
+/** @type {__VLS_StyleScopedClasses['h-16']} */ ;
+/** @type {__VLS_StyleScopedClasses['rounded-lg']} */ ;
+/** @type {__VLS_StyleScopedClasses['bg-muted']} */ ;
+/** @type {__VLS_StyleScopedClasses['animate-pulse']} */ ;
 /** @type {__VLS_StyleScopedClasses['p-8']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-center']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['w-full']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-sm']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:text-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['transition-colors']} */ ;
+/** @type {__VLS_StyleScopedClasses['disabled:opacity-50']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex']} */ ;
 /** @type {__VLS_StyleScopedClasses['touch-none']} */ ;
 /** @type {__VLS_StyleScopedClasses['select-none']} */ ;
@@ -762,9 +828,20 @@ var __VLS_130;
 /** @type {__VLS_StyleScopedClasses['gap-2']} */ ;
 /** @type {__VLS_StyleScopedClasses['p-4']} */ ;
 /** @type {__VLS_StyleScopedClasses['pt-0']} */ ;
+/** @type {__VLS_StyleScopedClasses['h-16']} */ ;
+/** @type {__VLS_StyleScopedClasses['rounded-lg']} */ ;
+/** @type {__VLS_StyleScopedClasses['bg-muted']} */ ;
+/** @type {__VLS_StyleScopedClasses['animate-pulse']} */ ;
 /** @type {__VLS_StyleScopedClasses['p-8']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-center']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['w-full']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-sm']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:text-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['transition-colors']} */ ;
+/** @type {__VLS_StyleScopedClasses['disabled:opacity-50']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex']} */ ;
 /** @type {__VLS_StyleScopedClasses['touch-none']} */ ;
 /** @type {__VLS_StyleScopedClasses['select-none']} */ ;
@@ -791,7 +868,6 @@ var __VLS_dollars;
 const __VLS_self = (await import('vue')).defineComponent({
     setup() {
         return {
-            Search: Search,
             ArrowDownUp: ArrowDownUp,
             Trash2: Trash2,
             TabsRoot: TabsRoot,
@@ -803,11 +879,10 @@ const __VLS_self = (await import('vue')).defineComponent({
             ScrollAreaScrollbar: ScrollAreaScrollbar,
             ScrollAreaThumb: ScrollAreaThumb,
             MessageListItem: MessageListItem,
-            Input: Input,
+            SearchBar: SearchBar,
             Dialog: Dialog,
             Button: Button,
             store: store,
-            searchValue: searchValue,
             showTrashConfirm: showTrashConfirm,
             folderColor: folderColor,
             displayMessages: displayMessages,

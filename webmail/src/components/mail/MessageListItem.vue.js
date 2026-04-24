@@ -5,14 +5,37 @@ import { Paperclip, Star } from 'lucide-vue-next';
 import { TooltipRoot, TooltipTrigger, TooltipContent, TooltipPortal } from 'radix-vue';
 import { cn } from '../../lib/utils';
 import Badge from '../ui/Badge.vue';
+import { useMailStore } from '../../stores/mail';
 const props = defineProps({
     message: { type: Object, required: true },
     selected: { type: Boolean, default: false },
     folderColor: { type: String, default: '' },
 });
+const store = useMailStore();
 const timestamp = computed(() => props.message.received_at || props.message.sent_at);
 const relativeTime = computed(() => timestamp.value ? formatDistanceToNow(new Date(timestamp.value), { addSuffix: true }) : '');
 const exactTime = computed(() => timestamp.value ? format(new Date(timestamp.value), 'PPpp') : '');
+const isSentOrDrafts = computed(() => {
+    const name = store.currentFolderObj?.name?.toLowerCase() ?? '';
+    return name === 'sent' || name === 'drafts';
+});
+const recipientLabel = computed(() => {
+    if (!isSentOrDrafts.value)
+        return null;
+    let addrs = [];
+    try {
+        addrs = JSON.parse(props.message.to_addresses || '[]');
+    }
+    catch {
+        addrs = [];
+    }
+    if (!addrs.length)
+        return null;
+    return 'To: ' + addrs.map((a) => {
+        const m = a.match(/<([^>]+)>/);
+        return m ? m[1] : a;
+    }).join(', ');
+});
 debugger; /* PartiallyEnd: #3632/scriptSetup.vue */
 const __VLS_ctx = {};
 let __VLS_components;
@@ -33,7 +56,7 @@ __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.d
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
     ...{ class: "font-semibold" },
 });
-(__VLS_ctx.message.from_name || __VLS_ctx.message.from_address);
+(__VLS_ctx.recipientLabel ?? (__VLS_ctx.message.from_name || __VLS_ctx.message.from_address));
 if (!__VLS_ctx.message.is_read) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.span)({
         ...{ class: "flex h-2 w-2 rounded-full bg-primary" },
@@ -183,6 +206,7 @@ const __VLS_self = (await import('vue')).defineComponent({
             timestamp: timestamp,
             relativeTime: relativeTime,
             exactTime: exactTime,
+            recipientLabel: recipientLabel,
         };
     },
     props: {

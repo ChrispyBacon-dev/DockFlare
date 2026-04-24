@@ -81,6 +81,15 @@ watch(emailIframe, (el) => {
 
 onUnmounted(() => resizeObserver?.disconnect())
 
+const parseAddrs = (raw: string | null | undefined) => {
+  let addrs: string[] = []
+  try { addrs = JSON.parse(raw || '[]') } catch { addrs = [] }
+  return addrs.map((a: string) => { const m = a.match(/<([^>]+)>/); return m ? m[1] : a }).join(', ')
+}
+const toDisplay = computed(() => parseAddrs(props.message?.to_addresses))
+const ccDisplay = computed(() => parseAddrs(props.message?.cc_addresses))
+const bccDisplay = computed(() => parseAddrs(props.message?.bcc_addresses))
+
 const displayTimestamp = computed(() => {
   const ts = props.message?.received_at || props.message?.sent_at
   return ts ? format(new Date(ts), 'PPpp') : ''
@@ -104,6 +113,7 @@ const replyTo = () => {
   if (!props.message) return
   store.composeDefaults = {
     to: props.message.from_address,
+    from: props.message.received_via_alias || undefined,
     subject: props.message.subject?.startsWith('Re:')
       ? props.message.subject
       : `Re: ${props.message.subject || ''}`,
@@ -126,6 +136,7 @@ const replyAll = () => {
   ].filter((a: string) => a && a !== store.currentMailbox)
   store.composeDefaults = {
     to: allAddresses.join(', '),
+    from: props.message.received_via_alias || undefined,
     subject: props.message.subject?.startsWith('Re:')
       ? props.message.subject
       : `Re: ${props.message.subject || ''}`,
@@ -495,10 +506,16 @@ const sendInlineReply = async () => {
           <Avatar :initials="message.from_name?.[0] || message.from_address?.[0] || '?'" />
           <div class="grid gap-1">
             <div class="font-semibold">{{ message.from_name || message.from_address }}</div>
-            <div class="line-clamp-1 text-xs">{{ message.subject }}</div>
-            <div class="line-clamp-1 text-xs">
-              <span class="font-medium">Reply-To:</span> {{ message.from_address }}
+            <div v-if="toDisplay" class="line-clamp-1 text-xs">
+              <span class="font-medium">To:</span> {{ toDisplay }}
             </div>
+            <div v-if="ccDisplay" class="line-clamp-1 text-xs">
+              <span class="font-medium">Cc:</span> {{ ccDisplay }}
+            </div>
+            <div v-if="bccDisplay" class="line-clamp-1 text-xs">
+              <span class="font-medium">Bcc:</span> {{ bccDisplay }}
+            </div>
+            <div class="line-clamp-1 text-xs">{{ message.subject }}</div>
           </div>
         </div>
         <div v-if="displayTimestamp" class="ml-auto text-xs text-muted-foreground">

@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer utilities {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .h-\[100dvh\] {
+    height: 100dvh;
+  }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

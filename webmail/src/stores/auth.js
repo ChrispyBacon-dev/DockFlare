@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
+import { setIDBItem, removeIDBItem } from '@/lib/idb';
 export const useAuthStore = defineStore('auth', () => {
     const token = ref(localStorage.getItem('jwt_token') || '');
     const isAuthenticated = computed(() => {
@@ -16,6 +17,7 @@ export const useAuthStore = defineStore('auth', () => {
     const setToken = (newToken) => {
         token.value = newToken;
         localStorage.setItem('jwt_token', newToken);
+        setIDBItem('jwt_token', newToken).catch(() => { });
     };
     const logout = async () => {
         if ('serviceWorker' in navigator) {
@@ -38,6 +40,7 @@ export const useAuthStore = defineStore('auth', () => {
         }
         token.value = '';
         localStorage.removeItem('jwt_token');
+        removeIDBItem('jwt_token').catch(() => { });
     };
     const decodeToken = () => {
         if (!token.value)

@@ -6,6 +6,7 @@ import { usePushSubscription } from '@/composables/usePushSubscription'
 import { useMailStore } from '@/stores/mail'
 import { mailApi } from '@/api/mail'
 import { authApi } from '@/api/auth'
+import type { Alias } from '@/types/mail'
 
 const { canInstall, promptInstall } = useInstallPrompt()
 const notificationsStore = useNotificationsStore()
@@ -166,6 +167,98 @@ async function deleteAutoResponder() {
   } finally {
     arDeleteLoading.value = false
   }
+}
+
+const alAliases = ref<Alias[]>([])
+const alLoading = ref(false)
+const alError = ref('')
+const alSuccess = ref('')
+const alNewAddress = ref('')
+const alNewLabel = ref('')
+const alNewDescription = ref('')
+const alNewExpires = ref('')
+const alNeverExpire = ref(true)
+const alCreateLoading = ref(false)
+const alGenerating = ref(false)
+
+async function loadAliases(address: string) {
+  alLoading.value = true
+  alError.value = ''
+  try {
+    const res = await mailApi.getAllAliases(address)
+    alAliases.value = res.data.aliases || []
+  } catch {
+    alError.value = 'Failed to load aliases.'
+  } finally {
+    alLoading.value = false
+  }
+}
+
+watch(
+  () => mailStore.currentMailbox,
+  (address) => { if (address) loadAliases(address) },
+  { immediate: true }
+)
+
+async function generateAlias() {
+  if (!mailStore.currentMailbox) return
+  const domain = mailStore.currentMailbox.split('@')[1]
+  if (!domain) return
+  alGenerating.value = true
+  try {
+    const res = await mailApi.generateAlias(mailStore.currentMailbox, domain)
+    alNewAddress.value = res.data.suggestion?.split('@')[0] || ''
+  } catch { /* ignore */ } finally {
+    alGenerating.value = false
+  }
+}
+
+async function createAlias() {
+  if (!mailStore.currentMailbox || !alNewAddress.value) return
+  const domain = mailStore.currentMailbox.split('@')[1]
+  alError.value = ''
+  alSuccess.value = ''
+  alCreateLoading.value = true
+  try {
+    await mailApi.createAlias({
+      address: `${alNewAddress.value}@${domain}`,
+      mailbox_address: mailStore.currentMailbox,
+      label: alNewLabel.value || undefined,
+      description: alNewDescription.value || undefined,
+      expires_at: alNeverExpire.value ? null : (alNewExpires.value || null),
+    })
+    alNewAddress.value = ''
+    alNewLabel.value = ''
+    alNewDescription.value = ''
+    alNewExpires.value = ''
+    alNeverExpire.value = true
+    alSuccess.value = 'Alias created.'
+    await loadAliases(mailStore.currentMailbox)
+  } catch (e: any) {
+    alError.value = e?.response?.data?.error || 'Failed to create alias.'
+  } finally {
+    alCreateLoading.value = false
+  }
+}
+
+async function toggleAlias(alias: Alias) {
+  try {
+    await mailApi.updateAlias(alias.address, { is_active: !alias.is_active })
+    alias.is_active = !alias.is_active
+  } catch { /* ignore */ }
+}
+
+async function deleteAlias(alias: Alias) {
+  if (!confirm(`Delete alias ${alias.address}? This cannot be undone.`)) return
+  try {
+    await mailApi.deleteAlias(alias.address)
+    alAliases.value = alAliases.value.filter(a => a.address !== alias.address)
+  } catch { /* ignore */ }
+}
+
+function formatDate(iso: string | null) {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleDateString()
 }
 </script>
 
@@ -408,6 +501,111 @@ async function deleteAutoResponder() {
       >
         {{ pwLoading ? 'Updating…' : 'Update Password' }}
       </button>
+    </div>
+
+    <div v-if="mailStore.currentMailbox" class="mb-4 rounded-lg border p-4 space-y-3">
+      <div>
+        <h2 class="text-sm font-medium">Email Aliases</h2>
+        <p class="text-sm text-muted-foreground mt-0.5">
+          Create aliases that forward mail to your mailbox while keeping your real address private.
+        </p>
+      </div>
+
+      <div v-if="alLoading" class="text-sm text-muted-foreground">Loading…</div>
+
+      <template v-else>
+        <div v-if="alAliases.length" class="divide-y divide-border rounded-md border overflow-hidden">
+          <div
+            v-for="alias in alAliases"
+            :key="alias.address"
+            class="flex items-center gap-3 px-3 py-2.5 bg-background text-sm"
+          >
+            <div class="flex-1 min-w-0">
+              <div class="font-mono text-xs truncate">{{ alias.address }}</div>
+              <div class="flex items-center gap-2 mt-0.5">
+                <span v-if="alias.label" class="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{{ alias.label }}</span>
+                <span v-if="alias.expires_at" class="text-xs text-muted-foreground">Expires {{ formatDate(alias.expires_at) }}</span>
+                <span class="text-xs text-muted-foreground">{{ alias.use_count }} received</span>
+              </div>
+            </div>
+            <button
+              class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200"
+              :class="alias.is_active ? 'bg-primary' : 'bg-muted'"
+              role="switch"
+              :aria-checked="alias.is_active"
+              @click="toggleAlias(alias)"
+            >
+              <span
+                class="pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow ring-0 transition-transform duration-200"
+                :class="alias.is_active ? 'translate-x-4' : 'translate-x-0'"
+              />
+            </button>
+            <button
+              class="text-muted-foreground hover:text-destructive transition-colors text-xs"
+              @click="deleteAlias(alias)"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+        <p v-else class="text-sm text-muted-foreground">No aliases yet.</p>
+
+        <div class="space-y-2 pt-1">
+          <label class="text-sm font-medium">Create alias</label>
+          <div class="flex items-center gap-2">
+            <input
+              v-model="alNewAddress"
+              type="text"
+              placeholder="local-part"
+              class="flex-1 rounded-md border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <span class="text-sm text-muted-foreground shrink-0">@{{ mailStore.currentMailbox.split('@')[1] }}</span>
+            <button
+              :disabled="alGenerating"
+              class="inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent transition-colors disabled:opacity-50 shrink-0"
+              @click="generateAlias"
+            >
+              {{ alGenerating ? '…' : 'Generate' }}
+            </button>
+          </div>
+          <input
+            v-model="alNewLabel"
+            type="text"
+            placeholder="Label (optional, e.g. shopping)"
+            class="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+          <input
+            v-model="alNewDescription"
+            type="text"
+            placeholder="Description (optional)"
+            maxlength="200"
+            class="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+          <div class="flex items-center gap-3">
+            <label class="flex items-center gap-2 text-sm cursor-pointer">
+              <input v-model="alNeverExpire" type="checkbox" class="rounded border-border" />
+              Never expire
+            </label>
+            <input
+              v-if="!alNeverExpire"
+              v-model="alNewExpires"
+              type="date"
+              class="rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+        </div>
+
+        <p v-if="alError" class="text-xs text-destructive">{{ alError }}</p>
+        <p v-if="alSuccess" class="text-xs text-green-600">{{ alSuccess }}</p>
+
+        <button
+          :disabled="alCreateLoading || !alNewAddress"
+          class="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+          @click="createAlias"
+        >
+          {{ alCreateLoading ? 'Creating…' : 'Create Alias' }}
+        </button>
+      </template>
     </div>
 
     <p class="text-sm text-muted-foreground">Additional settings are managed in DockFlare Master.</p>

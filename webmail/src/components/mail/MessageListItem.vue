@@ -5,12 +5,15 @@ import { Paperclip, Star } from 'lucide-vue-next'
 import { TooltipRoot, TooltipTrigger, TooltipContent, TooltipPortal } from 'radix-vue'
 import { cn } from '../../lib/utils'
 import Badge from '../ui/Badge.vue'
+import { useMailStore } from '../../stores/mail'
 
 const props = defineProps({
   message: { type: Object, required: true },
   selected: { type: Boolean, default: false },
   folderColor: { type: String, default: '' },
 })
+
+const store = useMailStore()
 
 const timestamp = computed(() => props.message.received_at || props.message.sent_at)
 const relativeTime = computed(() =>
@@ -19,6 +22,22 @@ const relativeTime = computed(() =>
 const exactTime = computed(() =>
   timestamp.value ? format(new Date(timestamp.value), 'PPpp') : ''
 )
+
+const isSentOrDrafts = computed(() => {
+  const name = store.currentFolderObj?.name?.toLowerCase() ?? ''
+  return name === 'sent' || name === 'drafts'
+})
+
+const recipientLabel = computed(() => {
+  if (!isSentOrDrafts.value) return null
+  let addrs: string[] = []
+  try { addrs = JSON.parse(props.message.to_addresses || '[]') } catch { addrs = [] }
+  if (!addrs.length) return null
+  return 'To: ' + addrs.map((a: string) => {
+    const m = a.match(/<([^>]+)>/)
+    return m ? m[1] : a
+  }).join(', ')
+})
 </script>
 
 <template>
@@ -32,7 +51,7 @@ const exactTime = computed(() =>
     <div class="flex w-full flex-col gap-1">
       <div class="flex items-center">
         <div class="flex items-center gap-2">
-          <div class="font-semibold">{{ message.from_name || message.from_address }}</div>
+          <div class="font-semibold">{{ recipientLabel ?? (message.from_name || message.from_address) }}</div>
           <span v-if="!message.is_read" class="flex h-2 w-2 rounded-full bg-primary" />
           <Star v-if="message.is_starred" class="size-3 fill-yellow-400 text-yellow-400" />
         </div>

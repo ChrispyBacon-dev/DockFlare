@@ -35,7 +35,7 @@ def _get_int_env(name, default, minimum=None):
         return default
 
 # --- DockFlare Version ---
-APP_VERSION = "v3.1.0"
+APP_VERSION = "v3.1.1"
 # --- web: https://dockflare.app ---
 # --- github: https://github.com/ChrispyBacon-dev/DockFlare ---
 
