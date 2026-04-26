@@ -184,10 +184,14 @@ def inbound():
             return jsonify({"error": "unknown domain"}), 401
         secret = domain_cfg['webhook_secret']
     else:
-        cur = get_db().execute("SELECT webhook_secret FROM domain_configs LIMIT 1")
-        row = cur.fetchone()
-        secret = row['webhook_secret'] if row else config.WEBHOOK_SECRET
-        domain_cfg = None
+        db = get_db()
+        count = db.execute("SELECT COUNT(*) FROM domain_configs").fetchone()[0]
+        if count > 1:
+            log.warning("Inbound webhook: X-DockFlare-Domain header missing with %d domains configured", count)
+            return jsonify({"error": "domain header required"}), 400
+        row = db.execute("SELECT * FROM domain_configs LIMIT 1").fetchone()
+        domain_cfg = row if row else None
+        secret = domain_cfg['webhook_secret'] if domain_cfg else config.WEBHOOK_SECRET
 
     if not _verify_signature(request, secret):
         return jsonify({"error": "invalid signature"}), 401
@@ -217,6 +221,11 @@ def inbound():
             if db.execute("SELECT 1 FROM mailboxes WHERE address=?", (addr,)).fetchone():
                 to_address = addr
                 break
+
+        if not to_address:
+            raw_resolved = data.get('resolved_mailbox') or data.get('to', '')
+            if raw_resolved and db.execute("SELECT 1 FROM mailboxes WHERE address=?", (raw_resolved,)).fetchone():
+                to_address = raw_resolved
 
         if not to_address:
             via_alias = data.get('via_alias', False)
@@ -251,6 +260,12 @@ def inbound():
                             (now_utc, alias_address)
                         )
                         break
+
+        if not to_address:
+            for addr in parsed.get('delivered_to_addresses', []):
+                if db.execute("SELECT 1 FROM mailboxes WHERE address=?", (addr,)).fetchone():
+                    to_address = addr
+                    break
 
         if not to_address and domain_cfg and domain_cfg['catch_all_mailbox']:
             catch_all = domain_cfg['catch_all_mailbox']
@@ -298,10 +313,21 @@ def inbound():
         ))
         msg_id = cur.lastrowid
 
+        used_filenames = set()
         for att in parsed['attachments']:
             att_dir = os.path.join(config.ATTACHMENTS_PATH, str(msg_id))
             os.makedirs(att_dir, exist_ok=True)
-            safe_filename = att['filename'].replace('/', '_').replace('\\', '_')
+            raw_name = os.path.basename(att['filename'] or '').replace('/', '_').replace('\\', '_').strip('. ')
+            safe_filename = raw_name or 'unnamed_attachment'
+            if safe_filename in used_filenames:
+                stem, sep, ext = safe_filename.rpartition('.')
+                base = stem if sep else safe_filename
+                tail = (sep + ext) if sep else ''
+                counter = 2
+                while f"{base}_{counter}{tail}" in used_filenames:
+                    counter += 1
+                safe_filename = f"{base}_{counter}{tail}"
+            used_filenames.add(safe_filename)
             att_path = os.path.join(att_dir, safe_filename)
             with open(att_path, 'wb') as f:
                 f.write(att['data'])
@@ -432,7 +458,10 @@ def inbound():
         })
         _check_and_send_auto_reply(db, to_address, parsed, domain_cfg)
 
-        delete_from_r2(r2_key, domain_cfg)
+        try:
+            delete_from_r2(r2_key, domain_cfg)
+        except Exception:
+            log.warning("Inbound: R2 delete failed for %s — will clean on next cron", r2_key)
 
         log.info("Inbound delivered: message=%s to=%s db_id=%s",
                  msg_uuid, to_address, msg_id)

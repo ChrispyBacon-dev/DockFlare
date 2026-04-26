@@ -1,6 +1,8 @@
 import email
 import email.policy
 import email.utils
+import re
+import uuid
 from datetime import datetime, timezone
 import nh3
 
@@ -21,12 +23,13 @@ _ALLOWED_ATTRIBUTES = {
 def parse_eml(eml_bytes):
     msg = email.message_from_bytes(eml_bytes, policy=email.policy.default)
     parsed = {
-        'message_id': msg.get('Message-ID', '').strip('<>'),
+        'message_id': msg.get('Message-ID', '').strip('<>') or str(uuid.uuid4()),
         'from_address': '',
         'from_name': '',
         'to_addresses': [],
         'cc_addresses': [],
         'bcc_addresses': [],
+        'delivered_to_addresses': [],
         'subject': msg.get('Subject', ''),
         'date': msg.get('Date'),
         'in_reply_to': msg.get('In-Reply-To', '').strip('<>'),
@@ -53,6 +56,20 @@ def parse_eml(eml_bytes):
             parsed[f'{addr_header.lower()}_addresses'] = [
                 addr for _, addr in pairs if addr
             ]
+
+    for delivery_header in ['Delivered-To', 'X-Original-To', 'X-Forwarded-To', 'X-GitHub-Recipient-Address', 'destinations']:
+        for val in msg.get_all(delivery_header) or []:
+            _, addr = email.utils.parseaddr(str(val))
+            if addr and addr not in parsed['delivered_to_addresses']:
+                parsed['delivered_to_addresses'].append(addr)
+
+    for received in msg.get_all('Received') or []:
+        m = re.search(r'\bfor\s+<([^>]+)>', str(received))
+        if m:
+            addr = m.group(1).strip()
+            if addr and addr not in parsed['delivered_to_addresses']:
+                parsed['delivered_to_addresses'].append(addr)
+            break
 
     try:
         if parsed['date']:

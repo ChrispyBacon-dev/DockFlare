@@ -45,9 +45,11 @@ export default {
         const allowedRecipients = JSON.parse(env.ALLOWED_RECIPIENTS || '[]');
         if (!allowedRecipients.includes(message.to)) {
           let aliasRecord = null;
-          try {
-            aliasRecord = await env.QUOTA_KV.get('alias::' + message.to, 'json');
-          } catch (_) {}
+          if (typeof env.QUOTA_KV !== 'undefined') {
+            try {
+              aliasRecord = await env.QUOTA_KV.get('alias::' + message.to, 'json');
+            } catch (_) {}
+          }
 
           if (!aliasRecord) {
             message.setReject("Recipient not allowed");
@@ -81,7 +83,7 @@ export default {
           to: message.to,
           resolved_mailbox: resolvedMailbox || message.to,
           via_alias: resolvedMailbox ? "1" : "0",
-          subject: message.headers.get("subject") || "",
+          subject: (message.headers.get("subject") || "").slice(0, 500),
           receivedAt: receivedAt
         }
       });
@@ -121,6 +123,8 @@ export default {
   async scheduled(event, env, ctx) {
     console.log("Cron: scanning R2 temp_cache for buffered emails...");
 
+    const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
     let cursor;
     let processed = 0;
     let failed = 0;
@@ -129,11 +133,19 @@ export default {
       const list = await env.EMAIL_BUCKET.list({
         prefix: "temp_cache/",
         limit: 100,
-        cursor: cursor
+        cursor: cursor,
+        include: ['customMetadata']
       });
 
       for (const object of list.objects) {
         const r2Key = object.key;
+
+        if (object.uploaded && (now - object.uploaded.getTime()) > MAX_AGE_MS) {
+          console.warn(`Cron: expiring ${r2Key} (age > 7d)`);
+          try { await env.EMAIL_BUCKET.delete(r2Key); } catch (_) {}
+          failed++;
+          continue;
+        }
         const meta = object.customMetadata || {};
         const messageId = r2Key.replace("temp_cache/", "").replace(".eml", "");
 
