@@ -310,10 +310,6 @@ else {
                 boxShadow: '2px 0 12px rgba(0,0,0,0.04)',
             }) },
     });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div)({
-        ...{ class: "absolute top-0 left-0 right-0 h-px pointer-events-none z-10" },
-        ...{ style: {} },
-    });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "h-[54px] flex items-center justify-center px-[14px] flex-shrink-0" },
     });
@@ -1190,13 +1186,6 @@ var __VLS_3;
 /** @type {__VLS_StyleScopedClasses['flex-shrink-0']} */ ;
 /** @type {__VLS_StyleScopedClasses['relative']} */ ;
 /** @type {__VLS_StyleScopedClasses['overflow-hidden']} */ ;
-/** @type {__VLS_StyleScopedClasses['absolute']} */ ;
-/** @type {__VLS_StyleScopedClasses['top-0']} */ ;
-/** @type {__VLS_StyleScopedClasses['left-0']} */ ;
-/** @type {__VLS_StyleScopedClasses['right-0']} */ ;
-/** @type {__VLS_StyleScopedClasses['h-px']} */ ;
-/** @type {__VLS_StyleScopedClasses['pointer-events-none']} */ ;
-/** @type {__VLS_StyleScopedClasses['z-10']} */ ;
 /** @type {__VLS_StyleScopedClasses['h-[54px]']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex']} */ ;
 /** @type {__VLS_StyleScopedClasses['items-center']} */ ;

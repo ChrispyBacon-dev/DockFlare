@@ -60,7 +60,7 @@ const mobileTitle = computed(() => {
     <!-- ══════════════════════════════════════════════════════════
          MOBILE LAYOUT  (< 768px)
     ══════════════════════════════════════════════════════════ -->
-    <div v-if="isMobile" class="flex flex-col h-[100dvh] w-screen overflow-hidden" style="background: var(--df-pane-bg); backdrop-filter: blur(12px);">
+    <div v-if="isMobile" class="flex flex-col h-[100dvh] w-screen overflow-hidden overscroll-none" style="background: var(--df-pane-bg); backdrop-filter: blur(12px);">
 
       <!-- Top bar — safe area aware -->
       <div
@@ -112,7 +112,7 @@ const mobileTitle = computed(() => {
       <div class="flex-1 min-h-0 overflow-hidden">
 
         <!-- Folders panel -->
-        <div v-if="mobilePanel === 'folders'" class="h-full flex flex-col overflow-y-auto">
+        <div v-if="mobilePanel === 'folders'" class="h-full flex flex-col overflow-y-auto overscroll-none">
           <div v-if="store.mailboxes.length > 1" class="px-3 py-3 border-b border-border">
             <MailboxSelector :is-collapsed="false" />
           </div>
@@ -180,8 +180,6 @@ const mobileTitle = computed(() => {
           boxShadow: '2px 0 12px rgba(0,0,0,0.04)',
         }"
       >
-        <!-- specular top edge -->
-        <div class="absolute top-0 left-0 right-0 h-px pointer-events-none z-10" style="background: rgba(255,255,255,0.62)" />
 
         <!-- Header: wordmark + collapse toggle -->
         <div class="h-[54px] flex items-center justify-center px-[14px] flex-shrink-0">

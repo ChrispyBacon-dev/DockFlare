@@ -57,11 +57,9 @@ const redirectToMaster = async () => {
 <template>
   <div class="flex h-screen w-screen items-center justify-center">
     <div class="df-login-card w-full max-w-sm space-y-6 p-8">
-      <div class="flex flex-col space-y-1 text-center">
-        <h1 class="font-['Outfit'] font-extrabold text-[28px] tracking-[-0.02em] leading-none">
-          <span class="text-[#194466] dark:text-[#5EB1E5]">Dock</span><span class="text-[#FBA612]">Flare</span>
-        </h1>
-        <p class="text-sm text-muted-foreground mt-1">Webmail</p>
+      <div class="flex flex-col items-center space-y-1 text-center">
+        <img src="/logo.gif" alt="DockFlare" class="h-12 w-auto select-none mb-1" draggable="false" />
+        <p class="text-sm text-muted-foreground">Webmail</p>
       </div>
 
       <form @submit.prevent="handleLogin" class="space-y-3">
