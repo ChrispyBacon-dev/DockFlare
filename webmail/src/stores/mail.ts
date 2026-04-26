@@ -1,6 +1,15 @@
 import { defineStore } from 'pinia'
 import { ref, shallowRef, computed } from 'vue'
+import { format as dateFnsFormat } from 'date-fns'
 import type { Mailbox, Folder, Message, Toast, ComposeDefaults } from '../types/mail'
+
+export type DateFormatKey = 'us' | 'eu' | 'iso'
+
+const DATE_FORMATS: Record<DateFormatKey, string> = {
+  us:  'PPpp',
+  eu:  'dd.MM.yyyy, HH:mm:ss',
+  iso: 'yyyy-MM-dd HH:mm:ss',
+}
 
 export const useMailStore = defineStore('mail', () => {
   const mailboxes = ref<Mailbox[]>([])
@@ -23,6 +32,18 @@ export const useMailStore = defineStore('mail', () => {
   const isCollapsed = ref(false)
   const sortOrder = ref<'asc' | 'desc'>('desc')
   const isDark = ref(localStorage.getItem('theme') === 'dark')
+  const dateFormat = ref<DateFormatKey>((localStorage.getItem('dateFormat') as DateFormatKey) || 'us')
+  const settingsCategory = ref<string>('notifications')
+
+  function formatDate(ts: string | null | undefined): string {
+    if (!ts) return ''
+    return dateFnsFormat(new Date(ts), DATE_FORMATS[dateFormat.value])
+  }
+
+  function setDateFormat(key: DateFormatKey) {
+    dateFormat.value = key
+    localStorage.setItem('dateFormat', key)
+  }
   const viewMode = ref<'split' | 'full'>((localStorage.getItem('viewMode') as 'split' | 'full') || 'split')
   const toast = ref<Toast | null>(null)
 
@@ -79,6 +100,8 @@ export const useMailStore = defineStore('mail', () => {
     isComposeOpen, isComposeFullView, isSettingsOpen, composeDefaults, composeBody,
     activeTab, isCollapsed,
     sortOrder, isDark, toggleTheme,
+    dateFormat, setDateFormat, formatDate,
+    settingsCategory,
     viewMode, toggleViewMode,
     unreadMessages, starredMessages,
     toast, showToast,

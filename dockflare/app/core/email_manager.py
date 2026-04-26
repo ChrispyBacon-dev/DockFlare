@@ -337,6 +337,28 @@ def create_kv_namespace(title):
                          json_data={'title': title})
     return res.get('result', {}).get('id')
 
+
+def get_or_create_kv_namespace(title):
+    try:
+        ns_id = create_kv_namespace(title)
+        if ns_id:
+            return ns_id
+    except Exception:
+        pass
+    page = 1
+    while True:
+        res = cf_api_request('GET', f'/accounts/{config.CF_ACCOUNT_ID}/storage/kv/namespaces',
+                             params={'per_page': 100, 'page': page})
+        results = res.get('result') or []
+        for ns in results:
+            if ns.get('title') == title:
+                return ns.get('id')
+        info = res.get('result_info', {})
+        if page >= info.get('total_pages', 1):
+            break
+        page += 1
+    return None
+
 def update_kv_entry(namespace_id, key, value_dict):
     url = f"{config.CF_API_BASE_URL}/accounts/{config.CF_ACCOUNT_ID}/storage/kv/namespaces/{namespace_id}/values/{key}"
     headers = {"Authorization": f"Bearer {config.CF_API_TOKEN}", "Content-Type": "text/plain"}

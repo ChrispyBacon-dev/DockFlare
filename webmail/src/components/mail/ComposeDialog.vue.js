@@ -1,6 +1,7 @@
 /// <reference types="../../../node_modules/.vue-global-types/vue_3.5_0_0_0.d.ts" />
-import { ref, watch, nextTick, onUnmounted } from 'vue';
-import { Paperclip, X, Bold as BoldIcon, Italic as ItalicIcon, Link2, List as ListIcon, ListOrdered, Minus, Underline as UnderlineIcon, AlignLeft as AlignLeftIcon, AlignCenter as AlignCenterIcon, AlignRight as AlignRightIcon, Quote as QuoteIcon, RemoveFormatting, Baseline, Trash2, Type, BookmarkCheck, Maximize2, Minimize2 } from 'lucide-vue-next';
+import { ref, watch, nextTick, onUnmounted, onMounted, computed } from 'vue';
+import { useBreakpoint } from '../../composables/useBreakpoint';
+import { Paperclip, X, Bold as BoldIcon, Italic as ItalicIcon, Link2, List as ListIcon, ListOrdered, Minus, Underline as UnderlineIcon, AlignLeft as AlignLeftIcon, AlignCenter as AlignCenterIcon, AlignRight as AlignRightIcon, Quote as QuoteIcon, RemoveFormatting, Baseline, Trash2, Type, BookmarkCheck, Maximize2, Minimize2, Smile } from 'lucide-vue-next';
 import { useEditor, EditorContent } from '@tiptap/vue-3';
 import StarterKit from '@tiptap/starter-kit';
 import LinkExtension from '@tiptap/extension-link';
@@ -15,9 +16,21 @@ import FontFamily from '@tiptap/extension-font-family';
 import { mailApi } from '../../api/mail';
 import { useMailStore } from '../../stores/mail';
 import Button from '../ui/Button.vue';
-const __VLS_props = defineProps({ panelMode: { type: Boolean, default: false } });
+const props = defineProps({ panelMode: { type: Boolean, default: false } });
 const store = useMailStore();
-const to = ref('');
+const { isMobile } = useBreakpoint();
+const effectivePanelMode = computed(() => props.panelMode || isMobile.value);
+const _EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const toTags = ref([]);
+const toInput = ref('');
+const ccTags = ref([]);
+const ccInput = ref('');
+const bccTags = ref([]);
+const bccInput = ref('');
+const showCc = ref(false);
+const showBcc = ref(false);
+const fromAddress = ref('');
+const aliases = ref([]);
 const subject = ref('');
 const attachments = ref([]);
 const sending = ref(false);
@@ -54,45 +67,27 @@ const editor = useEditor({
         }
     },
 });
-watch(() => store.isComposeOpen, async (open) => {
-    if (open && store.composeDefaults) {
-        to.value = store.composeDefaults.to || '';
-        subject.value = store.composeDefaults.subject || '';
-        quotedHtml.value = store.composeDefaults.quotedHtml || '';
-        if (store.composeDefaults.draftId) {
-            draftId.value = store.composeDefaults.draftId;
-        }
-        minimized.value = false;
-        await nextTick();
-        if (store.composeDefaults.body) {
-            editor.value?.commands.setContent(store.composeDefaults.body);
-        }
-        else {
-            editor.value?.commands.clearContent();
-        }
+const loadAliases = async () => {
+    if (!store.currentMailbox)
+        return;
+    try {
+        const res = await mailApi.getAliases(store.currentMailbox);
+        aliases.value = (res.data.aliases || []).map((a) => a.address);
     }
-    else if (!open) {
-        reset();
+    catch {
+        aliases.value = [];
     }
-}, { immediate: true });
-watch(to, (val) => {
-    if (store.composeDefaults !== null) {
-        store.composeDefaults = { ...store.composeDefaults, to: val };
-    }
-});
-watch(subject, (val) => {
-    if (store.composeDefaults !== null) {
-        store.composeDefaults = { ...store.composeDefaults, subject: val };
-    }
-});
-watch(quotedHtml, (val) => {
-    if (store.composeDefaults !== null) {
-        store.composeDefaults = { ...store.composeDefaults, quotedHtml: val };
-    }
-});
-onUnmounted(() => editor.value?.destroy());
+};
 const reset = () => {
-    to.value = '';
+    toTags.value = [];
+    toInput.value = '';
+    ccTags.value = [];
+    ccInput.value = '';
+    bccTags.value = [];
+    bccInput.value = '';
+    showCc.value = false;
+    showBcc.value = false;
+    fromAddress.value = store.currentMailbox || '';
     subject.value = '';
     attachments.value = [];
     error.value = '';
@@ -103,6 +98,77 @@ const reset = () => {
     editor.value?.commands.clearContent();
     store.composeDefaults = null;
 };
+const addTag = (tags, input) => {
+    const val = input.value.trim().replace(/[,;]+$/, '');
+    if (val && _EMAIL_RE.test(val) && !tags.value.includes(val)) {
+        tags.value.push(val);
+    }
+    input.value = '';
+};
+const makeTagHandlers = (tags, input) => ({
+    onKeydown(e) {
+        if (e.key === 'Enter' || e.key === ',' || e.key === 'Tab') {
+            e.preventDefault();
+            addTag(tags, input);
+        }
+        else if (e.key === 'Backspace' && !input.value && tags.value.length) {
+            tags.value.pop();
+        }
+    },
+    onBlur() { addTag(tags, input); },
+    onPaste(e) {
+        e.preventDefault();
+        const text = e.clipboardData?.getData('text') || '';
+        for (const addr of text.split(/[,;\s]+/)) {
+            const trimmed = addr.trim();
+            if (trimmed && _EMAIL_RE.test(trimmed) && !tags.value.includes(trimmed)) {
+                tags.value.push(trimmed);
+            }
+        }
+    },
+});
+const toHandlers = makeTagHandlers(toTags, toInput);
+const ccHandlers = makeTagHandlers(ccTags, ccInput);
+const bccHandlers = makeTagHandlers(bccTags, bccInput);
+onMounted(loadAliases);
+watch(() => store.isComposeOpen, async (open) => {
+    if (open) {
+        await loadAliases();
+        if (store.composeDefaults) {
+            const rawTo = store.composeDefaults.to || '';
+            if (rawTo) {
+                for (const addr of rawTo.split(',').map((s) => s.trim()).filter(Boolean)) {
+                    if (_EMAIL_RE.test(addr) && !toTags.value.includes(addr))
+                        toTags.value.push(addr);
+                }
+            }
+            subject.value = store.composeDefaults.subject || '';
+            quotedHtml.value = store.composeDefaults.quotedHtml || '';
+            if (store.composeDefaults.draftId) {
+                draftId.value = store.composeDefaults.draftId;
+            }
+            const requestedFrom = store.composeDefaults.from;
+            fromAddress.value = (requestedFrom && aliases.value.includes(requestedFrom))
+                ? requestedFrom
+                : (store.currentMailbox || '');
+        }
+        else {
+            fromAddress.value = store.currentMailbox || '';
+        }
+        minimized.value = false;
+        await nextTick();
+        if (store.composeDefaults?.body) {
+            editor.value?.commands.setContent(store.composeDefaults.body);
+        }
+        else {
+            editor.value?.commands.clearContent();
+        }
+    }
+    else if (!open) {
+        reset();
+    }
+}, { immediate: true });
+onUnmounted(() => editor.value?.destroy());
 const close = () => {
     store.isComposeOpen = false;
     store.isComposeFullView = false;
@@ -149,26 +215,47 @@ const formatBytes = (bytes) => {
         return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
-const setLink = () => {
-    const prev = editor.value?.getAttributes('link').href || '';
-    const url = window.prompt('Enter URL', prev);
-    if (url === null)
-        return;
-    if (url === '') {
+const showLinkPopover = ref(false);
+const linkInput = ref('');
+const openLinkPopover = () => {
+    linkInput.value = editor.value?.getAttributes('link').href || '';
+    showLinkPopover.value = true;
+    nextTick(() => {
+        const el = document.getElementById('compose-link-input');
+        el?.focus();
+    });
+};
+const applyLink = () => {
+    const url = linkInput.value.trim();
+    if (!url) {
         editor.value?.chain().focus().unsetLink().run();
     }
     else {
-        editor.value?.chain().focus().setLink({ href: url }).run();
+        const href = url.startsWith('http') ? url : `https://${url}`;
+        editor.value?.chain().focus().setLink({ href }).run();
+    }
+    showLinkPopover.value = false;
+};
+const onLinkKeydown = (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        applyLink();
+    }
+    if (e.key === 'Escape') {
+        showLinkPopover.value = false;
     }
 };
 const saveDraft = async () => {
     if (!store.currentMailbox || !editor.value)
         return;
+    toHandlers.onBlur();
     savingDraft.value = true;
     error.value = '';
     try {
         const payload = {
-            to: to.value ? to.value.split(',').map((s) => s.trim()).filter(Boolean) : [],
+            to: toTags.value,
+            cc: ccTags.value,
+            bcc: bccTags.value,
             subject: subject.value,
             html_body: editor.value.getHTML() + (quotedHtml.value || ''),
             text_body: editor.value.getText(),
@@ -195,6 +282,11 @@ const saveDraft = async () => {
 const send = async () => {
     if (!store.currentMailbox || !editor.value)
         return;
+    toHandlers.onBlur();
+    if (!toTags.value.length) {
+        error.value = 'Please add at least one recipient.';
+        return;
+    }
     const totalSize = attachments.value.reduce((sum, f) => sum + f.size, 0);
     if (totalSize > MAX_ATTACHMENT_BYTES) {
         error.value = `Attachments exceed 10 MB limit (${formatBytes(totalSize)} total).`;
@@ -206,10 +298,18 @@ const send = async () => {
         const html = editor.value.getHTML() + (quotedHtml.value || '');
         const text = editor.value.getText();
         const formData = new FormData();
-        formData.append('to', to.value);
+        for (const addr of toTags.value)
+            formData.append('to', addr);
+        for (const addr of ccTags.value)
+            formData.append('cc', addr);
+        for (const addr of bccTags.value)
+            formData.append('bcc', addr);
         formData.append('subject', subject.value);
         formData.append('html', html);
         formData.append('text', text);
+        if (fromAddress.value && fromAddress.value !== store.currentMailbox) {
+            formData.append('from_address', fromAddress.value);
+        }
         for (const file of attachments.value) {
             formData.append('attachments', file);
         }
@@ -250,20 +350,57 @@ const setHighlight = (e) => {
     const target = e.target;
     editor.value?.chain().focus().setHighlight({ color: target.value }).run();
 };
+const showEmojiPicker = ref(false);
+const emojiPickerContainer = ref(null);
+const openEmojiPicker = async () => {
+    showEmojiPicker.value = !showEmojiPicker.value;
+    if (!showEmojiPicker.value)
+        return;
+    await nextTick();
+    if (!emojiPickerContainer.value)
+        return;
+    emojiPickerContainer.value.innerHTML = '';
+    const { Picker } = await import('emoji-mart');
+    const data = (await import('@emoji-mart/data')).default;
+    new Picker({
+        data,
+        onEmojiSelect: (emoji) => {
+            editor.value?.chain().focus().insertContent(emoji.native).run();
+            showEmojiPicker.value = false;
+        },
+        parent: emojiPickerContainer.value,
+        theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+    });
+};
+const onEmojiClickOutside = (e) => {
+    if (!emojiPickerContainer.value)
+        return;
+    const wrapper = emojiPickerContainer.value.closest('.emoji-picker-wrapper');
+    if (wrapper && !wrapper.contains(e.target)) {
+        showEmojiPicker.value = false;
+    }
+};
+watch(showEmojiPicker, (val) => {
+    if (val)
+        document.addEventListener('mousedown', onEmojiClickOutside);
+    else
+        document.removeEventListener('mousedown', onEmojiClickOutside);
+});
+onUnmounted(() => document.removeEventListener('mousedown', onEmojiClickOutside));
 debugger; /* PartiallyEnd: #3632/scriptSetup.vue */
 const __VLS_ctx = {};
 let __VLS_components;
 let __VLS_directives;
 // CSS variable injection 
 // CSS variable injection end 
-if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.isComposeFullView)) {
+if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.effectivePanelMode || !__VLS_ctx.store.isComposeFullView)) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: (__VLS_ctx.panelMode
-                ? 'flex flex-col h-full w-full bg-background'
-                : 'fixed bottom-0 right-6 z-50 flex flex-col rounded-t-xl shadow-2xl border border-border bg-background') },
-        ...{ style: (!__VLS_ctx.panelMode ? (__VLS_ctx.minimized ? 'width:320px' : 'width:560px') : '') },
+        ...{ class: (__VLS_ctx.effectivePanelMode
+                ? 'flex flex-col h-full w-full'
+                : 'df-compose-popup fixed bottom-4 right-6 z-50 flex flex-col') },
+        ...{ style: (!__VLS_ctx.effectivePanelMode ? (__VLS_ctx.minimized ? 'width:320px' : 'width:620px') : 'background: var(--df-pane-bg);') },
     });
-    if (__VLS_ctx.panelMode) {
+    if (__VLS_ctx.effectivePanelMode) {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
             ...{ class: "h-[52px] flex items-center gap-2 px-4 border-b border-border flex-shrink-0" },
         });
@@ -302,19 +439,20 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
             ...{ class: "size-4" },
         }, ...__VLS_functionalComponentArgsRest(__VLS_5));
     }
-    else {
+    else if (!__VLS_ctx.effectivePanelMode) {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
             ...{ onClick: (__VLS_ctx.toggleMinimize) },
-            ...{ class: "flex items-center gap-2 rounded-t-xl bg-primary px-4 py-2.5 cursor-pointer select-none" },
+            ...{ class: "flex items-center gap-2 px-4 py-3 cursor-pointer select-none flex-shrink-0" },
+            ...{ style: {} },
         });
         __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: "flex-1 text-sm font-semibold text-primary-foreground truncate" },
+            ...{ class: "flex-1 text-sm font-semibold text-foreground truncate" },
         });
         (__VLS_ctx.subject || 'New Message');
         __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
             ...{ onClick: (__VLS_ctx.toggleFullView) },
             type: "button",
-            ...{ class: "rounded p-0.5 text-primary-foreground/70 hover:text-primary-foreground hover:bg-white/10 transition-colors" },
+            ...{ class: "rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors" },
             title: "Full view",
         });
         const __VLS_8 = {}.Maximize2;
@@ -329,7 +467,7 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
         __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
             ...{ onClick: (__VLS_ctx.toggleMinimize) },
             type: "button",
-            ...{ class: "rounded p-0.5 text-primary-foreground/70 hover:text-primary-foreground hover:bg-white/10 transition-colors" },
+            ...{ class: "rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors" },
             title: "Minimize",
         });
         const __VLS_12 = {}.Minus;
@@ -344,7 +482,7 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
         __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
             ...{ onClick: (__VLS_ctx.close) },
             type: "button",
-            ...{ class: "rounded p-0.5 text-primary-foreground/70 hover:text-primary-foreground hover:bg-white/10 transition-colors" },
+            ...{ class: "rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors" },
             title: "Close",
         });
         const __VLS_16 = {}.X;
@@ -358,33 +496,217 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
         }, ...__VLS_functionalComponentArgsRest(__VLS_17));
     }
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: (__VLS_ctx.panelMode ? 'flex flex-col flex-1 overflow-hidden' : 'flex flex-col flex-1 overflow-hidden max-h-[80vh]') },
+        ...{ class: (__VLS_ctx.effectivePanelMode ? 'flex flex-col flex-1 overflow-hidden' : 'flex flex-col flex-1 overflow-hidden max-h-[80vh]') },
     });
-    __VLS_asFunctionalDirective(__VLS_directives.vShow)(null, { ...__VLS_directiveBindingRestFields, value: (__VLS_ctx.panelMode || !__VLS_ctx.minimized) }, null, null);
+    __VLS_asFunctionalDirective(__VLS_directives.vShow)(null, { ...__VLS_directiveBindingRestFields, value: (__VLS_ctx.effectivePanelMode || !__VLS_ctx.minimized) }, null, null);
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "flex flex-col border-b border-border flex-shrink-0" },
     });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.input)({
-        placeholder: "To",
-        ...{ class: "w-full border-b border-border px-4 py-2 text-sm bg-background text-foreground placeholder:text-muted-foreground focus:outline-none" },
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "flex items-start border-b border-border min-h-[36px]" },
     });
-    (__VLS_ctx.to);
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+        ...{ class: "px-4 py-2 text-sm text-muted-foreground shrink-0 leading-5" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "flex flex-wrap items-center gap-1 flex-1 py-1.5 pr-2 min-w-0" },
+    });
+    for (const [tag, i] of __VLS_getVForSourceType((__VLS_ctx.toTags))) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+            key: (tag),
+            ...{ class: "flex items-center gap-1 bg-muted rounded-full px-2 py-0.5 text-xs text-foreground border border-border" },
+        });
+        (tag);
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.effectivePanelMode || !__VLS_ctx.store.isComposeFullView)))
+                        return;
+                    __VLS_ctx.toTags.splice(i, 1);
+                } },
+            type: "button",
+            ...{ class: "hover:text-destructive leading-none" },
+        });
+        const __VLS_20 = {}.X;
+        /** @type {[typeof __VLS_components.X, ]} */ ;
+        // @ts-ignore
+        const __VLS_21 = __VLS_asFunctionalComponent(__VLS_20, new __VLS_20({
+            size: (10),
+        }));
+        const __VLS_22 = __VLS_21({
+            size: (10),
+        }, ...__VLS_functionalComponentArgsRest(__VLS_21));
+    }
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.input)({
+        ...{ onKeydown: (__VLS_ctx.toHandlers.onKeydown) },
+        ...{ onBlur: (__VLS_ctx.toHandlers.onBlur) },
+        ...{ onPaste: (__VLS_ctx.toHandlers.onPaste) },
+        placeholder: "Add recipient…",
+        ...{ class: "flex-1 min-w-[120px] bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none py-0.5" },
+        ...{ style: {} },
+    });
+    (__VLS_ctx.toInput);
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "flex items-center gap-2 px-3 py-2 shrink-0" },
+    });
+    if (!__VLS_ctx.showCc) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.effectivePanelMode || !__VLS_ctx.store.isComposeFullView)))
+                        return;
+                    if (!(!__VLS_ctx.showCc))
+                        return;
+                    __VLS_ctx.showCc = true;
+                } },
+            type: "button",
+            ...{ class: "text-xs text-muted-foreground hover:text-foreground transition-colors" },
+        });
+    }
+    if (!__VLS_ctx.showBcc) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.effectivePanelMode || !__VLS_ctx.store.isComposeFullView)))
+                        return;
+                    if (!(!__VLS_ctx.showBcc))
+                        return;
+                    __VLS_ctx.showBcc = true;
+                } },
+            type: "button",
+            ...{ class: "text-xs text-muted-foreground hover:text-foreground transition-colors" },
+        });
+    }
+    if (__VLS_ctx.showCc) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "flex items-start border-b border-border min-h-[36px]" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+            ...{ class: "px-4 py-2 text-sm text-muted-foreground shrink-0 leading-5" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "flex flex-wrap items-center gap-1 flex-1 py-1.5 pr-2 min-w-0" },
+        });
+        for (const [tag, i] of __VLS_getVForSourceType((__VLS_ctx.ccTags))) {
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+                key: (tag),
+                ...{ class: "flex items-center gap-1 bg-muted rounded-full px-2 py-0.5 text-xs text-foreground border border-border" },
+            });
+            (tag);
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.effectivePanelMode || !__VLS_ctx.store.isComposeFullView)))
+                            return;
+                        if (!(__VLS_ctx.showCc))
+                            return;
+                        __VLS_ctx.ccTags.splice(i, 1);
+                    } },
+                type: "button",
+                ...{ class: "hover:text-destructive leading-none" },
+            });
+            const __VLS_24 = {}.X;
+            /** @type {[typeof __VLS_components.X, ]} */ ;
+            // @ts-ignore
+            const __VLS_25 = __VLS_asFunctionalComponent(__VLS_24, new __VLS_24({
+                size: (10),
+            }));
+            const __VLS_26 = __VLS_25({
+                size: (10),
+            }, ...__VLS_functionalComponentArgsRest(__VLS_25));
+        }
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.input)({
+            ...{ onKeydown: (__VLS_ctx.ccHandlers.onKeydown) },
+            ...{ onBlur: (__VLS_ctx.ccHandlers.onBlur) },
+            ...{ onPaste: (__VLS_ctx.ccHandlers.onPaste) },
+            placeholder: "Add Cc…",
+            ...{ class: "flex-1 min-w-[120px] bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none py-0.5" },
+        });
+        (__VLS_ctx.ccInput);
+    }
+    if (__VLS_ctx.showBcc) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "flex items-start border-b border-border min-h-[36px]" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+            ...{ class: "px-4 py-2 text-sm text-muted-foreground shrink-0 leading-5" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "flex flex-wrap items-center gap-1 flex-1 py-1.5 pr-2 min-w-0" },
+        });
+        for (const [tag, i] of __VLS_getVForSourceType((__VLS_ctx.bccTags))) {
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+                key: (tag),
+                ...{ class: "flex items-center gap-1 bg-muted rounded-full px-2 py-0.5 text-xs text-foreground border border-border" },
+            });
+            (tag);
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.effectivePanelMode || !__VLS_ctx.store.isComposeFullView)))
+                            return;
+                        if (!(__VLS_ctx.showBcc))
+                            return;
+                        __VLS_ctx.bccTags.splice(i, 1);
+                    } },
+                type: "button",
+                ...{ class: "hover:text-destructive leading-none" },
+            });
+            const __VLS_28 = {}.X;
+            /** @type {[typeof __VLS_components.X, ]} */ ;
+            // @ts-ignore
+            const __VLS_29 = __VLS_asFunctionalComponent(__VLS_28, new __VLS_28({
+                size: (10),
+            }));
+            const __VLS_30 = __VLS_29({
+                size: (10),
+            }, ...__VLS_functionalComponentArgsRest(__VLS_29));
+        }
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.input)({
+            ...{ onKeydown: (__VLS_ctx.bccHandlers.onKeydown) },
+            ...{ onBlur: (__VLS_ctx.bccHandlers.onBlur) },
+            ...{ onPaste: (__VLS_ctx.bccHandlers.onPaste) },
+            placeholder: "Add Bcc…",
+            ...{ class: "flex-1 min-w-[120px] bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none py-0.5" },
+        });
+        (__VLS_ctx.bccInput);
+    }
+    if (__VLS_ctx.aliases.length) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "flex items-center border-b border-border" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+            ...{ class: "px-4 py-2 text-sm text-muted-foreground shrink-0" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.select, __VLS_intrinsicElements.select)({
+            value: (__VLS_ctx.fromAddress),
+            ...{ class: "flex-1 px-2 py-2 bg-transparent text-foreground focus:outline-none" },
+            ...{ style: {} },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.option, __VLS_intrinsicElements.option)({
+            value: (__VLS_ctx.store.currentMailbox),
+        });
+        (__VLS_ctx.store.currentMailbox);
+        for (const [alias] of __VLS_getVForSourceType((__VLS_ctx.aliases))) {
+            __VLS_asFunctionalElement(__VLS_intrinsicElements.option, __VLS_intrinsicElements.option)({
+                key: (alias),
+                value: (alias),
+            });
+            (alias);
+        }
+    }
     __VLS_asFunctionalElement(__VLS_intrinsicElements.input)({
         placeholder: "Subject",
-        ...{ class: "w-full px-4 py-2 text-sm bg-background text-foreground placeholder:text-muted-foreground focus:outline-none" },
+        ...{ class: "w-full px-4 py-2 bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none" },
+        ...{ style: {} },
     });
     (__VLS_ctx.subject);
-    const __VLS_20 = {}.EditorContent;
+    const __VLS_32 = {}.EditorContent;
     /** @type {[typeof __VLS_components.EditorContent, ]} */ ;
     // @ts-ignore
-    const __VLS_21 = __VLS_asFunctionalComponent(__VLS_20, new __VLS_20({
+    const __VLS_33 = __VLS_asFunctionalComponent(__VLS_32, new __VLS_32({
         editor: (__VLS_ctx.editor),
         ...{ class: "compose-editor flex-1" },
     }));
-    const __VLS_22 = __VLS_21({
+    const __VLS_34 = __VLS_33({
         editor: (__VLS_ctx.editor),
         ...{ class: "compose-editor flex-1" },
-    }, ...__VLS_functionalComponentArgsRest(__VLS_21));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_33));
     if (__VLS_ctx.attachments.length) {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
             ...{ class: "flex flex-wrap gap-1.5 border-t border-border px-4 py-2 bg-muted/30 flex-shrink-0" },
@@ -404,7 +726,7 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
             (__VLS_ctx.formatBytes(file.size));
             __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
                 ...{ onClick: (...[$event]) => {
-                        if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.isComposeFullView)))
+                        if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.effectivePanelMode || !__VLS_ctx.store.isComposeFullView)))
                             return;
                         if (!(__VLS_ctx.attachments.length))
                             return;
@@ -413,15 +735,15 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
                 type: "button",
                 ...{ class: "ml-1 hover:text-destructive" },
             });
-            const __VLS_24 = {}.X;
+            const __VLS_36 = {}.X;
             /** @type {[typeof __VLS_components.X, ]} */ ;
             // @ts-ignore
-            const __VLS_25 = __VLS_asFunctionalComponent(__VLS_24, new __VLS_24({
+            const __VLS_37 = __VLS_asFunctionalComponent(__VLS_36, new __VLS_36({
                 size: (12),
             }));
-            const __VLS_26 = __VLS_25({
+            const __VLS_38 = __VLS_37({
                 size: (12),
-            }, ...__VLS_functionalComponentArgsRest(__VLS_25));
+            }, ...__VLS_functionalComponentArgsRest(__VLS_37));
         }
     }
     if (__VLS_ctx.quotedHtml) {
@@ -458,7 +780,7 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
         });
         __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
             ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.isComposeFullView)))
+                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.effectivePanelMode || !__VLS_ctx.store.isComposeFullView)))
                         return;
                     if (!(__VLS_ctx.showFormatting))
                         return;
@@ -469,18 +791,18 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
             ...{ class: (__VLS_ctx.editor?.isActive('bold') ? 'bg-accent' : '') },
             title: "Bold",
         });
-        const __VLS_28 = {}.BoldIcon;
+        const __VLS_40 = {}.BoldIcon;
         /** @type {[typeof __VLS_components.BoldIcon, ]} */ ;
         // @ts-ignore
-        const __VLS_29 = __VLS_asFunctionalComponent(__VLS_28, new __VLS_28({
+        const __VLS_41 = __VLS_asFunctionalComponent(__VLS_40, new __VLS_40({
             ...{ class: "size-3.5" },
         }));
-        const __VLS_30 = __VLS_29({
+        const __VLS_42 = __VLS_41({
             ...{ class: "size-3.5" },
-        }, ...__VLS_functionalComponentArgsRest(__VLS_29));
+        }, ...__VLS_functionalComponentArgsRest(__VLS_41));
         __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
             ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.isComposeFullView)))
+                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.effectivePanelMode || !__VLS_ctx.store.isComposeFullView)))
                         return;
                     if (!(__VLS_ctx.showFormatting))
                         return;
@@ -491,18 +813,18 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
             ...{ class: (__VLS_ctx.editor?.isActive('italic') ? 'bg-accent' : '') },
             title: "Italic",
         });
-        const __VLS_32 = {}.ItalicIcon;
+        const __VLS_44 = {}.ItalicIcon;
         /** @type {[typeof __VLS_components.ItalicIcon, ]} */ ;
         // @ts-ignore
-        const __VLS_33 = __VLS_asFunctionalComponent(__VLS_32, new __VLS_32({
+        const __VLS_45 = __VLS_asFunctionalComponent(__VLS_44, new __VLS_44({
             ...{ class: "size-3.5" },
         }));
-        const __VLS_34 = __VLS_33({
+        const __VLS_46 = __VLS_45({
             ...{ class: "size-3.5" },
-        }, ...__VLS_functionalComponentArgsRest(__VLS_33));
+        }, ...__VLS_functionalComponentArgsRest(__VLS_45));
         __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
             ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.isComposeFullView)))
+                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.effectivePanelMode || !__VLS_ctx.store.isComposeFullView)))
                         return;
                     if (!(__VLS_ctx.showFormatting))
                         return;
@@ -513,15 +835,15 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
             ...{ class: (__VLS_ctx.editor?.isActive('underline') ? 'bg-accent' : '') },
             title: "Underline",
         });
-        const __VLS_36 = {}.UnderlineIcon;
+        const __VLS_48 = {}.UnderlineIcon;
         /** @type {[typeof __VLS_components.UnderlineIcon, ]} */ ;
         // @ts-ignore
-        const __VLS_37 = __VLS_asFunctionalComponent(__VLS_36, new __VLS_36({
+        const __VLS_49 = __VLS_asFunctionalComponent(__VLS_48, new __VLS_48({
             ...{ class: "size-3.5" },
         }));
-        const __VLS_38 = __VLS_37({
+        const __VLS_50 = __VLS_49({
             ...{ class: "size-3.5" },
-        }, ...__VLS_functionalComponentArgsRest(__VLS_37));
+        }, ...__VLS_functionalComponentArgsRest(__VLS_49));
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div)({
             ...{ class: "mx-1 h-4 w-px bg-border" },
         });
@@ -529,15 +851,15 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
             ...{ class: "relative group flex items-center p-1 rounded hover:bg-accent cursor-pointer" },
             title: "Text Color",
         });
-        const __VLS_40 = {}.Baseline;
+        const __VLS_52 = {}.Baseline;
         /** @type {[typeof __VLS_components.Baseline, ]} */ ;
         // @ts-ignore
-        const __VLS_41 = __VLS_asFunctionalComponent(__VLS_40, new __VLS_40({
+        const __VLS_53 = __VLS_asFunctionalComponent(__VLS_52, new __VLS_52({
             ...{ class: "size-3.5 text-foreground" },
         }));
-        const __VLS_42 = __VLS_41({
+        const __VLS_54 = __VLS_53({
             ...{ class: "size-3.5 text-foreground" },
-        }, ...__VLS_functionalComponentArgsRest(__VLS_41));
+        }, ...__VLS_functionalComponentArgsRest(__VLS_53));
         __VLS_asFunctionalElement(__VLS_intrinsicElements.input)({
             ...{ onInput: (__VLS_ctx.setColor) },
             type: "color",
@@ -560,7 +882,7 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
         });
         __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
             ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.isComposeFullView)))
+                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.effectivePanelMode || !__VLS_ctx.store.isComposeFullView)))
                         return;
                     if (!(__VLS_ctx.showFormatting))
                         return;
@@ -571,18 +893,18 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
             ...{ class: (__VLS_ctx.editor?.isActive({ textAlign: 'left' }) ? 'bg-accent' : '') },
             title: "Align left",
         });
-        const __VLS_44 = {}.AlignLeftIcon;
+        const __VLS_56 = {}.AlignLeftIcon;
         /** @type {[typeof __VLS_components.AlignLeftIcon, ]} */ ;
         // @ts-ignore
-        const __VLS_45 = __VLS_asFunctionalComponent(__VLS_44, new __VLS_44({
+        const __VLS_57 = __VLS_asFunctionalComponent(__VLS_56, new __VLS_56({
             ...{ class: "size-3.5" },
         }));
-        const __VLS_46 = __VLS_45({
+        const __VLS_58 = __VLS_57({
             ...{ class: "size-3.5" },
-        }, ...__VLS_functionalComponentArgsRest(__VLS_45));
+        }, ...__VLS_functionalComponentArgsRest(__VLS_57));
         __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
             ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.isComposeFullView)))
+                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.effectivePanelMode || !__VLS_ctx.store.isComposeFullView)))
                         return;
                     if (!(__VLS_ctx.showFormatting))
                         return;
@@ -593,18 +915,18 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
             ...{ class: (__VLS_ctx.editor?.isActive({ textAlign: 'center' }) ? 'bg-accent' : '') },
             title: "Align center",
         });
-        const __VLS_48 = {}.AlignCenterIcon;
+        const __VLS_60 = {}.AlignCenterIcon;
         /** @type {[typeof __VLS_components.AlignCenterIcon, ]} */ ;
         // @ts-ignore
-        const __VLS_49 = __VLS_asFunctionalComponent(__VLS_48, new __VLS_48({
+        const __VLS_61 = __VLS_asFunctionalComponent(__VLS_60, new __VLS_60({
             ...{ class: "size-3.5" },
         }));
-        const __VLS_50 = __VLS_49({
+        const __VLS_62 = __VLS_61({
             ...{ class: "size-3.5" },
-        }, ...__VLS_functionalComponentArgsRest(__VLS_49));
+        }, ...__VLS_functionalComponentArgsRest(__VLS_61));
         __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
             ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.isComposeFullView)))
+                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.effectivePanelMode || !__VLS_ctx.store.isComposeFullView)))
                         return;
                     if (!(__VLS_ctx.showFormatting))
                         return;
@@ -615,77 +937,8 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
             ...{ class: (__VLS_ctx.editor?.isActive({ textAlign: 'right' }) ? 'bg-accent' : '') },
             title: "Align right",
         });
-        const __VLS_52 = {}.AlignRightIcon;
+        const __VLS_64 = {}.AlignRightIcon;
         /** @type {[typeof __VLS_components.AlignRightIcon, ]} */ ;
-        // @ts-ignore
-        const __VLS_53 = __VLS_asFunctionalComponent(__VLS_52, new __VLS_52({
-            ...{ class: "size-3.5" },
-        }));
-        const __VLS_54 = __VLS_53({
-            ...{ class: "size-3.5" },
-        }, ...__VLS_functionalComponentArgsRest(__VLS_53));
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.div)({
-            ...{ class: "mx-1 h-4 w-px bg-border" },
-        });
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
-            ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.isComposeFullView)))
-                        return;
-                    if (!(__VLS_ctx.showFormatting))
-                        return;
-                    __VLS_ctx.editor?.chain().focus().toggleBulletList().run();
-                } },
-            type: "button",
-            ...{ class: "rounded p-1 hover:bg-accent transition-colors" },
-            ...{ class: (__VLS_ctx.editor?.isActive('bulletList') ? 'bg-accent' : '') },
-            title: "Bullet list",
-        });
-        const __VLS_56 = {}.ListIcon;
-        /** @type {[typeof __VLS_components.ListIcon, ]} */ ;
-        // @ts-ignore
-        const __VLS_57 = __VLS_asFunctionalComponent(__VLS_56, new __VLS_56({
-            ...{ class: "size-3.5" },
-        }));
-        const __VLS_58 = __VLS_57({
-            ...{ class: "size-3.5" },
-        }, ...__VLS_functionalComponentArgsRest(__VLS_57));
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
-            ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.isComposeFullView)))
-                        return;
-                    if (!(__VLS_ctx.showFormatting))
-                        return;
-                    __VLS_ctx.editor?.chain().focus().toggleOrderedList().run();
-                } },
-            type: "button",
-            ...{ class: "rounded p-1 hover:bg-accent transition-colors" },
-            ...{ class: (__VLS_ctx.editor?.isActive('orderedList') ? 'bg-accent' : '') },
-            title: "Ordered list",
-        });
-        const __VLS_60 = {}.ListOrdered;
-        /** @type {[typeof __VLS_components.ListOrdered, ]} */ ;
-        // @ts-ignore
-        const __VLS_61 = __VLS_asFunctionalComponent(__VLS_60, new __VLS_60({
-            ...{ class: "size-3.5" },
-        }));
-        const __VLS_62 = __VLS_61({
-            ...{ class: "size-3.5" },
-        }, ...__VLS_functionalComponentArgsRest(__VLS_61));
-        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
-            ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.isComposeFullView)))
-                        return;
-                    if (!(__VLS_ctx.showFormatting))
-                        return;
-                    __VLS_ctx.editor?.chain().focus().toggleBlockquote().run();
-                } },
-            type: "button",
-            ...{ class: "rounded p-1 hover:bg-accent transition-colors" },
-            ...{ class: (__VLS_ctx.editor?.isActive('blockquote') ? 'bg-accent' : '') },
-            title: "Quote",
-        });
-        const __VLS_64 = {}.QuoteIcon;
-        /** @type {[typeof __VLS_components.QuoteIcon, ]} */ ;
         // @ts-ignore
         const __VLS_65 = __VLS_asFunctionalComponent(__VLS_64, new __VLS_64({
             ...{ class: "size-3.5" },
@@ -698,7 +951,76 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
         });
         __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
             ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.isComposeFullView)))
+                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.effectivePanelMode || !__VLS_ctx.store.isComposeFullView)))
+                        return;
+                    if (!(__VLS_ctx.showFormatting))
+                        return;
+                    __VLS_ctx.editor?.chain().focus().toggleBulletList().run();
+                } },
+            type: "button",
+            ...{ class: "rounded p-1 hover:bg-accent transition-colors" },
+            ...{ class: (__VLS_ctx.editor?.isActive('bulletList') ? 'bg-accent' : '') },
+            title: "Bullet list",
+        });
+        const __VLS_68 = {}.ListIcon;
+        /** @type {[typeof __VLS_components.ListIcon, ]} */ ;
+        // @ts-ignore
+        const __VLS_69 = __VLS_asFunctionalComponent(__VLS_68, new __VLS_68({
+            ...{ class: "size-3.5" },
+        }));
+        const __VLS_70 = __VLS_69({
+            ...{ class: "size-3.5" },
+        }, ...__VLS_functionalComponentArgsRest(__VLS_69));
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.effectivePanelMode || !__VLS_ctx.store.isComposeFullView)))
+                        return;
+                    if (!(__VLS_ctx.showFormatting))
+                        return;
+                    __VLS_ctx.editor?.chain().focus().toggleOrderedList().run();
+                } },
+            type: "button",
+            ...{ class: "rounded p-1 hover:bg-accent transition-colors" },
+            ...{ class: (__VLS_ctx.editor?.isActive('orderedList') ? 'bg-accent' : '') },
+            title: "Ordered list",
+        });
+        const __VLS_72 = {}.ListOrdered;
+        /** @type {[typeof __VLS_components.ListOrdered, ]} */ ;
+        // @ts-ignore
+        const __VLS_73 = __VLS_asFunctionalComponent(__VLS_72, new __VLS_72({
+            ...{ class: "size-3.5" },
+        }));
+        const __VLS_74 = __VLS_73({
+            ...{ class: "size-3.5" },
+        }, ...__VLS_functionalComponentArgsRest(__VLS_73));
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.effectivePanelMode || !__VLS_ctx.store.isComposeFullView)))
+                        return;
+                    if (!(__VLS_ctx.showFormatting))
+                        return;
+                    __VLS_ctx.editor?.chain().focus().toggleBlockquote().run();
+                } },
+            type: "button",
+            ...{ class: "rounded p-1 hover:bg-accent transition-colors" },
+            ...{ class: (__VLS_ctx.editor?.isActive('blockquote') ? 'bg-accent' : '') },
+            title: "Quote",
+        });
+        const __VLS_76 = {}.QuoteIcon;
+        /** @type {[typeof __VLS_components.QuoteIcon, ]} */ ;
+        // @ts-ignore
+        const __VLS_77 = __VLS_asFunctionalComponent(__VLS_76, new __VLS_76({
+            ...{ class: "size-3.5" },
+        }));
+        const __VLS_78 = __VLS_77({
+            ...{ class: "size-3.5" },
+        }, ...__VLS_functionalComponentArgsRest(__VLS_77));
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div)({
+            ...{ class: "mx-1 h-4 w-px bg-border" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.effectivePanelMode || !__VLS_ctx.store.isComposeFullView)))
                         return;
                     if (!(__VLS_ctx.showFormatting))
                         return;
@@ -708,49 +1030,51 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
             ...{ class: "rounded p-1 hover:bg-accent transition-colors" },
             title: "Remove formatting",
         });
-        const __VLS_68 = {}.RemoveFormatting;
+        const __VLS_80 = {}.RemoveFormatting;
         /** @type {[typeof __VLS_components.RemoveFormatting, ]} */ ;
         // @ts-ignore
-        const __VLS_69 = __VLS_asFunctionalComponent(__VLS_68, new __VLS_68({
+        const __VLS_81 = __VLS_asFunctionalComponent(__VLS_80, new __VLS_80({
             ...{ class: "size-3.5" },
         }));
-        const __VLS_70 = __VLS_69({
+        const __VLS_82 = __VLS_81({
             ...{ class: "size-3.5" },
-        }, ...__VLS_functionalComponentArgsRest(__VLS_69));
+        }, ...__VLS_functionalComponentArgsRest(__VLS_81));
     }
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "flex items-center justify-between gap-2 border-t border-border px-4 py-2.5 flex-shrink-0 bg-background" },
+        ...{ class: "flex items-center justify-between gap-2 border-t border-border px-4 py-2.5 flex-shrink-0" },
     });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "flex items-center gap-1" },
     });
     /** @type {[typeof Button, typeof Button, ]} */ ;
     // @ts-ignore
-    const __VLS_72 = __VLS_asFunctionalComponent(Button, new Button({
+    const __VLS_84 = __VLS_asFunctionalComponent(Button, new Button({
         ...{ 'onClick': {} },
         as: "button",
         type: "button",
         size: "sm",
         ...{ class: "rounded-full px-5 font-semibold tracking-wide" },
-        disabled: (__VLS_ctx.sending || !__VLS_ctx.to),
+        ...{ style: {} },
+        disabled: (__VLS_ctx.sending || (!__VLS_ctx.toTags.length && !__VLS_ctx.toInput)),
     }));
-    const __VLS_73 = __VLS_72({
+    const __VLS_85 = __VLS_84({
         ...{ 'onClick': {} },
         as: "button",
         type: "button",
         size: "sm",
         ...{ class: "rounded-full px-5 font-semibold tracking-wide" },
-        disabled: (__VLS_ctx.sending || !__VLS_ctx.to),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_72));
-    let __VLS_75;
-    let __VLS_76;
-    let __VLS_77;
-    const __VLS_78 = {
+        ...{ style: {} },
+        disabled: (__VLS_ctx.sending || (!__VLS_ctx.toTags.length && !__VLS_ctx.toInput)),
+    }, ...__VLS_functionalComponentArgsRest(__VLS_84));
+    let __VLS_87;
+    let __VLS_88;
+    let __VLS_89;
+    const __VLS_90 = {
         onClick: (__VLS_ctx.send)
     };
-    __VLS_74.slots.default;
+    __VLS_86.slots.default;
     (__VLS_ctx.sending ? 'Sending…' : 'Send');
-    var __VLS_74;
+    var __VLS_86;
     __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
         ...{ onClick: (__VLS_ctx.saveDraft) },
         type: "button",
@@ -759,18 +1083,44 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
         disabled: (__VLS_ctx.savingDraft),
         title: "Save draft",
     });
-    const __VLS_79 = {}.BookmarkCheck;
+    const __VLS_91 = {}.BookmarkCheck;
     /** @type {[typeof __VLS_components.BookmarkCheck, ]} */ ;
     // @ts-ignore
-    const __VLS_80 = __VLS_asFunctionalComponent(__VLS_79, new __VLS_79({
+    const __VLS_92 = __VLS_asFunctionalComponent(__VLS_91, new __VLS_91({
         ...{ class: "size-4" },
     }));
-    const __VLS_81 = __VLS_80({
+    const __VLS_93 = __VLS_92({
         ...{ class: "size-4" },
-    }, ...__VLS_functionalComponentArgsRest(__VLS_80));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_92));
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "relative emoji-picker-wrapper" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+        ...{ onClick: (__VLS_ctx.openEmojiPicker) },
+        type: "button",
+        ...{ class: "rounded p-1.5 transition-colors" },
+        ...{ class: (__VLS_ctx.showEmojiPicker ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground') },
+        title: "Insert emoji",
+    });
+    const __VLS_95 = {}.Smile;
+    /** @type {[typeof __VLS_components.Smile, ]} */ ;
+    // @ts-ignore
+    const __VLS_96 = __VLS_asFunctionalComponent(__VLS_95, new __VLS_95({
+        ...{ class: "size-4" },
+    }));
+    const __VLS_97 = __VLS_96({
+        ...{ class: "size-4" },
+    }, ...__VLS_functionalComponentArgsRest(__VLS_96));
+    if (__VLS_ctx.showEmojiPicker) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div)({
+            ...{ class: "absolute bottom-10 left-0 z-50 shadow-xl rounded-xl overflow-hidden" },
+            ref: "emojiPickerContainer",
+        });
+        /** @type {typeof __VLS_ctx.emojiPickerContainer} */ ;
+    }
     __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
         ...{ onClick: (...[$event]) => {
-                if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.isComposeFullView)))
+                if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.effectivePanelMode || !__VLS_ctx.store.isComposeFullView)))
                     return;
                 __VLS_ctx.showFormatting = !__VLS_ctx.showFormatting;
             } },
@@ -779,64 +1129,103 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
         ...{ class: (__VLS_ctx.showFormatting ? 'bg-accent text-accent-foreground' : 'text-muted-foreground') },
         title: "Formatting options",
     });
-    const __VLS_83 = {}.Type;
+    const __VLS_99 = {}.Type;
     /** @type {[typeof __VLS_components.Type, ]} */ ;
     // @ts-ignore
-    const __VLS_84 = __VLS_asFunctionalComponent(__VLS_83, new __VLS_83({
+    const __VLS_100 = __VLS_asFunctionalComponent(__VLS_99, new __VLS_99({
         ...{ class: "size-4" },
     }));
-    const __VLS_85 = __VLS_84({
+    const __VLS_101 = __VLS_100({
         ...{ class: "size-4" },
-    }, ...__VLS_functionalComponentArgsRest(__VLS_84));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_100));
     __VLS_asFunctionalElement(__VLS_intrinsicElements.label, __VLS_intrinsicElements.label)({
         ...{ class: "cursor-pointer rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors" },
         title: "Attach files",
     });
-    const __VLS_87 = {}.Paperclip;
+    const __VLS_103 = {}.Paperclip;
     /** @type {[typeof __VLS_components.Paperclip, ]} */ ;
     // @ts-ignore
-    const __VLS_88 = __VLS_asFunctionalComponent(__VLS_87, new __VLS_87({
+    const __VLS_104 = __VLS_asFunctionalComponent(__VLS_103, new __VLS_103({
         ...{ class: "size-4" },
     }));
-    const __VLS_89 = __VLS_88({
+    const __VLS_105 = __VLS_104({
         ...{ class: "size-4" },
-    }, ...__VLS_functionalComponentArgsRest(__VLS_88));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_104));
     __VLS_asFunctionalElement(__VLS_intrinsicElements.input)({
         ...{ onChange: (__VLS_ctx.onFileChange) },
         type: "file",
         multiple: true,
         ...{ class: "hidden" },
     });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "relative" },
+    });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
-        ...{ onClick: (__VLS_ctx.setLink) },
+        ...{ onClick: (__VLS_ctx.openLinkPopover) },
         type: "button",
-        ...{ class: "rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors" },
+        ...{ class: "rounded p-1.5 transition-colors" },
+        ...{ class: (__VLS_ctx.showLinkPopover ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground') },
         title: "Insert link",
     });
-    const __VLS_91 = {}.Link2;
+    const __VLS_107 = {}.Link2;
     /** @type {[typeof __VLS_components.Link2, ]} */ ;
     // @ts-ignore
-    const __VLS_92 = __VLS_asFunctionalComponent(__VLS_91, new __VLS_91({
+    const __VLS_108 = __VLS_asFunctionalComponent(__VLS_107, new __VLS_107({
         ...{ class: "size-4" },
     }));
-    const __VLS_93 = __VLS_92({
+    const __VLS_109 = __VLS_108({
         ...{ class: "size-4" },
-    }, ...__VLS_functionalComponentArgsRest(__VLS_92));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_108));
+    if (__VLS_ctx.showLinkPopover) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "absolute bottom-10 left-0 z-50 w-72 rounded-lg border border-border bg-background shadow-xl p-3 flex flex-col gap-2" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.label, __VLS_intrinsicElements.label)({
+            ...{ class: "text-xs font-medium text-muted-foreground" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.input)({
+            ...{ onKeydown: (__VLS_ctx.onLinkKeydown) },
+            id: "compose-link-input",
+            type: "url",
+            placeholder: "https://example.com",
+            ...{ class: "w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring" },
+        });
+        (__VLS_ctx.linkInput);
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "flex gap-2 justify-end" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(__VLS_ctx.store.isComposeOpen && (__VLS_ctx.effectivePanelMode || !__VLS_ctx.store.isComposeFullView)))
+                        return;
+                    if (!(__VLS_ctx.showLinkPopover))
+                        return;
+                    __VLS_ctx.showLinkPopover = false;
+                } },
+            type: "button",
+            ...{ class: "rounded-md px-3 py-1 text-xs text-muted-foreground hover:bg-accent transition-colors" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
+            ...{ onClick: (__VLS_ctx.applyLink) },
+            type: "button",
+            ...{ class: "rounded-md px-3 py-1 text-xs bg-primary text-primary-foreground hover:bg-primary/90 transition-colors" },
+        });
+    }
     __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElements.button)({
         ...{ onClick: (__VLS_ctx.discardDraft) },
         type: "button",
         ...{ class: "rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-destructive transition-colors" },
         title: (__VLS_ctx.draftId ? 'Delete draft' : 'Discard'),
     });
-    const __VLS_95 = {}.Trash2;
+    const __VLS_111 = {}.Trash2;
     /** @type {[typeof __VLS_components.Trash2, ]} */ ;
     // @ts-ignore
-    const __VLS_96 = __VLS_asFunctionalComponent(__VLS_95, new __VLS_95({
+    const __VLS_112 = __VLS_asFunctionalComponent(__VLS_111, new __VLS_111({
         ...{ class: "size-4" },
     }));
-    const __VLS_97 = __VLS_96({
+    const __VLS_113 = __VLS_112({
         ...{ class: "size-4" },
-    }, ...__VLS_functionalComponentArgsRest(__VLS_96));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_112));
 }
 /** @type {__VLS_StyleScopedClasses['h-[52px]']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex']} */ ;
@@ -875,36 +1264,35 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
 /** @type {__VLS_StyleScopedClasses['flex']} */ ;
 /** @type {__VLS_StyleScopedClasses['items-center']} */ ;
 /** @type {__VLS_StyleScopedClasses['gap-2']} */ ;
-/** @type {__VLS_StyleScopedClasses['rounded-t-xl']} */ ;
-/** @type {__VLS_StyleScopedClasses['bg-primary']} */ ;
 /** @type {__VLS_StyleScopedClasses['px-4']} */ ;
-/** @type {__VLS_StyleScopedClasses['py-2.5']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-3']} */ ;
 /** @type {__VLS_StyleScopedClasses['cursor-pointer']} */ ;
 /** @type {__VLS_StyleScopedClasses['select-none']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex-shrink-0']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex-1']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-sm']} */ ;
 /** @type {__VLS_StyleScopedClasses['font-semibold']} */ ;
-/** @type {__VLS_StyleScopedClasses['text-primary-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-foreground']} */ ;
 /** @type {__VLS_StyleScopedClasses['truncate']} */ ;
-/** @type {__VLS_StyleScopedClasses['rounded']} */ ;
-/** @type {__VLS_StyleScopedClasses['p-0.5']} */ ;
-/** @type {__VLS_StyleScopedClasses['text-primary-foreground/70']} */ ;
-/** @type {__VLS_StyleScopedClasses['hover:text-primary-foreground']} */ ;
-/** @type {__VLS_StyleScopedClasses['hover:bg-white/10']} */ ;
+/** @type {__VLS_StyleScopedClasses['rounded-md']} */ ;
+/** @type {__VLS_StyleScopedClasses['p-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:text-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:bg-accent/60']} */ ;
 /** @type {__VLS_StyleScopedClasses['transition-colors']} */ ;
 /** @type {__VLS_StyleScopedClasses['size-4']} */ ;
-/** @type {__VLS_StyleScopedClasses['rounded']} */ ;
-/** @type {__VLS_StyleScopedClasses['p-0.5']} */ ;
-/** @type {__VLS_StyleScopedClasses['text-primary-foreground/70']} */ ;
-/** @type {__VLS_StyleScopedClasses['hover:text-primary-foreground']} */ ;
-/** @type {__VLS_StyleScopedClasses['hover:bg-white/10']} */ ;
+/** @type {__VLS_StyleScopedClasses['rounded-md']} */ ;
+/** @type {__VLS_StyleScopedClasses['p-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:text-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:bg-accent/60']} */ ;
 /** @type {__VLS_StyleScopedClasses['transition-colors']} */ ;
 /** @type {__VLS_StyleScopedClasses['size-4']} */ ;
-/** @type {__VLS_StyleScopedClasses['rounded']} */ ;
-/** @type {__VLS_StyleScopedClasses['p-0.5']} */ ;
-/** @type {__VLS_StyleScopedClasses['text-primary-foreground/70']} */ ;
-/** @type {__VLS_StyleScopedClasses['hover:text-primary-foreground']} */ ;
-/** @type {__VLS_StyleScopedClasses['hover:bg-white/10']} */ ;
+/** @type {__VLS_StyleScopedClasses['rounded-md']} */ ;
+/** @type {__VLS_StyleScopedClasses['p-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:text-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:bg-accent/60']} */ ;
 /** @type {__VLS_StyleScopedClasses['transition-colors']} */ ;
 /** @type {__VLS_StyleScopedClasses['size-4']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex']} */ ;
@@ -912,21 +1300,158 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
 /** @type {__VLS_StyleScopedClasses['border-b']} */ ;
 /** @type {__VLS_StyleScopedClasses['border-border']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex-shrink-0']} */ ;
-/** @type {__VLS_StyleScopedClasses['w-full']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex']} */ ;
+/** @type {__VLS_StyleScopedClasses['items-start']} */ ;
+/** @type {__VLS_StyleScopedClasses['border-b']} */ ;
+/** @type {__VLS_StyleScopedClasses['border-border']} */ ;
+/** @type {__VLS_StyleScopedClasses['min-h-[36px]']} */ ;
+/** @type {__VLS_StyleScopedClasses['px-4']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-sm']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['shrink-0']} */ ;
+/** @type {__VLS_StyleScopedClasses['leading-5']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex-wrap']} */ ;
+/** @type {__VLS_StyleScopedClasses['items-center']} */ ;
+/** @type {__VLS_StyleScopedClasses['gap-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-1.5']} */ ;
+/** @type {__VLS_StyleScopedClasses['pr-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['min-w-0']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex']} */ ;
+/** @type {__VLS_StyleScopedClasses['items-center']} */ ;
+/** @type {__VLS_StyleScopedClasses['gap-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['bg-muted']} */ ;
+/** @type {__VLS_StyleScopedClasses['rounded-full']} */ ;
+/** @type {__VLS_StyleScopedClasses['px-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-0.5']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-xs']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['border']} */ ;
+/** @type {__VLS_StyleScopedClasses['border-border']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:text-destructive']} */ ;
+/** @type {__VLS_StyleScopedClasses['leading-none']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['min-w-[120px]']} */ ;
+/** @type {__VLS_StyleScopedClasses['bg-transparent']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['placeholder:text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['focus:outline-none']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-0.5']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex']} */ ;
+/** @type {__VLS_StyleScopedClasses['items-center']} */ ;
+/** @type {__VLS_StyleScopedClasses['gap-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['px-3']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['shrink-0']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-xs']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:text-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['transition-colors']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-xs']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:text-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['transition-colors']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex']} */ ;
+/** @type {__VLS_StyleScopedClasses['items-start']} */ ;
+/** @type {__VLS_StyleScopedClasses['border-b']} */ ;
+/** @type {__VLS_StyleScopedClasses['border-border']} */ ;
+/** @type {__VLS_StyleScopedClasses['min-h-[36px]']} */ ;
+/** @type {__VLS_StyleScopedClasses['px-4']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-sm']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['shrink-0']} */ ;
+/** @type {__VLS_StyleScopedClasses['leading-5']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex-wrap']} */ ;
+/** @type {__VLS_StyleScopedClasses['items-center']} */ ;
+/** @type {__VLS_StyleScopedClasses['gap-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-1.5']} */ ;
+/** @type {__VLS_StyleScopedClasses['pr-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['min-w-0']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex']} */ ;
+/** @type {__VLS_StyleScopedClasses['items-center']} */ ;
+/** @type {__VLS_StyleScopedClasses['gap-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['bg-muted']} */ ;
+/** @type {__VLS_StyleScopedClasses['rounded-full']} */ ;
+/** @type {__VLS_StyleScopedClasses['px-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-0.5']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-xs']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['border']} */ ;
+/** @type {__VLS_StyleScopedClasses['border-border']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:text-destructive']} */ ;
+/** @type {__VLS_StyleScopedClasses['leading-none']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['min-w-[120px]']} */ ;
+/** @type {__VLS_StyleScopedClasses['bg-transparent']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-sm']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['placeholder:text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['focus:outline-none']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-0.5']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex']} */ ;
+/** @type {__VLS_StyleScopedClasses['items-start']} */ ;
+/** @type {__VLS_StyleScopedClasses['border-b']} */ ;
+/** @type {__VLS_StyleScopedClasses['border-border']} */ ;
+/** @type {__VLS_StyleScopedClasses['min-h-[36px]']} */ ;
+/** @type {__VLS_StyleScopedClasses['px-4']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-sm']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['shrink-0']} */ ;
+/** @type {__VLS_StyleScopedClasses['leading-5']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex-wrap']} */ ;
+/** @type {__VLS_StyleScopedClasses['items-center']} */ ;
+/** @type {__VLS_StyleScopedClasses['gap-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-1.5']} */ ;
+/** @type {__VLS_StyleScopedClasses['pr-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['min-w-0']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex']} */ ;
+/** @type {__VLS_StyleScopedClasses['items-center']} */ ;
+/** @type {__VLS_StyleScopedClasses['gap-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['bg-muted']} */ ;
+/** @type {__VLS_StyleScopedClasses['rounded-full']} */ ;
+/** @type {__VLS_StyleScopedClasses['px-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-0.5']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-xs']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['border']} */ ;
+/** @type {__VLS_StyleScopedClasses['border-border']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:text-destructive']} */ ;
+/** @type {__VLS_StyleScopedClasses['leading-none']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['min-w-[120px]']} */ ;
+/** @type {__VLS_StyleScopedClasses['bg-transparent']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-sm']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['placeholder:text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['focus:outline-none']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-0.5']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex']} */ ;
+/** @type {__VLS_StyleScopedClasses['items-center']} */ ;
 /** @type {__VLS_StyleScopedClasses['border-b']} */ ;
 /** @type {__VLS_StyleScopedClasses['border-border']} */ ;
 /** @type {__VLS_StyleScopedClasses['px-4']} */ ;
 /** @type {__VLS_StyleScopedClasses['py-2']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-sm']} */ ;
-/** @type {__VLS_StyleScopedClasses['bg-background']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['shrink-0']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['px-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['bg-transparent']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-foreground']} */ ;
-/** @type {__VLS_StyleScopedClasses['placeholder:text-muted-foreground']} */ ;
 /** @type {__VLS_StyleScopedClasses['focus:outline-none']} */ ;
 /** @type {__VLS_StyleScopedClasses['w-full']} */ ;
 /** @type {__VLS_StyleScopedClasses['px-4']} */ ;
 /** @type {__VLS_StyleScopedClasses['py-2']} */ ;
-/** @type {__VLS_StyleScopedClasses['text-sm']} */ ;
-/** @type {__VLS_StyleScopedClasses['bg-background']} */ ;
+/** @type {__VLS_StyleScopedClasses['bg-transparent']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-foreground']} */ ;
 /** @type {__VLS_StyleScopedClasses['placeholder:text-muted-foreground']} */ ;
 /** @type {__VLS_StyleScopedClasses['focus:outline-none']} */ ;
@@ -1103,7 +1628,6 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
 /** @type {__VLS_StyleScopedClasses['px-4']} */ ;
 /** @type {__VLS_StyleScopedClasses['py-2.5']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex-shrink-0']} */ ;
-/** @type {__VLS_StyleScopedClasses['bg-background']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex']} */ ;
 /** @type {__VLS_StyleScopedClasses['items-center']} */ ;
 /** @type {__VLS_StyleScopedClasses['gap-1']} */ ;
@@ -1116,6 +1640,19 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
 /** @type {__VLS_StyleScopedClasses['p-1.5']} */ ;
 /** @type {__VLS_StyleScopedClasses['transition-colors']} */ ;
 /** @type {__VLS_StyleScopedClasses['size-4']} */ ;
+/** @type {__VLS_StyleScopedClasses['relative']} */ ;
+/** @type {__VLS_StyleScopedClasses['emoji-picker-wrapper']} */ ;
+/** @type {__VLS_StyleScopedClasses['rounded']} */ ;
+/** @type {__VLS_StyleScopedClasses['p-1.5']} */ ;
+/** @type {__VLS_StyleScopedClasses['transition-colors']} */ ;
+/** @type {__VLS_StyleScopedClasses['size-4']} */ ;
+/** @type {__VLS_StyleScopedClasses['absolute']} */ ;
+/** @type {__VLS_StyleScopedClasses['bottom-10']} */ ;
+/** @type {__VLS_StyleScopedClasses['left-0']} */ ;
+/** @type {__VLS_StyleScopedClasses['z-50']} */ ;
+/** @type {__VLS_StyleScopedClasses['shadow-xl']} */ ;
+/** @type {__VLS_StyleScopedClasses['rounded-xl']} */ ;
+/** @type {__VLS_StyleScopedClasses['overflow-hidden']} */ ;
 /** @type {__VLS_StyleScopedClasses['ml-1']} */ ;
 /** @type {__VLS_StyleScopedClasses['rounded']} */ ;
 /** @type {__VLS_StyleScopedClasses['p-1.5']} */ ;
@@ -1131,13 +1668,59 @@ if (__VLS_ctx.store.isComposeOpen && (__VLS_ctx.panelMode || !__VLS_ctx.store.is
 /** @type {__VLS_StyleScopedClasses['transition-colors']} */ ;
 /** @type {__VLS_StyleScopedClasses['size-4']} */ ;
 /** @type {__VLS_StyleScopedClasses['hidden']} */ ;
+/** @type {__VLS_StyleScopedClasses['relative']} */ ;
 /** @type {__VLS_StyleScopedClasses['rounded']} */ ;
 /** @type {__VLS_StyleScopedClasses['p-1.5']} */ ;
-/** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
-/** @type {__VLS_StyleScopedClasses['hover:bg-accent']} */ ;
-/** @type {__VLS_StyleScopedClasses['hover:text-accent-foreground']} */ ;
 /** @type {__VLS_StyleScopedClasses['transition-colors']} */ ;
 /** @type {__VLS_StyleScopedClasses['size-4']} */ ;
+/** @type {__VLS_StyleScopedClasses['absolute']} */ ;
+/** @type {__VLS_StyleScopedClasses['bottom-10']} */ ;
+/** @type {__VLS_StyleScopedClasses['left-0']} */ ;
+/** @type {__VLS_StyleScopedClasses['z-50']} */ ;
+/** @type {__VLS_StyleScopedClasses['w-72']} */ ;
+/** @type {__VLS_StyleScopedClasses['rounded-lg']} */ ;
+/** @type {__VLS_StyleScopedClasses['border']} */ ;
+/** @type {__VLS_StyleScopedClasses['border-border']} */ ;
+/** @type {__VLS_StyleScopedClasses['bg-background']} */ ;
+/** @type {__VLS_StyleScopedClasses['shadow-xl']} */ ;
+/** @type {__VLS_StyleScopedClasses['p-3']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex-col']} */ ;
+/** @type {__VLS_StyleScopedClasses['gap-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-xs']} */ ;
+/** @type {__VLS_StyleScopedClasses['font-medium']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['w-full']} */ ;
+/** @type {__VLS_StyleScopedClasses['rounded-md']} */ ;
+/** @type {__VLS_StyleScopedClasses['border']} */ ;
+/** @type {__VLS_StyleScopedClasses['border-border']} */ ;
+/** @type {__VLS_StyleScopedClasses['bg-background']} */ ;
+/** @type {__VLS_StyleScopedClasses['px-3']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-1.5']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-sm']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['placeholder:text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['focus:outline-none']} */ ;
+/** @type {__VLS_StyleScopedClasses['focus:ring-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['focus:ring-ring']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex']} */ ;
+/** @type {__VLS_StyleScopedClasses['gap-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['justify-end']} */ ;
+/** @type {__VLS_StyleScopedClasses['rounded-md']} */ ;
+/** @type {__VLS_StyleScopedClasses['px-3']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-xs']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:bg-accent']} */ ;
+/** @type {__VLS_StyleScopedClasses['transition-colors']} */ ;
+/** @type {__VLS_StyleScopedClasses['rounded-md']} */ ;
+/** @type {__VLS_StyleScopedClasses['px-3']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-xs']} */ ;
+/** @type {__VLS_StyleScopedClasses['bg-primary']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-primary-foreground']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:bg-primary/90']} */ ;
+/** @type {__VLS_StyleScopedClasses['transition-colors']} */ ;
 /** @type {__VLS_StyleScopedClasses['rounded']} */ ;
 /** @type {__VLS_StyleScopedClasses['p-1.5']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
@@ -1169,10 +1752,21 @@ const __VLS_self = (await import('vue')).defineComponent({
             BookmarkCheck: BookmarkCheck,
             Maximize2: Maximize2,
             Minimize2: Minimize2,
+            Smile: Smile,
             EditorContent: EditorContent,
             Button: Button,
             store: store,
-            to: to,
+            effectivePanelMode: effectivePanelMode,
+            toTags: toTags,
+            toInput: toInput,
+            ccTags: ccTags,
+            ccInput: ccInput,
+            bccTags: bccTags,
+            bccInput: bccInput,
+            showCc: showCc,
+            showBcc: showBcc,
+            fromAddress: fromAddress,
+            aliases: aliases,
             subject: subject,
             attachments: attachments,
             sending: sending,
@@ -1184,6 +1778,9 @@ const __VLS_self = (await import('vue')).defineComponent({
             showFormatting: showFormatting,
             quotedHtml: quotedHtml,
             editor: editor,
+            toHandlers: toHandlers,
+            ccHandlers: ccHandlers,
+            bccHandlers: bccHandlers,
             close: close,
             toggleFullView: toggleFullView,
             discardDraft: discardDraft,
@@ -1191,13 +1788,20 @@ const __VLS_self = (await import('vue')).defineComponent({
             onFileChange: onFileChange,
             removeAttachment: removeAttachment,
             formatBytes: formatBytes,
-            setLink: setLink,
+            showLinkPopover: showLinkPopover,
+            linkInput: linkInput,
+            openLinkPopover: openLinkPopover,
+            applyLink: applyLink,
+            onLinkKeydown: onLinkKeydown,
             saveDraft: saveDraft,
             send: send,
             fonts: fonts,
             setFont: setFont,
             setColor: setColor,
             setHighlight: setHighlight,
+            showEmojiPicker: showEmojiPicker,
+            emojiPickerContainer: emojiPickerContainer,
+            openEmojiPicker: openEmojiPicker,
         };
     },
     props: { panelMode: { type: Boolean, default: false } },

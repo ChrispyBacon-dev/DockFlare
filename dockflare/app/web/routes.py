@@ -188,7 +188,7 @@ def gating_logic():
             return
 
         if not current_user.is_authenticated:
-            exempt_endpoints = ['static', 'web.ping', 'web.cloudflare_ping_route', 'setup.step_import_env', 'email.internal_mail_config', 'email.mailbox_login', 'email.quota_kv_sync']
+            exempt_endpoints = ['static', 'web.ping', 'web.cloudflare_ping_route', 'setup.step_import_env', 'email.internal_mail_config', 'email.mailbox_login', 'email.quota_kv_sync', 'email.alias_kv_sync']
             oauth_endpoints = ['web.login_provider', 'web.auth_callback', 'web.login']
             if request.endpoint and not request.endpoint.startswith('auth.') and request.endpoint not in exempt_endpoints and request.endpoint not in oauth_endpoints:
                 try:

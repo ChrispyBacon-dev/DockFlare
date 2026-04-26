@@ -23,8 +23,8 @@ const selectResult = (msg: any) => {
 </script>
 
 <template>
-  <div class="relative w-full px-4 py-2 border-b">
-    <input v-model="searchVal" type="search" placeholder="Search..." class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+  <div class="relative w-full px-4 py-2">
+    <input v-model="searchVal" type="search" placeholder="Search..." class="w-full rounded-md border border-input bg-background px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-ring" style="font-size: 16px;" />
     <div v-if="searchVal && results.length > 0" class="absolute left-0 right-0 top-full z-10 mt-1 max-h-[300px] overflow-y-auto rounded-md border bg-background p-1 shadow-md">
       <div v-for="res in results" :key="res.id" @click="selectResult(res)" class="cursor-pointer rounded-sm px-2 py-1 text-sm hover:bg-accent">
         <div class="font-semibold">{{ res.subject }}</div>

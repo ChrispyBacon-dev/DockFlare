@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick, onUnmounted } from 'vue'
 import DOMPurify from 'dompurify'
-import { format } from 'date-fns'
 import {
   Archive, Trash2, Reply, ReplyAll, Forward,
   MoreVertical, MailOpen, Star, Printer, FolderInput,
@@ -81,17 +80,23 @@ watch(emailIframe, (el) => {
 
 onUnmounted(() => resizeObserver?.disconnect())
 
-const displayTimestamp = computed(() => {
-  const ts = props.message?.received_at || props.message?.sent_at
-  return ts ? format(new Date(ts), 'PPpp') : ''
-})
+const parseAddrs = (raw: string | null | undefined) => {
+  let addrs: string[] = []
+  try { addrs = JSON.parse(raw || '[]') } catch { addrs = [] }
+  return addrs.map((a: string) => { const m = a.match(/<([^>]+)>/); return m ? m[1] : a }).join(', ')
+}
+const toDisplay = computed(() => parseAddrs(props.message?.to_addresses))
+const ccDisplay = computed(() => parseAddrs(props.message?.cc_addresses))
+const bccDisplay = computed(() => parseAddrs(props.message?.bcc_addresses))
+
+const displayTimestamp = computed(() =>
+  store.formatDate(props.message?.received_at || props.message?.sent_at)
+)
 
 const quotedBody = computed(() => {
   if (!props.message) return ''
   const from = props.message.from_address || ''
-  const date = (props.message.received_at || props.message.sent_at)
-    ? format(new Date(props.message.received_at || props.message.sent_at), 'PPpp')
-    : ''
+  const date = store.formatDate(props.message.received_at || props.message.sent_at)
   const original = props.message.html_body || `<pre>${props.message.text_body || ''}</pre>`
   return `<br><blockquote style="border-left:2px solid #ccc;padding-left:1em;color:#555;margin:1em 0;"><p>On ${date}, ${from} wrote:</p>${original}</blockquote>`
 })
@@ -104,6 +109,7 @@ const replyTo = () => {
   if (!props.message) return
   store.composeDefaults = {
     to: props.message.from_address,
+    from: props.message.received_via_alias || undefined,
     subject: props.message.subject?.startsWith('Re:')
       ? props.message.subject
       : `Re: ${props.message.subject || ''}`,
@@ -126,6 +132,7 @@ const replyAll = () => {
   ].filter((a: string) => a && a !== store.currentMailbox)
   store.composeDefaults = {
     to: allAddresses.join(', '),
+    from: props.message.received_via_alias || undefined,
     subject: props.message.subject?.startsWith('Re:')
       ? props.message.subject
       : `Re: ${props.message.subject || ''}`,
@@ -495,10 +502,16 @@ const sendInlineReply = async () => {
           <Avatar :initials="message.from_name?.[0] || message.from_address?.[0] || '?'" />
           <div class="grid gap-1">
             <div class="font-semibold">{{ message.from_name || message.from_address }}</div>
-            <div class="line-clamp-1 text-xs">{{ message.subject }}</div>
-            <div class="line-clamp-1 text-xs">
-              <span class="font-medium">Reply-To:</span> {{ message.from_address }}
+            <div v-if="toDisplay" class="line-clamp-1 text-xs">
+              <span class="font-medium">To:</span> {{ toDisplay }}
             </div>
+            <div v-if="ccDisplay" class="line-clamp-1 text-xs">
+              <span class="font-medium">Cc:</span> {{ ccDisplay }}
+            </div>
+            <div v-if="bccDisplay" class="line-clamp-1 text-xs">
+              <span class="font-medium">Bcc:</span> {{ bccDisplay }}
+            </div>
+            <div class="line-clamp-1 text-xs">{{ message.subject }}</div>
           </div>
         </div>
         <div v-if="displayTimestamp" class="ml-auto text-xs text-muted-foreground">
@@ -524,16 +537,17 @@ const sendInlineReply = async () => {
 
       <AttachmentBar :attachments="message.attachments" />
 
-      <Separator class="mt-auto print-hide" />
 
       <div class="p-4 print-hide">
         <form @submit.prevent="sendInlineReply">
-          <div class="grid gap-4">
-            <Textarea
-              v-model="replyText"
-              class="p-4 min-h-[100px]"
-              :placeholder="`Reply ${message.from_name || message.from_address}...`"
-            />
+          <div class="grid gap-3">
+            <div class="df-reply-wrapper rounded-2xl p-3">
+              <Textarea
+                v-model="replyText"
+                class="p-2 min-h-[80px] bg-transparent border-0 shadow-none focus-visible:ring-0"
+                :placeholder="`Reply ${message.from_name || message.from_address}...`"
+              />
+            </div>
             <div class="flex items-center">
               <Button
                 type="submit"
@@ -554,3 +568,29 @@ const sendInlineReply = async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.df-reply-wrapper {
+  background: rgba(255,255,255,0.6);
+  border: 1px solid rgba(0,0,0,0.07);
+  transition: box-shadow 0.14s;
+}
+.df-reply-wrapper:focus-within {
+  box-shadow: 0 2px 10px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.04), 0 0 0 2px rgba(251,166,18,0.18);
+}
+.df-reply-wrapper :deep(textarea) {
+  background: transparent !important;
+}
+.dark .df-reply-wrapper {
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+}
+.dark .df-reply-wrapper :deep(textarea) {
+  color: hsl(210 40% 92%);
+  caret-color: hsl(210 40% 92%);
+}
+.dark .df-reply-wrapper :deep(textarea)::placeholder {
+  color: hsl(210 30% 70%);
+  opacity: 1;
+}
+</style>

@@ -45,6 +45,7 @@ _SCHEMA = """
         has_attachments INTEGER,
         headers_json TEXT,
         created_at TEXT,
+        received_via_alias TEXT,
         FOREIGN KEY(mailbox_address) REFERENCES mailboxes(address) ON DELETE CASCADE,
         FOREIGN KEY(folder_id) REFERENCES folders(id) ON DELETE CASCADE
     );
@@ -73,7 +74,8 @@ _SCHEMA = """
         sent_at TEXT,
         status TEXT,
         error_message TEXT,
-        worker_response TEXT
+        worker_response TEXT,
+        via_alias TEXT
     );
     CREATE TABLE IF NOT EXISTS bounce_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -94,11 +96,28 @@ _SCHEMA = """
         outbound_auth_secret TEXT NOT NULL,
         updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS aliases (
+        address         TEXT PRIMARY KEY,
+        mailbox_address TEXT NOT NULL,
+        domain          TEXT NOT NULL,
+        label           TEXT,
+        description     TEXT,
+        is_active       INTEGER NOT NULL DEFAULT 1,
+        expires_at      TEXT,
+        created_at      TEXT NOT NULL,
+        use_count       INTEGER NOT NULL DEFAULT 0,
+        last_use_at     TEXT,
+        FOREIGN KEY (mailbox_address) REFERENCES mailboxes(address) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_aliases_mailbox ON aliases(mailbox_address);
+    CREATE INDEX IF NOT EXISTS idx_aliases_domain  ON aliases(domain);
+    CREATE INDEX IF NOT EXISTS idx_aliases_active  ON aliases(is_active, expires_at);
     CREATE INDEX IF NOT EXISTS idx_domain_configs_name ON domain_configs(domain_name);
     CREATE INDEX IF NOT EXISTS idx_messages_mailbox ON messages(mailbox_address);
     CREATE INDEX IF NOT EXISTS idx_messages_folder ON messages(folder_id);
     CREATE INDEX IF NOT EXISTS idx_messages_received ON messages(received_at DESC);
     CREATE INDEX IF NOT EXISTS idx_messages_read ON messages(is_read);
+    CREATE INDEX IF NOT EXISTS idx_messages_alias ON messages(received_via_alias) WHERE received_via_alias IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id);
     CREATE INDEX IF NOT EXISTS idx_send_log_from ON send_log(from_address);
     CREATE TABLE IF NOT EXISTS push_subscriptions (
@@ -119,7 +138,9 @@ _SCHEMA = """
     DROP TRIGGER IF EXISTS messages_ai;
     CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
         INSERT INTO messages_fts(rowid, subject, from_address, from_name, to_addresses, text_body)
-        VALUES (new.id, new.subject, new.from_address, new.from_name, new.to_addresses, new.text_body);
+        VALUES (new.id, new.subject, new.from_address, new.from_name,
+                new.to_addresses || ' ' || COALESCE(new.received_via_alias, ''),
+                new.text_body);
     END;
     DROP TRIGGER IF EXISTS messages_ad;
     CREATE TRIGGER messages_ad AFTER DELETE ON messages BEGIN
@@ -129,7 +150,9 @@ _SCHEMA = """
     CREATE TRIGGER messages_au AFTER UPDATE ON messages BEGIN
         DELETE FROM messages_fts WHERE rowid = old.id;
         INSERT INTO messages_fts(rowid, subject, from_address, from_name, to_addresses, text_body)
-        VALUES (new.id, new.subject, new.from_address, new.from_name, new.to_addresses, new.text_body);
+        VALUES (new.id, new.subject, new.from_address, new.from_name,
+                new.to_addresses || ' ' || COALESCE(new.received_via_alias, ''),
+                new.text_body);
     END;
 """
 
@@ -210,12 +233,36 @@ def _migrate(conn):
         "ALTER TABLE mailboxes ADD COLUMN last_quota_warning_at TEXT DEFAULT NULL",
         "ALTER TABLE domain_configs ADD COLUMN grace_buffer_bytes INTEGER DEFAULT NULL",
         "ALTER TABLE messages ADD COLUMN is_system INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE messages ADD COLUMN received_via_alias TEXT DEFAULT NULL",
+        "ALTER TABLE send_log ADD COLUMN via_alias TEXT DEFAULT NULL",
+        "CREATE INDEX IF NOT EXISTS idx_messages_alias ON messages(received_via_alias) WHERE received_via_alias IS NOT NULL",
     ]:
         try:
             conn.execute(sql)
         except Exception:
             pass
 
+    try:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS aliases (
+                address         TEXT PRIMARY KEY,
+                mailbox_address TEXT NOT NULL,
+                domain          TEXT NOT NULL,
+                label           TEXT,
+                description     TEXT,
+                is_active       INTEGER NOT NULL DEFAULT 1,
+                expires_at      TEXT,
+                created_at      TEXT NOT NULL,
+                use_count       INTEGER NOT NULL DEFAULT 0,
+                last_use_at     TEXT,
+                FOREIGN KEY (mailbox_address) REFERENCES mailboxes(address) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_aliases_mailbox ON aliases(mailbox_address);
+            CREATE INDEX IF NOT EXISTS idx_aliases_domain  ON aliases(domain);
+            CREATE INDEX IF NOT EXISTS idx_aliases_active  ON aliases(is_active, expires_at);
+        """)
+    except Exception:
+        pass
 
     try:
         conn.executescript("""
@@ -250,8 +297,8 @@ def init_db():
     import logging
     os.makedirs(os.path.dirname(config.DB_PATH), exist_ok=True)
     conn = _connect()
-    conn.executescript(_SCHEMA)
     _migrate(conn)
+    conn.executescript(_SCHEMA)
     result = conn.execute("PRAGMA quick_check").fetchone()
     if result and result[0] != 'ok':
         logging.getLogger('mail-manager').critical("SQLite integrity check failed: %s", result[0])

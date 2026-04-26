@@ -22,12 +22,13 @@ const __VLS_ctx = {};
 let __VLS_components;
 let __VLS_directives;
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-    ...{ class: "relative w-full px-4 py-2 border-b" },
+    ...{ class: "relative w-full px-4 py-2" },
 });
 __VLS_asFunctionalElement(__VLS_intrinsicElements.input)({
     type: "search",
     placeholder: "Search...",
-    ...{ class: "w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" },
+    ...{ class: "w-full rounded-md border border-input bg-background px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-ring" },
+    ...{ style: {} },
 });
 (__VLS_ctx.searchVal);
 if (__VLS_ctx.searchVal && __VLS_ctx.results.length > 0) {
@@ -63,7 +64,6 @@ else if (__VLS_ctx.searchVal && !__VLS_ctx.loading) {
 /** @type {__VLS_StyleScopedClasses['w-full']} */ ;
 /** @type {__VLS_StyleScopedClasses['px-4']} */ ;
 /** @type {__VLS_StyleScopedClasses['py-2']} */ ;
-/** @type {__VLS_StyleScopedClasses['border-b']} */ ;
 /** @type {__VLS_StyleScopedClasses['w-full']} */ ;
 /** @type {__VLS_StyleScopedClasses['rounded-md']} */ ;
 /** @type {__VLS_StyleScopedClasses['border']} */ ;
@@ -71,7 +71,7 @@ else if (__VLS_ctx.searchVal && !__VLS_ctx.loading) {
 /** @type {__VLS_StyleScopedClasses['bg-background']} */ ;
 /** @type {__VLS_StyleScopedClasses['px-3']} */ ;
 /** @type {__VLS_StyleScopedClasses['py-2']} */ ;
-/** @type {__VLS_StyleScopedClasses['text-sm']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-base']} */ ;
 /** @type {__VLS_StyleScopedClasses['focus:outline-none']} */ ;
 /** @type {__VLS_StyleScopedClasses['focus:ring-2']} */ ;
 /** @type {__VLS_StyleScopedClasses['focus:ring-ring']} */ ;

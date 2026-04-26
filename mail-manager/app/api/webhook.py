@@ -211,13 +211,46 @@ def inbound():
         db = get_db()
 
         to_address = ''
+        alias_address = None
+
         for addr in parsed['to_addresses']:
-            cur = db.execute(
-                "SELECT address FROM mailboxes WHERE address=?", (addr,)
-            )
-            if cur.fetchone():
+            if db.execute("SELECT 1 FROM mailboxes WHERE address=?", (addr,)).fetchone():
                 to_address = addr
                 break
+
+        if not to_address:
+            via_alias = data.get('via_alias', False)
+            raw_resolved = data.get('resolved_mailbox', '')
+
+            if via_alias and raw_resolved:
+                envelope_to = data.get('to', '')
+                now_utc = datetime.now(timezone.utc).isoformat()
+                alias_row = db.execute(
+                    "SELECT * FROM aliases WHERE address=? AND is_active=1 AND (expires_at IS NULL OR expires_at > ?)",
+                    (envelope_to, now_utc)
+                ).fetchone()
+                if alias_row and alias_row['mailbox_address'] == raw_resolved:
+                    to_address = alias_row['mailbox_address']
+                    alias_address = envelope_to
+                    db.execute(
+                        "UPDATE aliases SET use_count=use_count+1, last_use_at=? WHERE address=?",
+                        (now_utc, alias_address)
+                    )
+            else:
+                now_utc = datetime.now(timezone.utc).isoformat()
+                for addr in parsed['to_addresses']:
+                    alias_row = db.execute(
+                        "SELECT * FROM aliases WHERE address=? AND is_active=1 AND (expires_at IS NULL OR expires_at > ?)",
+                        (addr, now_utc)
+                    ).fetchone()
+                    if alias_row:
+                        to_address = alias_row['mailbox_address']
+                        alias_address = addr
+                        db.execute(
+                            "UPDATE aliases SET use_count=use_count+1, last_use_at=? WHERE address=?",
+                            (now_utc, alias_address)
+                        )
+                        break
 
         if not to_address and domain_cfg and domain_cfg['catch_all_mailbox']:
             catch_all = domain_cfg['catch_all_mailbox']
@@ -225,12 +258,8 @@ def inbound():
                 to_address = catch_all
 
         if not to_address:
-            log.info("Inbound ignored: no matching mailbox for %s",
-                     parsed['to_addresses'])
-            return jsonify({
-                "status": "ignored",
-                "reason": "unknown recipient",
-            }), 200
+            log.info("Inbound ignored: no matching mailbox for %s", parsed['to_addresses'])
+            return jsonify({"status": "ignored", "reason": "unknown recipient"}), 200
 
         cur = db.execute(
             "SELECT id FROM folders WHERE mailbox_address=? AND name='Inbox'",
@@ -253,8 +282,8 @@ def inbound():
                 to_addresses, cc_addresses, bcc_addresses, subject, text_body,
                 html_body, received_at, is_read, is_starred, is_draft,
                 in_reply_to, reference_ids, size_bytes, has_attachments,
-                headers_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?)
+                headers_json, created_at, received_via_alias
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?)
         """, (
             parsed['message_id'], to_address, folder_id,
             parsed['from_address'], parsed['from_name'],
@@ -265,7 +294,7 @@ def inbound():
             parsed['received_at'], parsed['in_reply_to'],
             parsed['references'], actual_size,
             1 if parsed['attachments'] else 0,
-            json.dumps(parsed['headers_json']), now,
+            json.dumps(parsed['headers_json']), now, alias_address,
         ))
         msg_id = cur.lastrowid
 
@@ -399,6 +428,7 @@ def inbound():
             'subject': parsed['subject'],
             'from_name': parsed['from_name'] or parsed['from_address'],
             'mailbox': to_address,
+            'via_alias': alias_address,
         })
         _check_and_send_auto_reply(db, to_address, parsed, domain_cfg)
 

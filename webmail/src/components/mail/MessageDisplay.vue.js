@@ -1,7 +1,6 @@
 /// <reference types="../../../node_modules/.vue-global-types/vue_3.5_0_0_0.d.ts" />
 import { computed, ref, watch, nextTick, onUnmounted } from 'vue';
 import DOMPurify from 'dompurify';
-import { format } from 'date-fns';
 import { Trash2, Reply, ReplyAll, Forward, MoreVertical, MailOpen, Star, Printer, FolderInput, ArrowLeft, Columns, Maximize } from 'lucide-vue-next';
 import { TooltipRoot, TooltipTrigger, TooltipContent, TooltipPortal, } from 'radix-vue';
 import { DropdownMenuRoot, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuPortal, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, } from 'radix-vue';
@@ -65,17 +64,25 @@ watch(emailIframe, (el) => {
         resizeObserver.observe(el.parentElement);
 });
 onUnmounted(() => resizeObserver?.disconnect());
-const displayTimestamp = computed(() => {
-    const ts = props.message?.received_at || props.message?.sent_at;
-    return ts ? format(new Date(ts), 'PPpp') : '';
-});
+const parseAddrs = (raw) => {
+    let addrs = [];
+    try {
+        addrs = JSON.parse(raw || '[]');
+    }
+    catch {
+        addrs = [];
+    }
+    return addrs.map((a) => { const m = a.match(/<([^>]+)>/); return m ? m[1] : a; }).join(', ');
+};
+const toDisplay = computed(() => parseAddrs(props.message?.to_addresses));
+const ccDisplay = computed(() => parseAddrs(props.message?.cc_addresses));
+const bccDisplay = computed(() => parseAddrs(props.message?.bcc_addresses));
+const displayTimestamp = computed(() => store.formatDate(props.message?.received_at || props.message?.sent_at));
 const quotedBody = computed(() => {
     if (!props.message)
         return '';
     const from = props.message.from_address || '';
-    const date = (props.message.received_at || props.message.sent_at)
-        ? format(new Date(props.message.received_at || props.message.sent_at), 'PPpp')
-        : '';
+    const date = store.formatDate(props.message.received_at || props.message.sent_at);
     const original = props.message.html_body || `<pre>${props.message.text_body || ''}</pre>`;
     return `<br><blockquote style="border-left:2px solid #ccc;padding-left:1em;color:#555;margin:1em 0;"><p>On ${date}, ${from} wrote:</p>${original}</blockquote>`;
 });
@@ -85,6 +92,7 @@ const replyTo = () => {
         return;
     store.composeDefaults = {
         to: props.message.from_address,
+        from: props.message.received_via_alias || undefined,
         subject: props.message.subject?.startsWith('Re:')
             ? props.message.subject
             : `Re: ${props.message.subject || ''}`,
@@ -96,13 +104,28 @@ const replyTo = () => {
 const replyAll = () => {
     if (!props.message)
         return;
+    let toList = [];
+    let ccList = [];
+    try {
+        toList = JSON.parse(props.message.to_addresses || '[]');
+    }
+    catch {
+        toList = [];
+    }
+    try {
+        ccList = JSON.parse(props.message.cc_addresses || '[]');
+    }
+    catch {
+        ccList = [];
+    }
     const allAddresses = [
         props.message.from_address,
-        ...(JSON.parse(props.message.to_addresses || '[]')),
-        ...(JSON.parse(props.message.cc_addresses || '[]')),
+        ...toList,
+        ...ccList,
     ].filter((a) => a && a !== store.currentMailbox);
     store.composeDefaults = {
         to: allAddresses.join(', '),
+        from: props.message.received_via_alias || undefined,
         subject: props.message.subject?.startsWith('Re:')
             ? props.message.subject
             : `Re: ${props.message.subject || ''}`,
@@ -134,9 +157,11 @@ const trash = async () => {
         await mailApi.deleteMessage(store.currentMailbox, props.message.id);
         store.messages = store.messages.filter((m) => m.id !== props.message.id);
         store.currentMessage = null;
+        const fRes = await mailApi.getFolders(store.currentMailbox);
+        store.folders = fRes.data;
     }
-    catch (e) {
-        console.error('Failed to trash message', e);
+    catch {
+        store.showToast('Failed to move message to trash');
     }
 };
 const markUnread = async () => {
@@ -147,10 +172,28 @@ const markUnread = async () => {
         const idx = store.messages.findIndex((m) => m.id === props.message.id);
         if (idx !== -1)
             store.messages[idx] = { ...store.messages[idx], is_read: 0 };
-        store.currentMessage = null;
+        store.currentMessage = { ...store.currentMessage, is_read: 0 };
+        const fRes = await mailApi.getFolders(store.currentMailbox);
+        store.folders = fRes.data;
     }
-    catch (e) {
-        console.error('Failed to mark unread', e);
+    catch {
+        store.showToast('Failed to mark as unread');
+    }
+};
+const markRead = async () => {
+    if (!props.message || !store.currentMailbox)
+        return;
+    try {
+        await mailApi.updateMessage(store.currentMailbox, props.message.id, { is_read: true });
+        const idx = store.messages.findIndex((m) => m.id === props.message.id);
+        if (idx !== -1)
+            store.messages[idx] = { ...store.messages[idx], is_read: 1 };
+        store.currentMessage = { ...store.currentMessage, is_read: 1 };
+        const fRes = await mailApi.getFolders(store.currentMailbox);
+        store.folders = fRes.data;
+    }
+    catch {
+        store.showToast('Failed to mark as read');
     }
 };
 const toggleStar = async () => {
@@ -165,8 +208,8 @@ const toggleStar = async () => {
         if (store.currentMessage)
             store.currentMessage = { ...store.currentMessage, is_starred: newVal };
     }
-    catch (e) {
-        console.error('Failed to toggle star', e);
+    catch {
+        store.showToast('Failed to update star');
     }
 };
 const moveToFolder = async (targetFolder) => {
@@ -179,17 +222,26 @@ const moveToFolder = async (targetFolder) => {
         });
         store.messages = store.messages.filter((m) => m.id !== props.message.id);
         store.currentMessage = null;
+        const fRes = await mailApi.getFolders(store.currentMailbox);
+        store.folders = fRes.data;
     }
-    catch (e) {
-        console.error('Failed to move message', e);
+    catch {
+        store.showToast('Failed to move message');
     }
 };
+const escapeHtml = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const printMessage = () => {
     if (!props.message)
         return;
     const from = props.message.from_name ? `${props.message.from_name} <${props.message.from_address}>` : props.message.from_address;
-    const toRaw = JSON.parse(props.message.to_addresses || '[]');
-    const to = Array.isArray(toRaw) ? toRaw.join(', ') : toRaw;
+    let toRaw = [];
+    try {
+        toRaw = JSON.parse(props.message.to_addresses || '[]');
+    }
+    catch {
+        toRaw = [];
+    }
+    const to = Array.isArray(toRaw) ? toRaw.join(', ') : String(toRaw);
     const date = displayTimestamp.value;
     const subject = props.message.subject || '(No Subject)';
     let content = '';
@@ -225,9 +277,9 @@ const printMessage = () => {
       </head>
       <body>
         <div class="header">
-          <h1 class="subject">${subject}</h1>
-          <div class="meta"><div class="label">From:</div><div class="val">${from.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></div>
-          <div class="meta"><div class="label">To:</div><div class="val">${to.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div></div>
+          <h1 class="subject">${escapeHtml(subject)}</h1>
+          <div class="meta"><div class="label">From:</div><div class="val">${escapeHtml(from)}</div></div>
+          <div class="meta"><div class="label">To:</div><div class="val">${escapeHtml(to)}</div></div>
           <div class="meta"><div class="label">Date:</div><div class="val">${date}</div></div>
         </div>
         <div class="content">
@@ -248,6 +300,8 @@ const printMessage = () => {
 const sendInlineReply = async () => {
     if (!props.message || !store.currentMailbox || !replyText.value.trim())
         return;
+    if (!props.message.from_address)
+        return;
     sendingReply.value = true;
     try {
         await mailApi.sendMessage(store.currentMailbox, {
@@ -261,8 +315,8 @@ const sendInlineReply = async () => {
         });
         replyText.value = '';
     }
-    catch (e) {
-        console.error('Failed to send reply', e);
+    catch {
+        store.showToast('Failed to send reply');
     }
     finally {
         sendingReply.value = false;
@@ -272,6 +326,15 @@ debugger; /* PartiallyEnd: #3632/scriptSetup.vue */
 const __VLS_ctx = {};
 let __VLS_components;
 let __VLS_directives;
+/** @type {__VLS_StyleScopedClasses['df-reply-wrapper']} */ ;
+/** @type {__VLS_StyleScopedClasses['df-reply-wrapper']} */ ;
+/** @type {__VLS_StyleScopedClasses['df-reply-wrapper']} */ ;
+/** @type {__VLS_StyleScopedClasses['dark']} */ ;
+/** @type {__VLS_StyleScopedClasses['df-reply-wrapper']} */ ;
+/** @type {__VLS_StyleScopedClasses['dark']} */ ;
+/** @type {__VLS_StyleScopedClasses['df-reply-wrapper']} */ ;
+// CSS variable injection 
+// CSS variable injection end 
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
     ...{ class: "flex h-full flex-col" },
     id: "print-message-area",
@@ -882,137 +945,169 @@ const __VLS_223 = __VLS_222({
     ...{ class: "z-50 min-w-[160px] rounded-md border bg-popover p-1 text-popover-foreground shadow-md" },
 }, ...__VLS_functionalComponentArgsRest(__VLS_222));
 __VLS_224.slots.default;
-const __VLS_225 = {}.DropdownMenuItem;
+if (props.message?.is_read) {
+    const __VLS_225 = {}.DropdownMenuItem;
+    /** @type {[typeof __VLS_components.DropdownMenuItem, typeof __VLS_components.DropdownMenuItem, ]} */ ;
+    // @ts-ignore
+    const __VLS_226 = __VLS_asFunctionalComponent(__VLS_225, new __VLS_225({
+        ...{ 'onClick': {} },
+        ...{ class: "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent" },
+    }));
+    const __VLS_227 = __VLS_226({
+        ...{ 'onClick': {} },
+        ...{ class: "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent" },
+    }, ...__VLS_functionalComponentArgsRest(__VLS_226));
+    let __VLS_229;
+    let __VLS_230;
+    let __VLS_231;
+    const __VLS_232 = {
+        onClick: (__VLS_ctx.markUnread)
+    };
+    __VLS_228.slots.default;
+    const __VLS_233 = {}.MailOpen;
+    /** @type {[typeof __VLS_components.MailOpen, ]} */ ;
+    // @ts-ignore
+    const __VLS_234 = __VLS_asFunctionalComponent(__VLS_233, new __VLS_233({
+        ...{ class: "mr-2 size-4" },
+    }));
+    const __VLS_235 = __VLS_234({
+        ...{ class: "mr-2 size-4" },
+    }, ...__VLS_functionalComponentArgsRest(__VLS_234));
+    var __VLS_228;
+}
+else {
+    const __VLS_237 = {}.DropdownMenuItem;
+    /** @type {[typeof __VLS_components.DropdownMenuItem, typeof __VLS_components.DropdownMenuItem, ]} */ ;
+    // @ts-ignore
+    const __VLS_238 = __VLS_asFunctionalComponent(__VLS_237, new __VLS_237({
+        ...{ 'onClick': {} },
+        ...{ class: "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent" },
+    }));
+    const __VLS_239 = __VLS_238({
+        ...{ 'onClick': {} },
+        ...{ class: "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent" },
+    }, ...__VLS_functionalComponentArgsRest(__VLS_238));
+    let __VLS_241;
+    let __VLS_242;
+    let __VLS_243;
+    const __VLS_244 = {
+        onClick: (__VLS_ctx.markRead)
+    };
+    __VLS_240.slots.default;
+    const __VLS_245 = {}.MailOpen;
+    /** @type {[typeof __VLS_components.MailOpen, ]} */ ;
+    // @ts-ignore
+    const __VLS_246 = __VLS_asFunctionalComponent(__VLS_245, new __VLS_245({
+        ...{ class: "mr-2 size-4" },
+    }));
+    const __VLS_247 = __VLS_246({
+        ...{ class: "mr-2 size-4" },
+    }, ...__VLS_functionalComponentArgsRest(__VLS_246));
+    var __VLS_240;
+}
+const __VLS_249 = {}.DropdownMenuItem;
 /** @type {[typeof __VLS_components.DropdownMenuItem, typeof __VLS_components.DropdownMenuItem, ]} */ ;
-// @ts-ignore
-const __VLS_226 = __VLS_asFunctionalComponent(__VLS_225, new __VLS_225({
-    ...{ 'onClick': {} },
-    ...{ class: "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent" },
-}));
-const __VLS_227 = __VLS_226({
-    ...{ 'onClick': {} },
-    ...{ class: "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent" },
-}, ...__VLS_functionalComponentArgsRest(__VLS_226));
-let __VLS_229;
-let __VLS_230;
-let __VLS_231;
-const __VLS_232 = {
-    onClick: (__VLS_ctx.markUnread)
-};
-__VLS_228.slots.default;
-const __VLS_233 = {}.MailOpen;
-/** @type {[typeof __VLS_components.MailOpen, ]} */ ;
-// @ts-ignore
-const __VLS_234 = __VLS_asFunctionalComponent(__VLS_233, new __VLS_233({
-    ...{ class: "mr-2 size-4" },
-}));
-const __VLS_235 = __VLS_234({
-    ...{ class: "mr-2 size-4" },
-}, ...__VLS_functionalComponentArgsRest(__VLS_234));
-var __VLS_228;
-const __VLS_237 = {}.DropdownMenuItem;
-/** @type {[typeof __VLS_components.DropdownMenuItem, typeof __VLS_components.DropdownMenuItem, ]} */ ;
-// @ts-ignore
-const __VLS_238 = __VLS_asFunctionalComponent(__VLS_237, new __VLS_237({
-    ...{ 'onClick': {} },
-    ...{ class: "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent" },
-}));
-const __VLS_239 = __VLS_238({
-    ...{ 'onClick': {} },
-    ...{ class: "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent" },
-}, ...__VLS_functionalComponentArgsRest(__VLS_238));
-let __VLS_241;
-let __VLS_242;
-let __VLS_243;
-const __VLS_244 = {
-    onClick: (__VLS_ctx.toggleStar)
-};
-__VLS_240.slots.default;
-const __VLS_245 = {}.Star;
-/** @type {[typeof __VLS_components.Star, ]} */ ;
-// @ts-ignore
-const __VLS_246 = __VLS_asFunctionalComponent(__VLS_245, new __VLS_245({
-    ...{ class: "mr-2 size-4" },
-}));
-const __VLS_247 = __VLS_246({
-    ...{ class: "mr-2 size-4" },
-}, ...__VLS_functionalComponentArgsRest(__VLS_246));
-(__VLS_ctx.message?.is_starred ? 'Unstar' : 'Star');
-var __VLS_240;
-const __VLS_249 = {}.DropdownMenuSeparator;
-/** @type {[typeof __VLS_components.DropdownMenuSeparator, ]} */ ;
 // @ts-ignore
 const __VLS_250 = __VLS_asFunctionalComponent(__VLS_249, new __VLS_249({
-    ...{ class: "my-1 h-px bg-border" },
+    ...{ 'onClick': {} },
+    ...{ class: "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent" },
 }));
 const __VLS_251 = __VLS_250({
-    ...{ class: "my-1 h-px bg-border" },
+    ...{ 'onClick': {} },
+    ...{ class: "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent" },
 }, ...__VLS_functionalComponentArgsRest(__VLS_250));
-const __VLS_253 = {}.DropdownMenuSub;
-/** @type {[typeof __VLS_components.DropdownMenuSub, typeof __VLS_components.DropdownMenuSub, ]} */ ;
-// @ts-ignore
-const __VLS_254 = __VLS_asFunctionalComponent(__VLS_253, new __VLS_253({}));
-const __VLS_255 = __VLS_254({}, ...__VLS_functionalComponentArgsRest(__VLS_254));
-__VLS_256.slots.default;
-const __VLS_257 = {}.DropdownMenuSubTrigger;
-/** @type {[typeof __VLS_components.DropdownMenuSubTrigger, typeof __VLS_components.DropdownMenuSubTrigger, ]} */ ;
+let __VLS_253;
+let __VLS_254;
+let __VLS_255;
+const __VLS_256 = {
+    onClick: (__VLS_ctx.toggleStar)
+};
+__VLS_252.slots.default;
+const __VLS_257 = {}.Star;
+/** @type {[typeof __VLS_components.Star, ]} */ ;
 // @ts-ignore
 const __VLS_258 = __VLS_asFunctionalComponent(__VLS_257, new __VLS_257({
-    ...{ class: "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent" },
+    ...{ class: "mr-2 size-4" },
 }));
 const __VLS_259 = __VLS_258({
-    ...{ class: "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent" },
+    ...{ class: "mr-2 size-4" },
 }, ...__VLS_functionalComponentArgsRest(__VLS_258));
-__VLS_260.slots.default;
-const __VLS_261 = {}.FolderInput;
-/** @type {[typeof __VLS_components.FolderInput, ]} */ ;
+(__VLS_ctx.message?.is_starred ? 'Unstar' : 'Star');
+var __VLS_252;
+const __VLS_261 = {}.DropdownMenuSeparator;
+/** @type {[typeof __VLS_components.DropdownMenuSeparator, ]} */ ;
 // @ts-ignore
 const __VLS_262 = __VLS_asFunctionalComponent(__VLS_261, new __VLS_261({
-    ...{ class: "mr-2 size-4" },
+    ...{ class: "my-1 h-px bg-border" },
 }));
 const __VLS_263 = __VLS_262({
-    ...{ class: "mr-2 size-4" },
+    ...{ class: "my-1 h-px bg-border" },
 }, ...__VLS_functionalComponentArgsRest(__VLS_262));
-var __VLS_260;
-const __VLS_265 = {}.DropdownMenuPortal;
-/** @type {[typeof __VLS_components.DropdownMenuPortal, typeof __VLS_components.DropdownMenuPortal, ]} */ ;
+const __VLS_265 = {}.DropdownMenuSub;
+/** @type {[typeof __VLS_components.DropdownMenuSub, typeof __VLS_components.DropdownMenuSub, ]} */ ;
 // @ts-ignore
 const __VLS_266 = __VLS_asFunctionalComponent(__VLS_265, new __VLS_265({}));
 const __VLS_267 = __VLS_266({}, ...__VLS_functionalComponentArgsRest(__VLS_266));
 __VLS_268.slots.default;
-const __VLS_269 = {}.DropdownMenuSubContent;
-/** @type {[typeof __VLS_components.DropdownMenuSubContent, typeof __VLS_components.DropdownMenuSubContent, ]} */ ;
+const __VLS_269 = {}.DropdownMenuSubTrigger;
+/** @type {[typeof __VLS_components.DropdownMenuSubTrigger, typeof __VLS_components.DropdownMenuSubTrigger, ]} */ ;
 // @ts-ignore
 const __VLS_270 = __VLS_asFunctionalComponent(__VLS_269, new __VLS_269({
-    ...{ class: "z-50 min-w-[140px] rounded-md border bg-popover p-1 text-popover-foreground shadow-md" },
+    ...{ class: "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent" },
 }));
 const __VLS_271 = __VLS_270({
-    ...{ class: "z-50 min-w-[140px] rounded-md border bg-popover p-1 text-popover-foreground shadow-md" },
+    ...{ class: "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent" },
 }, ...__VLS_functionalComponentArgsRest(__VLS_270));
 __VLS_272.slots.default;
+const __VLS_273 = {}.FolderInput;
+/** @type {[typeof __VLS_components.FolderInput, ]} */ ;
+// @ts-ignore
+const __VLS_274 = __VLS_asFunctionalComponent(__VLS_273, new __VLS_273({
+    ...{ class: "mr-2 size-4" },
+}));
+const __VLS_275 = __VLS_274({
+    ...{ class: "mr-2 size-4" },
+}, ...__VLS_functionalComponentArgsRest(__VLS_274));
+var __VLS_272;
+const __VLS_277 = {}.DropdownMenuPortal;
+/** @type {[typeof __VLS_components.DropdownMenuPortal, typeof __VLS_components.DropdownMenuPortal, ]} */ ;
+// @ts-ignore
+const __VLS_278 = __VLS_asFunctionalComponent(__VLS_277, new __VLS_277({}));
+const __VLS_279 = __VLS_278({}, ...__VLS_functionalComponentArgsRest(__VLS_278));
+__VLS_280.slots.default;
+const __VLS_281 = {}.DropdownMenuSubContent;
+/** @type {[typeof __VLS_components.DropdownMenuSubContent, typeof __VLS_components.DropdownMenuSubContent, ]} */ ;
+// @ts-ignore
+const __VLS_282 = __VLS_asFunctionalComponent(__VLS_281, new __VLS_281({
+    ...{ class: "z-50 min-w-[140px] rounded-md border bg-popover p-1 text-popover-foreground shadow-md" },
+}));
+const __VLS_283 = __VLS_282({
+    ...{ class: "z-50 min-w-[140px] rounded-md border bg-popover p-1 text-popover-foreground shadow-md" },
+}, ...__VLS_functionalComponentArgsRest(__VLS_282));
+__VLS_284.slots.default;
 for (const [f] of __VLS_getVForSourceType((__VLS_ctx.otherFolders))) {
-    const __VLS_273 = {}.DropdownMenuItem;
+    const __VLS_285 = {}.DropdownMenuItem;
     /** @type {[typeof __VLS_components.DropdownMenuItem, typeof __VLS_components.DropdownMenuItem, ]} */ ;
     // @ts-ignore
-    const __VLS_274 = __VLS_asFunctionalComponent(__VLS_273, new __VLS_273({
+    const __VLS_286 = __VLS_asFunctionalComponent(__VLS_285, new __VLS_285({
         ...{ 'onClick': {} },
         key: (f.id),
         ...{ class: "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent" },
     }));
-    const __VLS_275 = __VLS_274({
+    const __VLS_287 = __VLS_286({
         ...{ 'onClick': {} },
         key: (f.id),
         ...{ class: "relative flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent" },
-    }, ...__VLS_functionalComponentArgsRest(__VLS_274));
-    let __VLS_277;
-    let __VLS_278;
-    let __VLS_279;
-    const __VLS_280 = {
+    }, ...__VLS_functionalComponentArgsRest(__VLS_286));
+    let __VLS_289;
+    let __VLS_290;
+    let __VLS_291;
+    const __VLS_292 = {
         onClick: (...[$event]) => {
             __VLS_ctx.moveToFolder(f);
         }
     };
-    __VLS_276.slots.default;
+    __VLS_288.slots.default;
     if (f.color) {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.span)({
             ...{ class: "mr-2 inline-block h-2 w-2 rounded-full flex-shrink-0" },
@@ -1020,11 +1115,11 @@ for (const [f] of __VLS_getVForSourceType((__VLS_ctx.otherFolders))) {
         });
     }
     (f.name);
-    var __VLS_276;
+    var __VLS_288;
 }
-var __VLS_272;
+var __VLS_284;
+var __VLS_280;
 var __VLS_268;
-var __VLS_256;
 var __VLS_224;
 var __VLS_220;
 var __VLS_205;
@@ -1052,12 +1147,12 @@ if (__VLS_ctx.message) {
     });
     /** @type {[typeof Avatar, ]} */ ;
     // @ts-ignore
-    const __VLS_281 = __VLS_asFunctionalComponent(Avatar, new Avatar({
+    const __VLS_293 = __VLS_asFunctionalComponent(Avatar, new Avatar({
         initials: (__VLS_ctx.message.from_name?.[0] || __VLS_ctx.message.from_address?.[0] || '?'),
     }));
-    const __VLS_282 = __VLS_281({
+    const __VLS_294 = __VLS_293({
         initials: (__VLS_ctx.message.from_name?.[0] || __VLS_ctx.message.from_address?.[0] || '?'),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_281));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_293));
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "grid gap-1" },
     });
@@ -1065,17 +1160,37 @@ if (__VLS_ctx.message) {
         ...{ class: "font-semibold" },
     });
     (__VLS_ctx.message.from_name || __VLS_ctx.message.from_address);
+    if (__VLS_ctx.toDisplay) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "line-clamp-1 text-xs" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+            ...{ class: "font-medium" },
+        });
+        (__VLS_ctx.toDisplay);
+    }
+    if (__VLS_ctx.ccDisplay) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "line-clamp-1 text-xs" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+            ...{ class: "font-medium" },
+        });
+        (__VLS_ctx.ccDisplay);
+    }
+    if (__VLS_ctx.bccDisplay) {
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+            ...{ class: "line-clamp-1 text-xs" },
+        });
+        __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
+            ...{ class: "font-medium" },
+        });
+        (__VLS_ctx.bccDisplay);
+    }
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "line-clamp-1 text-xs" },
     });
     (__VLS_ctx.message.subject);
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "line-clamp-1 text-xs" },
-    });
-    __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-        ...{ class: "font-medium" },
-    });
-    (__VLS_ctx.message.from_address);
     if (__VLS_ctx.displayTimestamp) {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
             ...{ class: "ml-auto text-xs text-muted-foreground" },
@@ -1084,8 +1199,8 @@ if (__VLS_ctx.message) {
     }
     /** @type {[typeof Separator, ]} */ ;
     // @ts-ignore
-    const __VLS_284 = __VLS_asFunctionalComponent(Separator, new Separator({}));
-    const __VLS_285 = __VLS_284({}, ...__VLS_functionalComponentArgsRest(__VLS_284));
+    const __VLS_296 = __VLS_asFunctionalComponent(Separator, new Separator({}));
+    const __VLS_297 = __VLS_296({}, ...__VLS_functionalComponentArgsRest(__VLS_296));
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "flex-1 overflow-y-auto" },
     });
@@ -1109,20 +1224,12 @@ if (__VLS_ctx.message) {
     }
     /** @type {[typeof AttachmentBar, ]} */ ;
     // @ts-ignore
-    const __VLS_287 = __VLS_asFunctionalComponent(AttachmentBar, new AttachmentBar({
+    const __VLS_299 = __VLS_asFunctionalComponent(AttachmentBar, new AttachmentBar({
         attachments: (__VLS_ctx.message.attachments),
     }));
-    const __VLS_288 = __VLS_287({
+    const __VLS_300 = __VLS_299({
         attachments: (__VLS_ctx.message.attachments),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_287));
-    /** @type {[typeof Separator, ]} */ ;
-    // @ts-ignore
-    const __VLS_290 = __VLS_asFunctionalComponent(Separator, new Separator({
-        ...{ class: "mt-auto print-hide" },
-    }));
-    const __VLS_291 = __VLS_290({
-        ...{ class: "mt-auto print-hide" },
-    }, ...__VLS_functionalComponentArgsRest(__VLS_290));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_299));
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "p-4 print-hide" },
     });
@@ -1130,40 +1237,43 @@ if (__VLS_ctx.message) {
         ...{ onSubmit: (__VLS_ctx.sendInlineReply) },
     });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "grid gap-4" },
+        ...{ class: "grid gap-3" },
+    });
+    __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
+        ...{ class: "df-reply-wrapper rounded-2xl p-3" },
     });
     /** @type {[typeof Textarea, ]} */ ;
     // @ts-ignore
-    const __VLS_293 = __VLS_asFunctionalComponent(Textarea, new Textarea({
+    const __VLS_302 = __VLS_asFunctionalComponent(Textarea, new Textarea({
         modelValue: (__VLS_ctx.replyText),
-        ...{ class: "p-4 min-h-[100px]" },
+        ...{ class: "p-2 min-h-[80px] bg-transparent border-0 shadow-none focus-visible:ring-0" },
         placeholder: (`Reply ${__VLS_ctx.message.from_name || __VLS_ctx.message.from_address}...`),
     }));
-    const __VLS_294 = __VLS_293({
+    const __VLS_303 = __VLS_302({
         modelValue: (__VLS_ctx.replyText),
-        ...{ class: "p-4 min-h-[100px]" },
+        ...{ class: "p-2 min-h-[80px] bg-transparent border-0 shadow-none focus-visible:ring-0" },
         placeholder: (`Reply ${__VLS_ctx.message.from_name || __VLS_ctx.message.from_address}...`),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_293));
+    }, ...__VLS_functionalComponentArgsRest(__VLS_302));
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "flex items-center" },
     });
     /** @type {[typeof Button, typeof Button, ]} */ ;
     // @ts-ignore
-    const __VLS_296 = __VLS_asFunctionalComponent(Button, new Button({
+    const __VLS_305 = __VLS_asFunctionalComponent(Button, new Button({
         type: "submit",
         size: "sm",
         ...{ class: "ml-auto" },
         disabled: (__VLS_ctx.sendingReply || !__VLS_ctx.replyText.trim()),
     }));
-    const __VLS_297 = __VLS_296({
+    const __VLS_306 = __VLS_305({
         type: "submit",
         size: "sm",
         ...{ class: "ml-auto" },
         disabled: (__VLS_ctx.sendingReply || !__VLS_ctx.replyText.trim()),
-    }, ...__VLS_functionalComponentArgsRest(__VLS_296));
-    __VLS_298.slots.default;
+    }, ...__VLS_functionalComponentArgsRest(__VLS_305));
+    __VLS_307.slots.default;
     (__VLS_ctx.sendingReply ? 'Sending...' : 'Send');
-    var __VLS_298;
+    var __VLS_307;
 }
 else {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
@@ -1298,6 +1408,19 @@ else {
 /** @type {__VLS_StyleScopedClasses['hover:bg-accent']} */ ;
 /** @type {__VLS_StyleScopedClasses['mr-2']} */ ;
 /** @type {__VLS_StyleScopedClasses['size-4']} */ ;
+/** @type {__VLS_StyleScopedClasses['relative']} */ ;
+/** @type {__VLS_StyleScopedClasses['flex']} */ ;
+/** @type {__VLS_StyleScopedClasses['cursor-pointer']} */ ;
+/** @type {__VLS_StyleScopedClasses['select-none']} */ ;
+/** @type {__VLS_StyleScopedClasses['items-center']} */ ;
+/** @type {__VLS_StyleScopedClasses['rounded-sm']} */ ;
+/** @type {__VLS_StyleScopedClasses['px-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['py-1.5']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-sm']} */ ;
+/** @type {__VLS_StyleScopedClasses['outline-none']} */ ;
+/** @type {__VLS_StyleScopedClasses['hover:bg-accent']} */ ;
+/** @type {__VLS_StyleScopedClasses['mr-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['size-4']} */ ;
 /** @type {__VLS_StyleScopedClasses['my-1']} */ ;
 /** @type {__VLS_StyleScopedClasses['h-px']} */ ;
 /** @type {__VLS_StyleScopedClasses['bg-border']} */ ;
@@ -1363,9 +1486,15 @@ else {
 /** @type {__VLS_StyleScopedClasses['font-semibold']} */ ;
 /** @type {__VLS_StyleScopedClasses['line-clamp-1']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-xs']} */ ;
+/** @type {__VLS_StyleScopedClasses['font-medium']} */ ;
 /** @type {__VLS_StyleScopedClasses['line-clamp-1']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-xs']} */ ;
 /** @type {__VLS_StyleScopedClasses['font-medium']} */ ;
+/** @type {__VLS_StyleScopedClasses['line-clamp-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-xs']} */ ;
+/** @type {__VLS_StyleScopedClasses['font-medium']} */ ;
+/** @type {__VLS_StyleScopedClasses['line-clamp-1']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-xs']} */ ;
 /** @type {__VLS_StyleScopedClasses['ml-auto']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-xs']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-muted-foreground']} */ ;
@@ -1377,14 +1506,19 @@ else {
 /** @type {__VLS_StyleScopedClasses['p-4']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-sm']} */ ;
 /** @type {__VLS_StyleScopedClasses['whitespace-pre-wrap']} */ ;
-/** @type {__VLS_StyleScopedClasses['mt-auto']} */ ;
-/** @type {__VLS_StyleScopedClasses['print-hide']} */ ;
 /** @type {__VLS_StyleScopedClasses['p-4']} */ ;
 /** @type {__VLS_StyleScopedClasses['print-hide']} */ ;
 /** @type {__VLS_StyleScopedClasses['grid']} */ ;
-/** @type {__VLS_StyleScopedClasses['gap-4']} */ ;
-/** @type {__VLS_StyleScopedClasses['p-4']} */ ;
-/** @type {__VLS_StyleScopedClasses['min-h-[100px]']} */ ;
+/** @type {__VLS_StyleScopedClasses['gap-3']} */ ;
+/** @type {__VLS_StyleScopedClasses['df-reply-wrapper']} */ ;
+/** @type {__VLS_StyleScopedClasses['rounded-2xl']} */ ;
+/** @type {__VLS_StyleScopedClasses['p-3']} */ ;
+/** @type {__VLS_StyleScopedClasses['p-2']} */ ;
+/** @type {__VLS_StyleScopedClasses['min-h-[80px]']} */ ;
+/** @type {__VLS_StyleScopedClasses['bg-transparent']} */ ;
+/** @type {__VLS_StyleScopedClasses['border-0']} */ ;
+/** @type {__VLS_StyleScopedClasses['shadow-none']} */ ;
+/** @type {__VLS_StyleScopedClasses['focus-visible:ring-0']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex']} */ ;
 /** @type {__VLS_StyleScopedClasses['items-center']} */ ;
 /** @type {__VLS_StyleScopedClasses['ml-auto']} */ ;
@@ -1434,6 +1568,9 @@ const __VLS_self = (await import('vue')).defineComponent({
             emailIframe: emailIframe,
             safeHtml: safeHtml,
             resizeIframe: resizeIframe,
+            toDisplay: toDisplay,
+            ccDisplay: ccDisplay,
+            bccDisplay: bccDisplay,
             displayTimestamp: displayTimestamp,
             otherFolders: otherFolders,
             replyTo: replyTo,
@@ -1442,6 +1579,7 @@ const __VLS_self = (await import('vue')).defineComponent({
             backToList: backToList,
             trash: trash,
             markUnread: markUnread,
+            markRead: markRead,
             toggleStar: toggleStar,
             moveToFolder: moveToFolder,
             printMessage: printMessage,

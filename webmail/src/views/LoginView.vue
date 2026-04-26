@@ -55,11 +55,11 @@ const redirectToMaster = async () => {
 </script>
 
 <template>
-  <div class="flex h-screen w-screen items-center justify-center bg-background">
-    <div class="w-full max-w-sm space-y-6 rounded-lg border p-8 shadow-sm">
-      <div class="flex flex-col space-y-2 text-center">
-        <h1 class="text-2xl font-semibold tracking-tight">Login to Webmail</h1>
-        <p class="text-sm text-muted-foreground">Sign in with your email and password</p>
+  <div class="flex h-screen w-screen items-center justify-center">
+    <div class="df-login-card w-full max-w-sm space-y-6 p-8">
+      <div class="flex flex-col items-center space-y-1 text-center">
+        <img src="/logo.gif" alt="DockFlare" class="h-12 w-auto select-none mb-1" draggable="false" />
+        <p class="text-sm text-muted-foreground">Webmail</p>
       </div>
 
       <form @submit.prevent="handleLogin" class="space-y-3">
@@ -68,30 +68,88 @@ const redirectToMaster = async () => {
           type="email"
           placeholder="you@example.com"
           required
-          class="input input-bordered w-full"
+          class="df-login-input w-full rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[rgba(251,166,18,0.4)]"
         />
         <input
           v-model="password"
           type="password"
           placeholder="Password"
           required
-          class="input input-bordered w-full"
+          class="df-login-input w-full rounded-xl px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[rgba(251,166,18,0.4)]"
         />
         <p v-if="error" class="text-sm text-destructive">{{ error }}</p>
-        <Button type="submit" class="w-full" :disabled="loading">
+        <button
+          type="submit"
+          class="df-login-submit w-full h-10 rounded-md text-sm font-semibold transition-all disabled:opacity-50"
+          :disabled="loading"
+        >
           {{ loading ? 'Signing in…' : 'Sign in' }}
-        </Button>
+        </button>
       </form>
 
       <div class="flex items-center gap-2">
-        <div class="flex-1 border-t" />
+        <div class="flex-1 border-t border-border" />
         <span class="text-xs text-muted-foreground">or</span>
-        <div class="flex-1 border-t" />
+        <div class="flex-1 border-t border-border" />
       </div>
 
-      <Button variant="outline" class="w-full" @click="redirectToMaster">
+      <button
+        class="df-login-sso w-full h-10 rounded-md text-sm font-medium transition-all"
+        @click="redirectToMaster"
+      >
         Admin SSO
-      </Button>
+      </button>
     </div>
   </div>
 </template>
+
+<style scoped>
+.df-login-card {
+  background: rgba(252, 254, 255, 0.88);
+  backdrop-filter: blur(32px) saturate(1.8);
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  border-radius: 22px;
+  box-shadow: 0 20px 52px rgba(0,0,0,0.13);
+}
+.dark .df-login-card {
+  background: rgba(12, 24, 52, 0.90);
+  border-color: rgba(255, 255, 255, 0.10);
+  box-shadow: 0 20px 52px rgba(0,0,0,0.50);
+}
+
+.df-login-input {
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(128, 128, 128, 0.15);
+}
+.dark .df-login-input {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: hsl(210 40% 92%);
+}
+
+.df-login-submit {
+  background: #FBA612;
+  color: white;
+  box-shadow: 0 2px 10px rgba(251, 166, 18, 0.32);
+}
+.df-login-submit:hover:not(:disabled) {
+  box-shadow: 0 4px 16px rgba(251, 166, 18, 0.45);
+}
+
+.df-login-sso {
+  background: rgba(25, 68, 102, 0.10);
+  color: #194466;
+  border: 1px solid rgba(25, 68, 102, 0.25);
+}
+.df-login-sso:hover {
+  background: rgba(25, 68, 102, 0.18);
+}
+.dark .df-login-sso {
+  background: rgba(94, 177, 229, 0.10);
+  color: #5EB1E5;
+  border: 1px solid rgba(94, 177, 229, 0.22);
+}
+.dark .df-login-sso:hover {
+  background: rgba(94, 177, 229, 0.18);
+}
+</style>

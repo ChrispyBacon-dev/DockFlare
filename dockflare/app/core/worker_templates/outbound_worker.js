@@ -10,10 +10,8 @@ export default {
       return new Response("Unauthorized", { status: 401 });
     }
     const body = await request.json();
-    const toHeader = Array.isArray(body.to) ? body.to.join(", ") : body.to;
-    const rawTo = Array.isArray(body.to) ? body.to[0] : body.to;
-    const addrMatch = typeof rawTo === 'string' ? rawTo.match(/<([^>]+)>/) : null;
-    const toAddress = addrMatch ? addrMatch[1] : (typeof rawTo === 'string' ? rawTo.trim() : rawTo);
+    const toList = Array.isArray(body.to) ? body.to : [body.to];
+    const toHeader = toList.join(", ");
 
     const attachments = Array.isArray(body.attachments) ? body.attachments.filter(a => a && a.data_b64) : [];
     const hasAttachments = attachments.length > 0;
@@ -73,9 +71,13 @@ export default {
       mimeMessage += `--${innerBoundary}--\r\n`;
     }
 
-    const message = new EmailMessage(body.from, toAddress, mimeMessage);
     try {
-      await env.SEND_EMAIL.send(message);
+      for (const recipient of toList) {
+        const addrMatch = typeof recipient === 'string' ? recipient.match(/<([^>]+)>/) : null;
+        const toAddress = addrMatch ? addrMatch[1] : (typeof recipient === 'string' ? recipient.trim() : recipient);
+        const message = new EmailMessage(body.from, toAddress, mimeMessage);
+        await env.SEND_EMAIL.send(message);
+      }
       return new Response(JSON.stringify({ success: true, message_id: body.messageId }), {
         status: 200,
         headers: { "Content-Type": "application/json" }

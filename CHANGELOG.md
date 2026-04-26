@@ -3,6 +3,41 @@
 All notable changes to this project will be documented in this file.
 
 
+## [v3.1.1] - 2026-04-24
+
+### Added
+- **Webmail - Inline Settings:** Settings replaced the modal with a split-panel layout inside the main mail area. Clicking any folder exits settings. Mobile uses a full-screen overlay with a back button.
+- **Webmail - Appearance Setting:** Date and time format selector (US, European, ISO 8601) persisted to localStorage, applied to all timestamps.
+- **Webmail - About and Help Sections:** About shows project links ([dockflare.app](https://dockflare.app), GitHub) and a PWA install prompt. Help is a placeholder for future documentation with a GitHub and issue tracker link.
+- **Webmail - Bulk Email Actions:** Multi-select mode in the message list with select-all, trash, and folder move controls.
+- **Webmail - Animated Logo:** Sidebar shows the animated DockFlare logo when expanded, falls back to `DF` when collapsed.
+- **Email Alias System:** A disposable email alias layer for the DockFlare Email Suite.
+  - **Alias Creation:** Generate aliases with three styles (`word-word-num`, `word-num`, `uuid-short`) or define a custom local-part.
+  - **Inbound Forwarding:** Aliases enforced at the Cloudflare Worker layer via KV lookups. Unknown aliases are rejected at the SMTP level.
+  - **Outbound Reply Support:** Replying to an alias-received email pre-selects the alias as sender via a From dropdown.
+  - **Alias Management UI:** Create, toggle, set expiry, label, describe, and delete aliases from Settings. Usage count tracked per alias.
+  - **Alias Expiry:** Hourly background job deactivates expired aliases and removes their KV entries from Cloudflare.
+  - **Per-Alias Rate Limiting:** 20 alias creations per hour and 100 per mailbox enforced server-side.
+- **Webmail Compose Enhancements:**
+  - **Multi-Recipient To Field:** Multiple recipients as chips, confirmed with Enter, Tab, or comma. Supports paste of comma-separated lists.
+  - **Cc and Bcc Fields:** Hidden by default, revealed via inline buttons.
+  - **Sent Folder Recipient Display:** Sent messages show recipient addresses instead of the sender.
+  - **Emoji Picker:** Searchable, categorized, lazy-loaded emoji selector in the compose toolbar.
+  - **Inline Link Popover:** Link insertion opens an inline popover instead of a browser prompt.
+- **Mobile Support:** Fully responsive webmail for phones and small screens.
+  - **Single-Panel Navigation:** Stacked Folders, Message List, and Message Detail panels with a back button.
+  - **Bottom Navigation Bar:** Persistent bar with Folders, Compose, and Mail shortcuts.
+  - **Full-Screen Compose:** Compose opens as a full-screen overlay on mobile.
+  - **iOS Safe Area Support:** Bottom navigation respects the iOS home indicator via `viewport-fit=cover`.
+
+### Changed
+- **Webmail - Sidebar Layout:** Collapse and expand controls moved to the bottom action bar. Sidebar header reserved for the logo.
+- **Webmail - Folder Navigation:** Removed the "CUSTOM" section label. Active custom folders use a `FolderOpen` icon.
+- **Webmail - Alias Delete:** Native browser confirm dialog replaced with a styled in-app confirmation modal.
+
+### Fixed
+- **Webmail - Dark Mode:** Placeholder text in the reply composer and input backgrounds in the settings panel were broken in dark mode due to a Vue scoped CSS compilation issue. Fixed throughout.
+
 ## [v3.1.0] - 2026-04-16
 
 > **Cloudflare Context:** Cloudflare's Email Service entered public beta today — the same `send_email` Workers binding that powers DockFlare Mail's outbound relay is now generally available. Read the announcement: [Email for Agents](https://blog.cloudflare.com/email-for-agents/)

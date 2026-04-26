@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { ArrowDownUp, Trash2 } from 'lucide-vue-next'
+import { ref, computed, watch } from 'vue'
+import { ArrowDownUp, Trash2, Square, CheckSquare, FolderInput } from 'lucide-vue-next'
 import {
   TabsRoot, TabsList, TabsTrigger, TabsContent,
 } from 'radix-vue'
 import {
   ScrollAreaRoot, ScrollAreaViewport, ScrollAreaScrollbar, ScrollAreaThumb,
+} from 'radix-vue'
+import {
+  DropdownMenuRoot, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuPortal,
 } from 'radix-vue'
 import { useMailStore } from '../../stores/mail'
 import { mailApi } from '../../api/mail'
@@ -14,8 +18,16 @@ import SearchBar from './SearchBar.vue'
 import Dialog from '../ui/Dialog.vue'
 import Button from '../ui/Button.vue'
 
+const props = defineProps({
+  hideTitle: { type: Boolean, default: false },
+})
+
 const store = useMailStore()
 const showTrashConfirm = ref(false)
+
+const bulkSelectMode = ref(false)
+const selectedIds = ref<Set<string>>(new Set())
+const isBulkLoading = ref(false)
 
 const folderColor = computed(() => store.currentFolderObj?.color || '')
 
@@ -39,11 +51,48 @@ const displayMessages = computed(() => {
   })
 })
 
+const trashFolder = computed(() => store.folders.find((f: any) => f.name === 'Trash'))
+const otherFolders = computed(() => store.folders.filter((f: any) => f.name !== store.currentFolder))
+const hasSelection = computed(() => selectedIds.value.size > 0)
+const allSelected = computed(() =>
+  displayMessages.value.length > 0 && selectedIds.value.size === displayMessages.value.length
+)
+
+watch(() => store.activeTab, () => {
+  selectedIds.value = new Set()
+})
+
 const toggleSort = () => {
   store.sortOrder = store.sortOrder === 'desc' ? 'asc' : 'desc'
 }
 
+function toggleBulkSelect() {
+  bulkSelectMode.value = !bulkSelectMode.value
+  if (!bulkSelectMode.value) {
+    selectedIds.value = new Set()
+  }
+}
+
+function toggleSelectAll() {
+  if (allSelected.value) {
+    selectedIds.value = new Set()
+  } else {
+    selectedIds.value = new Set(displayMessages.value.map((m: any) => m.id))
+  }
+}
+
+function toggleMessageSelection(id: string) {
+  const next = new Set(selectedIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedIds.value = next
+}
+
 const selectMessage = (msg: any) => {
+  if (bulkSelectMode.value) {
+    toggleMessageSelection(msg.id)
+    return
+  }
   if (msg.is_draft) {
     let parsed = msg.to_addresses
     if (typeof parsed === 'string') {
@@ -82,51 +131,170 @@ const performEmptyTrash = async () => {
     showTrashConfirm.value = false
   }
 }
+
+async function bulkMoveToTrash() {
+  if (!hasSelection.value || !trashFolder.value) return
+  isBulkLoading.value = true
+  try {
+    await mailApi.moveMessages(store.currentMailbox, {
+      message_ids: [...selectedIds.value],
+      folder_id: trashFolder.value.id,
+    })
+    store.messages = (store.messages as any[]).filter((m: any) => !selectedIds.value.has(m.id)) as any
+    selectedIds.value = new Set()
+    const fRes = await mailApi.getFolders(store.currentMailbox)
+    store.folders = fRes.data
+    store.showToast('Messages moved to Trash', 'success')
+  } catch {
+    store.showToast('Failed to move messages to Trash')
+  } finally {
+    isBulkLoading.value = false
+  }
+}
+
+async function bulkMoveToFolder(folderId: number, folderName: string) {
+  if (!hasSelection.value) return
+  isBulkLoading.value = true
+  try {
+    await mailApi.moveMessages(store.currentMailbox, {
+      message_ids: [...selectedIds.value],
+      folder_id: folderId,
+    })
+    store.messages = (store.messages as any[]).filter((m: any) => !selectedIds.value.has(m.id)) as any
+    selectedIds.value = new Set()
+    const fRes = await mailApi.getFolders(store.currentMailbox)
+    store.folders = fRes.data
+    store.showToast(`Messages moved to ${folderName}`, 'success')
+  } catch {
+    store.showToast('Failed to move messages')
+  } finally {
+    isBulkLoading.value = false
+  }
+}
 </script>
 
 <template>
   <TabsRoot v-model="store.activeTab" class="flex h-full flex-col">
-    <div class="h-[52px] flex items-center px-4 flex-shrink-0">
-      <h1 class="text-xl font-bold">{{ store.currentFolder || 'Inbox' }}</h1>
-      <div class="ml-auto flex items-center gap-1">
+    <div class="flex items-center px-4 flex-shrink-0" :class="hideTitle ? 'h-[44px]' : 'h-[52px]'">
+      <h1 v-if="!hideTitle" class="text-xl font-bold">{{ store.currentFolder || 'Inbox' }}</h1>
+      <div class="flex items-center gap-1" :class="hideTitle ? 'w-full justify-between' : 'ml-auto'">
+
+        <!-- Bulk action controls (visible when bulkSelectMode active) -->
+        <template v-if="bulkSelectMode">
+          <!-- Select all -->
+          <button
+            class="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+            :title="allSelected ? 'Deselect all' : 'Select all'"
+            @click="toggleSelectAll"
+          >
+            <CheckSquare v-if="allSelected" class="size-4" />
+            <Square v-else class="size-4" />
+          </button>
+
+          <!-- Move to trash (hidden when already in Trash) -->
+          <button
+            v-if="store.currentFolder !== 'Trash'"
+            class="inline-flex h-9 w-9 items-center justify-center rounded-md transition-colors"
+            :class="hasSelection && !isBulkLoading
+              ? 'text-muted-foreground hover:bg-destructive hover:text-destructive-foreground'
+              : 'text-muted-foreground/30 cursor-not-allowed'"
+            :disabled="!hasSelection || isBulkLoading"
+            title="Move to Trash"
+            @click="bulkMoveToTrash"
+          >
+            <Trash2 class="size-4" />
+          </button>
+
+          <!-- Move to folder dropdown -->
+          <DropdownMenuRoot>
+            <DropdownMenuTrigger as-child>
+              <button
+                class="inline-flex h-9 w-9 items-center justify-center rounded-md transition-colors"
+                :class="hasSelection && !isBulkLoading
+                  ? 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  : 'text-muted-foreground/30 cursor-not-allowed'"
+                :disabled="!hasSelection || isBulkLoading"
+                title="Move to folder"
+              >
+                <FolderInput class="size-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuPortal>
+              <DropdownMenuContent
+                align="end"
+                :side-offset="4"
+                class="z-50 min-w-[160px] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+              >
+                <DropdownMenuItem
+                  v-for="folder in otherFolders"
+                  :key="folder.id"
+                  class="relative flex cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground"
+                  @click="bulkMoveToFolder(folder.id, folder.name)"
+                >
+                  <span
+                    v-if="folder.color"
+                    class="h-2 w-2 rounded-full flex-shrink-0"
+                    :style="`background: ${folder.color}`"
+                  />
+                  {{ folder.name }}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenuPortal>
+          </DropdownMenuRoot>
+        </template>
+
+        <!-- Empty trash (only outside bulk mode) -->
         <button
-          v-if="store.currentFolder === 'Trash' && store.messages.length > 0"
-          class="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive hover:text-destructive-foreground transition-colors"
+          v-if="store.currentFolder === 'Trash' && store.messages.length > 0 && !bulkSelectMode"
+          class="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive hover:text-destructive-foreground transition-colors"
           title="Empty Trash"
           @click="emptyTrash"
         >
           <Trash2 class="size-4" />
         </button>
+
+        <!-- Checkbox toggle (always visible) -->
         <button
-          class="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+          class="inline-flex h-9 w-9 items-center justify-center rounded-md transition-colors"
+          :class="bulkSelectMode
+            ? 'bg-accent text-[#FBA612]'
+            : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'"
+          title="Select messages"
+          @click="toggleBulkSelect"
+        >
+          <CheckSquare v-if="bulkSelectMode" class="size-4" />
+          <Square v-else class="size-4" />
+        </button>
+
+        <!-- Sort -->
+        <button
+          class="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
           :title="store.sortOrder === 'desc' ? 'Oldest first' : 'Newest first'"
           @click="toggleSort"
         >
           <ArrowDownUp class="size-4" :class="store.sortOrder === 'asc' ? 'rotate-180' : ''" />
         </button>
-        <TabsList class="inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground">
+
+        <TabsList class="inline-flex h-9 items-center gap-1 bg-transparent">
           <TabsTrigger
             value="all"
-            class="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow"
-          >
-            All
-          </TabsTrigger>
+            class="inline-flex items-center justify-center whitespace-nowrap rounded-full py-1.5 px-3 text-sm font-medium transition-all data-[state=active]:font-semibold data-[state=inactive]:text-muted-foreground focus-visible:outline-none min-h-[36px]"
+            :style="store.activeTab === 'all' ? 'background: rgba(251,166,18,0.12); color: #FBA612;' : ''"
+          >All</TabsTrigger>
           <TabsTrigger
             value="unread"
-            class="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow"
-          >
-            Unread
-          </TabsTrigger>
+            class="inline-flex items-center justify-center whitespace-nowrap rounded-full py-1.5 px-3 text-sm font-medium transition-all data-[state=active]:font-semibold data-[state=inactive]:text-muted-foreground focus-visible:outline-none min-h-[36px]"
+            :style="store.activeTab === 'unread' ? 'background: rgba(251,166,18,0.12); color: #FBA612;' : ''"
+          >Unread</TabsTrigger>
           <TabsTrigger
             value="starred"
-            class="inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow"
-          >
-            Starred
-          </TabsTrigger>
+            class="inline-flex items-center justify-center whitespace-nowrap rounded-full py-1.5 px-3 text-sm font-medium transition-all data-[state=active]:font-semibold data-[state=inactive]:text-muted-foreground focus-visible:outline-none min-h-[36px]"
+            :style="store.activeTab === 'starred' ? 'background: rgba(251,166,18,0.12); color: #FBA612;' : ''"
+          >Starred</TabsTrigger>
         </TabsList>
       </div>
     </div>
-    <div class="bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <div class="px-[10px] pb-2">
       <SearchBar />
     </div>
 
@@ -145,6 +313,8 @@ const performEmptyTrash = async () => {
                   :message="msg"
                   :selected="store.currentMessage?.id === msg.id"
                   :folder-color="folderColor"
+                  :bulk-select-mode="bulkSelectMode"
+                  :is-checked="selectedIds.has(msg.id)"
                   @click="selectMessage(msg)"
                 />
               </TransitionGroup>
@@ -183,6 +353,8 @@ const performEmptyTrash = async () => {
                   :message="msg"
                   :selected="store.currentMessage?.id === msg.id"
                   :folder-color="folderColor"
+                  :bulk-select-mode="bulkSelectMode"
+                  :is-checked="selectedIds.has(msg.id)"
                   @click="selectMessage(msg)"
                 />
               </TransitionGroup>
@@ -221,6 +393,8 @@ const performEmptyTrash = async () => {
                   :message="msg"
                   :selected="store.currentMessage?.id === msg.id"
                   :folder-color="folderColor"
+                  :bulk-select-mode="bulkSelectMode"
+                  :is-checked="selectedIds.has(msg.id)"
                   @click="selectMessage(msg)"
                 />
               </TransitionGroup>

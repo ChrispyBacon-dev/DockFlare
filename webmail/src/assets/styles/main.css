@@ -2,50 +2,106 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer utilities {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .h-\[100dvh\] {
+    height: 100dvh;
+  }
+  .df-folder-active {
+    background: rgba(25, 68, 102, 0.88);
+    color: white;
+    box-shadow: 0 2px 10px rgba(25,68,102,0.25);
+  }
+  .dark .df-folder-active {
+    background: rgba(94, 177, 229, 0.85);
+    color: #061526;
+  }
+}
+
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
+    --background:     214 35% 97%;
+    --foreground:     214 60% 12%;
+    --card:           0 0% 100%;
+    --card-foreground: 214 60% 12%;
+    --popover:        0 0% 100%;
+    --popover-foreground: 214 60% 12%;
+
+    --primary:        214 60% 23%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary:      214 25% 93%;
+    --secondary-foreground: 214 60% 23%;
+    --muted:          214 20% 93%;
+    --muted-foreground: 214 18% 46%;
+    --accent:         214 20% 93%;
+    --accent-foreground: 214 60% 23%;
+
+    --destructive:    0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border:         214 22% 88%;
+    --input:          214 22% 88%;
+    --ring:           214 60% 23%;
+    --radius:         0.5rem;
+
+    --df-accent:        38 97% 52%;
+    --df-accent-hover:  35 97% 48%;
+    --df-blue:          204 73% 63%;
+
+    --df-sidebar-bg:    rgba(232, 241, 255, 0.62);
+    --df-sidebar-blur:  blur(24px) saturate(1.6);
+    --df-list-bg:       rgba(245, 249, 255, 0.74);
+    --df-list-blur:     blur(18px) saturate(1.4);
+    --df-pane-bg:       rgba(255, 255, 255, 0.88);
+    --df-pane-blur:     blur(12px);
+
+    --df-shadow-xs:    0 1px 4px rgba(0,0,0,0.06);
+    --df-shadow-sm:    0 2px 10px rgba(0,0,0,0.07), 0 1px 3px rgba(0,0,0,0.04);
+    --df-shadow-md:    0 6px 24px rgba(0,0,0,0.09), 0 2px 8px rgba(0,0,0,0.05);
+    --df-shadow-lg:    0 20px 52px rgba(0,0,0,0.13), 0 6px 18px rgba(0,0,0,0.07);
+    --df-shadow-float: 0 4px 18px rgba(0,0,0,0.10), 0 1px 5px rgba(0,0,0,0.06);
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --background:     222 38% 7%;
+    --foreground:     210 40% 95%;
+    --card:           222 32% 11%;
+    --card-foreground: 210 40% 95%;
+    --popover:        222 32% 11%;
+    --popover-foreground: 210 40% 95%;
+
+    --primary:        204 73% 63%;
+    --primary-foreground: 220 60% 6%;
+
+    --secondary:      222 28% 17%;
+    --secondary-foreground: 210 40% 95%;
+    --muted:          222 28% 17%;
+    --muted-foreground: 215 18% 58%;
+    --accent:         222 28% 17%;
+    --accent-foreground: 210 40% 95%;
+
+    --destructive:    0 55% 42%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border:         222 26% 22%;
+    --input:          222 26% 22%;
+    --ring:           204 73% 63%;
+
+    --df-sidebar-bg:  rgba(6, 14, 32, 0.65);
+    --df-list-bg:     rgba(10, 20, 44, 0.72);
+    --df-pane-bg:     rgba(14, 26, 54, 0.86);
+
+    --df-shadow-xs:    0 1px 4px rgba(0,0,0,0.22);
+    --df-shadow-sm:    0 2px 10px rgba(0,0,0,0.30);
+    --df-shadow-md:    0 6px 24px rgba(0,0,0,0.38);
+    --df-shadow-lg:    0 20px 52px rgba(0,0,0,0.52);
+    --df-shadow-float: 0 4px 18px rgba(0,0,0,0.34);
   }
 }
 
@@ -54,7 +110,19 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    font-family: 'DM Sans', -apple-system, sans-serif;
+    background: linear-gradient(148deg,
+      oklch(0.89 0.028 255) 0%,
+      oklch(0.94 0.014 215) 42%,
+      oklch(0.90 0.022 280) 100%);
+    min-height: 100vh;
+  }
+  .dark body {
+    background: linear-gradient(148deg,
+      oklch(0.085 0.032 258) 0%,
+      oklch(0.11 0.026 238) 42%,
+      oklch(0.078 0.030 274) 100%);
   }
 }
 
@@ -76,7 +144,7 @@
   .print-hide, .print-hide * {
     display: none !important;
   }
-  #print-message-area .flex-1 { 
-    overflow: visible !important; 
+  #print-message-area .flex-1 {
+    overflow: visible !important;
   }
 }

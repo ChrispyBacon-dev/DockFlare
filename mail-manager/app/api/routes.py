@@ -6,7 +6,7 @@ import re
 import shutil
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import requests as http_requests
 from flask import Blueprint, request, jsonify, send_file
@@ -15,6 +15,7 @@ from app.config import config
 from app.core.database import get_db
 from app.api.middleware import jwt_required, admin_required
 from app.core.rate_limiter import limiter
+from app.core.alias_words import generate_alias, validate_alias_address
 
 log = logging.getLogger(__name__)
 api_bp = Blueprint('api', __name__)
@@ -749,7 +750,7 @@ def _local_deliver(db, recipient_addr, from_address, to_field, data, subject, te
     log.info("Local delivery: msg_id=%s to=%s", local_msg_id, recipient_addr)
 
 
-def _dispatch_send(address, data):
+def _dispatch_send(address, data, effective_from=None, via_alias=None):
     allowed, reason = limiter.check_rate(address)
     if not allowed:
         return jsonify({"error": reason}), 429
@@ -759,6 +760,16 @@ def _dispatch_send(address, data):
         to_field = [to_field]
     if not to_field:
         return jsonify({"error": "to is required"}), 400
+
+    cc_field = data.get('cc') or []
+    if isinstance(cc_field, str):
+        cc_field = [cc_field]
+    data['cc'] = cc_field
+
+    bcc_field = data.get('bcc') or []
+    if isinstance(bcc_field, str):
+        bcc_field = [bcc_field]
+    data['bcc'] = bcc_field
 
     subject = data.get('subject', '')
     text = data.get('text') or data.get('text_body', '')
@@ -773,6 +784,7 @@ def _dispatch_send(address, data):
     if total_attach > _MAX_ATTACH_BYTES:
         return jsonify({"error": "attachments exceed 10 MB limit"}), 413
 
+    from_address = effective_from or address
     now = datetime.now(timezone.utc).isoformat()
     msg_id = f"<{uuid.uuid4()}@{address.split('@')[1]}>"
 
@@ -807,7 +819,7 @@ def _dispatch_send(address, data):
 
     if external_recipients:
         worker_payload = {
-            "from": address,
+            "from": from_address,
             "to": external_recipients,
             "cc": data.get('cc'),
             "bcc": data.get('bcc'),
@@ -840,8 +852,8 @@ def _dispatch_send(address, data):
             error_msg = 'Outbound worker not configured'
 
     db.execute(
-        "INSERT INTO send_log (message_id, from_address, to_addresses, subject, sent_at, status, error_message, worker_response) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (msg_id, address, json.dumps(to_field), subject, now, status, error_msg, worker_resp),
+        "INSERT INTO send_log (message_id, from_address, to_addresses, subject, sent_at, status, error_message, worker_response, via_alias) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (msg_id, from_address, json.dumps(to_field), subject, now, status, error_msg, worker_resp, via_alias),
     )
 
     if status == 'sent':
@@ -860,7 +872,7 @@ def _dispatch_send(address, data):
                     reference_ids, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0, ?, ?, ?)
             """, (
-                msg_id, address, sent_folder['id'], address,
+                msg_id, address, sent_folder['id'], from_address,
                 json.dumps(to_field), json.dumps(data.get('cc') or []),
                 subject, text, html, now,
                 data.get('in_reply_to') or data.get('inReplyTo', ''),
@@ -891,15 +903,12 @@ def send_email(address):
     if not _check_mailbox_access(address):
         return jsonify({"error": "forbidden"}), 403
     if request.content_type and 'multipart/form-data' in request.content_type:
-        data = dict(request.form)
-        # Flatten single-value lists produced by request.form
-        data = {k: v[0] if isinstance(v, list) and len(v) == 1 else v for k, v in data.items()}
+        data = {k: request.form.getlist(k) if len(request.form.getlist(k)) > 1 else request.form.get(k)
+                for k in request.form.keys()}
         files = request.files.getlist('attachments')
-        log.debug("send_email multipart: form_keys=%s file_count=%d", list(data.keys()), len(files))
         attachments = []
         for f in files:
             raw = f.read()
-            log.debug("send_email attachment: filename=%s content_type=%s size=%d", f.filename, f.content_type, len(raw))
             attachments.append({
                 'filename': f.filename,
                 'content_type': f.content_type or 'application/octet-stream',
@@ -909,7 +918,24 @@ def send_email(address):
         data['attachments'] = attachments
     else:
         data = request.json or {}
-    return _dispatch_send(address, data)
+
+    from_override = (data.get('from_address') or '').strip()
+    effective_from = None
+    via_alias = None
+
+    if from_override and from_override != address:
+        db = get_db()
+        now_iso = datetime.now(timezone.utc).isoformat()
+        alias_row = db.execute(
+            "SELECT address FROM aliases WHERE address=? AND mailbox_address=? AND is_active=1 AND (expires_at IS NULL OR expires_at > ?)",
+            (from_override, address, now_iso)
+        ).fetchone()
+        if not alias_row:
+            return jsonify({"error": "unauthorized_sender"}), 403
+        effective_from = from_override
+        via_alias = from_override
+
+    return _dispatch_send(address, data, effective_from=effective_from, via_alias=via_alias)
 
 
 @api_bp.route('/mailboxes/<address>/drafts', methods=['POST'])
@@ -1233,3 +1259,264 @@ def list_auto_responders():
     db = get_db()
     rows = db.execute("SELECT mailbox_address, is_active FROM auto_responders").fetchall()
     return jsonify({"auto_responders": [dict(r) for r in rows]})
+
+
+_ALIAS_MAX_PER_MAILBOX = int(os.environ.get('ALIAS_MAX_PER_MAILBOX', 100))
+_ALIAS_RATE_LIMIT_PER_HOUR = 20
+
+
+def _sync_alias_kv(alias_address, mailbox_address, action):
+    master_url = os.environ.get('DOCKFLARE_MASTER_URL', '').rstrip('/')
+    if not master_url:
+        return False
+    payload = {"domain": alias_address.split('@')[1], "alias_address": alias_address, "action": action}
+    if action == "put":
+        payload["mailbox_address"] = mailbox_address
+    try:
+        resp = http_requests.post(
+            f"{master_url}/email/internal/alias-kv-sync",
+            json=payload,
+            headers={"X-Bootstrap-Token": os.environ.get("INTERNAL_BOOTSTRAP_SECRET", "")},
+            timeout=5,
+        )
+        if not resp.ok:
+            log.error("alias-kv-sync %s failed for %s: HTTP %s %s", action, alias_address, resp.status_code, resp.text[:200])
+        return resp.ok
+    except Exception as e:
+        log.error("alias-kv-sync %s failed for %s: %s", action, alias_address, e)
+        return False
+
+
+def _alias_to_dict(row):
+    return {
+        "address": row["address"],
+        "mailbox_address": row["mailbox_address"],
+        "domain": row["domain"],
+        "label": row["label"],
+        "description": row["description"],
+        "is_active": bool(row["is_active"]),
+        "expires_at": row["expires_at"],
+        "created_at": row["created_at"],
+        "use_count": row["use_count"],
+        "last_use_at": row["last_use_at"],
+    }
+
+
+def _caller_mailboxes():
+    user = request.user
+    if user.get('role') == 'admin':
+        return None
+    return set(user.get('mailboxes', []))
+
+
+def _check_alias_ownership(alias_row):
+    user = request.user
+    if user.get('role') == 'admin':
+        return True
+    return alias_row['mailbox_address'] in user.get('mailboxes', [])
+
+
+@api_bp.route('/aliases', methods=['GET'])
+@jwt_required
+def list_aliases():
+    db = get_db()
+    caller_mailboxes = _caller_mailboxes()
+    domain_filter = request.args.get('domain', '').strip()
+    active_filter = request.args.get('active', '')
+    label_filter = request.args.get('label', '').strip()
+    mailbox_filter = request.args.get('mailbox', '').strip()
+
+    conditions = []
+    params = []
+
+    if caller_mailboxes is not None:
+        placeholders = ','.join('?' * len(caller_mailboxes))
+        conditions.append(f"mailbox_address IN ({placeholders})")
+        params.extend(list(caller_mailboxes))
+    elif mailbox_filter:
+        conditions.append("mailbox_address = ?")
+        params.append(mailbox_filter)
+
+    if domain_filter:
+        conditions.append("domain = ?")
+        params.append(domain_filter)
+    if active_filter != '':
+        conditions.append("is_active = ?")
+        params.append(1 if active_filter in ('1', 'true') else 0)
+    if label_filter:
+        conditions.append("label = ?")
+        params.append(label_filter)
+
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    rows = db.execute(f"SELECT * FROM aliases {where} ORDER BY created_at DESC", params).fetchall()
+    aliases = [_alias_to_dict(r) for r in rows]
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    total = len(aliases)
+    active = sum(1 for a in aliases if a['is_active'] and (not a['expires_at'] or a['expires_at'] > now_iso))
+    expired = sum(1 for a in aliases if a['expires_at'] and a['expires_at'] <= now_iso)
+    disabled = sum(1 for a in aliases if not a['is_active'])
+
+    return jsonify({"aliases": aliases, "total": total, "active": active, "expired": expired, "disabled": disabled})
+
+
+@api_bp.route('/aliases/generate', methods=['POST'])
+@jwt_required
+def generate_alias_suggestion():
+    data = request.json or {}
+    mailbox_address = (data.get('mailbox_address') or '').strip()
+    domain = (data.get('domain') or '').strip()
+    style = data.get('style', 'word-word-num')
+
+    if not mailbox_address or not domain:
+        return jsonify({"error": "mailbox_address and domain are required"}), 400
+    if style not in ('word-word-num', 'word-num', 'uuid-short'):
+        return jsonify({"error": "invalid style"}), 400
+
+    caller_mailboxes = _caller_mailboxes()
+    if caller_mailboxes is not None and mailbox_address not in caller_mailboxes:
+        return jsonify({"error": "forbidden"}), 403
+
+    db = get_db()
+    if not db.execute("SELECT 1 FROM mailboxes WHERE address=? AND domain=?", (mailbox_address, domain)).fetchone():
+        return jsonify({"error": "mailbox not found for domain"}), 404
+
+    suggestion = generate_alias(domain, style=style, db=db)
+    return jsonify({"suggestion": suggestion, "available": True})
+
+
+@api_bp.route('/aliases', methods=['POST'])
+@jwt_required
+def create_alias():
+    data = request.json or {}
+    address = (data.get('address') or '').strip().lower()
+    mailbox_address = (data.get('mailbox_address') or '').strip()
+    label = (data.get('label') or '').strip() or None
+    description = (data.get('description') or '').strip()[:200] or None
+    expires_at = data.get('expires_at') or None
+
+    if not address or not mailbox_address:
+        return jsonify({"error": "address and mailbox_address are required"}), 400
+
+    valid, err = validate_alias_address(address)
+    if not valid:
+        return jsonify({"error": err}), 400
+
+    alias_domain = address.split('@')[1]
+
+    caller_mailboxes = _caller_mailboxes()
+    if caller_mailboxes is not None and mailbox_address not in caller_mailboxes:
+        return jsonify({"error": "forbidden"}), 403
+
+    db = get_db()
+
+    if not db.execute("SELECT 1 FROM mailboxes WHERE address=? AND domain=?", (mailbox_address, alias_domain)).fetchone():
+        return jsonify({"error": "mailbox not found or domain mismatch"}), 403
+
+    if db.execute("SELECT 1 FROM aliases WHERE address=?", (address,)).fetchone():
+        return jsonify({"error": "alias already exists"}), 409
+    if db.execute("SELECT 1 FROM mailboxes WHERE address=?", (address,)).fetchone():
+        return jsonify({"error": "address already used as mailbox"}), 409
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    if expires_at:
+        if not isinstance(expires_at, str) or expires_at <= now_iso:
+            return jsonify({"error": "expires_at must be a future ISO-8601 datetime"}), 400
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    rate_count = db.execute(
+        "SELECT COUNT(*) FROM aliases WHERE mailbox_address=? AND created_at > ?",
+        (mailbox_address, cutoff)
+    ).fetchone()[0]
+    if rate_count >= _ALIAS_RATE_LIMIT_PER_HOUR:
+        return jsonify({"error": "rate_limit", "message": "max 20 aliases per hour"}), 429
+
+    total_count = db.execute(
+        "SELECT COUNT(*) FROM aliases WHERE mailbox_address=?", (mailbox_address,)
+    ).fetchone()[0]
+    if total_count >= _ALIAS_MAX_PER_MAILBOX:
+        return jsonify({"error": "alias_limit_reached", "message": f"max {_ALIAS_MAX_PER_MAILBOX} aliases per mailbox"}), 429
+
+    db.execute(
+        "INSERT INTO aliases (address, mailbox_address, domain, label, description, is_active, expires_at, created_at, use_count) VALUES (?, ?, ?, ?, ?, 1, ?, ?, 0)",
+        (address, mailbox_address, alias_domain, label, description, expires_at, now_iso)
+    )
+    db.commit()
+
+    threading.Thread(target=_sync_alias_kv, args=(address, mailbox_address, "put"), daemon=True).start()
+
+    row = db.execute("SELECT * FROM aliases WHERE address=?", (address,)).fetchone()
+    return jsonify(_alias_to_dict(row)), 201
+
+
+@api_bp.route('/aliases/<path:address>', methods=['GET'])
+@jwt_required
+def get_alias(address):
+    db = get_db()
+    row = db.execute("SELECT * FROM aliases WHERE address=?", (address,)).fetchone()
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    if not _check_alias_ownership(row):
+        return jsonify({"error": "forbidden"}), 403
+    return jsonify(_alias_to_dict(row))
+
+
+@api_bp.route('/aliases/<path:address>', methods=['PATCH'])
+@jwt_required
+def update_alias(address):
+    db = get_db()
+    row = db.execute("SELECT * FROM aliases WHERE address=?", (address,)).fetchone()
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    if not _check_alias_ownership(row):
+        return jsonify({"error": "forbidden"}), 403
+
+    data = request.json or {}
+    updates = {}
+    kv_action = None
+
+    if 'is_active' in data:
+        new_active = 1 if data['is_active'] else 0
+        updates['is_active'] = new_active
+        kv_action = "put" if new_active else "delete"
+
+    if 'label' in data:
+        updates['label'] = (data['label'] or '').strip() or None
+    if 'description' in data:
+        updates['description'] = (data['description'] or '').strip()[:200] or None
+    if 'expires_at' in data:
+        updates['expires_at'] = data['expires_at'] or None
+
+    if not updates:
+        return jsonify({"error": "no valid fields to update"}), 400
+
+    set_clause = ', '.join(f"{k}=?" for k in updates)
+    db.execute(f"UPDATE aliases SET {set_clause} WHERE address=?", list(updates.values()) + [address])
+    db.commit()
+
+    if kv_action:
+        mailbox = row['mailbox_address']
+        threading.Thread(target=_sync_alias_kv, args=(address, mailbox, kv_action), daemon=True).start()
+
+    row = db.execute("SELECT * FROM aliases WHERE address=?", (address,)).fetchone()
+    return jsonify(_alias_to_dict(row))
+
+
+@api_bp.route('/aliases/<path:address>', methods=['DELETE'])
+@jwt_required
+def delete_alias(address):
+    db = get_db()
+    row = db.execute("SELECT * FROM aliases WHERE address=?", (address,)).fetchone()
+    if not row:
+        return jsonify({"error": "not found"}), 404
+    if not _check_alias_ownership(row):
+        return jsonify({"error": "forbidden"}), 403
+
+    mailbox = row['mailbox_address']
+    db.execute("DELETE FROM aliases WHERE address=?", (address,))
+    db.commit()
+
+    threading.Thread(target=_sync_alias_kv, args=(address, mailbox, "delete"), daemon=True).start()
+
+    return jsonify({"status": "deleted"})
