@@ -7,11 +7,19 @@ Bevor Sie beginnen, stellen Sie sicher, dass Sie Folgendes haben:
 *   **Ihre Cloudflare-Konto-ID:** Sie finden Ihre Konto-ID im Cloudflare-Dashboard.
 *   **Die Zonen-ID für die Domain, die Sie verwenden möchten:** Jede Domain in Cloudflare hat eine eindeutige Zonen-ID.
 *   **Ein Cloudflare API-Token:** Sie müssen ein Cloudflare API-Token mit den folgenden Berechtigungen erstellen:
-    *   `Account:Cloudflare Tunnel:Edit`
-    *   `Account:Account Settings:Read`
-    *   `Account:Access: Apps and Policies:Edit`
-    *   `Account:Access: Organizations, Identity Providers, and Groups:Edit`
-    *   `Zone:Zone:Read`
-    *   `Zone:DNS:Edit`
+    * `Account:Cloudflare Tunnel:Write`
+    * `Account:Account Settings:Read`
+    * `Account:Access: Apps and Policies:Write`
+    * `Account:Access: Organizations, Identity Providers, and Groups:Write`
+    * `Account:Access: Service Tokens:Write`
+    * `Zone:Zone:Read`
+    * `Zone:DNS:Write`
+
+    **For optional DockFlare Email features, add these additional permissions:**
+    * `Workers Scripts:Write`
+    * `Workers KV Storage:Write`
+    * `Workers R2 Storage:Write`
+    * `Email Routing Addresses:Write`
+    * `Email Routing Rules:Write`
 
 ![Cloudflare API Berechtigungen](../static/images/cf.png)

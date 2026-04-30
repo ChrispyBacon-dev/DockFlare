@@ -7,11 +7,19 @@ Zanim zaczniesz, upewnij się, że masz następujące elementy:
 * **Identyfikator Twojego konta Cloudflare:** Identyfikator Twojego konta znajdziesz w panelu kontrolnym Cloudflare.
 * **Identyfikator strefy dla domeny, której chcesz używać:** Każda domena w Cloudflare ma unikalny identyfikator strefy.
 * **Token API Cloudflare:** Musisz utworzyć token API Cloudflare z następującymi uprawnieniami:
-    * `Account:Cloudflare Tunnel:Edit`
+    * `Account:Cloudflare Tunnel:Write`
     * `Account:Account Settings:Read`
-    * `Account:Access: Apps and Policies:Edit`
-    * `Account:Access: Organizations, Identity Providers, and Groups:Edit`
+    * `Account:Access: Apps and Policies:Write`
+    * `Account:Access: Organizations, Identity Providers, and Groups:Write`
+    * `Account:Access: Service Tokens:Write`
     * `Zone:Zone:Read`
-    * `Zone:DNS:Edit`  
+    * `Zone:DNS:Write`
+
+    **For optional DockFlare Email features, add these additional permissions:**
+    * `Workers Scripts:Write`
+    * `Workers KV Storage:Write`
+    * `Workers R2 Storage:Write`
+    * `Email Routing Addresses:Write`
+    * `Email Routing Rules:Write`
 
 ![Uprawnienia API Cloudflare](../static/images/cf.png)

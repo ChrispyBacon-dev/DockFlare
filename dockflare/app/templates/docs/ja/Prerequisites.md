@@ -7,11 +7,19 @@
 * **Cloudflare Account ID:** Cloudflare ダッシュボードで確認できます。
 * **利用するドメインの Zone ID:** Cloudflare 上の各ドメインには固有の Zone ID があります。
 * **Cloudflare API Token:** 次の権限を持つ Cloudflare API トークンを作成する必要があります。
-    * `Account:Cloudflare Tunnel:Edit`
+    * `Account:Cloudflare Tunnel:Write`
     * `Account:Account Settings:Read`
-    * `Account:Access: Apps and Policies:Edit`
-    * `Account:Access: Organizations, Identity Providers, and Groups:Edit`
+    * `Account:Access: Apps and Policies:Write`
+    * `Account:Access: Organizations, Identity Providers, and Groups:Write`
+    * `Account:Access: Service Tokens:Write`
     * `Zone:Zone:Read`
-    * `Zone:DNS:Edit`
+    * `Zone:DNS:Write`
+
+    **For optional DockFlare Email features, add these additional permissions:**
+    * `Workers Scripts:Write`
+    * `Workers KV Storage:Write`
+    * `Workers R2 Storage:Write`
+    * `Email Routing Addresses:Write`
+    * `Email Routing Rules:Write`
 
 ![Cloudflare API 権限](../static/images/cf.png)

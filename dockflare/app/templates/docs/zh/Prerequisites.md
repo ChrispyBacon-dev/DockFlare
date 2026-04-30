@@ -7,11 +7,19 @@
 * **您的 Cloudflare 帐户 ID：** 您可以在 Cloudflare 仪表板中找到您的帐户 ID。
 * **您要使用的域的区域 ID：** Cloudflare 中的每个域都有一个唯一的区域 ID。
 * **Cloudflare API 令牌：** 您需要创建具有以下权限的 Cloudflare API 令牌：
-    * `Account:Cloudflare Tunnel:Edit`
+    * `Account:Cloudflare Tunnel:Write`
     * `Account:Account Settings:Read`
-    * `Account:Access: Apps and Policies:Edit`
-    * `Account:Access: Organizations, Identity Providers, and Groups:Edit`
+    * `Account:Access: Apps and Policies:Write`
+    * `Account:Access: Organizations, Identity Providers, and Groups:Write`
+    * `Account:Access: Service Tokens:Write`
     * `Zone:Zone:Read`
-    * `Zone:DNS:Edit`  
+    * `Zone:DNS:Write`
+
+    **For optional DockFlare Email features, add these additional permissions:**
+    * `Workers Scripts:Write`
+    * `Workers KV Storage:Write`
+    * `Workers R2 Storage:Write`
+    * `Email Routing Addresses:Write`
+    * `Email Routing Rules:Write`
 
 ![Cloudflare API 权限](../static/images/cf.png)
