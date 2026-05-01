@@ -106,6 +106,6 @@ class CloudflareCredentialsForm(FlaskForm):
     )
     cf_api_token = PasswordField(
         'Cloudflare API Token',
-        validators=[Optional(), Length(min=40, max=40, message="API Token must be 40 characters long.")]
+        validators=[Optional(), Length(min=40, max=100, message="API Token must be at least 40 characters long.")]
     )
     submit_cloudflare_credentials = SubmitField('Update Cloudflare Credentials')

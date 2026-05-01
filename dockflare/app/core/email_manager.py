@@ -63,7 +63,7 @@ def enable_email_routing(zone_id):
 def enable_email_sending(zone_id, zone_name):
     try:
         subdomain = f"mail.{zone_name}"
-        res = cf_api_request('POST', f'/zones/{zone_id}/email/sending/subdomains', data={"name": subdomain})
+        res = cf_api_request('POST', f'/zones/{zone_id}/email/sending/subdomains', json_data={"name": subdomain})
         logging.info(f"Email sending enabled for {zone_name} (subdomain: {subdomain})")
         return res
     except Exception as e:
@@ -191,7 +191,11 @@ def create_r2_bucket(bucket_name):
 
 def get_r2_s3_credentials():
     import hashlib
-    token_verify = cf_api_request('GET', f'/accounts/{config.CF_ACCOUNT_ID}/tokens/verify')
+    token = getattr(config, 'CF_API_TOKEN', '') or ''
+    if token.startswith('cfat_'):
+        token_verify = cf_api_request('GET', f'/accounts/{config.CF_ACCOUNT_ID}/tokens/verify')
+    else:
+        token_verify = cf_api_request('GET', '/user/tokens/verify')
     token_id = token_verify.get('result', {}).get('id', '')
     secret = hashlib.sha256(config.CF_API_TOKEN.encode()).hexdigest()
     return {
