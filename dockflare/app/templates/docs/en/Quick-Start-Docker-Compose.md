@@ -4,25 +4,21 @@ This guide walks through the fastest way to run DockFlare with the hardened sock
 
 ## Option A — One-Liner Install (Recommended)
 
-The quickest way to get DockFlare running is the install script hosted at [dockflare.app](https://dockflare.app):
+The quickest way to get DockFlare running is the interactive install script hosted at [dockflare.app](https://dockflare.app):
 
 ```bash
-curl -fsSL https://dockflare.app/install.sh | bash
+bash <(curl -fsSL https://dockflare.app/install.sh)
 ```
 
-The script will:
-1. Check that Docker and Docker Compose are available.
-2. Create `~/dockflare/` and write a `docker-compose.yml` there.
-3. Create the `cloudflare-net` Docker network if it does not exist.
-4. Pull the images and start all services.
-5. Print the local URL when done.
+The script will guide you through:
+1. Choosing an install directory (default: `~/dockflare/`).
+2. Choosing a local UI port (default: `5000`).
+3. Optionally configuring a Cloudflare Tunnel for DockFlare itself.
+4. Optionally enabling the Email profile (dockflare-mail-manager + dockflare-webmail).
+
+It then writes `docker-compose.yml`, lets you review it, and asks before pulling and starting the stack.
 
 Once running, open `http://<your-server-ip>:5000` and complete the setup wizard.
-
-> **Optional overrides** — set environment variables before piping to control the install:
-> ```bash
-> DOCKFLARE_PORT=8080 DOCKFLARE_DIR=/opt/dockflare curl -fsSL https://dockflare.app/install.sh | bash
-> ```
 
 ---
 

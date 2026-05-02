@@ -4,25 +4,21 @@ Questa guida illustra il modo più veloce per eseguire DockFlare con un `docker-
 
 ## Opzione A — Installazione con un solo comando (Consigliato)
 
-Il modo più rapido per avviare DockFlare è lo script di installazione disponibile su [dockflare.app](https://dockflare.app):
+Il modo più rapido per avviare DockFlare è lo script di installazione interattivo disponibile su [dockflare.app](https://dockflare.app):
 
 ```bash
-curl -fsSL https://dockflare.app/install.sh | bash
+bash <(curl -fsSL https://dockflare.app/install.sh)
 ```
 
-Lo script eseguirà le seguenti operazioni:
-1. Verificare che Docker e Docker Compose siano disponibili.
-2. Creare `~/dockflare/` e scrivere un file `docker-compose.yml` al suo interno.
-3. Creare la rete Docker `cloudflare-net` se non esiste ancora.
-4. Scaricare le immagini e avviare tutti i servizi.
-5. Stampare l'URL locale al termine.
+Lo script ti guiderà attraverso:
+1. La scelta della directory di installazione (predefinita: `~/dockflare/`).
+2. La scelta della porta locale dell'interfaccia (predefinita: `5000`).
+3. La configurazione opzionale di un tunnel Cloudflare per DockFlare.
+4. L'attivazione opzionale del profilo e-mail (dockflare-mail-manager + dockflare-webmail).
+
+Genera quindi il file `docker-compose.yml`, ti permette di verificarlo e chiede conferma prima di avviare lo stack.
 
 Una volta avviato, apri `http://<your-server-ip>:5000` e completa la procedura guidata di configurazione.
-
-> **Sostituzioni opzionali** — imposta le variabili d'ambiente prima del pipe per controllare l'installazione:
-> ```bash
-> DOCKFLARE_PORT=8080 DOCKFLARE_DIR=/opt/dockflare curl -fsSL https://dockflare.app/install.sh | bash
-> ```
 
 ---
 

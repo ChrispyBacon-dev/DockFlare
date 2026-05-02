@@ -4,25 +4,21 @@
 
 ## オプション A — ワンライナーインストール（推奨）
 
-DockFlare を最短で起動するには、[dockflare.app](https://dockflare.app) でホストされているインストールスクリプトを使用します：
+DockFlare を最短で起動するには、[dockflare.app](https://dockflare.app) でホストされているインタラクティブなインストールスクリプトを使用します：
 
 ```bash
-curl -fsSL https://dockflare.app/install.sh | bash
+bash <(curl -fsSL https://dockflare.app/install.sh)
 ```
 
-スクリプトは以下を実行します：
-1. Docker と Docker Compose が利用可能かどうかを確認します。
-2. `~/dockflare/` を作成し、そこに `docker-compose.yml` を書き込みます。
-3. `cloudflare-net` Docker ネットワークが存在しない場合は作成します。
-4. イメージをプルしてすべてのサービスを起動します。
-5. 完了したらローカル URL を表示します。
+スクリプトは以下の手順を案内します：
+1. インストールディレクトリの選択（デフォルト：`~/dockflare/`）。
+2. ローカル UI ポートの選択（デフォルト：`5000`）。
+3. DockFlare 自身の Cloudflare トンネルの設定（オプション）。
+4. メールプロファイルの有効化（オプション）（dockflare-mail-manager + dockflare-webmail）。
+
+その後、`docker-compose.yml` を生成し、確認を求めてからスタックを起動します。
 
 起動後、`http://<your-server-ip>:5000` を開いてセットアップウィザードを完了してください。
-
-> **オプションの上書き設定** — パイプする前に環境変数を設定してインストールをカスタマイズできます：
-> ```bash
-> DOCKFLARE_PORT=8080 DOCKFLARE_DIR=/opt/dockflare curl -fsSL https://dockflare.app/install.sh | bash
-> ```
 
 ---
 

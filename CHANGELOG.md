@@ -38,6 +38,17 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - **Webmail - Dark Mode:** Placeholder text in the reply composer and input backgrounds in the settings panel were broken in dark mode due to a Vue scoped CSS compilation issue. Fixed throughout.
 
+### Hotfixes (post-release)
+- **Inbound - R2 Cron Delivery:** Emails buffered in R2 were not delivered when the EML `To:` header differed from the SMTP envelope recipient (e.g. GitHub mailing list addresses). Mail manager now falls back through payload `resolved_mailbox`, EML delivery headers (`X-GitHub-Recipient-Address`, `Delivered-To`), and the `Received: for <addr>` header.
+- **Inbound - Worker `list()` Metadata:** Cloudflare R2 `list()` does not return `customMetadata` unless explicitly requested. Added `include: ['customMetadata']` to the cron sweep so envelope metadata is available on retry.
+- **Inbound - R2 Delete Error Handling:** A transient R2 delete failure in the success path caused a false HTTP 500 response despite the message being delivered. Now try/except with a warning log; cron cleans up any orphaned object.
+- **Inbound - Empty Message-ID:** Emails with no `Message-ID` header produced an empty string, causing a UNIQUE constraint collision. A UUID fallback is now generated.
+- **Inbound - Attachment Filename Safety:** Filenames with path traversal components (`..`) are now stripped via `os.path.basename`. Duplicate filenames within the same message get a numeric suffix instead of overwriting each other on disk.
+- **Worker - KV Availability Guard:** Alias KV lookups in the `email()` handler now check `typeof env.QUOTA_KV !== 'undefined'` before use, matching the pattern already applied to quota checks. A missing KV binding previously caused all alias mail to be silently rejected.
+- **Worker - Subject Metadata Truncation:** Subject stored in R2 `customMetadata` is now capped at 500 characters to stay within Cloudflare's 2 KB per-object metadata limit.
+- **Worker - R2 Object TTL:** The cron sweep now expires and deletes `temp_cache/` objects older than 7 days to prevent unbounded accumulation during persistent misconfigurations.
+- **Inbound - Multi-Domain Header Requirement:** When multiple domains are configured, an inbound webhook without the `X-DockFlare-Domain` header now returns 400 instead of silently using a non-deterministic domain config.
+
 ## [v3.1.0] - 2026-04-16
 
 > **Cloudflare Context:** Cloudflare's Email Service entered public beta today — the same `send_email` Workers binding that powers DockFlare Mail's outbound relay is now generally available. Read the announcement: [Email for Agents](https://blog.cloudflare.com/email-for-agents/)

@@ -4,25 +4,21 @@ Ten przewodnik pokazuje najszybszy sposób uruchomienia DockFlare z wzmocnionym 
 
 ## Opcja A — Instalacja jednym poleceniem (Zalecane)
 
-Najszybszym sposobem uruchomienia DockFlare jest skrypt instalacyjny dostępny na [dockflare.app](https://dockflare.app):
+Najszybszym sposobem uruchomienia DockFlare jest interaktywny skrypt instalacyjny dostępny na [dockflare.app](https://dockflare.app):
 
 ```bash
-curl -fsSL https://dockflare.app/install.sh | bash
+bash <(curl -fsSL https://dockflare.app/install.sh)
 ```
 
-Skrypt wykona następujące czynności:
-1. Sprawdzi, czy Docker i Docker Compose są dostępne.
-2. Utworzy katalog `~/dockflare/` i zapisze tam plik `docker-compose.yml`.
-3. Utworzy sieć Docker `cloudflare-net`, jeśli jeszcze nie istnieje.
-4. Pobierze obrazy i uruchomi wszystkie usługi.
-5. Wyświetli lokalny adres URL po zakończeniu.
+Skrypt przeprowadzi Cię przez:
+1. Wybór katalogu instalacji (domyślnie: `~/dockflare/`).
+2. Wybór lokalnego portu interfejsu (domyślnie: `5000`).
+3. Opcjonalną konfigurację tunelu Cloudflare dla DockFlare.
+4. Opcjonalne włączenie profilu e-mail (dockflare-mail-manager + dockflare-webmail).
+
+Następnie generuje plik `docker-compose.yml`, umożliwia jego przegląd i pyta o potwierdzenie przed uruchomieniem stacka.
 
 Po uruchomieniu otwórz `http://<your-server-ip>:5000` i ukończ kreator konfiguracji.
-
-> **Opcjonalne parametry** — ustaw zmienne środowiskowe przed uruchomieniem, aby dostosować instalację:
-> ```bash
-> DOCKFLARE_PORT=8080 DOCKFLARE_DIR=/opt/dockflare curl -fsSL https://dockflare.app/install.sh | bash
-> ```
 
 ---
 

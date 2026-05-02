@@ -14,7 +14,7 @@
 <a href="https://github.com/ChrispyBacon-dev/DockFlare/stargazers">
   <img src="https://img.shields.io/github/stars/ChrispyBacon-dev/DockFlare?style=for-the-badge" alt="Stars">
 </a>
-  <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases"><img src="https://img.shields.io/badge/Release-v3.1.0-blue.svg?style=for-the-badge" alt="Release"></a>
+  <a href="https://github.com/ChrispyBacon-dev/DockFlare/releases"><img src="https://img.shields.io/badge/Release-v3.1.1-blue.svg?style=for-the-badge" alt="Release"></a>
   <a href="https://hub.docker.com/r/alplat/dockflare"><img src="https://img.shields.io/docker/pulls/alplat/dockflare?style=for-the-badge" alt="Docker Pulls"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Made%20with-Python-1f425f.svg?style=for-the-badge" alt="Python"></a>
   <a href="https://github.com/ChrispyBacon-dev/DockFlare/blob/main/LICENSE.MD"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg?style=for-the-badge" alt="License"></a>
@@ -81,10 +81,14 @@ Detailed architecture guide: [https://dockflare.app/architecture](https://dockfl
 ### One-Liner Install
 
 ```bash
-curl -fsSL https://dockflare.app/install.sh | bash
+bash <(curl -fsSL https://dockflare.app/install.sh)
 ```
 
-The script checks prerequisites, creates `~/dockflare/`, writes a production-ready `docker-compose.yml`, and starts all services. Open `http://<your-server-ip>:5000` when it finishes and follow the setup wizard.
+The script will guide you through:
+1. Choosing an install directory (default: `~/dockflare/`).
+2. Choosing a local UI port (default: `5000`).
+3. Optionally configuring a Cloudflare Tunnel for DockFlare itself.
+4. Optionally enabling the Email profile (dockflare-mail-manager + dockflare-webmail).
 
 For full setup documentation, use the project docs site:
 
@@ -268,6 +272,14 @@ networks:
 ```bash
 docker compose up -d
 ```
+
+The Email Suite is an optional, opt-in feature and will not start by default. To include email services, add the `email` profile:
+
+```bash
+docker compose --profile email up -d
+```
+
+Email setup and provisioning guide: [Email Overview](https://github.com/ChrispyBacon-dev/DockFlare/blob/stable/dockflare/app/templates/docs/en/Email-Overview.md)
 
 3. Open `http://your-server-ip:5000` and complete the setup wizard.
 

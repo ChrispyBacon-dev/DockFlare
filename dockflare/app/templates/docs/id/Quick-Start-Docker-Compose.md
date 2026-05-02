@@ -4,25 +4,21 @@ Panduan ini menjelaskan cara tercepat untuk menjalankan DockFlare dengan socket 
 
 ## Opsi A — Instalasi Satu Perintah (Direkomendasikan)
 
-Cara tercepat untuk menjalankan DockFlare adalah menggunakan skrip instalasi yang tersedia di [dockflare.app](https://dockflare.app):
+Cara tercepat untuk menjalankan DockFlare adalah menggunakan skrip instalasi interaktif yang tersedia di [dockflare.app](https://dockflare.app):
 
 ```bash
-curl -fsSL https://dockflare.app/install.sh | bash
+bash <(curl -fsSL https://dockflare.app/install.sh)
 ```
 
-Skrip akan melakukan hal berikut:
-1. Memeriksa bahwa Docker dan Docker Compose tersedia.
-2. Membuat `~/dockflare/` dan menulis file `docker-compose.yml` di sana.
-3. Membuat jaringan Docker `cloudflare-net` jika belum ada.
-4. Menarik image dan memulai semua layanan.
-5. Menampilkan URL lokal setelah selesai.
+Skrip akan memandu Anda melalui:
+1. Memilih direktori instalasi (default: `~/dockflare/`).
+2. Memilih port UI lokal (default: `5000`).
+3. Konfigurasi opsional tunnel Cloudflare untuk DockFlare.
+4. Mengaktifkan profil email secara opsional (dockflare-mail-manager + dockflare-webmail).
+
+Kemudian menghasilkan `docker-compose.yml`, memungkinkan Anda meninjaunya, dan meminta konfirmasi sebelum memulai stack.
 
 Setelah berjalan, buka `http://<your-server-ip>:5000` dan selesaikan wizard pengaturan.
-
-> **Opsi kustomisasi** — atur variabel lingkungan sebelum menjalankan perintah untuk mengontrol instalasi:
-> ```bash
-> DOCKFLARE_PORT=8080 DOCKFLARE_DIR=/opt/dockflare curl -fsSL https://dockflare.app/install.sh | bash
-> ```
 
 ---
 

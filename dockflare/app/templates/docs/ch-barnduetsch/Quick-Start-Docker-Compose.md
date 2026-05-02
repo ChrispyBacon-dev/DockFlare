@@ -4,25 +4,21 @@ Die Aaleitig zeigt dr schnäuschti Wäg, wie du DockFlare mit em ghärtete Socke
 
 ## Option A — Eizeiler-Installation (Empfohle)
 
-Dr schnäuschti Wäg, DockFlare zum Laufe z bringe, isch dr Installations-Skript uf [dockflare.app](https://dockflare.app):
+Dr schnäuschti Wäg, DockFlare zum Laufe z bringe, isch dr interaktivi Installations-Skript uf [dockflare.app](https://dockflare.app):
 
 ```bash
-curl -fsSL https://dockflare.app/install.sh | bash
+bash <(curl -fsSL https://dockflare.app/install.sh)
 ```
 
-Dr Skript macht Folgendes:
-1. Prüeft, ob Docker u Docker Compose verfüegbar si.
-2. Erstellt `~/dockflare/` u schrybt dort e `docker-compose.yml` ane.
-3. Erstellt s Docker-Netzwerk `cloudflare-net`, falls's no nid existiert.
-4. Ladet d Images abe u startet alli Dienscht.
-5. Zeigt d lokali URL aa, wenn's fertig isch.
+Dr Skript füehrt di dür folgende Schritt:
+1. Uswahl vom Installationsverzeuchnis (Standard: `~/dockflare/`).
+2. Uswahl vom lokale UI-Port (Standard: `5000`).
+3. Optionali Konfiguration vomene Cloudflare-Tunnel für DockFlare.
+4. Optionali Aktivierig vom E-Mail-Profil (dockflare-mail-manager + dockflare-webmail).
+
+Dernoo schrybt er d `docker-compose.yml`, lot di se aaluege u fragt vor em Starte nochmal nach.
 
 Sobald alles lauft, mach `http://<your-server-ip>:5000` uf u füehrt di dr Iirichtigsassistent dür.
-
-> **Optionali Yberschribige** — setz Umgebigsvariable vor em Pipe, zum d Installation aapasse:
-> ```bash
-> DOCKFLARE_PORT=8080 DOCKFLARE_DIR=/opt/dockflare curl -fsSL https://dockflare.app/install.sh | bash
-> ```
 
 ---
 

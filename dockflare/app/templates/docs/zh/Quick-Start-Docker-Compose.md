@@ -4,25 +4,21 @@
 
 ## 选项 A — 一键安装（推荐）
 
-启动 DockFlare 最快捷的方式是使用托管在 [dockflare.app](https://dockflare.app) 的安装脚本：
+启动 DockFlare 最快捷的方式是使用托管在 [dockflare.app](https://dockflare.app) 的交互式安装脚本：
 
 ```bash
-curl -fsSL https://dockflare.app/install.sh | bash
+bash <(curl -fsSL https://dockflare.app/install.sh)
 ```
 
-脚本将执行以下操作：
-1. 检查 Docker 和 Docker Compose 是否可用。
-2. 创建 `~/dockflare/` 目录并在其中写入 `docker-compose.yml`。
-3. 如果 `cloudflare-net` Docker 网络不存在则自动创建。
-4. 拉取镜像并启动所有服务。
-5. 完成后打印本地访问地址。
+脚本将引导您完成以下步骤：
+1. 选择安装目录（默认：`~/dockflare/`）。
+2. 选择本地 UI 端口（默认：`5000`）。
+3. 可选：为 DockFlare 配置 Cloudflare 隧道。
+4. 可选：启用邮件配置文件（dockflare-mail-manager + dockflare-webmail）。
+
+随后生成 `docker-compose.yml`，允许您查看，并在启动前确认。
 
 启动后，打开 `http://<your-server-ip>:5000` 并完成设置向导。
-
-> **可选覆盖参数** — 在管道命令前设置环境变量以自定义安装行为：
-> ```bash
-> DOCKFLARE_PORT=8080 DOCKFLARE_DIR=/opt/dockflare curl -fsSL https://dockflare.app/install.sh | bash
-> ```
 
 ---
 
