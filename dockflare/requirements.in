@@ -11,7 +11,7 @@ Markdown==3.8.1
 Pygments==2.20.0
 PyJWT[crypto]>=2.8.0
 pymdown-extensions==10.21.2
-python-dotenv==1.1.1
+python-dotenv>=1.2.2
 redis==4.5.5
 requests==2.33.1
 urllib3==2.6.3
