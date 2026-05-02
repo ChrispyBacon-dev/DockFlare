@@ -559,6 +559,13 @@ def redeploy_workers():
         zone_id = domains[domain].get('zone_id')
         if zone_id:
             email_cfg['domains'][domain]['email_sending_status'] = email_manager.get_email_sending_status(zone_id, domain)
+        try:
+            r2_creds = email_manager.get_r2_s3_credentials()
+            email_cfg['domains'][domain]['r2_access_key_id'] = r2_creds['access_key_id']
+            email_cfg['domains'][domain]['r2_secret_access_key'] = r2_creds['secret_access_key']
+            email_cfg['domains'][domain]['r2_endpoint_url'] = r2_creds['endpoint_url']
+        except Exception as e:
+            logging.warning(f"Could not refresh R2 credentials for {domain} on redeploy: {e}")
     save_email_config(email_cfg)
     _restart_mail_container()
     return jsonify({'success': True, 'domains': list(domains.keys())})
