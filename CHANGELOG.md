@@ -3,6 +3,15 @@
 All notable changes to this project will be documented in this file.
 
 
+## [v3.1.2] - 2026-05-07
+
+### Added
+- **Webmail - Profile Settings:** New Profile section in Settings lets users update their display name. The current formatted From address (`Name <email>`) is previewed live. Changes persist immediately and reflect across the session without re-login.
+
+### Fixed
+- **Outbound - Display Name in From Header:** The display name set during mailbox creation was stored but never applied when sending. Outbound emails now correctly use `Display Name <address>` format in the `From` header. Reported by the community in [#363](https://github.com/ChrispyBacon-dev/DockFlare/issues/363).
+
+
 ## [v3.1.1] - 2026-04-24
 
 ### Added

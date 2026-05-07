@@ -11,10 +11,12 @@ import SettingsAutoResponder from './sections/SettingsAutoResponder.vue'
 import SettingsSecurity      from './sections/SettingsSecurity.vue'
 import SettingsAbout         from './sections/SettingsAbout.vue'
 import SettingsHelp          from './sections/SettingsHelp.vue'
+import SettingsProfile       from './sections/SettingsProfile.vue'
 
 const store = useMailStore()
 
 const sectionMap: Record<string, any> = {
+  profile:       SettingsProfile,
   notifications: SettingsNotifications,
   appearance:    SettingsAppearance,
   aliases:       SettingsAliases,

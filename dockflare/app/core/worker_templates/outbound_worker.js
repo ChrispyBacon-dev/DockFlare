@@ -72,10 +72,12 @@ export default {
     }
 
     try {
+      const fromMatch = typeof body.from === 'string' ? body.from.match(/<([^>]+)>/) : null;
+      const fromEnvelope = fromMatch ? fromMatch[1] : (body.from || '').trim();
       for (const recipient of toList) {
         const addrMatch = typeof recipient === 'string' ? recipient.match(/<([^>]+)>/) : null;
         const toAddress = addrMatch ? addrMatch[1] : (typeof recipient === 'string' ? recipient.trim() : recipient);
-        const message = new EmailMessage(body.from, toAddress, mimeMessage);
+        const message = new EmailMessage(fromEnvelope, toAddress, mimeMessage);
         await env.SEND_EMAIL.send(message);
       }
       return new Response(JSON.stringify({ success: true, message_id: body.messageId }), {
