@@ -1,4 +1,5 @@
 import base64
+import email.utils
 import json
 import logging
 import os
@@ -299,12 +300,12 @@ def get_mailbox_preferences(address):
     if not _check_mailbox_access(address):
         return jsonify({"error": "forbidden"}), 403
     db = get_db()
-    cur = db.execute("SELECT notification_preview FROM mailboxes WHERE address=?", (address,))
+    cur = db.execute("SELECT notification_preview, display_name FROM mailboxes WHERE address=?", (address,))
     row = cur.fetchone()
     if not row:
         return jsonify({"error": "not found"}), 404
     preview = row['notification_preview'] if row['notification_preview'] is not None else 1
-    return jsonify({"notification_preview": bool(preview)})
+    return jsonify({"notification_preview": bool(preview), "display_name": row['display_name'] or ''})
 
 
 @api_bp.route('/mailboxes/<address>/preferences', methods=['PATCH'])
@@ -319,7 +320,9 @@ def patch_mailbox_preferences(address):
             "UPDATE mailboxes SET notification_preview=? WHERE address=?",
             (int(bool(data['notification_preview'])), address),
         )
-        db.commit()
+    if 'display_name' in data:
+        db.execute("UPDATE mailboxes SET display_name=? WHERE address=?", (data['display_name'], address))
+    db.commit()
     return jsonify({"status": "updated"})
 
 
@@ -789,6 +792,9 @@ def _dispatch_send(address, data, effective_from=None, via_alias=None):
     msg_id = f"<{uuid.uuid4()}@{address.split('@')[1]}>"
 
     db = get_db()
+    mb_row = db.execute("SELECT display_name FROM mailboxes WHERE address=?", (address,)).fetchone()
+    display_name = (mb_row['display_name'] if mb_row else '') or ''
+    from_formatted = email.utils.formataddr((display_name, from_address)) if display_name else from_address
 
     local_recipients = []
     external_recipients = []
@@ -819,7 +825,7 @@ def _dispatch_send(address, data, effective_from=None, via_alias=None):
 
     if external_recipients:
         worker_payload = {
-            "from": from_address,
+            "from": from_formatted,
             "to": external_recipients,
             "cc": data.get('cc'),
             "bcc": data.get('bcc'),

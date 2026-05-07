@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { Bell, Palette, AtSign, Mail, Shield, Info, HelpCircle } from 'lucide-vue-next'
+import { Bell, Palette, AtSign, Mail, Shield, Info, HelpCircle, User } from 'lucide-vue-next'
 import { useMailStore } from '@/stores/mail'
 
 const store = useMailStore()
 
 const categories = [
+  { key: 'profile',       label: 'Profile',       icon: User },
   { key: 'notifications', label: 'Notifications', icon: Bell },
   { key: 'appearance',    label: 'Appearance',    icon: Palette },
   { key: 'aliases',       label: 'Aliases',       icon: AtSign },

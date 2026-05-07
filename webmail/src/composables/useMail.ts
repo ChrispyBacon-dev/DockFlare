@@ -15,7 +15,15 @@ export function useMail() {
       const decoded = authStore.decodeToken()
       if (decoded?.role === 'user') {
         const addresses: string[] = decoded.mailboxes || []
-        store.mailboxes = addresses.map((addr: string) => ({ address: addr, display_name: addr }))
+        store.mailboxes = addresses.map((addr: string) => ({ address: addr, display_name: '' }))
+        const prefs = await Promise.allSettled(
+          addresses.map(addr => mailApi.getMailboxPreferences(addr))
+        )
+        prefs.forEach((result, i) => {
+          if (result.status === 'fulfilled') {
+            store.mailboxes[i].display_name = result.value.data.display_name || ''
+          }
+        })
       } else {
         const res = await mailApi.getMailboxes()
         store.mailboxes = res.data
