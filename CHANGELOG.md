@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 
 
-## [v3.1.2] - 2026-05-07
+## [v3.1.2] - 2026-05-08
 
 ### Added
 - **DockFlate Master - Design Refresh:** Visual overhaul aligning the DockFlare Master app with the DockFlare website CSS design.
@@ -13,7 +13,7 @@ All notable changes to this project will be documented in this file.
   - **Font:** Body font explicitly set to Inter across all page templates.
   - **Theme Toggle:** 29-theme DaisyUI dropdown replaced with sun/moon light/dark toggle button.
   - **System Theme Awareness:** Dark mode now falls back to the OS `prefers-color-scheme` setting when no explicit user preference has been stored.
-  - **Login Page:** Theme toggle button added to the login screen. Aurora and gradient applied to the login background.
+  - **Login Page:** Theme toggle button added to the login screen. Aurora and gradient applied to the login background. Split Login Design.
 - **Webmail - Profile Settings:** New Profile section in Settings lets users update their display name. The current formatted From address (`Name <email>`) is previewed live. Changes persist immediately and reflect across the session without re-login.
 - **Webmail - Design Refresh:** Visual overhaul aligning the webmail with the DockFlare website design system.
   - **New Logo:** Replaced animated GIF with the updated static SVG logo. Light and dark variants swap automatically based on active theme.
@@ -21,7 +21,7 @@ All notable changes to this project will be documented in this file.
   - **Light Mode Background:** Subtle radial blue gradient at the top of the light mode background, consistent with the website.
   - **Font:** Body font updated to Inter, matching the website. Outfit retained for branding text.
   - **Brand Orange:** Accent color aligned to `#f97316` across all components (compose button, unread indicators, active tabs, folder highlights, settings nav).
-  - **Login Page:** Theme toggle button (sun/moon) added to the login screen. Logo enlarged and "Webmail" sub-label removed for a cleaner presentation.
+  - **Login Page:** Theme toggle button (sun/moon) added to the login screen. Logo enlarged and "Webmail" sub-label removed for a cleaner presentation. Split Login Design.
   - **System Theme Awareness:** Dark mode now falls back to the OS `prefers-color-scheme` setting when no explicit user preference has been stored.
 
 - **Self-Contained Static Assets:** All third-party frontend dependencies are now bundled locally — no external CDN requests at runtime. Inter font (variable), Tom Select (CSS + JS), and country flag SVGs are served directly from the Flask static directory, enabling fully offline / air-gapped deployments.
