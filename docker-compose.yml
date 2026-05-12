@@ -6,7 +6,7 @@ services:
     container_name: docker-socket-proxy
     restart: unless-stopped
     logging:
-      driver: "none"  # Minimize the logs, remove for verbose
+      driver: "none"
     environment:
       - DOCKER_HOST=unix:///var/run/docker.sock
       - CONTAINERS=1
@@ -32,7 +32,6 @@ services:
     restart: "no"
 
   dockflare:
-    #build: ./dockflare
     image: alplat/dockflare:stable
     container_name: dockflare
     restart: unless-stopped
@@ -50,7 +49,6 @@ services:
       #- dockflare.0.path=/auth/google/callback
       #- dockflare.0.service=http://dockflare:5000
       #- dockflare.0.access.group=public-default-bypass
-
       # Add additional callback paths for other OAuth providers as needed
       # - dockflare.1.hostname=dockflare.example.com
       # - dockflare.1.path=/auth/github/callback
@@ -62,7 +60,6 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - REDIS_DB_INDEX=0  # Optional: specify Redis database index (0-15) for isolation from other containers
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
-      #- LOG_LEVEL=DEBUG # Uncomment for more verbose logging/debugging
     depends_on:
       docker-socket-proxy:
         condition: service_started
@@ -80,14 +77,13 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     logging:
-      driver: "none"  # less logs, remove for verbose / more logs
+      driver: "none"
     volumes:
       - dockflare_redis:/data
     networks:
       - dockflare-internal
 
   dockflare-mail-manager:
-    #build: ./mail-manager
     image: alplat/dockflare-mail-manager:stable
     container_name: dockflare-mail-manager
     restart: unless-stopped
@@ -105,7 +101,6 @@ services:
       - dockflare-internal
 
   dockflare-webmail:
-    #build: ./webmail
     image: alplat/dockflare-webmail:stable
     container_name: dockflare-webmail
     restart: unless-stopped
