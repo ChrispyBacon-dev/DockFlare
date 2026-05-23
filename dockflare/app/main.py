@@ -34,7 +34,7 @@ from app.core.tunnel_manager import (
     start_cloudflared_container
 )
 from app.core.docker_handler import start_event_listeners, process_container_start
-from app.core.reconciler import cleanup_expired_rules, reconcile_state_threaded
+from app.core.reconciler import cleanup_expired_rules, reconcile_state_threaded, tailscale_background_loop
 
 stop_event = threading.Event()
 background_threads_list = []
@@ -81,6 +81,11 @@ def run_all_background_tasks():
         else:
             logging.warning("Tunnel not ready. Skipping Docker event listener and cleanup task.")
 
+    if config.TAILSCALE_ENABLED and docker_client:
+        logging.info("Starting Tailscale background loop thread...")
+        ts_loop_thread = threading.Thread(target=tailscale_background_loop, args=(stop_event,), name="TailscaleBackgroundLoop", daemon=True)
+        threads_to_start.append(ts_loop_thread)
+
     if not config.USE_EXTERNAL_CLOUDFLARED and docker_client:
         logging.info("Starting periodic agent status updater thread...")
         agent_status_updater_thread = threading.Thread(target=periodic_agent_status_updater, name="AgentStatusUpdater", daemon=True)
@@ -117,6 +122,11 @@ def start_core_services():
 
     initialize_tunnel()
     logging.info(f"Tunnel initialization attempt complete. Status: {tunnel_state.get('status_message')}, Error: {tunnel_state.get('error')}")
+
+    if config.TAILSCALE_ENABLED:
+        from app.core.tailscale_manager import initialize_tailscale
+        initialize_tailscale()
+        logging.info("Tailscale initialization attempt complete.")
 
     ensure_default_bypass_policy(flask_app=app)
     logging.info("Bypass policy post-setup initialization complete.")

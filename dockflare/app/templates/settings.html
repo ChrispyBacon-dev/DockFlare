@@ -19,6 +19,7 @@
                 <li><a href="{{ url_for('web.settings_page') }}#security">{{ t('settings.security') }}</a></li>
                 <li><a href="{{ url_for('web.settings_page') }}#security" class="pl-8 text-sm">{{ t('settings.oauth_authentication') }}</a></li>
                 <li><a href="{{ url_for('web.settings_page') }}#tunnel-agent-status">{{ t('settings.tunnel_agent_status') }}</a></li>
+                <li><a href="{{ url_for('web.settings_page') }}#tailscale">Tailscale</a></li>
             </ul>
             <div class="mt-4 px-2">
                 <button id="btn-check-version" class="btn btn-sm btn-outline w-full" type="button" title="{{ t('settings.check_version_title') }}">
@@ -512,8 +513,196 @@
                 </div>
             </div>
         </section>
+
+        <!-- Tailscale -->
+        <section id="tailscale" class="card bg-base-100 shadow-xl mb-8 sm:mb-12 transition-all duration-300 hover:shadow-2xl">
+            <div class="card-body">
+                <h2 class="card-title text-2xl sm:text-3xl border-b border-base-300 pb-3 mb-6">
+                    Tailscale
+                    {% if tailscale_enabled %}
+                        <span class="badge badge-success badge-sm ml-2">Enabled</span>
+                    {% else %}
+                        <span class="badge badge-ghost badge-sm ml-2">Disabled</span>
+                    {% endif %}
+                </h2>
+
+                {% if tailscale_enabled %}
+                <!-- Status card -->
+                <div class="mb-6 p-4 bg-base-200/50 rounded-lg">
+                    <h3 class="text-lg font-semibold mb-3 opacity-80">Node Status</h3>
+                    {% if tailscale_state.version_mismatch %}
+                    <div role="alert" class="alert alert-warning text-sm mb-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                        <span>Tailscale CLI / daemon version mismatch detected. Restart the Tailscale sidecar container to resolve.</span>
+                    </div>
+                    {% endif %}
+                    {% if tailscale_state.last_error %}
+                    <div role="alert" class="alert alert-error text-sm mb-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-5 w-5" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        <span>{{ tailscale_state.last_error }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="space-y-2 text-sm">
+                        {% if tailscale_state.node %}
+                            <p><strong class="inline-block w-32 opacity-70">Machine</strong> <code class="badge badge-ghost">{{ tailscale_state.node.machine_name }}</code></p>
+                            <p><strong class="inline-block w-32 opacity-70">Tailnet</strong> <code class="badge badge-ghost">{{ tailscale_state.node.tailnet or '—' }}</code></p>
+                            <p><strong class="inline-block w-32 opacity-70">Online</strong>
+                                {% if tailscale_state.node.online %}
+                                    <span class="badge badge-success badge-sm">Online</span>
+                                {% else %}
+                                    <span class="badge badge-error badge-sm">Offline</span>
+                                {% endif %}
+                            </p>
+                        {% else %}
+                            <p class="opacity-60 text-sm">Node info unavailable — check that the Tailscale sidecar is running.</p>
+                        {% endif %}
+                        <p><strong class="inline-block w-32 opacity-70">Services</strong> <span class="badge badge-ghost">{{ tailscale_services | length }}</span></p>
+                    </div>
+                </div>
+
+                <!-- Active services table -->
+                <div class="mb-6">
+                    <h3 class="text-lg font-semibold mb-3 opacity-80">Active Services</h3>
+                    {% if tailscale_services %}
+                    <div class="overflow-x-auto">
+                        <table class="table table-sm w-full">
+                            <thead>
+                                <tr>
+                                    <th>Service</th>
+                                    <th>Protocol</th>
+                                    <th>Port</th>
+                                    <th>Container</th>
+                                    <th>Funnel</th>
+                                    <th>Status</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for rule_key, rule in tailscale_services %}
+                                <tr>
+                                    <td><code class="text-xs">{{ rule_key }}</code></td>
+                                    <td><span class="badge badge-ghost badge-sm">{{ rule.protocol }}</span></td>
+                                    <td>{{ rule.port }}</td>
+                                    <td class="text-xs opacity-70">{{ rule.container_name or '—' }}</td>
+                                    <td>
+                                        {% if rule.funnel_active %}
+                                            <span class="badge badge-info badge-sm">Active</span>
+                                        {% elif rule.funnel %}
+                                            <span class="badge badge-warning badge-sm">Pending</span>
+                                        {% else %}
+                                            <span class="opacity-40 text-xs">—</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if rule.status == 'active' %}
+                                            <span class="badge badge-success badge-sm">Active</span>
+                                        {% elif rule.status == 'pending_deletion' %}
+                                            <span class="badge badge-warning badge-sm">Expiring</span>
+                                        {% else %}
+                                            <span class="badge badge-ghost badge-sm">{{ rule.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <button type="button"
+                                            class="btn btn-xs btn-error btn-outline ts-delete-btn"
+                                            data-rule-key="{{ rule_key }}"
+                                            title="Remove service">
+                                            Remove
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-sm opacity-60">No active Tailscale services. Start containers with <code>dockflare.ts.enable=true</code> labels.</p>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <!-- Settings form -->
+                <div class="border-t border-base-300 pt-6">
+                    <h3 class="text-lg font-semibold mb-4 opacity-80">Tailscale Configuration</h3>
+                    <form method="POST" action="{{ url_for('web.settings_page') }}#tailscale" class="space-y-4">
+                        {{ ts_settings_form.hidden_tag() }}
+
+                        <div class="form-control">
+                            <label class="label cursor-pointer justify-start gap-3">
+                                {{ ts_settings_form.ts_enabled(class="toggle toggle-primary") }}
+                                <span class="label-text">{{ ts_settings_form.ts_enabled.label.text }}</span>
+                            </label>
+                            <label class="label"><span class="label-text-alt">Requires the Tailscale sidecar container and socket volume mount.</span></label>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="form-control">
+                                <label class="label"><span class="label-text">{{ ts_settings_form.ts_oauth_client_id.label.text }}</span></label>
+                                {{ ts_settings_form.ts_oauth_client_id(class="input input-bordered w-full", placeholder="k123abc...") }}
+                                <label class="label"><span class="label-text-alt">From Tailscale Admin → OAuth clients</span></label>
+                            </div>
+                            <div class="form-control">
+                                <label class="label"><span class="label-text">{{ ts_settings_form.ts_oauth_client_secret.label.text }}</span></label>
+                                {{ ts_settings_form.ts_oauth_client_secret(class="input input-bordered w-full", placeholder="Leave blank to keep existing") }}
+                                <label class="label"><span class="label-text-alt">Leave blank to keep the current secret.</span></label>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="form-control">
+                                <label class="label"><span class="label-text">{{ ts_settings_form.ts_tailnet.label.text }}</span></label>
+                                {{ ts_settings_form.ts_tailnet(class="input input-bordered w-full", placeholder="-") }}
+                                <label class="label"><span class="label-text-alt">Your tailnet name, or <code>-</code> for default.</span></label>
+                            </div>
+                            <div class="form-control">
+                                <label class="label"><span class="label-text">{{ ts_settings_form.ts_default_tags.label.text }}</span></label>
+                                {{ ts_settings_form.ts_default_tags(class="input input-bordered w-full", placeholder="tag:container") }}
+                                <label class="label"><span class="label-text-alt">Comma-separated ACL tags applied to services.</span></label>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div class="form-control">
+                                <label class="label"><span class="label-text">{{ ts_settings_form.ts_service_prefix.label.text }}</span></label>
+                                {{ ts_settings_form.ts_service_prefix(class="input input-bordered w-full", placeholder="prod-") }}
+                                <label class="label"><span class="label-text-alt">Prepended to every service name: <code>svc:&lt;prefix&gt;name</code>.</span></label>
+                            </div>
+                            <div class="form-control">
+                                <label class="label"><span class="label-text">{{ ts_settings_form.ts_ignore_services.label.text }}</span></label>
+                                {{ ts_settings_form.ts_ignore_services(class="input input-bordered w-full", placeholder="svc:my-manual-service") }}
+                                <label class="label"><span class="label-text-alt">Services DockFlare will never touch.</span></label>
+                            </div>
+                        </div>
+
+                        <div class="card-actions pt-2">
+                            {{ ts_settings_form.submit_tailscale(class="btn btn-primary") }}
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </section>
 </main>
 </div>
+
+<script>
+document.querySelectorAll('.ts-delete-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        var ruleKey = this.getAttribute('data-rule-key');
+        if (!confirm('Remove Tailscale service "' + ruleKey + '"? This will stop the live service immediately.')) return;
+        var masterKey = document.querySelector('meta[name="master-api-key"]');
+        fetch('/api/v2/tailscale/services/' + encodeURIComponent(ruleKey), {
+            method: 'DELETE',
+            headers: masterKey ? {'Authorization': 'Bearer ' + masterKey.content} : {}
+        }).then(function(r) { return r.json(); }).then(function(data) {
+            if (data.status === 'success') {
+                window.location.reload();
+            } else {
+                alert('Error: ' + (data.message || 'unknown'));
+            }
+        }).catch(function(e) { alert('Request failed: ' + e); });
+    });
+});
+</script>
 
 <dialog id="master-key-modal" class="modal">
   <div class="modal-box max-w-xl">

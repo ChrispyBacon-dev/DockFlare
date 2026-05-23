@@ -38,6 +38,7 @@ from .i18n import init_app as init_i18n
 
 tunnel_state = { "name": config.TUNNEL_NAME, "id": None, "token": None, "status_message": "Initializing...", "error": None }
 cloudflared_agent_state = { "container_status": "unknown", "last_action_status": None }
+tailscale_state = { "node": None, "version_mismatch": False, "last_error": None, "service_count": 0 }
 
 log_queue = queue.Queue(maxsize=config.MAX_LOG_QUEUE_SIZE)
 state_update_queue = queue.Queue(maxsize=50) 
@@ -262,6 +263,11 @@ def create_app():
         csrf.exempt(email_bp)
         app_instance.register_blueprint(email_bp)
         logging.info("Email blueprint registered.")
+
+        from .web.tailscale_api_routes import tailscale_api_bp
+        csrf.exempt(tailscale_api_bp)
+        app_instance.register_blueprint(tailscale_api_bp)
+        logging.info("Tailscale API blueprint registered.")
 
     return app_instance
 

@@ -109,3 +109,15 @@ class CloudflareCredentialsForm(FlaskForm):
         validators=[Optional(), Length(min=40, max=100, message="API Token must be at least 40 characters long.")]
     )
     submit_cloudflare_credentials = SubmitField('Update Cloudflare Credentials')
+
+
+class TailscaleSettingsForm(FlaskForm):
+    """Form for Tailscale integration settings."""
+    ts_enabled = BooleanField('Enable Tailscale Integration')
+    ts_oauth_client_id = StringField('OAuth Client ID', validators=[Optional()])
+    ts_oauth_client_secret = PasswordField('OAuth Client Secret', validators=[Optional()])
+    ts_tailnet = StringField('Tailnet', validators=[Optional()])
+    ts_default_tags = StringField('Default Tags (comma-separated)', validators=[Optional()])
+    ts_service_prefix = StringField('Service Name Prefix', validators=[Optional()])
+    ts_ignore_services = StringField('Ignore Services (comma-separated)', validators=[Optional()])
+    submit_tailscale = SubmitField('Save Tailscale Settings')

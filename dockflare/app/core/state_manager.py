@@ -30,6 +30,8 @@ access_groups = {}
 agents = {}
 identity_providers = {}
 agent_cf_token = {}
+tailscale_rules = {}
+tailscale_node_state = {}
 state_lock = threading.RLock()
 logging.info(
     "STATE_MANAGER_INIT: managed_rules ID: %s, access_groups ID: %s, agents ID: %s, identity_providers ID: %s",
@@ -61,6 +63,8 @@ def load_state():
         access_groups.clear()
         identity_providers.clear()
         agent_cf_token.clear()
+        tailscale_rules.clear()
+        tailscale_node_state.clear()
         logging.info(
             "LOAD_STATE: After .clear(), managed_rules ID: %s, len: %s",
             id(managed_rules),
@@ -94,12 +98,16 @@ def load_state():
                 agents_to_load = loaded_data.get("agents", {})
                 idps_to_load = loaded_data.get("identity_providers", {})
                 cf_token_to_load = loaded_data.get("agent_cf_token", {})
+                ts_rules_to_load = loaded_data.get("tailscale_rules", {})
+                ts_node_to_load = loaded_data.get("tailscale_node", {})
             else:
                 logging.info("Loading state from old format (rules only). Will migrate on next save.")
                 rules_to_load = loaded_data
                 agents_to_load = {}
                 idps_to_load = {}
                 cf_token_to_load = {}
+                ts_rules_to_load = {}
+                ts_node_to_load = {}
 
             access_groups.update(groups_to_load)
             agents.update(agents_to_load)
@@ -159,6 +167,17 @@ def load_state():
                 rule_copy.setdefault("tunnel_name", None)
 
                 managed_rules[final_key] = rule_copy
+
+            for ts_key, ts_data in (ts_rules_to_load or {}).items():
+                ts_copy = ts_data.copy()
+                delete_at_val = ts_copy.get("delete_at")
+                if isinstance(delete_at_val, str):
+                    ts_copy["delete_at"] = _deserialize_datetime(delete_at_val)
+                elif not isinstance(delete_at_val, (datetime, type(None))):
+                    ts_copy["delete_at"] = None
+                tailscale_rules[ts_key] = ts_copy
+
+            tailscale_node_state.update(ts_node_to_load or {})
 
             migration_needed = migrated_count > 0 or tunnel_name_migration_count > 0
             if migrated_count > 0:
@@ -517,12 +536,26 @@ def save_state():
                 logging.error(f"SAVE_STATE_LOOP_ERROR: THREAD: {current_thread_name}. Error preparing rule for serialization '{rule_key}': {e_serialize_item}. Rule data: {rule}", exc_info=True)
                 continue
         
+        serializable_ts_rules = {}
+        for ts_key, ts_rule in list(tailscale_rules.items()):
+            try:
+                ts_copy = {k: v for k, v in ts_rule.items() if k != "delete_at"}
+                ts_copy["delete_at"] = None
+                delete_at_val = ts_rule.get("delete_at")
+                if isinstance(delete_at_val, datetime):
+                    ts_copy["delete_at"] = delete_at_val.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
+                serializable_ts_rules[ts_key] = ts_copy
+            except Exception as e_ts:
+                logging.error(f"SAVE_STATE: Error serializing tailscale rule '{ts_key}': {e_ts}", exc_info=True)
+
         final_state_to_save = {
             "managed_rules": serializable_rules,
             "access_groups": groups_to_iterate,
             "agents": agents_to_iterate,
             "identity_providers": idps_to_iterate,
-            "agent_cf_token": cf_token_to_iterate
+            "agent_cf_token": cf_token_to_iterate,
+            "tailscale_rules": serializable_ts_rules,
+            "tailscale_node": dict(tailscale_node_state)
         }
 
         try:
@@ -898,3 +931,39 @@ def clear_agent_cf_token():
     with state_lock:
         agent_cf_token.clear()
         save_state()
+
+
+def get_tailscale_rule(rule_key: str):
+    with state_lock:
+        return tailscale_rules.get(rule_key)
+
+
+def upsert_tailscale_rule(rule_key: str, rule_data: dict):
+    with state_lock:
+        tailscale_rules[rule_key] = rule_data
+        save_state()
+
+
+def mark_tailscale_pending_deletion(rule_key: str, delete_at: datetime):
+    with state_lock:
+        rule = tailscale_rules.get(rule_key)
+        if rule is None:
+            return False
+        rule["delete_at"] = delete_at
+        rule["status"] = "pending_deletion"
+        save_state()
+        return True
+
+
+def remove_tailscale_rule(rule_key: str):
+    with state_lock:
+        if rule_key in tailscale_rules:
+            del tailscale_rules[rule_key]
+            save_state()
+            return True
+        return False
+
+
+def list_tailscale_rules():
+    with state_lock:
+        return dict(tailscale_rules)

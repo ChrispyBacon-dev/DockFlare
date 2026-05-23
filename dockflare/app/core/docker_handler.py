@@ -26,7 +26,7 @@ from flask import current_app
 
 from app import config, docker_client, cloudflared_agent_state, tunnel_state, publish_state_event
 
-from app.core.state_manager import managed_rules, state_lock, save_state
+from app.core.state_manager import managed_rules, state_lock, save_state, tailscale_rules, upsert_tailscale_rule
 from app.core.tunnel_manager import update_cloudflare_config
 from app.core.cloudflare_api import create_cloudflare_dns_record, get_zone_id_from_name, list_account_zones
 from app.core.access_manager import handle_access_policy_from_labels
@@ -90,6 +90,126 @@ def is_valid_service(service_str):
         
     logging.warning(f"Invalid service string format: '{service_str}' does not match supported patterns (HTTP, HTTPS, TCP, SSH, RDP, HTTP_STATUS, Bastion).")
     return False
+
+def _parse_tailscale_configs(labels, container_id, container_name):
+    ts_ns = config.TAILSCALE_LABEL_NS
+    if labels.get(f"{ts_ns}enable", "false").lower() not in ("true", "1", "t", "yes"):
+        return []
+
+    name = labels.get(f"{ts_ns}name") or container_name.lstrip("/").lower().replace("_", "-")
+
+    port_str = labels.get(f"{ts_ns}port", "")
+    if not port_str:
+        logging.warning("TS_HANDLER: Container %s has ts.enable but no ts.port, skipping.", container_name)
+        return []
+
+    try:
+        port = int(port_str)
+    except ValueError:
+        logging.warning("TS_HANDLER: Invalid ts.port '%s' for %s, skipping.", port_str, container_name)
+        return []
+
+    protocol = labels.get(f"{ts_ns}protocol", "https")
+    if protocol not in ("http", "https", "tcp"):
+        logging.warning("TS_HANDLER: Invalid ts.protocol '%s' for %s, using https.", protocol, container_name)
+        protocol = "https"
+
+    funnel = labels.get(f"{ts_ns}funnel", "false").lower() in ("true", "1", "t", "yes")
+
+    try:
+        funnel_port = int(labels.get(f"{ts_ns}funnel_port", "443"))
+    except ValueError:
+        funnel_port = 443
+
+    destination = labels.get(f"{ts_ns}destination", f"localhost:{port}")
+
+    return [{
+        "name": name,
+        "port": port,
+        "protocol": protocol,
+        "funnel": funnel,
+        "funnel_port": funnel_port,
+        "destination": destination,
+        "container_id": container_id,
+        "container_name": container_name,
+    }]
+
+
+def _process_tailscale_start(labels, container_id, container_name):
+    if not config.TAILSCALE_ENABLED:
+        return
+
+    from app.core import tailscale_manager
+
+    ts_configs = _parse_tailscale_configs(labels, container_id, container_name)
+    if not ts_configs:
+        return
+
+    for ts_cfg in ts_configs:
+        name = ts_cfg["name"]
+        rule_key = tailscale_manager._build_svc_name(name)
+        try:
+            tailscale_manager.add_service(
+                name=name,
+                port=ts_cfg["port"],
+                protocol=ts_cfg["protocol"],
+                destination=ts_cfg["destination"],
+            )
+            rule_data = {
+                "name": name,
+                "port": ts_cfg["port"],
+                "protocol": ts_cfg["protocol"],
+                "destination": ts_cfg["destination"],
+                "funnel": ts_cfg["funnel"],
+                "funnel_port": ts_cfg["funnel_port"],
+                "container_id": container_id,
+                "container_name": container_name,
+                "status": "active",
+                "delete_at": None,
+                "source": "docker",
+                "funnel_active": False,
+            }
+            if ts_cfg["funnel"]:
+                try:
+                    tailscale_manager.enable_funnel(
+                        funnel_port=ts_cfg["funnel_port"],
+                        protocol=ts_cfg["protocol"],
+                        destination=ts_cfg["destination"],
+                    )
+                    rule_data["funnel_active"] = True
+                except tailscale_manager.TailscaleFunnelACLError as e:
+                    logging.error("TS_HANDLER: Funnel ACL error for %s: %s", name, e)
+            upsert_tailscale_rule(rule_key, rule_data)
+            logging.info("TS_HANDLER: Registered service %s for container %s", rule_key, container_name)
+        except tailscale_manager.TailscaleSocketError as e:
+            logging.error("TS_HANDLER: Socket error for %s: %s", name, e)
+        except tailscale_manager.TailscaleUntaggedNodeError as e:
+            logging.error("TS_HANDLER: Untagged node error for %s: %s", name, e)
+        except tailscale_manager.TailscaleCLIError as e:
+            logging.error("TS_HANDLER: CLI error for %s: %s", name, e)
+        except Exception as e:
+            logging.error("TS_HANDLER: Unexpected error for %s: %s", name, e, exc_info=True)
+
+
+def _process_tailscale_stop(container_id):
+    if not config.TAILSCALE_ENABLED:
+        return
+
+    from datetime import datetime, timedelta, timezone
+
+    state_changed = False
+    delete_at = datetime.now(timezone.utc) + timedelta(seconds=config.GRACE_PERIOD_SECONDS)
+
+    with state_lock:
+        for rule_key, rule_data in list(tailscale_rules.items()):
+            if rule_data.get("container_id") == container_id and rule_data.get("status") == "active":
+                rule_data["status"] = "pending_deletion"
+                rule_data["delete_at"] = delete_at
+                state_changed = True
+                logging.info("TS_HANDLER: Scheduled deletion of %s at %s", rule_key, delete_at.isoformat())
+        if state_changed:
+            save_state()
+
 
 def process_container_start(container_obj):
     from app import app
@@ -272,6 +392,7 @@ def process_container_start(container_obj):
                 index += 1
             if not hostnames_to_process:
                 logging.warning(f"DOCKER_HANDLER: No valid hostname configs for {container_name_val} ({container_id_val[:12]}).")
+                _process_tailscale_start(labels, container_id_val, container_name_val)
                 return
 
             logging.info(f"DOCKER_HANDLER: Found {len(hostnames_to_process)} hostname configurations for container {container_name_val}")
@@ -490,6 +611,7 @@ def process_container_start(container_obj):
                 else:
                     logging.error(f"DOCKER_HANDLER: Failed to update Cloudflare tunnel config for {container_name_val}. DNS records not managed.")
 
+            _process_tailscale_start(labels, container_id_val, container_name_val)
 
         except NotFound:
             logging.warning(f"DOCKER_HANDLER: Container {container_name_val} ({container_id_val[:12] if container_id_val else 'UnknownID'}) not found.")
@@ -535,6 +657,8 @@ def schedule_container_stop(container_id_val):
             if state_changed_after_stop_processing:
                 save_state()
                 publish_state_event('snapshot_refresh')
+
+        _process_tailscale_stop(container_id_val)
 
 def docker_event_listener(stop_event_param, label_prefix):
     if not docker_client:

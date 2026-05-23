@@ -23,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 from app import config, docker_client, tunnel_state, publish_state_event
 from flask import current_app 
 
-from app.core.state_manager import managed_rules, state_lock, save_state, get_agent, update_agent
+from app.core.state_manager import managed_rules, state_lock, save_state, get_agent, update_agent, tailscale_rules, upsert_tailscale_rule, remove_tailscale_rule, list_tailscale_rules
 from app.core.cloudflare_api import (
     get_zone_id_from_name, 
     create_cloudflare_dns_record,
@@ -687,3 +687,140 @@ def cleanup_expired_rules(stop_event_param):
             stop_event_param.wait(wait_duration)
 
     logging.info("Cleanup task for expired rules stopped.")
+
+
+def _run_tailscale_reconciliation():
+    from app import app as main_app
+    from app.core import tailscale_manager
+    from app.core.docker_handler import _parse_tailscale_configs
+
+    with main_app.app_context():
+        if not config.TAILSCALE_ENABLED:
+            return
+
+        desired_rules = {}
+        try:
+            containers = docker_client.containers.list(all=False)
+            for c in containers:
+                try:
+                    c.reload()
+                    ts_configs = _parse_tailscale_configs(c.labels, c.id, c.name)
+                    for ts_cfg in ts_configs:
+                        rule_key = tailscale_manager._build_svc_name(ts_cfg["name"])
+                        desired_rules[rule_key] = ts_cfg
+                except Exception as e_cont:
+                    logging.error("TS_RECONCILE: Error parsing container %s: %s", c.id[:12] if c.id else "?", e_cont)
+        except Exception as e_list:
+            logging.error("TS_RECONCILE: Error listing containers: %s", e_list)
+            return
+
+        current_rules = list_tailscale_rules()
+
+        for rule_key, ts_cfg in desired_rules.items():
+            existing = current_rules.get(rule_key)
+            if existing and existing.get("status") == "active":
+                continue
+
+            if existing and existing.get("status") == "pending_deletion":
+                existing["status"] = "active"
+                existing["delete_at"] = None
+                existing["container_id"] = ts_cfg["container_id"]
+                upsert_tailscale_rule(rule_key, existing)
+                logging.info("TS_RECONCILE: Restored %s (was pending_deletion)", rule_key)
+                continue
+
+            try:
+                tailscale_manager.add_service(
+                    name=ts_cfg["name"],
+                    port=ts_cfg["port"],
+                    protocol=ts_cfg["protocol"],
+                    destination=ts_cfg["destination"],
+                )
+                rule_data = {
+                    "name": ts_cfg["name"],
+                    "port": ts_cfg["port"],
+                    "protocol": ts_cfg["protocol"],
+                    "destination": ts_cfg["destination"],
+                    "funnel": ts_cfg["funnel"],
+                    "funnel_port": ts_cfg["funnel_port"],
+                    "container_id": ts_cfg["container_id"],
+                    "container_name": ts_cfg["container_name"],
+                    "status": "active",
+                    "delete_at": None,
+                    "source": "docker",
+                    "funnel_active": False,
+                }
+                if ts_cfg["funnel"]:
+                    try:
+                        tailscale_manager.enable_funnel(
+                            funnel_port=ts_cfg["funnel_port"],
+                            protocol=ts_cfg["protocol"],
+                            destination=ts_cfg["destination"],
+                        )
+                        rule_data["funnel_active"] = True
+                    except tailscale_manager.TailscaleFunnelACLError as e:
+                        logging.error("TS_RECONCILE: Funnel ACL error for %s: %s", rule_key, e)
+                upsert_tailscale_rule(rule_key, rule_data)
+                logging.info("TS_RECONCILE: Added service %s", rule_key)
+            except tailscale_manager.TailscaleSocketError as e:
+                logging.error("TS_RECONCILE: Socket error adding %s: %s", rule_key, e)
+            except tailscale_manager.TailscaleCLIError as e:
+                logging.error("TS_RECONCILE: CLI error adding %s: %s", rule_key, e)
+
+        now_utc = datetime.now(timezone.utc)
+        for rule_key, rule_data in current_rules.items():
+            if rule_data.get("status") != "active":
+                continue
+            if rule_data.get("source", "docker") != "docker":
+                continue
+            if rule_key not in desired_rules:
+                delete_at = now_utc + timedelta(seconds=config.GRACE_PERIOD_SECONDS)
+                rule_data = dict(rule_data)
+                rule_data["status"] = "pending_deletion"
+                rule_data["delete_at"] = delete_at
+                upsert_tailscale_rule(rule_key, rule_data)
+                logging.info("TS_RECONCILE: Marked %s for deletion at %s", rule_key, delete_at.isoformat())
+
+
+def tailscale_background_loop(stop_event_param):
+    from app import app as main_app
+    from app.core import tailscale_manager
+
+    logging.info("Tailscale background loop starting.")
+
+    while not stop_event_param.is_set():
+        next_run = time.time() + config.TAILSCALE_RECONCILE_INTERVAL
+
+        with main_app.app_context():
+            try:
+                if config.TAILSCALE_ENABLED:
+                    _run_tailscale_reconciliation()
+
+                    now_utc = datetime.now(timezone.utc)
+                    for rule_key, rule_data in list(list_tailscale_rules().items()):
+                        if rule_data.get("status") != "pending_deletion":
+                            continue
+                        delete_at = rule_data.get("delete_at")
+                        if isinstance(delete_at, datetime):
+                            delete_at_utc = delete_at.astimezone(timezone.utc) if delete_at.tzinfo else delete_at.replace(tzinfo=timezone.utc)
+                            if delete_at_utc > now_utc:
+                                continue
+                        try:
+                            tailscale_manager.remove_service(rule_data.get("name", rule_key))
+                            if rule_data.get("funnel_active"):
+                                tailscale_manager.disable_funnel(
+                                    rule_data.get("funnel_port", 443),
+                                    rule_data.get("protocol", "https"),
+                                )
+                            remove_tailscale_rule(rule_key)
+                            logging.info("TS_CLEANUP: Removed expired service %s", rule_key)
+                        except Exception as e:
+                            logging.error("TS_CLEANUP: Error removing %s: %s", rule_key, e)
+            except Exception as e_outer:
+                logging.error("TS_BACKGROUND: Loop error: %s", e_outer, exc_info=True)
+
+        wait_duration = max(0, next_run - time.time())
+        if not stop_event_param.is_set():
+            stop_event_param.wait(wait_duration)
+
+    logging.info("Tailscale background loop stopped.")

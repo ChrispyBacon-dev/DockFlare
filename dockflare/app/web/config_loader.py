@@ -139,6 +139,30 @@ def apply_config_to_app(flask_app, config_data: Dict) -> None:
     else:
         config.CF_HEADERS.pop('Authorization', None)
 
+    ts_settings = config_data.get('tailscale_settings', {}) or {}
+    flask_app.config['TAILSCALE_ENABLED'] = bool(ts_settings.get('enabled', False))
+    flask_app.config['TAILSCALE_OAUTH_CLIENT_ID'] = ts_settings.get('oauth_client_id') or None
+    flask_app.config['TAILSCALE_OAUTH_CLIENT_SECRET'] = ts_settings.get('oauth_client_secret') or None
+    flask_app.config['TAILSCALE_TAILNET'] = ts_settings.get('tailnet') or '-'
+    raw_tags = ts_settings.get('default_tags', ['tag:container'])
+    flask_app.config['TAILSCALE_DEFAULT_TAGS'] = (
+        raw_tags if isinstance(raw_tags, list)
+        else [t.strip() for t in raw_tags.split(',') if t.strip()]
+    )
+    raw_ignore = ts_settings.get('ignore_services', [])
+    flask_app.config['TAILSCALE_IGNORE_SERVICES'] = (
+        raw_ignore if isinstance(raw_ignore, list)
+        else [s.strip() for s in raw_ignore.split(',') if s.strip()]
+    )
+    flask_app.config['TAILSCALE_SERVICE_PREFIX'] = ts_settings.get('service_prefix') or ''
+    config.TAILSCALE_ENABLED = flask_app.config['TAILSCALE_ENABLED']
+    config.TAILSCALE_OAUTH_CLIENT_ID = flask_app.config['TAILSCALE_OAUTH_CLIENT_ID']
+    config.TAILSCALE_OAUTH_CLIENT_SECRET = flask_app.config['TAILSCALE_OAUTH_CLIENT_SECRET']
+    config.TAILSCALE_TAILNET = flask_app.config['TAILSCALE_TAILNET']
+    config.TAILSCALE_DEFAULT_TAGS = flask_app.config['TAILSCALE_DEFAULT_TAGS']
+    config.TAILSCALE_IGNORE_SERVICES = flask_app.config['TAILSCALE_IGNORE_SERVICES']
+    config.TAILSCALE_SERVICE_PREFIX = flask_app.config['TAILSCALE_SERVICE_PREFIX']
+
     flask_app.is_configured = True
     container_name = build_cloudflared_container_name(tunnel_name)
     flask_app.config['CLOUDFLARED_CONTAINER_NAME'] = container_name
