@@ -109,13 +109,15 @@ For full setup documentation, use the project docs site:
 - Cloudflare Account ID.
 - Cloudflare Zone ID for your primary domain.
 - Cloudflare API token with these permissions:
-    * `Account:Cloudflare Tunnel:Write`
+    * `Account:Cloudflare Tunnel:Edit`
     * `Account:Account Settings:Read`
-    * `Account:Access: Apps and Policies:Write`
-    * `Account:Access: Organizations, Identity Providers, and Groups:Write`
-    * `Account:Access: Service Tokens:Write`
+    * `Account:Access: Apps and Policies:Edit`
+    * `Account:Access: Organizations, Identity Providers, and Groups:Edit`
+    * `Account:Access: Service Tokens:Edit`
     * `Zone:Zone:Read`
-    * `Zone:DNS:Write`
+    * `Zone:DNS:Edit`
+    * ![Cloudflare Token Permissions](images/cf_token_permissions.png)
+
 
     **For optional DockFlare Email features, add these additional permissions:**
     * `Workers Scripts:Write`
