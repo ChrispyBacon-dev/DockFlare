@@ -26,6 +26,7 @@ from flask import current_app
 from app.core.state_manager import managed_rules, state_lock, save_state, get_agent, update_agent, tailscale_rules, upsert_tailscale_rule, remove_tailscale_rule, list_tailscale_rules
 from app.core.cloudflare_api import (
     get_zone_id_from_name, 
+    detect_zone_for_hostname,
     create_cloudflare_dns_record,
     delete_cloudflare_dns_record
 )
@@ -161,6 +162,26 @@ def _get_hostname_configs_from_container(container_obj):
         idx += 1
     return hostnames_configs
 
+def _resolve_zone_for_hostname(hostname, zone_name=None):
+    target_zone_id = None
+    resolved_zone_name = zone_name
+
+    if zone_name:
+        target_zone_id = get_zone_id_from_name(zone_name)
+        if not target_zone_id:
+            logging.error(f"[Reconcile] Failed Zone ID lookup for '{zone_name}' (hostname {hostname}). Attempting auto-detect.")
+
+    if not target_zone_id:
+        detected_zone_id, detected_zone_name = detect_zone_for_hostname(hostname)
+        if detected_zone_id:
+            target_zone_id = detected_zone_id
+            resolved_zone_name = detected_zone_name or resolved_zone_name
+
+    if not target_zone_id:
+        target_zone_id = current_app.config.get('CF_ZONE_ID')
+
+    return target_zone_id, resolved_zone_name
+
 
 def reconcile_agent_report(agent_id, reported_containers):
     """
@@ -229,14 +250,11 @@ def reconcile_agent_report(agent_id, reported_containers):
             with state_lock:
                 for rule_key, desired in desired_configs.items():
                     existing = managed_rules.get(rule_key)
-                    target_zone_id = None
-                    try:
-                        target_zone_id = get_zone_id_from_name(desired.get("zone_name")) if desired.get("zone_name") else current_app.config.get('CF_ZONE_ID')
-                    except Exception:
-                        target_zone_id = current_app.config.get('CF_ZONE_ID')
+                    target_zone_id, resolved_zone_name = _resolve_zone_for_hostname(desired.get("hostname"), desired.get("zone_name"))
                     if not target_zone_id:
                         logging.warning(f"[Reconcile-Agent] Could not determine Zone ID for rule {rule_key} while reconciling agent {agent_id}. Skipping.")
                         continue
+                    desired["zone_name"] = resolved_zone_name
 
                     if existing:
                         if existing.get("source") == "manual":
@@ -260,6 +278,9 @@ def reconcile_agent_report(agent_id, reported_containers):
                         if existing.get("zone_id") != target_zone_id:
                             existing["zone_id"] = target_zone_id
                             changed = True
+                        if existing.get("zone_name") != resolved_zone_name:
+                            existing["zone_name"] = resolved_zone_name
+                            changed = True
                         if existing.get("no_tls_verify") != desired.get("no_tls_verify"):
                             existing["no_tls_verify"] = desired.get("no_tls_verify")
                             changed = True
@@ -279,6 +300,7 @@ def reconcile_agent_report(agent_id, reported_containers):
                             "status": "active",
                             "delete_at": None,
                             "zone_id": target_zone_id,
+                            "zone_name": resolved_zone_name,
                             "no_tls_verify": desired.get("no_tls_verify"),
                             "origin_server_name": desired.get("origin_server_name"),
                             "http_host_header": desired.get("http_host_header"),
@@ -397,10 +419,11 @@ def _run_reconciliation_logic():
                 if existing_rule and existing_rule.get("source") == "manual":
                     continue
 
-                target_zone_id = get_zone_id_from_name(desired_details["zone_name"]) if desired_details["zone_name"] else current_app.config.get('CF_ZONE_ID')
+                target_zone_id, resolved_zone_name = _resolve_zone_for_hostname(desired_details["hostname"], desired_details.get("zone_name"))
                 if not target_zone_id:
                     logging.error(f"[Reconcile] No zone ID for {rule_key}, skipping its reconciliation.")
                     continue
+                desired_details["zone_name"] = resolved_zone_name
                 
                 if not existing_rule:
                     managed_rules[rule_key] = {
@@ -412,6 +435,7 @@ def _run_reconciliation_logic():
                         "no_tls_verify": desired_details["no_tls_verify"],
                         "origin_server_name": desired_details.get("origin_server_name"),
                         "http_host_header": desired_details.get("http_host_header"),
+                        "zone_name": resolved_zone_name,
                         "access_app_id": None, "access_policy_type": None, "access_app_config_hash": None,
                         "access_policy_ui_override": False, "rule_ui_override": False, "source": "docker",
                         "access_group_id": None,
@@ -440,6 +464,9 @@ def _run_reconciliation_logic():
                         existing_rule["zone_id"] = target_zone_id
                         changed_in_reconcile = True
                         needs_tunnel_config_update = True 
+                    if existing_rule.get("zone_name") != resolved_zone_name:
+                        existing_rule["zone_name"] = resolved_zone_name
+                        changed_in_reconcile = True
                     if existing_rule.get("container_id") != desired_details["container_id"]:
                         existing_rule["container_id"] = desired_details["container_id"]
                         changed_in_reconcile = True

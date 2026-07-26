@@ -23,6 +23,7 @@ import threading
 from flask import current_app
 from app import config
 from app.core.cache import cache, get_dns_records_cache_key, DNS_RECORDS_CACHE_TIMEOUT, CACHE_ENABLED
+from app.core.zone_detection import find_best_zone_for_hostname
 
 zone_id_cache = {}  
 zone_details_by_id_cache = {}  
@@ -560,6 +561,14 @@ def list_account_zones(force_refresh=False):
     zones.sort(key=lambda x: x.get("name", "").lower())
     cache.set(cache_key, zones, timeout=300)
     return zones
+
+def detect_zone_for_hostname(hostname, zones=None):
+    try:
+        candidate_zones = zones if zones is not None else list_account_zones()
+    except Exception as detection_error:
+        logging.error(f"Failed to retrieve zones for hostname '{hostname}': {detection_error}")
+        return None, None
+    return find_best_zone_for_hostname(hostname, candidate_zones)
 
 def get_current_cf_config(tunnel_id_to_query):
     if not tunnel_id_to_query:

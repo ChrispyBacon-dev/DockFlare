@@ -28,7 +28,7 @@ from app import config, docker_client, cloudflared_agent_state, tunnel_state, pu
 
 from app.core.state_manager import managed_rules, state_lock, save_state, tailscale_rules, upsert_tailscale_rule
 from app.core.tunnel_manager import update_cloudflare_config
-from app.core.cloudflare_api import create_cloudflare_dns_record, get_zone_id_from_name, list_account_zones
+from app.core.cloudflare_api import create_cloudflare_dns_record, get_zone_id_from_name, detect_zone_for_hostname
 from app.core.access_manager import handle_access_policy_from_labels
 from app.core.utils import get_rule_key, get_label, normalize_access_group_value
 
@@ -754,28 +754,4 @@ def start_event_listeners(stop_event):
         
     return threads
 def _detect_zone_for_hostname(hostname):
-    if not hostname:
-        return None, None
-    try:
-        zones = list_account_zones()
-    except Exception as detection_error:
-        logging.error(f"DOCKER_HANDLER: Failed to retrieve zones for hostname '{hostname}': {detection_error}")
-        return None, None
-    if not zones:
-        return None, None
-    hostname_lower = hostname.lower().lstrip('.')
-    if hostname_lower.startswith('*.'):
-        hostname_lower = hostname_lower[2:]
-    matches = []
-    for zone in zones:
-        zone_name = (zone.get('name') or '').lower()
-        if not zone_name:
-            continue
-        if hostname_lower == zone_name or hostname_lower.endswith(f".{zone_name}"):
-            matches.append(zone)
-    if not matches:
-        return None, None
-    best_length = max(len(zone.get('name') or '') for zone in matches)
-    best_zones = [zone for zone in matches if len(zone.get('name') or '') == best_length]
-    chosen_zone = best_zones[0]
-    return chosen_zone.get('id'), chosen_zone.get('name')
+    return detect_zone_for_hostname(hostname)
