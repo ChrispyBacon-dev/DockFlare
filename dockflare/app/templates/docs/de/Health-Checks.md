@@ -24,8 +24,8 @@ services:
     # ... other settings
     healthcheck:
       # The command to run to check health.
-      # curl is used to make an HTTP request to the ping endpoint.
-      test: ["CMD", "curl", "-f", "http://localhost:5000/ping"]
+      # wget is available in the DockFlare image and checks the ping endpoint.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/ping"]
       # How often to run the check
       interval: 1m30s
       # How long to wait for a response
@@ -38,7 +38,7 @@ services:
 
 ### Aufschlüsselung der `healthcheck`-Konfiguration:
 
-*   `test`: Dies ist der Befehl, den Docker innerhalb des Containers ausführt. `curl -f` sendet eine HTTP-Anfrage an den `/ping`-Endpunkt und bricht mit einem Statuscode ungleich null ab, wenn die Antwort nicht HTTP 200 OK lautet.
+*   `test`: Dies ist der Befehl, den Docker innerhalb des Containers ausführt. `wget --spider` sendet eine HTTP-Anfrage an den `/ping`-Endpunkt und bricht mit einem Statuscode ungleich null ab, wenn die Antwort nicht HTTP 200 OK lautet.
 *   `interval`: Docker führt diese Prüfung alle 90 Sekunden aus.
 *   `timeout`: Docker wartet bis zu 10 Sekunden auf die Ausführung des Befehls.
 *   `retries`: Schlägt die Prüfung 3-mal hintereinander fehl, markiert Docker den Container als `unhealthy` (ungesund).
