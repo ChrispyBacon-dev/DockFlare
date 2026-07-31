@@ -440,7 +440,7 @@ def status_page():
                         default_tunnel_id=default_tunnel_id_value
                         )
 
-from app.web.forms import ChangePasswordForm, SecuritySettingsForm, SettingsForm, CloudflareCredentialsForm, TailscaleSettingsForm
+from app.web.forms import ChangePasswordForm, SecuritySettingsForm, SettingsForm, CloudflareCredentialsForm
 from werkzeug.security import check_password_hash, generate_password_hash
 from cryptography.fernet import Fernet
 
@@ -529,7 +529,6 @@ def settings_page():
     change_password_form = ChangePasswordForm()
     security_settings_form = SecuritySettingsForm(prefix='security')
     cf_credentials_form = CloudflareCredentialsForm(prefix='cf_creds')
-    ts_settings_form = TailscaleSettingsForm(prefix='ts_settings')
 
     
     if request.method == 'POST':
@@ -673,48 +672,6 @@ def settings_page():
                 logging.error(f"Failed to update Cloudflare credentials: {e}", exc_info=True)
                 flash(_t('flash.error_updating_credentials'), 'danger')
     
-        elif ts_settings_form.submit_tailscale.data and ts_settings_form.validate():
-            data_path = os.path.dirname(config.STATE_FILE_PATH)
-            key_file = os.path.join(data_path, 'dockflare.key')
-            config_file = os.path.join(data_path, 'dockflare_config.dat')
-            try:
-                with open(key_file, 'rb') as f:
-                    key = f.read()
-                fernet = Fernet(key)
-                with open(config_file, 'rb') as f:
-                    config_data = json.loads(fernet.decrypt(f.read()))
-
-                raw_tags = ts_settings_form.ts_default_tags.data or ''
-                tags_list = [t.strip() for t in raw_tags.split(',') if t.strip()] or ['tag:container']
-                raw_ignore = ts_settings_form.ts_ignore_services.data or ''
-                ignore_list = [s.strip() for s in raw_ignore.split(',') if s.strip()]
-
-                existing_ts = config_data.get('tailscale_settings', {}) or {}
-                new_secret = ts_settings_form.ts_oauth_client_secret.data
-                oauth_secret = new_secret if new_secret else existing_ts.get('oauth_client_secret', '')
-
-                config_data['tailscale_settings'] = {
-                    'enabled': bool(ts_settings_form.ts_enabled.data),
-                    'oauth_client_id': ts_settings_form.ts_oauth_client_id.data or '',
-                    'oauth_client_secret': oauth_secret,
-                    'tailnet': ts_settings_form.ts_tailnet.data or '-',
-                    'default_tags': tags_list,
-                    'ignore_services': ignore_list,
-                    'service_prefix': ts_settings_form.ts_service_prefix.data or '',
-                }
-
-                with open(config_file, 'wb') as f:
-                    f.write(fernet.encrypt(json.dumps(config_data).encode('utf-8')))
-
-                from app.web.config_loader import apply_config_to_app
-                apply_config_to_app(current_app, config_data)
-
-                flash('Tailscale settings saved.', 'success')
-                return redirect(url_for('web.settings_page') + '#tailscale')
-            except Exception as e:
-                logging.error("Failed to save Tailscale settings: %s", e, exc_info=True)
-                flash('Error saving Tailscale settings.', 'danger')
-
     if request.method == 'GET':
         settings_form.tunnel_name.data = current_app.config.get('TUNNEL_NAME')
         settings_form.cf_zone_id.data = current_app.config.get('CF_ZONE_ID')
@@ -723,12 +680,6 @@ def settings_page():
         settings_form.preserve_unmanaged_cf_ingress_fields.data = current_app.config.get('PRESERVE_UNMANAGED_CF_INGRESS_FIELDS', False)
         settings_form.dockflare_public_url.data = current_app.config.get('DOCKFLARE_PUBLIC_URL', '')
         security_settings_form.disable_password_login.data = current_app.config.get('DISABLE_PASSWORD_LOGIN', False)
-        ts_settings_form.ts_enabled.data = current_app.config.get('TAILSCALE_ENABLED', False)
-        ts_settings_form.ts_oauth_client_id.data = current_app.config.get('TAILSCALE_OAUTH_CLIENT_ID') or ''
-        ts_settings_form.ts_tailnet.data = current_app.config.get('TAILSCALE_TAILNET') or '-'
-        ts_settings_form.ts_default_tags.data = ','.join(current_app.config.get('TAILSCALE_DEFAULT_TAGS', []))
-        ts_settings_form.ts_service_prefix.data = current_app.config.get('TAILSCALE_SERVICE_PREFIX') or ''
-        ts_settings_form.ts_ignore_services.data = ','.join(current_app.config.get('TAILSCALE_IGNORE_SERVICES', []))
 
     template_tunnel_state = {}
     template_agent_state = {}
@@ -741,17 +692,12 @@ def settings_page():
     all_account_tunnels_list = get_all_account_cloudflare_tunnels(force_refresh=True)
     cf_account_id = current_app.config.get('CF_ACCOUNT_ID')
 
-    from app import tailscale_state as ts_state
-    from app.core.state_manager import list_tailscale_rules
-    ts_services = list(list_tailscale_rules().items())
-
     return render_template(
         'settings.html',
         settings_form=settings_form,
         change_password_form=change_password_form,
         security_settings_form=security_settings_form,
         cf_credentials_form=cf_credentials_form,
-        ts_settings_form=ts_settings_form,
         all_account_tunnels=all_account_tunnels_list,
         tunnel_state=template_tunnel_state,
         agent_state=template_agent_state,
@@ -761,10 +707,7 @@ def settings_page():
         external_cloudflared=config.USE_EXTERNAL_CLOUDFLARED,
         external_tunnel_id=config.EXTERNAL_TUNNEL_ID,
         CF_ACCOUNT_ID_CONFIGURED=bool(cf_account_id),
-        ACCOUNT_ID_FOR_DISPLAY=cf_account_id if cf_account_id else "Not Configured",
-        tailscale_state=ts_state,
-        tailscale_services=ts_services,
-        tailscale_enabled=current_app.config.get('TAILSCALE_ENABLED', False),
+        ACCOUNT_ID_FOR_DISPLAY=cf_account_id if cf_account_id else "Not Configured"
     )
 
 @bp.route('/settings/reveal-master-key', methods=['POST'])
