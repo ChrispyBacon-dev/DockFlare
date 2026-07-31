@@ -1840,6 +1840,22 @@ def agents_remove(agent_id):
         except Exception as e:
             logging.error(f"Failed to cleanup DNS records for tunnel {tunnel_id}: {e}")
 
+    if tunnel_id and not cleanup_results["tunnel_deleted"]:
+        logging.error(
+            "Keeping agent %s because Cloudflare tunnel %s could not be deleted.",
+            agent_id,
+            tunnel_id,
+        )
+        return jsonify({
+            "status": "error",
+            "message": (
+                f"Cloudflare tunnel cleanup failed for agent {agent_id}. "
+                "The agent was kept so its public routes do not become unmanaged; "
+                "delete the tunnel manually or retry removal after fixing Cloudflare access."
+            ),
+            "cleanup": cleanup_results,
+        }), 502
+
     with state_lock:
         rules_to_remove = []
         for rule_key, rule in managed_rules.items():
