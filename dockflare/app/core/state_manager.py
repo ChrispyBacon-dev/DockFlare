@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List
 from app import config
 from app.core import agent_key_store
+from app.core.access_policy_rules import normalize_managed_access_group
 from app.core.utils import get_rule_key
 
 managed_rules = {}
@@ -101,7 +102,12 @@ def load_state():
                 idps_to_load = {}
                 cf_token_to_load = {}
 
-            access_groups.update(groups_to_load)
+            group_migration_count = 0
+            for group_id, group_data in groups_to_load.items():
+                normalized_group, changed = normalize_managed_access_group(group_data)
+                access_groups[group_id] = normalized_group
+                if changed:
+                    group_migration_count += 1
             agents.update(agents_to_load)
             identity_providers.update(idps_to_load)
             agent_cf_token.update(cf_token_to_load)
@@ -160,11 +166,13 @@ def load_state():
 
                 managed_rules[final_key] = rule_copy
 
-            migration_needed = migrated_count > 0 or tunnel_name_migration_count > 0
+            migration_needed = migrated_count > 0 or tunnel_name_migration_count > 0 or group_migration_count > 0
             if migrated_count > 0:
                 logging.info(f"LOAD_STATE: Migrated {migrated_count} rules to the new key format.")
             if tunnel_name_migration_count > 0:
                 logging.info(f"LOAD_STATE: Found {tunnel_name_migration_count} rules with missing/default tunnel names, will update after tunnel initialization.")
+            if group_migration_count > 0:
+                logging.info(f"LOAD_STATE: Migrated {group_migration_count} access groups to strict IdP and email matching.")
             if migration_needed:
                 save_state()
             
@@ -325,8 +333,8 @@ def ensure_authenticated_default_policy(flask_app=None):
                             cf_policy = reusable_policies.create_reusable_policy(
                                 name=cf_policy_name,
                                 decision="allow",
-                                include_rules=[{"login_method": {"id": onetimepin_cf_id}}],
-                                require_rules=[{"email": {"email": account_email}}]
+                                include_rules=[{"email": {"email": account_email}}],
+                                require_rules=[{"login_method": {"id": onetimepin_cf_id}}]
                             )
                             if cf_policy and cf_policy.get("id"):
                                 cf_policy_id = cf_policy["id"]
@@ -348,8 +356,8 @@ def ensure_authenticated_default_policy(flask_app=None):
                     {
                         "name": cf_policy_name,
                         "decision": "allow",
-                        "include": [{"login_method": {"id": onetimepin_cf_id}}],
-                        "require": [{"email": {"email": account_email}}]
+                        "include": [{"email": {"email": account_email}}],
+                        "require": [{"login_method": {"id": onetimepin_cf_id}}]
                     }
                 ],
                 "system_policy": True,
@@ -379,8 +387,8 @@ def ensure_authenticated_default_policy(flask_app=None):
                     {
                         "name": cf_policy_name,
                         "decision": "allow",
-                        "include": [{"login_method": {"id": onetimepin_cf_id}}],
-                        "require": [{"email": {"email": account_email}}]
+                        "include": [{"email": {"email": account_email}}],
+                        "require": [{"login_method": {"id": onetimepin_cf_id}}]
                     }
                 ]
                 needs_state_update = True
@@ -398,22 +406,22 @@ def ensure_authenticated_default_policy(flask_app=None):
                 needs_state_update = True
 
             existing_include = existing_policy.get("policies", [{}])[0].get("include", [])
-            has_correct_login_method = any(
-                rule.get("login_method", {}).get("id") == onetimepin_cf_id
+            has_email_in_include = any(
+                rule.get("email", {}).get("email") == account_email
                 for rule in existing_include
             )
 
             existing_require = existing_policy.get("policies", [{}])[0].get("require", [])
-            has_email_in_require = any(
-                rule.get("email", {}).get("email") == account_email
+            has_correct_login_method = any(
+                rule.get("login_method", {}).get("id") == onetimepin_cf_id
                 for rule in existing_require
             )
 
-            if not has_correct_login_method or not has_email_in_require:
-                logging.info(f"Migrating authenticated-default policy to use include=login_method + require=email structure")
+            if not has_email_in_include or not has_correct_login_method:
+                logging.info(f"Migrating authenticated-default policy to strict email and login method matching")
                 if existing_policy.get("policies") and len(existing_policy["policies"]) > 0:
-                    existing_policy["policies"][0]["include"] = [{"login_method": {"id": onetimepin_cf_id}}]
-                    existing_policy["policies"][0]["require"] = [{"email": {"email": account_email}}]
+                    existing_policy["policies"][0]["include"] = [{"email": {"email": account_email}}]
+                    existing_policy["policies"][0]["require"] = [{"login_method": {"id": onetimepin_cf_id}}]
                     needs_state_update = True
                     needs_cf_update = True
 
@@ -430,13 +438,13 @@ def ensure_authenticated_default_policy(flask_app=None):
                             logging.debug(f"Verified default authenticated policy exists in Cloudflare: {cf_policy_id}")
 
                             if needs_cf_update:
-                                logging.info(f"Updating Cloudflare reusable policy {cf_policy_id} with include=login_method + require=email")
+                                logging.info(f"Updating Cloudflare reusable policy {cf_policy_id} with strict email and login method matching")
                                 updated_policy = reusable_policies.update_reusable_policy(
                                     cf_policy_id,
                                     cf_policy_name,
                                     "allow",
-                                    include_rules=[{"login_method": {"id": onetimepin_cf_id}}],
-                                    require_rules=[{"email": {"email": account_email}}]
+                                    include_rules=[{"email": {"email": account_email}}],
+                                    require_rules=[{"login_method": {"id": onetimepin_cf_id}}]
                                 )
                                 if updated_policy:
                                     logging.info(f"Successfully updated Cloudflare policy {cf_policy_id} with correct structure")
@@ -456,8 +464,8 @@ def ensure_authenticated_default_policy(flask_app=None):
                                 new_policy = reusable_policies.create_reusable_policy(
                                     name=cf_policy_name,
                                     decision="allow",
-                                    include_rules=[{"login_method": {"id": onetimepin_cf_id}}],
-                                    require_rules=[{"email": {"email": account_email}}]
+                                    include_rules=[{"email": {"email": account_email}}],
+                                    require_rules=[{"login_method": {"id": onetimepin_cf_id}}]
                                 )
                                 if new_policy and new_policy.get("id"):
                                     new_cf_policy_id = new_policy["id"]

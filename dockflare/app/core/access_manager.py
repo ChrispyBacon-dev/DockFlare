@@ -23,6 +23,7 @@ import copy
 from flask import current_app
 from app.core import cloudflare_api
 from app.core.state_manager import access_groups, managed_rules, state_lock
+from app.core.access_policy_rules import effective_access_policies, login_method_ids, normalize_managed_access_group
 from app.core.utils import normalize_path_value
 
 def _build_access_app_payload(application_domain, name, session_duration, app_launcher_visible, self_hosted_domains, access_policies_or_ids, allowed_idps=None, auto_redirect_to_identity=False, use_reusable=False):
@@ -281,6 +282,55 @@ def generate_access_app_config_hash(policy_type, session_duration, app_launcher_
     hasher.update(consistent_config_string.encode('utf-8'))
     return hasher.hexdigest()
 
+def get_access_group_allowed_idps(group_ids):
+    allowed_idps = []
+    with state_lock:
+        groups = [copy.deepcopy(access_groups.get(group_id)) for group_id in group_ids]
+    for group in groups:
+        if not group:
+            continue
+        group_idps = group.get("allowed_idps") or login_method_ids(group.get("policies", []))
+        for idp_id in group_idps:
+            if idp_id not in allowed_idps:
+                allowed_idps.append(idp_id)
+    return allowed_idps or None
+
+def resolve_access_group_policies(group_ids, prefer_reusable):
+    from app.core import reusable_policies
+
+    with state_lock:
+        groups = {
+            group_id: normalize_managed_access_group(copy.deepcopy(access_groups.get(group_id)))[0]
+            if access_groups.get(group_id) else None
+            for group_id in group_ids
+        }
+
+    if prefer_reusable and all(
+        groups.get(group_id) and len(effective_access_policies(groups[group_id])) == 1
+        for group_id in group_ids
+    ):
+        policy_ids = []
+        for group_id in group_ids:
+            policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id)
+            if not policy_id:
+                break
+            policy_ids.append(policy_id)
+        if len(policy_ids) == len(group_ids):
+            return policy_ids, True
+
+    policies = []
+    for group_id in group_ids:
+        group = groups.get(group_id)
+        if group:
+            policies.extend(effective_access_policies(group))
+        else:
+            logging.warning(f"Access Group '{group_id}' not found or has no policies.")
+
+    if any(policy.get("decision") == "allow" for policy in policies):
+        policies.append({"name": "Default Deny", "decision": "deny", "include": [{"everyone": {}}]})
+
+    return policies, False
+
 def handle_access_policy_from_labels(rule_key, hostname_config_item):
     from app import config
     from app.core import reusable_policies
@@ -334,42 +384,13 @@ def handle_access_policy_from_labels(rule_key, hostname_config_item):
         if first_group_def:
             desired_session_duration = first_group_def.get("session_duration", "24h")
             desired_app_launcher_visible = first_group_def.get("app_launcher_visible", False)
-            desired_allowed_idps = first_group_def.get("allowed_idps")
+            desired_allowed_idps = get_access_group_allowed_idps(desired_access_group_ids)
             desired_auto_redirect = first_group_def.get("auto_redirect_to_identity", False)
 
-        if config.USE_REUSABLE_POLICIES:
-            use_reusable = True
-            policy_ids = []
-            for group_id in desired_access_group_ids:
-                policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id)
-                if policy_id:
-                    policy_ids.append(policy_id)
-                else:
-                    logging.warning(f"Failed to sync access group '{group_id}' to reusable policy for {application_domain}")
-            cf_access_policies_or_ids = policy_ids
-        else:
-            aggregated_policies = []
-            for group_id in desired_access_group_ids:
-                with state_lock:
-                    group_definition = access_groups.get(group_id)
-                    group_copy = copy.deepcopy(group_definition) if group_definition else None
-                if group_copy and group_copy.get("policies"):
-                    for policy in group_copy.get("policies"):
-                        is_default_deny = (
-                            policy.get("decision") == "deny" and
-                            isinstance(policy.get("include"), list) and
-                            len(policy.get("include")) == 1 and
-                            policy.get("include")[0] == {"everyone": {}}
-                        )
-                        if not is_default_deny:
-                            aggregated_policies.append(policy)
-                else:
-                    logging.warning(f"Access Group '{group_id}' not found or has no policies.")
-
-            cf_access_policies_or_ids = aggregated_policies
-            has_allow_policy = any(p.get('decision') == 'allow' for p in cf_access_policies_or_ids)
-            if has_allow_policy:
-                cf_access_policies_or_ids.append({"name": "Default Deny", "decision": "deny", "include": [{"everyone": {}}]})
+        cf_access_policies_or_ids, use_reusable = resolve_access_group_policies(
+            desired_access_group_ids,
+            config.USE_REUSABLE_POLICIES
+        )
 
         if not cf_access_policies_or_ids:
             logging.warning(f"Skipping access app creation for {application_domain}; no policies resolved for groups {desired_access_group_ids}")

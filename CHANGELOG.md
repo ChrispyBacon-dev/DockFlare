@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.1.3] - 2026-08-05
+
+### Added
+- **Slovak localization:** Added Slovak UI translations and a complete Slovak documentation set. Thanks to [@Vaso73](https://github.com/Vaso73) for the community contribution ([#379](https://github.com/ChrispyBacon-dev/DockFlare/pull/379)).
+
+### Fixed
+- **Agent tunnel manual ingress preservation:** Fixed agent container start, update, and status events rebuilding the assigned Cloudflare tunnel from agent-managed rules only. Tunnel updates now use the shared configuration builder, preserving active manual rules and their origin settings on the same agent tunnel while keeping rules from other tunnels isolated. Reported by [@essentrix83](https://github.com/essentrix83) ([#386](https://github.com/ChrispyBacon-dev/DockFlare/issues/386)).
+- **Docker health-check documentation:** Updated Docker Compose health-check examples across all localized documentation to use `wget`, which is included in the DockFlare image, instead of the unavailable `curl` command. Thanks to [@kocaemre](https://github.com/kocaemre) for the community contribution ([#383](https://github.com/ChrispyBacon-dev/DockFlare/pull/383)).
+- **In-memory cache invalidation:** Added pattern-based invalidation for the built-in `SimpleCache` fallback, ensuring matching DNS and zone cache entries are cleared when Redis is not configured. This also removes the recurring Redis-only warning for supported non-Redis installations. Thanks to [@kocaemre](https://github.com/kocaemre) for the community contribution ([#384](https://github.com/ChrispyBacon-dev/DockFlare/pull/384)).
+- **Identity-provider Access policies:** Corrected Cloudflare Access rule construction when identity-provider and email restrictions are configured together. Previously, email selectors and login methods were combined as `Include` rules, allowing any account authenticated by the selected provider to satisfy the policy. Allowed emails and domains now retain OR semantics under `Include`, while the selected identity provider is enforced as an additional AND condition under `Require`.
+  - Supports multiple allowed email addresses and domains without requiring one user to match every entry.
+  - Supports multiple identity providers as alternative authenticated paths, each constrained by the same email allowlist.
+  - Applies the same rule resolution to zone-default policies, Docker-managed services, manually managed rules, and Master API-created rules.
+  - Fails closed when a referenced identity provider is missing instead of silently falling back to email-only authentication.
+  - Migrates previously stored DockFlare policies from the unsafe OR structure, as well as the intermediate inverted Require structure, during state loading.
+  - Preserves compound policies such as IP bypass plus authenticated access without dropping all but the first rule during reusable-policy synchronization.
+  - Restores complete email and identity-provider values when reopening an Access Group in the editor.
 
 ## [v3.1.2] - 2026-05-08
 

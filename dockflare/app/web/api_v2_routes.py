@@ -46,7 +46,6 @@ from app.core.cloudflare_api import (
     get_zone_id_from_name,
     get_zone_details_by_id,
     delete_tunnel_via_api,
-    cf_api_request,
     list_account_zones
 )
 from app.core.access_manager import (
@@ -57,7 +56,9 @@ from app.core.access_manager import (
     update_cloudflare_access_application,
     generate_access_app_config_hash,
     find_cloudflare_access_application_by_domain,
-    handle_access_policy_from_labels
+    handle_access_policy_from_labels,
+    get_access_group_allowed_idps,
+    resolve_access_group_policies
 )
 from app.core.reconciler import reconcile_state_threaded
 from app.core.docker_handler import is_valid_hostname, is_valid_service
@@ -601,46 +602,23 @@ def create_manual_rule_api():
             session_duration = "24h"
             app_launcher_visible = False
             auto_redirect_to_identity = False
+            allowed_idps = get_access_group_allowed_idps(access_group_ids_list)
 
-            if config.USE_REUSABLE_POLICIES:
-                use_reusable = True
-                from app.core import reusable_policies
+            for group_id in access_group_ids_list:
+                if group_id in access_groups:
+                    group = access_groups[group_id]
+                    group_session = group.get("session_duration", "24h")
+                    if group_session:
+                        session_duration = group_session
+                    app_launcher_visible = group.get("app_launcher_visible", False)
+                    auto_redirect_to_identity = group.get("auto_redirect_to_identity", False)
+                else:
+                    logging.warning(f"API: Access group '{group_id}' selected but not found in state")
 
-                for group_id in access_group_ids_list:
-                    if group_id in access_groups:
-                        group = access_groups[group_id]
-                        existing_policy_id = group.get("cloudflare_policy_id")
-                        if existing_policy_id:
-                            logging.info(f"API: Using existing reusable policy ID '{existing_policy_id}' for access group '{group_id}'")
-                            cf_access_policies_or_ids.append(existing_policy_id)
-                        else:
-                            policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id)
-                            if policy_id:
-                                logging.info(f"API: Synced access group '{group_id}' to reusable policy ID '{policy_id}' for manual rule")
-                                cf_access_policies_or_ids.append(policy_id)
-                            else:
-                                logging.error(f"API: Failed to sync access group '{group_id}' for manual rule - no policy ID returned")
-
-                        group_session = group.get("session_duration", "24h")
-                        if group_session:
-                            session_duration = group_session
-                        app_launcher_visible = group.get("app_launcher_visible", False)
-                        auto_redirect_to_identity = group.get("auto_redirect_to_identity", False)
-                    else:
-                        logging.warning(f"API: Access group '{group_id}' selected but not found in state")
-            else:
-                for group_id in access_group_ids_list:
-                    if group_id in access_groups:
-                        group = access_groups[group_id]
-                        cf_access_policies_or_ids.extend(group.get("policies", []))
-
-                        group_session = group.get("session_duration", "24h")
-                        if group_session:
-                            session_duration = group_session
-                        app_launcher_visible = group.get("app_launcher_visible", False)
-                        auto_redirect_to_identity = group.get("auto_redirect_to_identity", False)
-                    else:
-                        logging.warning(f"API: Access group '{group_id}' selected but not found in state")
+            cf_access_policies_or_ids, use_reusable = resolve_access_group_policies(
+                access_group_ids_list,
+                config.USE_REUSABLE_POLICIES
+            )
 
             if cf_access_policies_or_ids:
                 try:
@@ -656,6 +634,7 @@ def create_manual_rule_api():
                             app_launcher_visible,
                             [hostname],
                             cf_access_policies_or_ids,
+                            allowed_idps,
                             auto_redirect_to_identity=auto_redirect_to_identity,
                             use_reusable=use_reusable
                         )
@@ -673,6 +652,7 @@ def create_manual_rule_api():
                             app_launcher_visible,
                             [hostname],
                             cf_access_policies_or_ids,
+                            allowed_idps,
                             auto_redirect_to_identity=auto_redirect_to_identity,
                             use_reusable=use_reusable
                         )
@@ -1123,24 +1103,11 @@ def process_agent_container_start(payload, agent_id):
                         else:
                             logging.error(f"AGENT_PROCESS: Could not determine Zone ID for DNS record {hostname_dns}")
     
-                    from app.core.state_manager import get_agent_rules
-                    from app.core.tunnel_manager import _build_ingress_entry_from_rule
-                    agent_rules = get_agent_rules(agent_id)
-
-                    ingress_rules = []
-                    for rule_key, rule in agent_rules.items():
-                        if rule.get("status") == "active":
-                            entry = _build_ingress_entry_from_rule(rule)
-                            if entry:
-                                ingress_rules.append(entry)
-                    ingress_rules.append({"service": "http_status:404"})
-                    account_id = current_app.config.get('CF_ACCOUNT_ID')
-                    endpoint = f"/accounts/{account_id}/cfd_tunnel/{agent_tunnel_id}/configurations"
-                    config_payload = {"config": {"ingress": ingress_rules}}
-
                     try:
-                        cf_api_request("PUT", endpoint, json_data=config_payload)
-                        logging.info(f"AGENT_PROCESS: Successfully updated tunnel config for agent {agent_id}")
+                        if update_cloudflare_config(agent_tunnel_id):
+                            logging.info(f"AGENT_PROCESS: Successfully updated tunnel config for agent {agent_id}")
+                        else:
+                            logging.error(f"AGENT_PROCESS: Failed to update tunnel config for agent {agent_id}")
                     except Exception as e:
                         logging.error(f"AGENT_PROCESS: Failed to update tunnel config for agent {agent_id}: {e}")
                 else:

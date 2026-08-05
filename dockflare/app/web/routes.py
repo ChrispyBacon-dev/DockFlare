@@ -61,8 +61,11 @@ from app.core.access_manager import (
     create_cloudflare_access_application,
     update_cloudflare_access_application,
     generate_access_app_config_hash,
-    find_cloudflare_access_application_by_domain
+    find_cloudflare_access_application_by_domain,
+    get_access_group_allowed_idps,
+    resolve_access_group_policies
 )
+from app.core.access_policy_rules import build_access_policies, effective_access_policies, login_method_ids
 from app.core.reconciler import reconcile_state_threaded
 from app.core.docker_handler import is_valid_hostname, is_valid_service
 from app.core.utils import get_rule_key, normalize_path_value
@@ -691,7 +694,7 @@ def settings_page():
     display_token_val = get_display_token_ui(template_tunnel_state.get("token"))
     all_account_tunnels_list = get_all_account_cloudflare_tunnels(force_refresh=True)
     cf_account_id = current_app.config.get('CF_ACCOUNT_ID')
-    
+
     return render_template(
         'settings.html',
         settings_form=settings_form,
@@ -1342,28 +1345,15 @@ def ui_add_manual_rule_route():
                     if i == 0:
                         desired_session_duration = group.get("session_duration", "24h")
                         desired_app_launcher_visible = group.get("app_launcher_visible", False)
-                        desired_allowed_idps = group.get("allowed_idps")
                         desired_auto_redirect = group.get("auto_redirect_to_identity", False)
-
-                    if config.USE_REUSABLE_POLICIES:
-                        use_reusable = True
-                        from app.core import reusable_policies
-
-                        existing_policy_id = group.get("cloudflare_policy_id")
-                        if existing_policy_id:
-                            logging.info(f"Using existing reusable policy ID '{existing_policy_id}' for access group '{group_id}'")
-                            cf_access_policies_or_ids.append(existing_policy_id)
-                        else:
-                            policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id)
-                            if policy_id:
-                                logging.info(f"Synced access group '{group_id}' to reusable policy ID '{policy_id}' for manual rule")
-                                cf_access_policies_or_ids.append(policy_id)
-                            else:
-                                logging.error(f"Failed to sync access group '{group_id}' for manual rule - no policy ID returned")
-                    else:
-                        cf_access_policies_or_ids.extend(group.get("policies", []))
                 else:
                     logging.warning(f"Access group '{group_id}' selected but not found in state")
+
+            desired_allowed_idps = get_access_group_allowed_idps(manual_access_group_ids)
+            cf_access_policies_or_ids, use_reusable = resolve_access_group_policies(
+                manual_access_group_ids,
+                config.USE_REUSABLE_POLICIES
+            )
 
             if cf_access_policies_or_ids:
                 access_group_id = manual_access_group_ids
@@ -1665,28 +1655,15 @@ def ui_edit_manual_rule_route():
                     if i == 0:
                         desired_session_duration = group.get("session_duration", "24h")
                         desired_app_launcher_visible = group.get("app_launcher_visible", False)
-                        desired_allowed_idps = group.get("allowed_idps")
                         desired_auto_redirect = group.get("auto_redirect_to_identity", False)
-
-                    if config.USE_REUSABLE_POLICIES:
-                        use_reusable = True
-                        from app.core import reusable_policies
-
-                        existing_policy_id = group.get("cloudflare_policy_id")
-                        if existing_policy_id:
-                            logging.info(f"Using existing reusable policy ID '{existing_policy_id}' for access group '{group_id}' in edit")
-                            cf_access_policies_or_ids.append(existing_policy_id)
-                        else:
-                            policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id)
-                            if policy_id:
-                                logging.info(f"Synced access group '{group_id}' to reusable policy ID '{policy_id}' for manual edit")
-                                cf_access_policies_or_ids.append(policy_id)
-                            else:
-                                logging.error(f"Failed to sync access group '{group_id}' for manual edit - no policy ID returned")
-                    else:
-                        cf_access_policies_or_ids.extend(group.get("policies", []))
                 else:
                     logging.warning(f"Access group '{group_id}' selected in edit but not found in state")
+
+            desired_allowed_idps = get_access_group_allowed_idps(manual_access_group_ids)
+            cf_access_policies_or_ids, use_reusable = resolve_access_group_policies(
+                manual_access_group_ids,
+                config.USE_REUSABLE_POLICIES
+            )
 
             if cf_access_policies_or_ids:
                 access_group_id = manual_access_group_ids
@@ -1877,82 +1854,14 @@ def ui_delete_manual_rule_route(rule_key_from_url):
 
 def _parse_and_build_policy_from_form(email_str, ip_ranges_str=None, countries_list=None, idp_list=None, public_mode=False):
     from app.core.state_manager import get_idp_id_by_name
-    policies = []
-    email_rules = []
-    ip_rules = []
-    idp_rules = []
-
-    if email_str and email_str.strip():
-        email_parts = [part.strip() for part in email_str.split(',') if part.strip()]
-        for part in email_parts:
-            if part.startswith('@'):
-                email_rules.append({"email_domain": {"domain": part[1:]}})
-            else:
-                email_rules.append({"email": {"email": part}})
-
-    if idp_list:
-        for idp_friendly_name in idp_list:
-            if idp_friendly_name.strip():
-                idp_id = get_idp_id_by_name(idp_friendly_name)
-                if idp_id:
-                    idp_rules.append({"login_method": {"id": idp_id}})
-                else:
-                    logging.warning(f"IdP friendly name '{idp_friendly_name}' not found in state, skipping")
-
-    if idp_rules and not email_rules and not public_mode:
-        raise ValueError("When using Identity Providers, you must specify allowed email addresses to prevent unauthorized access.")
-
-    if ip_ranges_str and ip_ranges_str.strip():
-        ip_parts = [part.strip() for part in ip_ranges_str.split(',') if part.strip()]
-        for ip in ip_parts:
-            ip_rules.append({"ip": {"ip": ip}})
-
-    if ip_rules:
-        policies.append({"name": "Bypass for defined IPs", "decision": "bypass", "include": ip_rules})
-
-    if public_mode:
-        # PUBLIC MODE: Bypass for everyone except blocked countries
-        if countries_list:
-            blocked_country_rules = [{"geo": {"country_code": country.upper()}} for country in countries_list]
-            policies.append({
-                "name": "Public Access (Bypass) with geo-blocking",
-                "decision": "bypass",
-                "include": [{"everyone": {}}],
-                "exclude": blocked_country_rules
-            })
-        else:
-            # Full public access, no restrictions
-            policies.append({
-                "name": "Public Access (Bypass)",
-                "decision": "bypass",
-                "include": [{"everyone": {}}]
-            })
-    else:
-                
-        if countries_list and not email_rules and not idp_rules:
-            raise ValueError(
-                "Invalid configuration: You've selected geo-restrictions but no authentication method (email or identity provider). "
-                "To create a public access rule with geo-restrictions, please switch to 'Public Access' mode."
-            )
-
-        include_rules = email_rules + idp_rules
-        if include_rules:
-            policy = {
-                "name": "Allow defined users",
-                "decision": "allow",
-                "include": include_rules
-            }
-
-            if countries_list:
-                blocked_country_rules = [{"geo": {"country_code": country.upper()}} for country in countries_list]
-                policy["exclude"] = blocked_country_rules
-
-            policies.append(policy)
-            policies.append({"name": "Default Deny", "decision": "deny", "include": [{"everyone": {}}]})
-        else:
-            policies.append({"name": "Default Deny (No rules defined)", "decision": "deny", "include": [{"everyone": {}}]})
-
-    return policies
+    return build_access_policies(
+        email_str,
+        ip_ranges_str,
+        countries_list,
+        idp_list,
+        get_idp_id_by_name,
+        public_mode
+    )
 
 @bp.route('/ui/access-groups/create', methods=['POST'])
 def create_access_group():
@@ -1990,13 +1899,14 @@ def create_access_group():
             "app_launcher_visible": form.get('app_launcher_visible') == 'on',
             "auto_redirect_to_identity": form.get('auto_redirect') == 'on',
             "public_mode": public_mode,
+            "allowed_idps": login_method_ids(policies),
             "policies": policies
         }
         access_groups[group_id] = new_group
         save_state()
 
         from app import config
-        if config.USE_REUSABLE_POLICIES:
+        if config.USE_REUSABLE_POLICIES and len(effective_access_policies(new_group)) == 1:
             from app.core import reusable_policies
             try:
                 policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id)
@@ -2045,13 +1955,14 @@ def edit_access_group(group_id):
             "app_launcher_visible": form.get('app_launcher_visible') == 'on',
             "auto_redirect_to_identity": form.get('auto_redirect') == 'on',
             "public_mode": public_mode,
+            "allowed_idps": login_method_ids(policies),
             "policies": policies
         }
         access_groups[group_id] = updated_group
         save_state()
 
         from app import config
-        if config.USE_REUSABLE_POLICIES:
+        if config.USE_REUSABLE_POLICIES and len(effective_access_policies(updated_group)) == 1:
             from app.core import reusable_policies
             try:
                 policy_id = reusable_policies.sync_access_group_to_reusable_policy(group_id)
@@ -2135,28 +2046,23 @@ def create_zone_default_policy():
             flash(_t('flash.zone_policy.wildcard_exists', wildcardHostname=wildcard_hostname), "warning")
             return redirect(url_for('web.access_policies_page'))
         
-        from app.core import reusable_policies
-        cf_policy_id = group.get("cf_policy_id") or group.get("id")
-        
-        if not cf_policy_id or cf_policy_id == access_group_id:
-            policy_id = reusable_policies.sync_access_group_to_reusable_policy(access_group_id)
-            if policy_id:
-                cf_policy_id = policy_id
-                with state_lock:
-                    access_groups[access_group_id]["cf_policy_id"] = policy_id
-                    access_groups[access_group_id]["id"] = policy_id
-                    save_state()
-        
+        policy_payload, use_reusable = resolve_access_group_policies(
+            [access_group_id],
+            config.USE_REUSABLE_POLICIES
+        )
+        if not policy_payload:
+            raise ValueError(f"Access group '{access_group_id}' has no usable policies")
+
         app_name = f"Zone Default: {wildcard_hostname}"
         session_duration = group.get("session_duration", "24h")
         app_launcher_visible = group.get("app_launcher_visible", False)
         auto_redirect = group.get("auto_redirect_to_identity", False)
-        allowed_idps = group.get("allowed_idps")
+        allowed_idps = group.get("allowed_idps") or login_method_ids(group.get("policies", [])) or None
 
         app_result = create_cloudflare_access_application(
             wildcard_hostname, app_name, session_duration,
-            app_launcher_visible, [wildcard_hostname], [cf_policy_id],
-            allowed_idps, auto_redirect, True
+            app_launcher_visible, [wildcard_hostname], policy_payload,
+            allowed_idps, auto_redirect, use_reusable
         )
 
         if app_result:

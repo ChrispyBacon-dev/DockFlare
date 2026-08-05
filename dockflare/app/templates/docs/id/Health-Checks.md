@@ -23,7 +23,7 @@ services:
     restart: unless-stopped
     # ... pengaturan lain
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/ping"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/ping"]
       interval: 1m30s
       timeout: 10s
       retries: 3
