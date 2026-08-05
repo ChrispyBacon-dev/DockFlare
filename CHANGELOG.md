@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.1.3] - 2026-08-01
+
+### Added
+- **Slovak localization:** Added Slovak UI translations and a complete Slovak documentation set. Thanks to [@Vaso73](https://github.com/Vaso73) for the community contribution ([#379](https://github.com/ChrispyBacon-dev/DockFlare/pull/379)).
+
+### Fixed
+- **Zone-default Access policies:** Corrected Cloudflare Access policy creation for TLD / zone-default policies when both identity-provider and email rules are configured. Email rules are now applied as required conditions rather than being combined with identity-provider rules using unintended OR logic.
 
 ## [v3.1.2] - 2026-05-08
 
