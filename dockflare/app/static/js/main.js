@@ -1295,14 +1295,16 @@ async function openEditAccessGroupModal(groupId, details) {
         const ipRanges = [];
 
         details.policies.forEach(policy => {
-            if (policy.include) {
-                policy.include.forEach(rule => {
-                    if (rule.email && rule.email.email) emails.push(rule.email.email);
-                    else if (rule.email_domain && rule.email_domain.domain) emails.push(`@${rule.email_domain.domain}`);
-                    else if (rule.ip && rule.ip.ip) ipRanges.push(rule.ip.ip);
-                    else if (rule['login_method'] && rule['login_method'].id) selectedIdpIds.push(rule['login_method'].id);
-                });
-            }
+            ['include', 'require'].forEach(ruleType => {
+                if (Array.isArray(policy[ruleType])) {
+                    policy[ruleType].forEach(rule => {
+                        if (rule.email && rule.email.email) emails.push(rule.email.email);
+                        else if (rule.email_domain && rule.email_domain.domain) emails.push(`@${rule.email_domain.domain}`);
+                        else if (rule.ip && rule.ip.ip) ipRanges.push(rule.ip.ip);
+                        else if (rule['login_method'] && rule['login_method'].id) selectedIdpIds.push(rule['login_method'].id);
+                    });
+                }
+            });
 
             if (policy.exclude && Array.isArray(policy.exclude)) {
                 policy.exclude.forEach(rule => {
@@ -1316,6 +1318,7 @@ async function openEditAccessGroupModal(groupId, details) {
         emailText = [...new Set(emails)].join(', ');
         ipRangeText = [...new Set(ipRanges)].join(', ');
         selectedCountries = [...new Set(selectedCountries)];
+        selectedIdpIds = [...new Set(selectedIdpIds)];
     }
 
     document.getElementById('group_emails').value = emailText;

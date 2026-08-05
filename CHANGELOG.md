@@ -8,7 +8,14 @@ All notable changes to this project will be documented in this file.
 - **Slovak localization:** Added Slovak UI translations and a complete Slovak documentation set. Thanks to [@Vaso73](https://github.com/Vaso73) for the community contribution ([#379](https://github.com/ChrispyBacon-dev/DockFlare/pull/379)).
 
 ### Fixed
-- **Zone-default Access policies:** Corrected Cloudflare Access policy creation for TLD / zone-default policies when both identity-provider and email rules are configured. Email rules are now applied as required conditions rather than being combined with identity-provider rules using unintended OR logic.
+- **Identity-provider Access policies:** Corrected Cloudflare Access rule construction when identity-provider and email restrictions are configured together. Previously, email selectors and login methods were combined as `Include` rules, allowing any account authenticated by the selected provider to satisfy the policy. Allowed emails and domains now retain OR semantics under `Include`, while the selected identity provider is enforced as an additional AND condition under `Require`.
+  - Supports multiple allowed email addresses and domains without requiring one user to match every entry.
+  - Supports multiple identity providers as alternative authenticated paths, each constrained by the same email allowlist.
+  - Applies the same rule resolution to zone-default policies, Docker-managed services, manually managed rules, and Master API-created rules.
+  - Fails closed when a referenced identity provider is missing instead of silently falling back to email-only authentication.
+  - Migrates previously stored DockFlare policies from the unsafe OR structure, as well as the intermediate inverted Require structure, during state loading.
+  - Preserves compound policies such as IP bypass plus authenticated access without dropping all but the first rule during reusable-policy synchronization.
+  - Restores complete email and identity-provider values when reopening an Access Group in the editor.
 
 ## [v3.1.2] - 2026-05-08
 

@@ -20,6 +20,7 @@ import requests
 import copy
 from flask import current_app
 from app.core import cloudflare_api
+from app.core.access_policy_rules import effective_access_policies, login_method_ids, normalize_managed_access_group
 
 def create_reusable_policy(name, decision, include_rules, exclude_rules=None, require_rules=None, purpose_justification_required=False, purpose_justification_prompt=None):
     account_id = current_app.config.get('CF_ACCOUNT_ID')
@@ -185,7 +186,7 @@ def sync_access_group_to_reusable_policy(group_id):
         if not group_definition or not group_definition.get("policies"):
             logging.warning(f"Access group '{group_id}' has no policies to sync")
             return None
-        local_definition = copy.deepcopy(group_definition)
+        local_definition = normalize_managed_access_group(copy.deepcopy(group_definition))[0]
 
     is_system_policy = local_definition.get("system_policy", False)
     if is_system_policy and local_definition.get("policies"):
@@ -194,9 +195,9 @@ def sync_access_group_to_reusable_policy(group_id):
         policy_name = f"DockFlare-AccessGroup-{group_id}"
 
     existing_policy_id = local_definition.get("cloudflare_policy_id")
-    policies = local_definition.get("policies", [])
-    if not policies:
-        logging.warning(f"No policies found in access group '{group_id}'")
+    policies = effective_access_policies(local_definition)
+    if len(policies) != 1:
+        logging.warning(f"Access group '{group_id}' has {len(policies)} effective policies and cannot be represented by one reusable policy")
         return None
 
     primary_policy = policies[0]
@@ -382,6 +383,7 @@ def import_cloudflare_reusable_policies(sync_all=None):
                 continue
             else:
                 existing_group["cloudflare_policy_id"] = policy_id
+                existing_group["allowed_idps"] = login_method_ids([policy_definition])
                 if not is_dockflare_managed:
                     existing_group["external_policy"] = True
                 # Update system_policy flag if this is a system policy
@@ -397,6 +399,7 @@ def import_cloudflare_reusable_policies(sync_all=None):
                 "session_duration": "24h",
                 "app_launcher_visible": False,
                 "auto_redirect_to_identity": False,
+                "allowed_idps": login_method_ids([policy_definition]),
                 "policies": [policy_definition],
                 "cloudflare_policy_id": policy_id
             }
