@@ -24,8 +24,8 @@ services:
     # ... ďalšie nastavenia
     healthcheck:
       # Príkaz na kontrolu stavu.
-      # curl vykoná HTTP požiadavku na ping endpoint.
-      test: ["CMD", "curl", "-f", "http://localhost:5000/ping"]
+      # wget je dostupný v image DockFlare a kontroluje ping endpoint.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/ping"]
       # Ako často spúšťať kontrolu
       interval: 1m30s
       # Ako dlho čakať na odpoveď
@@ -38,7 +38,7 @@ services:
 
 ### Rozbor konfigurácie `healthcheck`:
 
-*   `test`: Príkaz, ktorý Docker spúšťa vnútri kontajnera. `curl -f` vykoná HTTP požiadavku na endpoint `/ping` a skončí s nenulovým stavovým kódom, ak odpoveď nie je HTTP 200 OK.
+*   `test`: Príkaz, ktorý Docker spúšťa vnútri kontajnera. `wget --spider` vykoná HTTP požiadavku na endpoint `/ping` a skončí s nenulovým stavovým kódom, ak odpoveď nie je HTTP 200 OK.
 *   `interval`: Docker spustí túto kontrolu každých 90 sekúnd.
 *   `timeout`: Docker počká na dokončenie príkazu až 10 sekúnd.
 *   `retries`: Ak kontrola zlyhá 3-krát po sebe, Docker označí kontajner ako `unhealthy`.
