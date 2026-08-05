@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - **Slovak localization:** Added Slovak UI translations and a complete Slovak documentation set. Thanks to [@Vaso73](https://github.com/Vaso73) for the community contribution ([#379](https://github.com/ChrispyBacon-dev/DockFlare/pull/379)).
 
 ### Fixed
+- **In-memory cache invalidation:** Added pattern-based invalidation for the built-in `SimpleCache` fallback, ensuring matching DNS and zone cache entries are cleared when Redis is not configured. This also removes the recurring Redis-only warning for supported non-Redis installations. Thanks to [@kocaemre](https://github.com/kocaemre) for the community contribution ([#384](https://github.com/ChrispyBacon-dev/DockFlare/pull/384)).
 - **Identity-provider Access policies:** Corrected Cloudflare Access rule construction when identity-provider and email restrictions are configured together. Previously, email selectors and login methods were combined as `Include` rules, allowing any account authenticated by the selected provider to satisfy the policy. Allowed emails and domains now retain OR semantics under `Include`, while the selected identity provider is enforced as an additional AND condition under `Require`.
   - Supports multiple allowed email addresses and domains without requiring one user to match every entry.
   - Supports multiple identity providers as alternative authenticated paths, each constrained by the same email allowlist.
