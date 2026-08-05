@@ -46,7 +46,6 @@ from app.core.cloudflare_api import (
     get_zone_id_from_name,
     get_zone_details_by_id,
     delete_tunnel_via_api,
-    cf_api_request,
     list_account_zones
 )
 from app.core.access_manager import (
@@ -1104,24 +1103,11 @@ def process_agent_container_start(payload, agent_id):
                         else:
                             logging.error(f"AGENT_PROCESS: Could not determine Zone ID for DNS record {hostname_dns}")
     
-                    from app.core.state_manager import get_agent_rules
-                    from app.core.tunnel_manager import _build_ingress_entry_from_rule
-                    agent_rules = get_agent_rules(agent_id)
-
-                    ingress_rules = []
-                    for rule_key, rule in agent_rules.items():
-                        if rule.get("status") == "active":
-                            entry = _build_ingress_entry_from_rule(rule)
-                            if entry:
-                                ingress_rules.append(entry)
-                    ingress_rules.append({"service": "http_status:404"})
-                    account_id = current_app.config.get('CF_ACCOUNT_ID')
-                    endpoint = f"/accounts/{account_id}/cfd_tunnel/{agent_tunnel_id}/configurations"
-                    config_payload = {"config": {"ingress": ingress_rules}}
-
                     try:
-                        cf_api_request("PUT", endpoint, json_data=config_payload)
-                        logging.info(f"AGENT_PROCESS: Successfully updated tunnel config for agent {agent_id}")
+                        if update_cloudflare_config(agent_tunnel_id):
+                            logging.info(f"AGENT_PROCESS: Successfully updated tunnel config for agent {agent_id}")
+                        else:
+                            logging.error(f"AGENT_PROCESS: Failed to update tunnel config for agent {agent_id}")
                     except Exception as e:
                         logging.error(f"AGENT_PROCESS: Failed to update tunnel config for agent {agent_id}: {e}")
                 else:
