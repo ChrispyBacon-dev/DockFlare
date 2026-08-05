@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v3.1.3] - 2026-08-01
+## [v3.1.3] - 2026-08-05
 
 ### Added
 - **Slovak localization:** Added Slovak UI translations and a complete Slovak documentation set. Thanks to [@Vaso73](https://github.com/Vaso73) for the community contribution ([#379](https://github.com/ChrispyBacon-dev/DockFlare/pull/379)).
