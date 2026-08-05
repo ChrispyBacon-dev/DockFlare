@@ -15,12 +15,15 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 # dockflare/app/core/cache.py
+import fnmatch
 import logging
 import os
-import time
 import threading
+import time
+
 import redis
 from flask_caching import Cache
+
 from app import config
 
 cache_config = {
@@ -130,8 +133,16 @@ def _delete_keys_by_pattern(pattern):
                     redis_client.delete(*keys)
                     logging.debug(f"Deleted {len(keys)} keys matching pattern {full_pattern}")
                 cursor = int(cursor)
+        elif cache.config['CACHE_TYPE'] == 'SimpleCache' and hasattr(cache, 'cache') and hasattr(cache.cache, '_cache'):
+            matching_keys = [
+                key for key in list(cache.cache._cache)
+                if fnmatch.fnmatch(key, pattern)
+            ]
+            for key in matching_keys:
+                cache.cache.delete(key)
+            logging.debug(f"Deleted {len(matching_keys)} SimpleCache keys matching pattern {pattern}")
         else:
-            logging.warning("Pattern-based cache invalidation is only supported with RedisCache")
+            logging.debug("Pattern-based cache invalidation skipped for unsupported cache backend")
     except Exception as e:
         logging.error(f"Error deleting keys by pattern {pattern}: {e}", exc_info=True)
 
