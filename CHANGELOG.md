@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Fixed
+- **Centralized Cloudflare zone resolution:** Replaced fixed-label and duplicated zone detection with one account-aware longest-suffix resolver across manual rules, the API, local Docker events, agent events, and reconciliation. Multi-label domains and nested zones now resolve consistently; invalid explicit overrides fail closed; zone inventory pagination, caching, stale fallback, IDNA normalization, rule ownership persistence, tunnel-preserving edits, guarded DNS migration, wildcard DNS behavior, and active-zone DNS scans are handled consistently. Fixes [#389](https://github.com/ChrispyBacon-dev/DockFlare/issues/389).
+
 ## [v3.1.3] - 2026-08-05
 
 ### Added

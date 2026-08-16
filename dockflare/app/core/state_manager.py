@@ -152,6 +152,8 @@ def load_state():
                 rule_copy.setdefault("access_group_id", None)
                 rule_copy.setdefault("tunnel_id", None)
                 rule_copy.setdefault("zone_name", None)
+                rule_copy.setdefault("zone_resolution_source", None)
+                rule_copy.setdefault("agent_id", None)
                 rule_copy.setdefault("no_tls_verify", False)
                 rule_copy.setdefault("origin_server_name", None)
                 rule_copy.setdefault("http2_origin", False)
@@ -500,6 +502,9 @@ def save_state():
                     "status": rule.get("status"),
                     "delete_at": None,
                     "zone_id": rule.get("zone_id"),
+                    "zone_name": rule.get("zone_name"),
+                    "zone_resolution_source": rule.get("zone_resolution_source"),
+                    "agent_id": rule.get("agent_id"),
                     "no_tls_verify": rule.get("no_tls_verify", False),
                     "origin_server_name": rule.get("origin_server_name"),
                     "http_host_header": rule.get("http_host_header"),
@@ -514,8 +519,7 @@ def save_state():
                     "source": rule.get("source", "docker"),
                     "access_group_id": rule.get("access_group_id"),
                     "tunnel_id": rule.get("tunnel_id"),
-                    "tunnel_name": rule.get("tunnel_name"),
-                    "zone_name": rule.get("zone_name")
+                    "tunnel_name": rule.get("tunnel_name")
                 }
                 delete_at_val = rule.get("delete_at")
                 if isinstance(delete_at_val, datetime):
@@ -767,7 +771,9 @@ def serialize_managed_rule(rule_key: str, rule: Dict[str, Any]) -> Dict[str, Any
         "delete_at": _serialize_datetime(rule.get("delete_at")),
         "zone_id": rule.get("zone_id"),
         "zone_name": rule.get("zone_name"),
+        "zone_resolution_source": rule.get("zone_resolution_source"),
         "source": rule.get("source"),
+        "agent_id": rule.get("agent_id"),
         "container_id": rule.get("container_id"),
         "tunnel_id": rule.get("tunnel_id"),
         "tunnel_name": rule.get("tunnel_name"),

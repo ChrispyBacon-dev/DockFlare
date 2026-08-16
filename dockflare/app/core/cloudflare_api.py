@@ -23,14 +23,35 @@ import threading
 from flask import current_app
 from app import config
 from app.core.cache import cache, get_dns_records_cache_key, DNS_RECORDS_CACHE_TIMEOUT, CACHE_ENABLED
+from app.core.zone_resolver import ZoneResolutionError, hostname_in_zone, normalize_dns_name, resolve_zone
 
 zone_id_cache = {}  
 zone_details_by_id_cache = {}  
+_last_good_zone_inventories = {}
 _cached_account_email = None
 _cached_account_email_timestamp = 0
 _cache_lock = threading.Lock()
+_zone_inventory_lock = threading.Lock()
 
 dns_semaphore = threading.Semaphore(config.MAX_CONCURRENT_DNS_OPS)
+
+def clear_zone_resolution_caches(account_id=None):
+    global zone_id_cache, zone_details_by_id_cache, _last_good_zone_inventories
+    with _cache_lock:
+        zone_id_cache.clear()
+        zone_details_by_id_cache.clear()
+        if account_id:
+            _last_good_zone_inventories.pop(account_id, None)
+        else:
+            _last_good_zone_inventories.clear()
+    if account_id:
+        cache.delete(f"zones:{account_id}")
+
+def _serialize_zone_inventory(func):
+    def wrapped(*args, **kwargs):
+        with _zone_inventory_lock:
+            return func(*args, **kwargs)
+    return wrapped
 
 def cf_api_request(method, endpoint, json_data=None, params=None, log_errors=True):
 
@@ -117,11 +138,17 @@ def get_zone_id_from_name(zone_name):
         logging.warning("get_zone_id_from_name called with empty zone_name.")
         return None
     
+    try:
+        normalized_zone_name = normalize_dns_name(zone_name, allow_wildcard=False)
+    except ZoneResolutionError:
+        return None
+    account_id = current_app.config.get('CF_ACCOUNT_ID')
+    cache_key = (account_id, normalized_zone_name)
     cache_ttl = config.ACCOUNT_EMAIL_CACHE_TTL
     current_time = time.time()
 
     with _cache_lock:
-        cached_data = zone_id_cache.get(zone_name)
+        cached_data = zone_id_cache.get(cache_key)
         if cached_data:
             zone_id, timestamp = cached_data
             if current_time - timestamp < cache_ttl:
@@ -132,7 +159,7 @@ def get_zone_id_from_name(zone_name):
     
     logging.info(f"Zone ID for '{zone_name}' not in cache or expired. Querying Cloudflare API...")
     endpoint = "/zones"
-    params = {"name": zone_name, "status": "active", "account.id": current_app.config.get('CF_ACCOUNT_ID')}
+    params = {"name": normalized_zone_name, "status": "active", "account.id": account_id}
     try:
         response_data = cf_api_request("GET", endpoint, params=params)
         results = response_data.get("result", [])
@@ -140,10 +167,14 @@ def get_zone_id_from_name(zone_name):
         if results and isinstance(results, list) and len(results) == 1:
             zone_id = results[0].get("id")
             zone_actual_name = results[0].get("name")
-            if zone_id and zone_actual_name == zone_name:
+            try:
+                actual_normalized = normalize_dns_name(zone_actual_name, allow_wildcard=False)
+            except ZoneResolutionError:
+                actual_normalized = None
+            if zone_id and actual_normalized == normalized_zone_name:
                 logging.info(f"Found Zone ID for '{zone_name}': {zone_id}")
                 with _cache_lock:
-                    zone_id_cache[zone_name] = (zone_id, current_time)
+                    zone_id_cache[cache_key] = (zone_id, current_time)
                 return zone_id
             else:
                 logging.error(f"API returned unexpected result or name mismatch for zone '{zone_name}': {results[0]}")
@@ -288,6 +319,8 @@ def create_tunnel_via_api(name):
 def create_cloudflare_dns_record(zone_id, hostname, tunnel_id):
     acquired = False
     try:
+        if isinstance(hostname, str) and hostname.startswith('*.'):
+            return "wildcard_dns_skipped"
         acquired = dns_semaphore.acquire(timeout=30)
         if not acquired:
             logging.error(f"Timed out waiting for DNS semaphore - too many concurrent operations. Skipping DNS creation for {hostname}")
@@ -295,6 +328,16 @@ def create_cloudflare_dns_record(zone_id, hostname, tunnel_id):
             
         if not zone_id or not hostname or not tunnel_id:
             logging.error("create_cloudflare_dns_record: Missing required arguments zone_id, hostname, or tunnel_id.")
+            return None
+        zone_details = get_zone_details_by_id(zone_id)
+        if not zone_details or not zone_details.get("name"):
+            logging.error(f"create_cloudflare_dns_record: Could not validate zone {zone_id} for {hostname}.")
+            return None
+        try:
+            if not hostname_in_zone(hostname, zone_details["name"]):
+                logging.error(f"create_cloudflare_dns_record: Hostname {hostname} is outside zone {zone_details['name']}.")
+                return None
+        except ZoneResolutionError:
             return None
 
         existing_record_id, correct_tunnel = find_dns_record_id(zone_id, hostname, tunnel_id)
@@ -435,6 +478,8 @@ def find_dns_record_id(zone_id, hostname, tunnel_id):
             logging.debug(f"Released DNS semaphore after find_dns_record_id for {hostname}")
 
 def delete_cloudflare_dns_record(zone_id, hostname, tunnel_id):
+    if isinstance(hostname, str) and hostname.startswith('*.'):
+        return True
     acquired = False
     try:
         acquired = dns_semaphore.acquire(timeout=30)
@@ -523,43 +568,98 @@ def get_cloudflare_account_email():
     logging.warning("Could not fetch Cloudflare account email from any available endpoint")
     return None
 
-def list_account_zones(force_refresh=False):
+@_serialize_zone_inventory
+def get_account_zone_inventory(force_refresh=False):
     account_id = current_app.config.get('CF_ACCOUNT_ID')
     if not account_id:
-        return []
+        return {"zones": [], "status": "unavailable", "error": "missing_account_configuration"}
     cache_key = f"zones:{account_id}"
-    if not force_refresh:
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return cached
+    cached = cache.get(cache_key)
+    cached_zones = None
+    if isinstance(cached, dict) and "zones" in cached:
+        cached_zones = cached["zones"]
+        _last_good_zone_inventories[account_id] = list(cached_zones)
+        if not force_refresh:
+            return {**cached, "status": "cached"}
+    elif isinstance(cached, list):
+        cached_zones = cached
+        _last_good_zone_inventories[account_id] = list(cached_zones)
+        if not force_refresh:
+            return {"zones": cached_zones, "status": "cached", "error": None}
     endpoint = "/zones"
-    params = {"status": "active", "per_page": 100, "account.id": account_id}
+    params = {"status": "active", "per_page": 50, "account.id": account_id}
     zones = []
     page = 1
-    while True:
+    error = None
+    complete = False
+    while page <= 100:
         params["page"] = page
         try:
             response_data = cf_api_request("GET", endpoint, params=params)
             results = response_data.get("result", [])
             if not isinstance(results, list):
+                error = "invalid_zone_inventory"
                 break
             for z in results:
                 zid = z.get("id")
                 name = z.get("name")
                 if zid and name:
                     zones.append({"id": zid, "name": name})
-            if len(results) < params["per_page"]:
+            result_info = response_data.get("result_info") or {}
+            total_pages = result_info.get("total_pages")
+            if isinstance(total_pages, str) and total_pages.isdigit():
+                total_pages = int(total_pages)
+            if isinstance(total_pages, int) and total_pages > 0:
+                if page >= total_pages:
+                    complete = True
+                    break
+            elif len(results) < params["per_page"]:
+                complete = True
                 break
             page += 1
-            if page > 20:
-                break
-        except requests.exceptions.RequestException:
+        except requests.exceptions.RequestException as exc:
+            error = str(exc)
             break
-        except Exception:
+        except Exception as exc:
+            error = str(exc)
             break
+    if page > 100:
+        error = "zone_inventory_page_limit"
+    if not complete:
+        previous = _last_good_zone_inventories.get(account_id)
+        if previous is None:
+            previous = cached_zones
+        if previous is not None:
+            return {"zones": list(previous), "status": "stale", "error": error or "partial_zone_inventory"}
+        return {"zones": [], "status": "partial" if zones else "unavailable", "error": error or "partial_zone_inventory"}
     zones.sort(key=lambda x: x.get("name", "").lower())
-    cache.set(cache_key, zones, timeout=300)
-    return zones
+    inventory = {"zones": zones, "status": "complete", "error": None}
+    _last_good_zone_inventories[account_id] = list(zones)
+    cache.set(cache_key, inventory, timeout=300)
+    return inventory
+
+def list_account_zones(force_refresh=False):
+    return get_account_zone_inventory(force_refresh=force_refresh).get("zones", [])
+
+def resolve_account_zone(hostname, explicit_zone_id=None, explicit_zone_name=None, default_zone_id=None, zones=None, inventory_status=None, allow_unverified_default=False):
+    if zones is None or inventory_status is None:
+        inventory = get_account_zone_inventory()
+        zones = inventory["zones"]
+        inventory_status = inventory["status"]
+    if default_zone_id is None:
+        default_zone_id = current_app.config.get('CF_ZONE_ID')
+    result = resolve_zone(
+        hostname,
+        zones,
+        explicit_zone_id=explicit_zone_id,
+        explicit_zone_name=explicit_zone_name,
+        default_zone_id=default_zone_id,
+        inventory_status=inventory_status,
+        allow_unverified_default=allow_unverified_default,
+    )
+    if result.get("source") == "default_unverified":
+        logging.warning(f"Zone resolution for {hostname} used unverified default zone {result.get('id')} because inventory status was {inventory_status}.")
+    return result
 
 def get_current_cf_config(tunnel_id_to_query):
     if not tunnel_id_to_query:

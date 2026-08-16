@@ -46,8 +46,11 @@ from app.core.cloudflare_api import (
     get_zone_id_from_name,
     get_zone_details_by_id,
     delete_tunnel_via_api,
-    list_account_zones
+    list_account_zones,
+    get_account_zone_inventory,
+    resolve_account_zone
 )
+from app.core.zone_resolver import ZoneResolutionError
 from app.core.access_manager import (
     check_for_tld_access_policy,
     get_cloudflare_account_email,
@@ -370,8 +373,12 @@ def get_overview_data():
 @api_v2_bp.route('/zones', methods=['GET'])
 def list_zones_api():
     force_refresh = request.args.get('refresh') == '1'
-    zones = list_account_zones(force_refresh=force_refresh)
-    return jsonify(zones)
+    inventory = get_account_zone_inventory(force_refresh=force_refresh)
+    if inventory["status"] in {"unavailable", "partial"}:
+        return jsonify({"error": "inventory_unavailable", **inventory}), 503
+    response = jsonify(inventory["zones"])
+    response.headers["X-DockFlare-Zone-Inventory"] = inventory["status"]
+    return response
 
 @api_v2_bp.route('/zone-policies', methods=['GET'])
 @login_required
@@ -422,27 +429,6 @@ def get_zone_policies_api():
         logging.error(f"Error fetching zone default policies: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
-def _auto_detect_zone_match(hostname, zones):
-    if not hostname or not zones:
-        return None, []
-    normalized = hostname.lower()
-    if normalized.startswith('*.'):
-        normalized = normalized[2:]
-    matches = []
-    for zone in zones:
-        name = (zone.get("name") or "").lower()
-        if not name:
-            continue
-        if normalized == name or normalized.endswith('.' + name):
-            matches.append(zone)
-    if not matches:
-        return None, []
-    longest = max(len(zone.get("name") or "") for zone in matches)
-    top_matches = [zone for zone in matches if len(zone.get("name") or "") == longest]
-    if len(top_matches) == 1:
-        return top_matches[0], []
-    return None, top_matches
-
 def _check_manual_rule_rate_limit():
     ip = request.remote_addr or 'global'
     now = time.time()
@@ -492,6 +478,7 @@ def create_manual_rule_api():
     tunnel_id_raw = data.get('tunnel_id')
     path_value = data.get('path')
     zone_id_override = data.get('zone_id')
+    zone_name_override = data.get('zone_name')
     if not isinstance(hostname_raw, str) or not isinstance(service_raw, str) or not isinstance(tunnel_id_raw, str):
         return jsonify({"error": "validation_failed"}), 400
     hostname = hostname_raw.strip()
@@ -508,20 +495,16 @@ def create_manual_rule_api():
             if len(trimmed) > 1 and trimmed.endswith('/'):
                 trimmed = trimmed.rstrip('/')
             normalized_path = trimmed
-    zones = list_account_zones()
-    selected_zone = None
-    ambiguous_zones = []
-    if zone_id_override:
-        zone_candidate = next((z for z in zones if z.get('id') == zone_id_override), None)
-        if not zone_candidate:
-            return jsonify({"error": "zone_not_found", "candidates": zones}), 409
-        selected_zone = zone_candidate
-    else:
-        selected_zone, ambiguous_zones = _auto_detect_zone_match(hostname, zones)
-        if not selected_zone:
-            if ambiguous_zones:
-                return jsonify({"error": "zone_ambiguous", "candidates": ambiguous_zones}), 409
-            return jsonify({"error": "zone_not_found", "candidates": zones}), 409
+    try:
+        selected_zone = resolve_account_zone(
+            hostname,
+            explicit_zone_id=zone_id_override,
+            explicit_zone_name=zone_name_override,
+            allow_unverified_default=False,
+        )
+    except ZoneResolutionError as exc:
+        status = 503 if exc.code == "inventory_unavailable" else 409
+        return jsonify({"error": exc.code, "candidates": exc.candidates}), status
     zone_id = selected_zone.get('id')
     zone_name = selected_zone.get('name')
     tunnels = get_all_account_cloudflare_tunnels()
@@ -541,9 +524,11 @@ def create_manual_rule_api():
         access_group_ids_list = []
     state_changed = False
     previous_tunnel_id = None
+    previous_rule_snapshot = None
     master_tunnel_id = get_effective_tunnel_id()
     with state_lock:
         existing = managed_rules.get(rule_key)
+        previous_rule_snapshot = copy.deepcopy(existing) if existing else None
         if existing and existing.get("status") == "active":
             existing_tunnel = existing.get("tunnel_id") or master_tunnel_id
             if existing.get("source") != "manual" or existing_tunnel != tunnel_id:
@@ -555,6 +540,7 @@ def create_manual_rule_api():
                 "service": service,
                 "zone_id": zone_id,
                 "zone_name": zone_name,
+                "zone_resolution_source": selected_zone.get("source"),
                 "tunnel_id": tunnel_id,
                 "tunnel_name": tunnel_name,
                 "access_group_id": access_group_ids_list or None
@@ -575,6 +561,7 @@ def create_manual_rule_api():
                 "delete_at": None,
                 "zone_id": zone_id,
                 "zone_name": zone_name,
+                "zone_resolution_source": selected_zone.get("source"),
                 "no_tls_verify": False,
                 "origin_server_name": None,
                 "http_host_header": None,
@@ -669,18 +656,66 @@ def create_manual_rule_api():
 
     if state_changed:
         publish_state_event('snapshot_refresh')
+    dns_result = None
     try:
-        create_cloudflare_dns_record(zone_id, hostname, tunnel_id)
+        dns_result = create_cloudflare_dns_record(zone_id, hostname, tunnel_id)
     except Exception as dns_error:
         logging.error(f"Failed to ensure DNS for manual rule {rule_key}: {dns_error}")
 
     update_needed = state_changed or (previous_tunnel_id and previous_tunnel_id != tunnel_id)
+    tunnel_update_success = True
     if update_needed:
-        update_cloudflare_config(tunnel_id)
+        tunnel_update_success = bool(update_cloudflare_config(tunnel_id))
     if previous_tunnel_id and previous_tunnel_id != tunnel_id:
         update_cloudflare_config(previous_tunnel_id)
     if state_changed and previous_tunnel_id is None and master_tunnel_id and master_tunnel_id != tunnel_id:
         update_cloudflare_config(master_tunnel_id)
+    dns_success = bool(dns_result) and dns_result not in {"semaphore_timeout", "existing_record_unconfirmed"}
+    if not dns_success or not tunnel_update_success:
+        with state_lock:
+            if previous_rule_snapshot is None:
+                managed_rules.pop(rule_key, None)
+            else:
+                managed_rules[rule_key] = previous_rule_snapshot
+            save_state()
+        update_cloudflare_config(tunnel_id)
+        if previous_tunnel_id:
+            update_cloudflare_config(previous_tunnel_id)
+        previous_tuple = None
+        if previous_rule_snapshot:
+            previous_tuple = (
+                previous_rule_snapshot.get("hostname"),
+                previous_rule_snapshot.get("zone_id"),
+                previous_rule_snapshot.get("tunnel_id") or master_tunnel_id,
+            )
+        with state_lock:
+            new_tuple_still_owned = any(
+                rule.get("status") == "active"
+                and rule.get("hostname") == hostname
+                and rule.get("zone_id") == zone_id
+                and (rule.get("tunnel_id") or master_tunnel_id) == tunnel_id
+                for rule in managed_rules.values()
+            )
+        if dns_success and previous_tuple != (hostname, zone_id, tunnel_id) and not new_tuple_still_owned:
+            delete_cloudflare_dns_record(zone_id, hostname, tunnel_id)
+        return jsonify({"error": "cloudflare_mutation_failed", "dns_updated": dns_success, "tunnel_updated": tunnel_update_success}), 502
+    if previous_rule_snapshot:
+        old_tuple = (
+            previous_rule_snapshot.get("hostname"),
+            previous_rule_snapshot.get("zone_id"),
+            previous_rule_snapshot.get("tunnel_id") or master_tunnel_id,
+        )
+        new_tuple = (hostname, zone_id, tunnel_id)
+        with state_lock:
+            old_tuple_still_owned = any(
+                rule.get("status") == "active"
+                and rule.get("hostname") == old_tuple[0]
+                and rule.get("zone_id") == old_tuple[1]
+                and (rule.get("tunnel_id") or master_tunnel_id) == old_tuple[2]
+                for rule in managed_rules.values()
+            )
+        if old_tuple != new_tuple and not old_tuple_still_owned and all(old_tuple) and not old_tuple[0].startswith('*.'):
+            delete_cloudflare_dns_record(old_tuple[1], old_tuple[0], old_tuple[2])
     status_code = 201 if state_changed else 200
     return jsonify({"rule_key": rule_key}), status_code
 
@@ -943,6 +978,7 @@ def process_agent_container_start(payload, agent_id):
 
             policy_jobs_map = {}
             dns_targets = {}
+            zone_inventory = get_account_zone_inventory()
             for config_item in hostnames_to_process:
                 hostname = config_item["hostname"]
                 service = config_item["service"]
@@ -957,17 +993,21 @@ def process_agent_container_start(payload, agent_id):
                 disable_chunked_encoding_from_item = config_item.get("disable_chunked_encoding", False)
                 match_sni_to_host_from_item = config_item.get("match_sni_to_host", False)
 
-                target_zone_id = None
-                if zone_name_from_item:
-                    target_zone_id = get_zone_id_from_name(zone_name_from_item)
-                    if not target_zone_id:
-                        logging.error(f"AGENT_PROCESS: Failed Zone ID lookup for '{zone_name_from_item}' (rule {rule_key}). Skipping.")
-                        continue
-                elif current_app.config.get('CF_ZONE_ID'):
-                    target_zone_id = current_app.config.get('CF_ZONE_ID')
-                else:
-                    logging.error(f"AGENT_PROCESS: No Zone ID for rule {rule_key}. Skipping.")
+                try:
+                    selected_zone = resolve_account_zone(
+                        hostname,
+                        explicit_zone_name=zone_name_from_item or None,
+                        zones=zone_inventory["zones"],
+                        inventory_status=zone_inventory["status"],
+                        allow_unverified_default=True,
+                    )
+                except ZoneResolutionError as exc:
+                    logging.error(f"AGENT_PROCESS: Zone resolution failed for {rule_key} ({exc.code}). Skipping.")
                     continue
+                target_zone_id = selected_zone["id"]
+                zone_name_from_item = selected_zone.get("name")
+                config_item["zone_name"] = zone_name_from_item
+                config_item["zone_resolution_source"] = selected_zone.get("source")
 
                 with state_lock:
                     existing_rule = managed_rules.get(rule_key)
@@ -1020,6 +1060,9 @@ def process_agent_container_start(payload, agent_id):
                         if existing_rule.get("zone_name") != zone_name_from_item:
                             existing_rule["zone_name"] = zone_name_from_item
                             rule_data_changed = True
+                        if existing_rule.get("zone_resolution_source") != selected_zone.get("source"):
+                            existing_rule["zone_resolution_source"] = selected_zone.get("source")
+                            rule_data_changed = True
 
                         existing_rule["source"] = "agent"
                         existing_rule["agent_id"] = agent_id
@@ -1044,6 +1087,7 @@ def process_agent_container_start(payload, agent_id):
                             "delete_at": None,
                             "zone_id": target_zone_id,
                             "zone_name": zone_name_from_item,
+                            "zone_resolution_source": selected_zone.get("source"),
                             "no_tls_verify": no_tls_verify_from_item,
                             "origin_server_name": origin_server_name_from_item,
                             "http_host_header": config_item.get("http_host_header"),
@@ -1096,11 +1140,10 @@ def process_agent_container_start(payload, agent_id):
                 if agent_record and agent_record.get("assigned_tunnel_id"):
                     agent_tunnel_id = agent_record.get("assigned_tunnel_id")
                     for hostname_dns, dns_details in dns_targets.items():
-                        zone_name_dns_item = dns_details.get("zone_name")
-                        target_zone_id_for_dns = dns_details.get("zone_id") or (get_zone_id_from_name(zone_name_dns_item) if zone_name_dns_item else current_app.config.get('CF_ZONE_ID'))
-                        if target_zone_id_for_dns:
+                        target_zone_id_for_dns = dns_details.get("zone_id")
+                        if target_zone_id_for_dns and not hostname_dns.startswith('*.'):
                             create_cloudflare_dns_record(target_zone_id_for_dns, hostname_dns, agent_tunnel_id)
-                        else:
+                        elif not target_zone_id_for_dns:
                             logging.error(f"AGENT_PROCESS: Could not determine Zone ID for DNS record {hostname_dns}")
     
                     try:
@@ -1784,6 +1827,12 @@ def agents_remove(agent_id):
             zone_ids_to_scan = set()
             if cf_zone_id:
                 zone_ids_to_scan.add(cf_zone_id)
+            with state_lock:
+                zone_ids_to_scan.update(
+                    rule.get("zone_id")
+                    for rule in managed_rules.values()
+                    if rule.get("status") == "active" and rule.get("zone_id")
+                )
             for zone_name in scan_zone_names:
                 try:
                     zone_id = get_zone_id_from_name(zone_name)
@@ -2393,6 +2442,12 @@ def get_tunnel_dns_records_api(tunnel_id):
     cf_zone_id = current_app.config.get('CF_ZONE_ID')
     if cf_zone_id:
         zone_ids_to_scan.add(cf_zone_id)
+    with state_lock:
+        zone_ids_to_scan.update(
+            rule.get("zone_id")
+            for rule in managed_rules.values()
+            if rule.get("status") == "active" and rule.get("zone_id")
+        )
     
     scan_zone_names_list = current_app.config.get('TUNNEL_DNS_SCAN_ZONE_NAMES', [])
     if isinstance(scan_zone_names_list, str) and scan_zone_names_list: 

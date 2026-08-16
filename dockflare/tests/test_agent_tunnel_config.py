@@ -67,6 +67,7 @@ class AgentTunnelConfigTests(unittest.TestCase):
             with patch.dict(app.config, {"CF_ZONE_ID": "zone-1"}):
                 with patch.object(api_v2_routes, "save_state"), \
                      patch.object(api_v2_routes, "publish_state_event"), \
+                     patch.object(api_v2_routes, "get_account_zone_inventory", return_value={"zones": [{"id": "zone-1", "name": "example.com"}], "status": "complete", "error": None}), \
                      patch.object(api_v2_routes, "create_cloudflare_dns_record"), \
                      patch.object(api_v2_routes, "handle_access_policy_from_labels", return_value=False), \
                      patch.object(tunnel_manager.cloudflare_api, "get_current_cf_config", return_value={"ingress": []}), \
@@ -83,6 +84,13 @@ class AgentTunnelConfigTests(unittest.TestCase):
         self.assertEqual(set(entries), {"plex.example.com", "sonarr.example.com"})
         self.assertEqual(entries["plex.example.com"]["originRequest"], {"noTLSVerify": True})
         self.assertEqual(ingress[-1], {"service": "http_status:404"})
+        with state_lock:
+            agent_rule = managed_rules["sonarr.example.com|"]
+            self.assertEqual(agent_rule["zone_id"], "zone-1")
+            self.assertEqual(agent_rule["zone_name"], "example.com")
+            self.assertEqual(agent_rule["zone_resolution_source"], "hostname")
+            self.assertEqual(agent_rule["agent_id"], "agent-1")
+            self.assertEqual(agent_rule["tunnel_id"], "agent-tunnel")
 
     def test_agent_tunnel_builder_excludes_other_tunnels_and_inactive_rules(self):
         with state_lock:
@@ -118,6 +126,38 @@ class AgentTunnelConfigTests(unittest.TestCase):
 
         self.assertEqual(hostnames, ["agent.example.com"])
         self.assertEqual(ingress[-1], {"service": "http_status:404"})
+
+    def test_agent_invalid_explicit_zone_fails_closed(self):
+        with state_lock:
+            agents["agent-1"] = {
+                "id": "agent-1",
+                "assigned_tunnel_id": "agent-tunnel",
+                "assigned_tunnel_name": "Agent Tunnel"
+            }
+        payload = {
+            "container": {
+                "id": "container-2",
+                "name": "invalid-zone",
+                "labels": {
+                    "dockflare.enable": "true",
+                    "dockflare.hostname": "app.example.com",
+                    "dockflare.service": "http://app:8080",
+                    "dockflare.zonename": "invalid.example"
+                }
+            }
+        }
+        inventory = {"zones": [{"id": "zone-1", "name": "example.com"}], "status": "complete", "error": None}
+        with app.app_context():
+            with patch.object(api_v2_routes, "get_account_zone_inventory", return_value=inventory), \
+                 patch.object(api_v2_routes, "save_state"), \
+                 patch.object(api_v2_routes, "publish_state_event"), \
+                 patch.object(api_v2_routes, "create_cloudflare_dns_record") as create_dns, \
+                 patch.object(api_v2_routes, "update_cloudflare_config") as update_tunnel:
+                api_v2_routes.process_agent_container_start(payload, "agent-1")
+        with state_lock:
+            self.assertNotIn("app.example.com|", managed_rules)
+        create_dns.assert_not_called()
+        update_tunnel.assert_not_called()
 
 
 if __name__ == "__main__":

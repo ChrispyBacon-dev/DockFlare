@@ -51,9 +51,12 @@ from app.core.cloudflare_api import (
     get_zone_id_from_name,
     get_zone_details_by_id,
     list_account_zones,
+    resolve_account_zone,
+    clear_zone_resolution_caches,
     delete_tunnel_via_api,
     get_tunnel_name_by_id
 )
+from app.core.zone_resolver import ZoneResolutionError
 from app.core.access_manager import (
     check_for_tld_access_policy,
     get_cloudflare_account_email,
@@ -357,6 +360,12 @@ def status_page():
             cf_zone_id_cfg = current_app.config.get('CF_ZONE_ID')
             if cf_zone_id_cfg:
                 zone_ids_to_scan.add(cf_zone_id_cfg)
+            with state_lock:
+                zone_ids_to_scan.update(
+                    rule.get("zone_id")
+                    for rule in managed_rules.values()
+                    if rule.get("status") == "active" and rule.get("zone_id")
+                )
             
             scan_zone_names = current_app.config.get('TUNNEL_DNS_SCAN_ZONE_NAMES', [])
             for zname in scan_zone_names:
@@ -571,6 +580,7 @@ def settings_page():
                 config_module.CLOUDFLARED_CONTAINER_NAME = build_cloudflared_container_name(new_tunnel_name)
                 current_app.config['CF_ZONE_ID'] = config_data['cf_zone_id']
                 config_module.CF_ZONE_ID = config_data['cf_zone_id']
+                clear_zone_resolution_caches(current_app.config.get('CF_ACCOUNT_ID'))
                 scan_zones_str = config_data.get('tunnel_dns_scan_zone_names', '')
                 current_app.config['TUNNEL_DNS_SCAN_ZONE_NAMES'] = [name.strip() for name in scan_zones_str.split(',') if name.strip()]
                 config_module.TUNNEL_DNS_SCAN_ZONE_NAMES = current_app.config['TUNNEL_DNS_SCAN_ZONE_NAMES']
@@ -647,6 +657,7 @@ def settings_page():
                 config_data = json.loads(decrypted_data)
 
                 updated = False
+                previous_account_id = current_app.config.get('CF_ACCOUNT_ID')
                 if cf_credentials_form.cf_account_id.data:
                     config_data['cf_account_id'] = cf_credentials_form.cf_account_id.data
                     current_app.config['CF_ACCOUNT_ID'] = config_data['cf_account_id']
@@ -657,9 +668,13 @@ def settings_page():
                     config_data['cf_api_token'] = cf_credentials_form.cf_api_token.data
                     current_app.config['CF_API_TOKEN'] = config_data['cf_api_token']
                     config.CF_API_TOKEN = config_data['cf_api_token']
+                    config.CF_HEADERS['Authorization'] = f"Bearer {config_data['cf_api_token']}"
                     updated = True
 
                 if updated:
+                    clear_zone_resolution_caches(previous_account_id)
+                    if current_app.config.get('CF_ACCOUNT_ID') != previous_account_id:
+                        clear_zone_resolution_caches(current_app.config.get('CF_ACCOUNT_ID'))
                     encrypted_payload = fernet.encrypt(json.dumps(config_data).encode('utf-8'))
                     with open(config_file, 'wb') as f:
                         f.write(encrypted_payload)
@@ -859,6 +874,12 @@ def tunnel_dns_records(tunnel_id):
     cf_zone_id = current_app.config.get('CF_ZONE_ID')
     if cf_zone_id:
         zone_ids_to_scan.add(cf_zone_id)
+    with state_lock:
+        zone_ids_to_scan.update(
+            rule.get("zone_id")
+            for rule in managed_rules.values()
+            if rule.get("status") == "active" and rule.get("zone_id")
+        )
 
     scan_zone_names = current_app.config.get('TUNNEL_DNS_SCAN_ZONE_NAMES', [])
     for zone_name in scan_zone_names:
@@ -1097,31 +1118,35 @@ def stop_tunnel_route():
 
 @bp.route('/force_delete_rule/<path:hostname>', methods=['POST']) 
 def force_delete_rule_route(hostname): 
-    fqdn = hostname.split('|')[0]
     rule_removed_from_state = False
-    dns_delete_success = False
-    access_app_delete_success = False
     zone_id_for_delete = None
     access_app_id_for_delete = None
+    tunnel_id_for_delete = None
+    fqdn = hostname.split('|')[0]
     with state_lock:
         rule_details = managed_rules.get(hostname)
-        if rule_details: 
+        if rule_details:
+            fqdn = rule_details.get("hostname") or fqdn
             zone_id_for_delete = rule_details.get("zone_id")
             access_app_id_for_delete = rule_details.get("access_app_id")
-    effective_tunnel_id = tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
-    if zone_id_for_delete and effective_tunnel_id:
-        dns_delete_success = delete_cloudflare_dns_record(zone_id_for_delete, fqdn, effective_tunnel_id)
-    if access_app_id_for_delete:
-        access_app_delete_success = delete_cloudflare_access_application(access_app_id_for_delete)
-    with state_lock:
-        if hostname in managed_rules:
+            tunnel_id_for_delete = rule_details.get("tunnel_id") or (tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID)
             del managed_rules[hostname]
             rule_removed_from_state = True
             save_state()
             publish_state_event('snapshot_refresh')
+        tuple_still_owned = any(
+            rule.get("status") == "active"
+            and rule.get("hostname") == fqdn
+            and rule.get("zone_id") == zone_id_for_delete
+            and (rule.get("tunnel_id") or tunnel_id_for_delete) == tunnel_id_for_delete
+            for rule in managed_rules.values()
+        )
+    if zone_id_for_delete and tunnel_id_for_delete and not tuple_still_owned:
+        delete_cloudflare_dns_record(zone_id_for_delete, fqdn, tunnel_id_for_delete)
+    if access_app_id_for_delete:
+        delete_cloudflare_access_application(access_app_id_for_delete)
     if rule_removed_from_state and not config.USE_EXTERNAL_CLOUDFLARED:
-        if update_cloudflare_config():
-            pass
+        update_cloudflare_config(tunnel_id_for_delete)
     return redirect(url_for('web.status_page'))
 
 @bp.route('/stream-logs')
@@ -1270,12 +1295,6 @@ def ui_add_manual_rule_route():
     if normalized_path_for_app:
         path_identifier = normalized_path_for_app.lstrip('/') or "root"
         path_identifier = path_identifier.replace('/', '-').replace(' ', '-')
-    normalized_path_for_app = normalize_path_value(processed_path)
-    application_domain = full_hostname if not normalized_path_for_app else f"{full_hostname}{normalized_path_for_app}"
-    path_identifier = ""
-    if normalized_path_for_app:
-        path_identifier = normalized_path_for_app.lstrip('/') or "root"
-        path_identifier = path_identifier.replace('/', '-').replace(' ', '-')
 
     key_for_managed_rules = get_rule_key(full_hostname, processed_path)
     
@@ -1293,42 +1312,27 @@ def ui_add_manual_rule_route():
         cloudflared_agent_state["last_action_status"] = f"Error: Constructed service string '{processed_service_for_cf}' is invalid."
         return redirect(url_for('web.status_page'))
     
-    target_zone_id = None
-    target_zone_name = None
-    if zone_id_override_input:
-        target_zone_id = zone_id_override_input
-        try:
-            zones_list = list_account_zones()
-            for zone in zones_list or []:
-                if zone.get('id') == target_zone_id:
-                    target_zone_name = zone.get('name')
-                    break
-        except Exception:
-            target_zone_name = None
-    if not target_zone_id:
-        zone_name_to_lookup = zone_name_override_input or '.'.join(domain_name_input.split('.')[-2:])
-        if zone_name_to_lookup:
-            looked_up_zone_id = get_zone_id_from_name(zone_name_to_lookup)
-            if looked_up_zone_id:
-                target_zone_id = looked_up_zone_id
-                target_zone_name = zone_name_to_lookup
-    if not target_zone_id:
-        cf_zone_id_default = current_app.config.get('CF_ZONE_ID')
-        if cf_zone_id_default:
-            target_zone_id = cf_zone_id_default
-            if not target_zone_name:
-                zone_details = get_zone_details_by_id(cf_zone_id_default)
-                if zone_details:
-                    target_zone_name = zone_details.get('name')
-        else:
-            cloudflared_agent_state["last_action_status"] = "Error: Could not determine Zone ID."
-            return redirect(url_for('web.status_page'))
+    try:
+        selected_zone = resolve_account_zone(
+            full_hostname,
+            explicit_zone_name=zone_name_override_input or None,
+            allow_unverified_default=True,
+        )
+    except ZoneResolutionError as exc:
+        cloudflared_agent_state["last_action_status"] = f"Error: Zone resolution failed ({exc.code})."
+        return redirect(url_for('web.status_page'))
+    if zone_id_override_input and zone_id_override_input != selected_zone["id"]:
+        cloudflared_agent_state["last_action_status"] = "Error: Browser-selected zone did not match server resolution."
+        return redirect(url_for('web.status_page'))
+    target_zone_id = selected_zone["id"]
+    target_zone_name = selected_zone.get("name")
         
     access_app_id = None
     access_policy_type = None
     access_app_config_hash = None
     access_group_id = None
     previous_tunnel_id = None
+    previous_rule_snapshot = None
 
     with state_lock:
         if manual_access_group_ids:
@@ -1359,8 +1363,6 @@ def ui_add_manual_rule_route():
                 access_group_id = manual_access_group_ids
                 access_policy_type = "group"
                 desired_app_name = f"DockFlare-{full_hostname}"
-                if path_identifier:
-                    desired_app_name = f"{desired_app_name}-{path_identifier}"
                 if path_identifier:
                     desired_app_name = f"{desired_app_name}-{path_identifier}"
 
@@ -1469,6 +1471,7 @@ def ui_add_manual_rule_route():
 
     with state_lock:
         existing_rule = managed_rules.get(key_for_managed_rules)
+        previous_rule_snapshot = copy.deepcopy(existing_rule) if existing_rule else None
         if existing_rule and existing_rule.get("source") == "docker":
             cloudflared_agent_state["last_action_status"] = f"Error: Rule for {full_hostname} is Docker-managed."
             return redirect(url_for('web.status_page'))
@@ -1482,6 +1485,7 @@ def ui_add_manual_rule_route():
             "container_id": None, "status": "active", "delete_at": None,
             "zone_id": target_zone_id,
             "zone_name": target_zone_name,
+            "zone_resolution_source": selected_zone.get("source"),
             "no_tls_verify": no_tls_verify,
             "origin_server_name": origin_server_name_input or None,
             "http_host_header": manual_http_host_header or None,
@@ -1502,14 +1506,50 @@ def ui_add_manual_rule_route():
         publish_state_event('snapshot_refresh')
     
     if update_cloudflare_config(target_tunnel_id):
-        create_cloudflare_dns_record(target_zone_id, full_hostname, target_tunnel_id)
+        dns_result = "wildcard_dns_skipped" if full_hostname.startswith('*.') else create_cloudflare_dns_record(target_zone_id, full_hostname, target_tunnel_id)
+        dns_success = bool(dns_result) and dns_result not in {"semaphore_timeout", "existing_record_unconfirmed"}
+        if not dns_success:
+            with state_lock:
+                if previous_rule_snapshot is None:
+                    managed_rules.pop(key_for_managed_rules, None)
+                else:
+                    managed_rules[key_for_managed_rules] = previous_rule_snapshot
+                save_state()
+                publish_state_event('snapshot_refresh')
+            update_cloudflare_config(target_tunnel_id)
+            cloudflared_agent_state["last_action_status"] = "Error: DNS setup failed; previous rule restored."
+            return redirect(url_for('web.status_page'))
         if previous_tunnel_id and previous_tunnel_id != target_tunnel_id:
             update_cloudflare_config(previous_tunnel_id)
         if previous_tunnel_id is None and default_tunnel_id and default_tunnel_id != target_tunnel_id:
             update_cloudflare_config(default_tunnel_id)
+        if previous_rule_snapshot:
+            old_tuple = (
+                previous_rule_snapshot.get("hostname"),
+                previous_rule_snapshot.get("zone_id"),
+                previous_rule_snapshot.get("tunnel_id") or default_tunnel_id,
+            )
+            new_tuple = (full_hostname, target_zone_id, target_tunnel_id)
+            with state_lock:
+                old_tuple_still_owned = any(
+                    rule.get("status") == "active"
+                    and rule.get("hostname") == old_tuple[0]
+                    and rule.get("zone_id") == old_tuple[1]
+                    and (rule.get("tunnel_id") or default_tunnel_id) == old_tuple[2]
+                    for rule in managed_rules.values()
+                )
+            if old_tuple != new_tuple and not old_tuple_still_owned and all(old_tuple) and not old_tuple[0].startswith('*.'):
+                delete_cloudflare_dns_record(old_tuple[1], old_tuple[0], old_tuple[2])
         cloudflared_agent_state["last_action_status"] = f"Success: Manual rule for {full_hostname} added/updated."
     else:
-        cloudflared_agent_state["last_action_status"] = "Error: Failed to update Cloudflare tunnel config."
+        with state_lock:
+            if previous_rule_snapshot is None:
+                managed_rules.pop(key_for_managed_rules, None)
+            else:
+                managed_rules[key_for_managed_rules] = previous_rule_snapshot
+            save_state()
+            publish_state_event('snapshot_refresh')
+        cloudflared_agent_state["last_action_status"] = "Error: Tunnel update failed; previous rule restored."
 
     return redirect(url_for('web.status_page'))
 
@@ -1577,8 +1617,7 @@ def ui_edit_manual_rule_route():
         if not existing:
             cloudflared_agent_state["last_action_status"] = f"Error: Rule '{rule_key}' not found."
             return redirect(url_for('web.status_page'))
-
-        # Allow editing Docker rules but mark them as UI-overridden
+        existing = copy.deepcopy(existing)
         is_docker_rule = existing.get("source") == "docker"
     
     subdomain_input = request.form.get('edit_subdomain', '').strip()
@@ -1625,17 +1664,24 @@ def ui_edit_manual_rule_route():
         cloudflared_agent_state["last_action_status"] = f"Error: Invalid service string '{processed_service_for_cf}'."
         return redirect(url_for('web.status_page'))
 
-    zone_name_to_lookup = zone_name_override_input or '.'.join(domain_name_input.split('.')[-2:])
-    target_zone_id = get_zone_id_from_name(zone_name_to_lookup) or current_app.config.get('CF_ZONE_ID')
-    if not target_zone_id:
-        cloudflared_agent_state["last_action_status"] = "Error: Could not determine Zone ID."
+    try:
+        selected_zone = resolve_account_zone(
+            full_hostname,
+            explicit_zone_name=zone_name_override_input or None,
+            allow_unverified_default=True,
+        )
+    except ZoneResolutionError as exc:
+        cloudflared_agent_state["last_action_status"] = f"Error: Zone resolution failed ({exc.code})."
         return redirect(url_for('web.status_page'))
+    target_zone_id = selected_zone["id"]
+    target_zone_name = selected_zone.get("name")
 
     manual_access_group_ids = request.form.getlist('edit_access_groups')
     manual_access_policy_type = request.form.get('edit_access_policy_type', 'none').strip().lower()
     manual_auth_email = request.form.get('edit_auth_email', '').strip()
 
     access_app_id = existing.get('access_app_id')
+    old_access_app_id = access_app_id
     access_policy_type = existing.get('access_policy_type')
     access_app_config_hash = existing.get('access_app_config_hash')
     access_group_id = existing.get('access_group_id')
@@ -1750,10 +1796,14 @@ def ui_edit_manual_rule_route():
         logging.error(f"Error updating access app during manual edit: {e}", exc_info=True)
         cloudflared_agent_state["last_action_status"] = "Error: Failed to update access app."
 
-    with state_lock:
-     
-        new_key = get_rule_key(full_hostname, processed_path)
-        rule_entry = {
+    new_key = get_rule_key(full_hostname, processed_path)
+    old_hostname = existing.get("hostname")
+    old_zone_id = existing.get("zone_id")
+    old_tunnel_id = existing.get("tunnel_id") or (tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID)
+    target_tunnel_id = existing.get("tunnel_id") or old_tunnel_id
+    target_tunnel_name = existing.get("tunnel_name")
+    rule_entry = copy.deepcopy(existing)
+    rule_entry.update({
             "hostname": full_hostname,
             "path": processed_path,
             "service": processed_service_for_cf,
@@ -1761,6 +1811,8 @@ def ui_edit_manual_rule_route():
             "status": "active",
             "delete_at": None,
             "zone_id": target_zone_id,
+            "zone_name": target_zone_name,
+            "zone_resolution_source": selected_zone.get("source"),
             "no_tls_verify": no_tls_verify,
             "origin_server_name": origin_server_name_input or None,
             "http_host_header": manual_http_host_header or None,
@@ -1773,24 +1825,59 @@ def ui_edit_manual_rule_route():
             "access_group_id": access_group_id,
             "access_policy_ui_override": True,
             "rule_ui_override": is_docker_rule,
-            "source": existing.get("source", "manual")
-        }
+            "source": existing.get("source", "manual"),
+            "agent_id": existing.get("agent_id"),
+            "tunnel_id": target_tunnel_id,
+            "tunnel_name": target_tunnel_name
+        })
 
-      
+    with state_lock:
+        conflicting = managed_rules.get(new_key)
+        if new_key != rule_key and conflicting and conflicting.get("status") == "active":
+            cloudflared_agent_state["last_action_status"] = f"Error: Rule '{new_key}' already exists."
+            return redirect(url_for('web.status_page'))
         if new_key != rule_key and rule_key in managed_rules:
             del managed_rules[rule_key]
         managed_rules[new_key] = rule_entry
         save_state()
         publish_state_event('snapshot_refresh')
 
-    
-    effective_tunnel_id = tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
-    if update_cloudflare_config():
-        if effective_tunnel_id:
-            create_cloudflare_dns_record(target_zone_id, full_hostname, effective_tunnel_id)
-        cloudflared_agent_state["last_action_status"] = f"Success: Manual rule '{full_hostname}' updated."
-    else:
-        cloudflared_agent_state["last_action_status"] = "Error: Failed to update Cloudflare tunnel config."
+    tunnel_updated = update_cloudflare_config(target_tunnel_id)
+    dns_updated = True
+    if tunnel_updated and target_tunnel_id and not full_hostname.startswith('*.'):
+        dns_result = create_cloudflare_dns_record(target_zone_id, full_hostname, target_tunnel_id)
+        dns_updated = bool(dns_result) and dns_result not in {"semaphore_timeout", "existing_record_unconfirmed"}
+    if not tunnel_updated or not dns_updated:
+        with state_lock:
+            managed_rules.pop(new_key, None)
+            managed_rules[rule_key] = existing
+            save_state()
+            publish_state_event('snapshot_refresh')
+        if target_tunnel_id:
+            update_cloudflare_config(target_tunnel_id)
+        if old_tunnel_id and old_tunnel_id != target_tunnel_id:
+            update_cloudflare_config(old_tunnel_id)
+        if access_app_id and access_app_id != old_access_app_id:
+            delete_cloudflare_access_application(access_app_id)
+        cloudflared_agent_state["last_action_status"] = "Error: Rule migration failed; previous rule restored."
+        return redirect(url_for('web.status_page'))
+    old_tuple = (old_hostname, old_zone_id, old_tunnel_id)
+    new_tuple = (full_hostname, target_zone_id, target_tunnel_id)
+    if old_tunnel_id and old_tunnel_id != target_tunnel_id:
+        update_cloudflare_config(old_tunnel_id)
+    with state_lock:
+        old_tuple_still_owned = any(
+            rule.get("status") == "active"
+            and rule.get("hostname") == old_hostname
+            and rule.get("zone_id") == old_zone_id
+            and (rule.get("tunnel_id") or old_tunnel_id) == old_tunnel_id
+            for rule in managed_rules.values()
+        )
+    if old_tuple != new_tuple and not old_tuple_still_owned and old_hostname and old_zone_id and old_tunnel_id and not old_hostname.startswith('*.'):
+        delete_cloudflare_dns_record(old_zone_id, old_hostname, old_tunnel_id)
+    if old_access_app_id and access_app_id != old_access_app_id:
+        delete_cloudflare_access_application(old_access_app_id)
+    cloudflared_agent_state["last_action_status"] = f"Success: Manual rule '{full_hostname}' updated."
 
     return redirect(url_for('web.status_page'))
 
@@ -1828,7 +1915,13 @@ def ui_delete_manual_rule_route(rule_key_from_url):
         should_delete_dns = True
         with state_lock:
             for other_rule in managed_rules.values():
-                if other_rule.get("hostname") == hostname_for_dns:
+                other_tunnel_id = other_rule.get("tunnel_id") or default_tunnel_id
+                if (
+                    other_rule.get("status") == "active"
+                    and other_rule.get("hostname") == hostname_for_dns
+                    and other_rule.get("zone_id") == zone_id_for_delete
+                    and other_tunnel_id == rule_tunnel_id
+                ):
                     should_delete_dns = False
                     break
         if should_delete_dns:

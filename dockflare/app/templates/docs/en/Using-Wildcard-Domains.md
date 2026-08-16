@@ -12,7 +12,7 @@ For example, if you configure `*.apps.example.com`, traffic for `service1.apps.e
 
 Unlike regular hostnames, DockFlare **cannot automatically create DNS records for wildcard domains**. You must create the wildcard DNS record manually in your Cloudflare dashboard.
 
-DockFlare will still manage the **ingress rule** in your Cloudflare Tunnel, but the initial DNS setup is a manual step.
+DockFlare will still resolve the wildcard hostname to the correct account zone and manage the **ingress rule** in your Cloudflare Tunnel, but it will skip automatic DNS creation and deletion. Wildcard DNS remains manually owned.
 
 ## Step-by-Step Guide
 
