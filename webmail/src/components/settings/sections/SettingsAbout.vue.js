@@ -63,13 +63,13 @@ __VLS_asFunctionalElement(__VLS_intrinsicElements.a, __VLS_intrinsicElements.a)(
     href: "https://dockflare.app",
     target: "_blank",
     rel: "noopener noreferrer",
-    ...{ class: "inline-flex items-center gap-1.5 text-xs text-[#FBA612] hover:underline" },
+    ...{ class: "inline-flex items-center gap-1.5 text-xs text-df-accent hover:underline" },
 });
 __VLS_asFunctionalElement(__VLS_intrinsicElements.a, __VLS_intrinsicElements.a)({
     href: "https://github.com/ChrispyBacon-dev/DockFlare",
     target: "_blank",
     rel: "noopener noreferrer",
-    ...{ class: "inline-flex items-center gap-1.5 text-xs text-[#FBA612] hover:underline" },
+    ...{ class: "inline-flex items-center gap-1.5 text-xs text-df-accent hover:underline" },
 });
 __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
     ...{ class: "rounded-lg border p-4 space-y-3" },
@@ -130,13 +130,13 @@ else {
 /** @type {__VLS_StyleScopedClasses['items-center']} */ ;
 /** @type {__VLS_StyleScopedClasses['gap-1.5']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-xs']} */ ;
-/** @type {__VLS_StyleScopedClasses['text-[#FBA612]']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-df-accent']} */ ;
 /** @type {__VLS_StyleScopedClasses['hover:underline']} */ ;
 /** @type {__VLS_StyleScopedClasses['inline-flex']} */ ;
 /** @type {__VLS_StyleScopedClasses['items-center']} */ ;
 /** @type {__VLS_StyleScopedClasses['gap-1.5']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-xs']} */ ;
-/** @type {__VLS_StyleScopedClasses['text-[#FBA612]']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-df-accent']} */ ;
 /** @type {__VLS_StyleScopedClasses['hover:underline']} */ ;
 /** @type {__VLS_StyleScopedClasses['rounded-lg']} */ ;
 /** @type {__VLS_StyleScopedClasses['border']} */ ;

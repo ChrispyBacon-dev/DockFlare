@@ -59,7 +59,7 @@ __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElement
 if (__VLS_ctx.bulkSelectMode) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "flex-shrink-0 h-5 w-5 rounded border-2 flex items-center justify-center mt-2 transition-all" },
-        ...{ class: (__VLS_ctx.isChecked ? 'bg-[#FBA612] border-[#FBA612]' : 'border-muted-foreground/50') },
+        ...{ class: (__VLS_ctx.isChecked ? 'bg-df-accent border-df-accent' : 'border-muted-foreground/50') },
     });
     if (__VLS_ctx.isChecked) {
         const __VLS_0 = {}.Check;
@@ -90,7 +90,7 @@ __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.d
 (__VLS_ctx.recipientLabel ?? (__VLS_ctx.message.from_name || __VLS_ctx.message.from_address));
 if (!__VLS_ctx.message.is_read) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.span)({
-        ...{ class: "flex-shrink-0 h-2 w-2 rounded-full bg-[#FBA612]" },
+        ...{ class: "flex-shrink-0 h-2 w-2 rounded-full bg-df-accent" },
     });
 }
 if (__VLS_ctx.message.is_starred) {
@@ -224,7 +224,7 @@ if (__VLS_ctx.message.has_attachments) {
 /** @type {__VLS_StyleScopedClasses['h-2']} */ ;
 /** @type {__VLS_StyleScopedClasses['w-2']} */ ;
 /** @type {__VLS_StyleScopedClasses['rounded-full']} */ ;
-/** @type {__VLS_StyleScopedClasses['bg-[#FBA612]']} */ ;
+/** @type {__VLS_StyleScopedClasses['bg-df-accent']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex-shrink-0']} */ ;
 /** @type {__VLS_StyleScopedClasses['size-3']} */ ;
 /** @type {__VLS_StyleScopedClasses['fill-yellow-400']} */ ;

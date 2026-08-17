@@ -26,7 +26,8 @@ export const useMailStore = defineStore('mail', () => {
     const activeTab = ref('all');
     const isCollapsed = ref(false);
     const sortOrder = ref('desc');
-    const isDark = ref(localStorage.getItem('theme') === 'dark');
+    const _stored = localStorage.getItem('theme');
+    const isDark = ref(_stored === 'dark' || (_stored === null && window.matchMedia('(prefers-color-scheme: dark)').matches));
     const dateFormat = ref(localStorage.getItem('dateFormat') || 'us');
     const settingsCategory = ref('notifications');
     function formatDate(ts) {

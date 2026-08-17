@@ -351,7 +351,7 @@ __VLS_asFunctionalElement(__VLS_intrinsicElements.button, __VLS_intrinsicElement
     ...{ onClick: (__VLS_ctx.toggleBulkSelect) },
     ...{ class: "inline-flex h-9 w-9 items-center justify-center rounded-md transition-colors" },
     ...{ class: (__VLS_ctx.bulkSelectMode
-            ? 'bg-accent text-[#FBA612]'
+            ? 'bg-accent text-df-accent'
             : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground') },
     title: "Select messages",
 });
@@ -409,12 +409,12 @@ const __VLS_64 = {}.TabsTrigger;
 const __VLS_65 = __VLS_asFunctionalComponent(__VLS_64, new __VLS_64({
     value: "all",
     ...{ class: "inline-flex items-center justify-center whitespace-nowrap rounded-full py-1.5 px-3 text-sm font-medium transition-all data-[state=active]:font-semibold data-[state=inactive]:text-muted-foreground focus-visible:outline-none min-h-[36px]" },
-    ...{ style: (__VLS_ctx.store.activeTab === 'all' ? 'background: rgba(251,166,18,0.12); color: #FBA612;' : '') },
+    ...{ style: (__VLS_ctx.store.activeTab === 'all' ? 'background: hsl(var(--df-accent) / 0.12); color: hsl(var(--df-accent));' : '') },
 }));
 const __VLS_66 = __VLS_65({
     value: "all",
     ...{ class: "inline-flex items-center justify-center whitespace-nowrap rounded-full py-1.5 px-3 text-sm font-medium transition-all data-[state=active]:font-semibold data-[state=inactive]:text-muted-foreground focus-visible:outline-none min-h-[36px]" },
-    ...{ style: (__VLS_ctx.store.activeTab === 'all' ? 'background: rgba(251,166,18,0.12); color: #FBA612;' : '') },
+    ...{ style: (__VLS_ctx.store.activeTab === 'all' ? 'background: hsl(var(--df-accent) / 0.12); color: hsl(var(--df-accent));' : '') },
 }, ...__VLS_functionalComponentArgsRest(__VLS_65));
 __VLS_67.slots.default;
 var __VLS_67;
@@ -424,12 +424,12 @@ const __VLS_68 = {}.TabsTrigger;
 const __VLS_69 = __VLS_asFunctionalComponent(__VLS_68, new __VLS_68({
     value: "unread",
     ...{ class: "inline-flex items-center justify-center whitespace-nowrap rounded-full py-1.5 px-3 text-sm font-medium transition-all data-[state=active]:font-semibold data-[state=inactive]:text-muted-foreground focus-visible:outline-none min-h-[36px]" },
-    ...{ style: (__VLS_ctx.store.activeTab === 'unread' ? 'background: rgba(251,166,18,0.12); color: #FBA612;' : '') },
+    ...{ style: (__VLS_ctx.store.activeTab === 'unread' ? 'background: hsl(var(--df-accent) / 0.12); color: hsl(var(--df-accent));' : '') },
 }));
 const __VLS_70 = __VLS_69({
     value: "unread",
     ...{ class: "inline-flex items-center justify-center whitespace-nowrap rounded-full py-1.5 px-3 text-sm font-medium transition-all data-[state=active]:font-semibold data-[state=inactive]:text-muted-foreground focus-visible:outline-none min-h-[36px]" },
-    ...{ style: (__VLS_ctx.store.activeTab === 'unread' ? 'background: rgba(251,166,18,0.12); color: #FBA612;' : '') },
+    ...{ style: (__VLS_ctx.store.activeTab === 'unread' ? 'background: hsl(var(--df-accent) / 0.12); color: hsl(var(--df-accent));' : '') },
 }, ...__VLS_functionalComponentArgsRest(__VLS_69));
 __VLS_71.slots.default;
 var __VLS_71;
@@ -439,12 +439,12 @@ const __VLS_72 = {}.TabsTrigger;
 const __VLS_73 = __VLS_asFunctionalComponent(__VLS_72, new __VLS_72({
     value: "starred",
     ...{ class: "inline-flex items-center justify-center whitespace-nowrap rounded-full py-1.5 px-3 text-sm font-medium transition-all data-[state=active]:font-semibold data-[state=inactive]:text-muted-foreground focus-visible:outline-none min-h-[36px]" },
-    ...{ style: (__VLS_ctx.store.activeTab === 'starred' ? 'background: rgba(251,166,18,0.12); color: #FBA612;' : '') },
+    ...{ style: (__VLS_ctx.store.activeTab === 'starred' ? 'background: hsl(var(--df-accent) / 0.12); color: hsl(var(--df-accent));' : '') },
 }));
 const __VLS_74 = __VLS_73({
     value: "starred",
     ...{ class: "inline-flex items-center justify-center whitespace-nowrap rounded-full py-1.5 px-3 text-sm font-medium transition-all data-[state=active]:font-semibold data-[state=inactive]:text-muted-foreground focus-visible:outline-none min-h-[36px]" },
-    ...{ style: (__VLS_ctx.store.activeTab === 'starred' ? 'background: rgba(251,166,18,0.12); color: #FBA612;' : '') },
+    ...{ style: (__VLS_ctx.store.activeTab === 'starred' ? 'background: hsl(var(--df-accent) / 0.12); color: hsl(var(--df-accent));' : '') },
 }, ...__VLS_functionalComponentArgsRest(__VLS_73));
 __VLS_75.slots.default;
 var __VLS_75;

@@ -1,8 +1,9 @@
 /// <reference types="../../../node_modules/.vue-global-types/vue_3.5_0_0_0.d.ts" />
-import { Bell, Palette, AtSign, Mail, Shield, Info, HelpCircle } from 'lucide-vue-next';
+import { Bell, Palette, AtSign, Mail, Shield, Info, HelpCircle, User } from 'lucide-vue-next';
 import { useMailStore } from '@/stores/mail';
 const store = useMailStore();
 const categories = [
+    { key: 'profile', label: 'Profile', icon: User },
     { key: 'notifications', label: 'Notifications', icon: Bell },
     { key: 'appearance', label: 'Appearance', icon: Palette },
     { key: 'aliases', label: 'Aliases', icon: AtSign },
@@ -26,7 +27,7 @@ for (const [cat] of __VLS_getVForSourceType((__VLS_ctx.categories))) {
         key: (cat.key),
         ...{ class: "flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sm transition-colors text-left" },
         ...{ class: (__VLS_ctx.store.settingsCategory === cat.key
-                ? 'bg-[#FBA612]/10 text-[#FBA612] font-medium'
+                ? 'bg-df-accent/10 text-df-accent font-medium'
                 : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground') },
     });
     const __VLS_0 = ((cat.icon));

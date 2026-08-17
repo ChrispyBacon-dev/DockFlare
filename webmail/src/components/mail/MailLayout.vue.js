@@ -65,7 +65,7 @@ var __VLS_4 = {};
 __VLS_3.slots.default;
 if (__VLS_ctx.isMobile) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-        ...{ class: "flex flex-col h-[100dvh] w-screen overflow-hidden" },
+        ...{ class: "flex flex-col h-[100dvh] w-screen overflow-hidden overscroll-none" },
         ...{ style: {} },
     });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
@@ -95,7 +95,7 @@ if (__VLS_ctx.isMobile) {
             ...{ class: "text-[#194466] dark:text-[#5EB1E5]" },
         });
         __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: "text-[#FBA612]" },
+            ...{ class: "text-df-accent" },
         });
     }
     if (__VLS_ctx.mobilePanel !== 'folders') {
@@ -184,7 +184,7 @@ if (__VLS_ctx.isMobile) {
     });
     if (__VLS_ctx.mobilePanel === 'folders') {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
-            ...{ class: "h-full flex flex-col overflow-y-auto" },
+            ...{ class: "h-full flex flex-col overflow-y-auto overscroll-none" },
         });
         if (__VLS_ctx.store.mailboxes.length > 1) {
             __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
@@ -246,7 +246,7 @@ if (__VLS_ctx.isMobile) {
             } },
         ...{ class: "flex flex-col items-center gap-1 px-6 py-2 rounded-xl transition-colors min-h-[44px] justify-center" },
         ...{ class: (__VLS_ctx.mobilePanel === 'folders' ? '' : 'text-muted-foreground') },
-        ...{ style: (__VLS_ctx.mobilePanel === 'folders' ? 'color: #FBA612;' : '') },
+        ...{ style: (__VLS_ctx.mobilePanel === 'folders' ? 'color: hsl(var(--df-accent))' : '') },
     });
     const __VLS_37 = {}.Menu;
     /** @type {[typeof __VLS_components.Menu, ]} */ ;
@@ -282,7 +282,7 @@ if (__VLS_ctx.isMobile) {
             } },
         ...{ class: "flex flex-col items-center gap-1 px-6 py-2 rounded-xl transition-colors min-h-[44px] justify-center" },
         ...{ class: (__VLS_ctx.mobilePanel === 'list' ? '' : 'text-muted-foreground') },
-        ...{ style: (__VLS_ctx.mobilePanel === 'list' ? 'color: #FBA612;' : '') },
+        ...{ style: (__VLS_ctx.mobilePanel === 'list' ? 'color: hsl(var(--df-accent))' : '') },
     });
     const __VLS_45 = {}.Columns2;
     /** @type {[typeof __VLS_components.Columns2, ]} */ ;
@@ -315,9 +315,9 @@ else {
     });
     if (!__VLS_ctx.store.isCollapsed) {
         __VLS_asFunctionalElement(__VLS_intrinsicElements.img)({
-            src: "/logo.gif",
+            src: (__VLS_ctx.store.isDark ? '/logo-dark.svg' : '/logo-light.svg'),
             alt: "DockFlare",
-            ...{ class: "h-7 w-auto select-none" },
+            ...{ class: "h-10 w-auto select-none" },
             draggable: "false",
         });
     }
@@ -329,7 +329,7 @@ else {
             ...{ class: "text-[#194466] dark:text-[#5EB1E5]" },
         });
         __VLS_asFunctionalElement(__VLS_intrinsicElements.span, __VLS_intrinsicElements.span)({
-            ...{ class: "text-[#FBA612]" },
+            ...{ style: {} },
         });
     }
     if (__VLS_ctx.store.mailboxes.length > 1 && !__VLS_ctx.store.isCollapsed) {
@@ -1040,6 +1040,7 @@ var __VLS_3;
 /** @type {__VLS_StyleScopedClasses['h-[100dvh]']} */ ;
 /** @type {__VLS_StyleScopedClasses['w-screen']} */ ;
 /** @type {__VLS_StyleScopedClasses['overflow-hidden']} */ ;
+/** @type {__VLS_StyleScopedClasses['overscroll-none']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex']} */ ;
 /** @type {__VLS_StyleScopedClasses['items-end']} */ ;
 /** @type {__VLS_StyleScopedClasses['gap-2']} */ ;
@@ -1072,7 +1073,7 @@ var __VLS_3;
 /** @type {__VLS_StyleScopedClasses['px-1']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-[#194466]']} */ ;
 /** @type {__VLS_StyleScopedClasses['dark:text-[#5EB1E5]']} */ ;
-/** @type {__VLS_StyleScopedClasses['text-[#FBA612]']} */ ;
+/** @type {__VLS_StyleScopedClasses['text-df-accent']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex-1']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-[15px]']} */ ;
 /** @type {__VLS_StyleScopedClasses['font-semibold']} */ ;
@@ -1120,6 +1121,7 @@ var __VLS_3;
 /** @type {__VLS_StyleScopedClasses['flex']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex-col']} */ ;
 /** @type {__VLS_StyleScopedClasses['overflow-y-auto']} */ ;
+/** @type {__VLS_StyleScopedClasses['overscroll-none']} */ ;
 /** @type {__VLS_StyleScopedClasses['px-3']} */ ;
 /** @type {__VLS_StyleScopedClasses['py-3']} */ ;
 /** @type {__VLS_StyleScopedClasses['border-b']} */ ;
@@ -1192,7 +1194,7 @@ var __VLS_3;
 /** @type {__VLS_StyleScopedClasses['justify-center']} */ ;
 /** @type {__VLS_StyleScopedClasses['px-[14px]']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex-shrink-0']} */ ;
-/** @type {__VLS_StyleScopedClasses['h-7']} */ ;
+/** @type {__VLS_StyleScopedClasses['h-10']} */ ;
 /** @type {__VLS_StyleScopedClasses['w-auto']} */ ;
 /** @type {__VLS_StyleScopedClasses['select-none']} */ ;
 /** @type {__VLS_StyleScopedClasses['font-[\'Outfit\']']} */ ;
@@ -1203,7 +1205,6 @@ var __VLS_3;
 /** @type {__VLS_StyleScopedClasses['mx-auto']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-[#194466]']} */ ;
 /** @type {__VLS_StyleScopedClasses['dark:text-[#5EB1E5]']} */ ;
-/** @type {__VLS_StyleScopedClasses['text-[#FBA612]']} */ ;
 /** @type {__VLS_StyleScopedClasses['px-3']} */ ;
 /** @type {__VLS_StyleScopedClasses['pb-2']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex-shrink-0']} */ ;
