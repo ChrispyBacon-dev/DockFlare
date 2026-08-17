@@ -1,3 +1,13 @@
+SYSTEM_ACCESS_GROUP_IDS = frozenset({
+    "public-default-bypass",
+    "authenticated-default",
+})
+
+
+def is_system_access_group(group_id, group=None):
+    return group_id in SYSTEM_ACCESS_GROUP_IDS or bool((group or {}).get("system_policy"))
+
+
 def build_access_policies(email_str, ip_ranges_str=None, countries_list=None, idp_list=None, idp_resolver=None, public_mode=False):
     policies = []
     email_rules = []

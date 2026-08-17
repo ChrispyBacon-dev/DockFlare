@@ -55,7 +55,7 @@ DockFlare provides two built-in system policies that are automatically available
 - **`public-default-bypass`** - Public access with bypass decision (use for truly public services)
 - **`authenticated-default`** - Default authentication with one-time PIN + email restriction
 
-These system policies are non-deletable and serve as the foundation for zone protection and legacy label migration.
+These system policies are read-only and non-deletable because DockFlare restores their built-in definitions during startup and reconciliation. To use Google, GitHub, or another identity provider, create a custom access group and assign it to the relevant applications instead.
 
 #### B) Via the Web UI (For Manual Rules or Overrides)
 

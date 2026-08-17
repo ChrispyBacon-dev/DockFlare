@@ -68,7 +68,12 @@ from app.core.access_manager import (
     get_access_group_allowed_idps,
     resolve_access_group_policies
 )
-from app.core.access_policy_rules import build_access_policies, effective_access_policies, login_method_ids
+from app.core.access_policy_rules import (
+    build_access_policies,
+    effective_access_policies,
+    is_system_access_group,
+    login_method_ids,
+)
 from app.core.reconciler import reconcile_state_threaded
 from app.core.docker_handler import is_valid_hostname, is_valid_service
 from app.core.utils import get_rule_key, normalize_path_value
@@ -510,6 +515,8 @@ def access_policies_page():
                 group_usage.setdefault(gid, set()).add(display_name)
 
         groups_for_template_raw = copy.deepcopy(access_groups)
+        for gid, group in groups_for_template_raw.items():
+            group["system_policy"] = is_system_access_group(gid, group)
         groups_for_template = {
             gid: group for gid, group in groups_for_template_raw.items()
             if not group.get("hide_from_ui", False)
@@ -2019,6 +2026,15 @@ def edit_access_group(group_id):
         if group_id not in access_groups:
             flash(_t('flash.access_group.update_not_found', groupId=group_id), "error")
             return redirect(url_for('web.access_policies_page'))
+        if is_system_access_group(group_id, access_groups[group_id]):
+            flash(
+                _t(
+                    'flash.access_group.update_system',
+                    displayName=access_groups[group_id].get('display_name', group_id)
+                ),
+                "error"
+            )
+            return redirect(url_for('web.access_policies_page'))
     
     form = request.form
     display_name = form.get('display_name', '').strip()
@@ -2077,7 +2093,7 @@ def delete_access_group(group_id):
             flash(_t('flash.access_group.update_not_found', groupId=group_id), "error")
             return redirect(url_for('web.access_policies_page'))
 
-        if access_groups[group_id].get('system_policy') or not access_groups[group_id].get('deletable', True):
+        if is_system_access_group(group_id, access_groups[group_id]) or not access_groups[group_id].get('deletable', True):
             flash(_t('flash.access_group.delete_system', displayName=access_groups[group_id]['display_name']), "error")
             return redirect(url_for('web.access_policies_page'))
 
