@@ -5,7 +5,8 @@ All notable changes to this project will be documented in this file.
 ## [v3.1.4] - Unreleased
 
 ### Fixed
-- **Centralized Cloudflare zone resolution:** Replaced fixed-label and duplicated zone detection with one account-aware longest-suffix resolver across manual rules, the API, local Docker events, agent events, and reconciliation. Multi-label domains and nested zones now resolve consistently; invalid explicit overrides fail closed; zone inventory pagination, caching, stale fallback, IDNA normalization, rule ownership persistence, tunnel-preserving edits, guarded DNS migration, wildcard DNS behavior, and active-zone DNS scans are handled consistently. Fixes [#389](https://github.com/ChrispyBacon-dev/DockFlare/issues/389).
+- **Centralized Cloudflare zone resolution:** Unified zone detection across manual rules, APIs, agents, Docker events, and reconciliation. Account-aware matching now handles multi-label and nested zones consistently while preserving safe DNS and rule migrations. Fixes [#389](https://github.com/ChrispyBacon-dev/DockFlare/issues/389).
+- **Read-only system Access policies:** Made `authenticated-default` and `public-default-bypass` read-only in both the UI and server. This prevents unsupported IdP edits from being reverted to the built-in OTP configuration; use a custom policy for Google, GitHub, or other IdPs. Addresses [#391](https://github.com/ChrispyBacon-dev/DockFlare/issues/391).
 
 ## [v3.1.3] - 2026-08-05
 
