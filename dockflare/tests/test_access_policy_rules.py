@@ -19,6 +19,16 @@ class AccessPolicyRuleTests(unittest.TestCase):
     def resolve_idp(self, name):
         return self.idps.get(name)
 
+    def test_reserved_system_groups_are_read_only_without_metadata(self):
+        self.assertTrue(RULES.is_system_access_group("authenticated-default", {}))
+        self.assertTrue(RULES.is_system_access_group("public-default-bypass", {}))
+
+    def test_explicit_system_group_is_read_only(self):
+        self.assertTrue(RULES.is_system_access_group("legacy-system", {"system_policy": True}))
+
+    def test_custom_group_is_not_system_owned(self):
+        self.assertFalse(RULES.is_system_access_group("google-users", {"system_policy": False}))
+
     def test_multiple_emails_are_or_within_selected_idp(self):
         policies = RULES.build_access_policies(
             "alice@gmail.com, bob@gmail.com, @example.com",

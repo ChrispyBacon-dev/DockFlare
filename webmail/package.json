@@ -36,7 +36,7 @@
   },
   "overrides": {
     "picomatch": "4.0.4",
-    "brace-expansion": "5.0.5",
+    "brace-expansion": "5.0.9",
     "yaml": "2.8.3"
   },
   "devDependencies": {

@@ -4,13 +4,17 @@ DockFlare is capable of managing DNS records across multiple domains (Cloudflare
 
 ## Default Zone
 
-During the initial setup of DockFlare, you provide a **Zone ID**. This is the **default zone** where DockFlare will create all DNS records. If you only plan to use a single domain, this is all you need to worry about.
+During initial setup, you provide a **Zone ID** used as a compatibility default. DockFlare normally loads every active zone accessible to the configured account and selects the longest DNS-label suffix matching each complete hostname. The default is used without verification only when the zone inventory is temporarily unavailable.
+
+For example, `app.internal.side.co.uk` selects `internal.side.co.uk` when both that nested zone and `side.co.uk` are accessible. DockFlare does not assume that the final two hostname labels form the zone.
+
+The master performs the same resolution for local Docker containers, agent-reported containers, manual rules, API-created rules, and reconciliation. Existing agents do not require a protocol or image update for this behavior.
 
 ## Overriding the Zone with a Label
 
-To manage a service on a domain other than the default one, you can use the `dockflare.zonename` label.
+To select a particular containing zone explicitly, use the `dockflare.zonename` label.
 
-This label tells DockFlare to create the DNS record for that specific service in the specified Cloudflare Zone.
+The explicit zone must exist in the configured Cloudflare account and must contain the hostname. An invalid or unrelated explicit zone causes the rule to be rejected; DockFlare does not silently fall back to another zone.
 
 ### Prerequisites
 
@@ -51,11 +55,11 @@ Both hostnames will be added as ingress rules to the same Cloudflare Tunnel.
 
 The DockFlare Web UI has a feature on the **Settings** page that allows you to view all Cloudflare Tunnels on your account and the DNS records pointing to them.
 
-To ensure that the UI can find DNS records across all your different zones, you can use the `TUNNEL_DNS_SCAN_ZONE_NAMES` environment variable.
+DockFlare automatically includes zones referenced by active rules when scanning tunnel DNS records. You can use `TUNNEL_DNS_SCAN_ZONE_NAMES` to include additional zones that do not currently have an active DockFlare rule.
 
 ### `TUNNEL_DNS_SCAN_ZONE_NAMES`
 
-This environment variable accepts a comma-separated list of zone names that the UI should scan when looking for DNS records.
+This environment variable accepts a comma-separated list of extra zone names that the UI should scan when looking for DNS records.
 
 **Example `docker-compose.yml`:**
 ```yaml

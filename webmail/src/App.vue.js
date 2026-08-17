@@ -6,6 +6,10 @@ debugger; /* PartiallyEnd: #3632/scriptSetup.vue */
 const __VLS_ctx = {};
 let __VLS_components;
 let __VLS_directives;
+__VLS_asFunctionalElement(__VLS_intrinsicElements.div)({
+    ...{ class: "aurora-layer" },
+    'aria-hidden': "true",
+});
 const __VLS_0 = {}.RouterView;
 /** @type {[typeof __VLS_components.RouterView, ]} */ ;
 // @ts-ignore
@@ -38,6 +42,7 @@ if (__VLS_ctx.needRefresh) {
     });
 }
 var __VLS_7;
+/** @type {__VLS_StyleScopedClasses['aurora-layer']} */ ;
 /** @type {__VLS_StyleScopedClasses['fixed']} */ ;
 /** @type {__VLS_StyleScopedClasses['bottom-4']} */ ;
 /** @type {__VLS_StyleScopedClasses['right-4']} */ ;

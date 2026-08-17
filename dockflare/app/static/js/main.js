@@ -8,6 +8,8 @@ let pingInterval = null;
 let manualTunnelTomSelect = null;
 let cachedTunnels = null;
 let cachedZones = null;
+let cachedZonesLoadError = false;
+let cachedZonesStale = false;
 let manualZoneDetectionTimeout = null;
 let servicesSnapshotPromise = null;
 let servicesSnapshotQueued = false;
@@ -132,10 +134,15 @@ function initializeEditRuleModal() {
                 modal.querySelector('#edit_original_rule_key').value = ruleKey;
 
                 const hostname = details.hostname || '';
-                const parts = hostname.split('.');
-                if (parts.length > 2 && !hostname.startsWith('*.')) {
-                    modal.querySelector('#edit_manual_subdomain').value = parts.slice(0, -2).join('.');
-                    modal.querySelector('#edit_manual_domain_name').value = parts.slice(-2).join('.');
+                const zoneName = details.zone_name || '';
+                const hostnameLower = normalizeDnsNameForMatch(hostname);
+                const zoneLower = normalizeDnsNameForMatch(zoneName);
+                if (zoneLower && (hostnameLower === zoneLower || hostnameLower.endsWith(`.${zoneLower}`))) {
+                    const hostnameParts = hostname.replace(/\.$/, '').split('.');
+                    const zoneLabelCount = zoneName.replace(/\.$/, '').split('.').length;
+                    const subdomain = hostnameParts.slice(0, Math.max(0, hostnameParts.length - zoneLabelCount)).join('.');
+                    modal.querySelector('#edit_manual_subdomain').value = subdomain;
+                    modal.querySelector('#edit_manual_domain_name').value = zoneName;
                 } else {
                     modal.querySelector('#edit_manual_subdomain').value = '';
                     modal.querySelector('#edit_manual_domain_name').value = hostname;
@@ -183,7 +190,9 @@ function initializeEditRuleModal() {
                 if (authEmailField) authEmailField.value = details.auth_email || '';
 
                 const zoneOverrideField = modal.querySelector('#edit_manual_zone_name_override');
-                if (zoneOverrideField) zoneOverrideField.value = '';
+                if (zoneOverrideField) {
+                    zoneOverrideField.value = (details.zone_resolution_source || '').startsWith('explicit') ? zoneName : '';
+                }
 
                 const noTlsVerifyField = modal.querySelector('#edit_manual_no_tls_verify');
                 if (noTlsVerifyField) noTlsVerifyField.checked = details.no_tls_verify || false;
@@ -962,6 +971,15 @@ function buildManualHostname(subdomain, domain) {
     return subdomainPart ? `${subdomainPart}.${domainPart}` : domainPart;
 }
 
+function normalizeDnsNameForMatch(value) {
+    const raw = (value || '').replace(/^\*\./, '').replace(/\.$/, '');
+    try {
+        return new URL(`http://${raw}`).hostname.toLowerCase().replace(/\.$/, '');
+    } catch (error) {
+        return raw.toLowerCase();
+    }
+}
+
 async function fetchAccountTunnels() {
     if (cachedTunnels !== null) return cachedTunnels;
     try {
@@ -987,9 +1005,13 @@ async function fetchAccountZones() {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         cachedZones = Array.isArray(data) ? data : [];
+        cachedZonesLoadError = false;
+        cachedZonesStale = response.headers.get('X-DockFlare-Zone-Inventory') === 'stale';
     } catch (error) {
         console.error('Failed to load account zones', error);
         cachedZones = [];
+        cachedZonesLoadError = true;
+        cachedZonesStale = false;
     }
     return cachedZones;
 }
@@ -1001,16 +1023,16 @@ function getZoneById(zoneId) {
 
 function detectZoneForHostname(hostname) {
     if (!hostname) return { status: 'empty' };
+    if (cachedZonesLoadError) {
+        return { status: 'unavailable', candidates: [] };
+    }
     if (!Array.isArray(cachedZones) || cachedZones.length === 0) {
         return { status: 'not_found', candidates: [] };
     }
-    let normalizedHost = hostname.toLowerCase();
-    if (normalizedHost.startsWith('*.')) {
-        normalizedHost = normalizedHost.slice(2);
-    }
+    const normalizedHost = normalizeDnsNameForMatch(hostname);
     const matches = [];
     cachedZones.forEach(zone => {
-        const zoneName = (zone && zone.name ? zone.name : '').toLowerCase();
+        const zoneName = normalizeDnsNameForMatch(zone && zone.name ? zone.name : '');
         if (!zoneName) return;
         if (normalizedHost === zoneName || normalizedHost.endsWith(`.${zoneName}`)) {
             matches.push(zone);
@@ -1086,8 +1108,8 @@ function updateManualZoneUI(state, elements) {
         case 'ok':
             zoneIdInput.value = state.zone && state.zone.id ? state.zone.id : '';
             if (selectorWrapper) selectorWrapper.classList.add('hidden');
-            setZoneBadge(badgeEl, t('js.text.zone_badge_detected'), 'success');
-            messageEl.textContent = state.zone && state.zone.name ? t('js.text.zone_detected', {zoneName: state.zone.name}) : t('js.text.zone_detected', {zoneName: ''});
+            setZoneBadge(badgeEl, cachedZonesStale ? 'Detected from cached zones' : t('js.text.zone_badge_detected'), cachedZonesStale ? 'warning' : 'success');
+            messageEl.textContent = cachedZonesStale ? 'Cloudflare zone refresh failed; using the last known good inventory.' : (state.zone && state.zone.name ? t('js.text.zone_detected', {zoneName: state.zone.name}) : t('js.text.zone_detected', {zoneName: ''}));
             break;
         case 'ambiguous':
             zoneIdInput.value = '';
@@ -1106,6 +1128,12 @@ function updateManualZoneUI(state, elements) {
             }
             setZoneBadge(badgeEl, t('js.text.zone_badge_required'), 'warning');
             messageEl.textContent = t('js.text.zone_not_found');
+            break;
+        case 'unavailable':
+            zoneIdInput.value = '';
+            if (selectorWrapper) selectorWrapper.classList.add('hidden');
+            setZoneBadge(badgeEl, 'Zone lookup unavailable', 'error');
+            messageEl.textContent = 'Cloudflare zones could not be loaded. Retry before submitting.';
             break;
         case 'selected':
             zoneIdInput.value = state.zone && state.zone.id ? state.zone.id : '';
@@ -1221,6 +1249,18 @@ async function initializeManualRuleForm() {
             updateManualZoneUI({ status: 'selected', zone }, elements);
         });
     }
+
+    form.addEventListener('submit', event => {
+        const overrideValue = zoneOverrideInput ? zoneOverrideInput.value.trim() : '';
+        if (!overrideValue && (!zoneIdInput.value || cachedZonesLoadError)) {
+            event.preventDefault();
+            if (feedbackEl) {
+                feedbackEl.textContent = cachedZonesLoadError ? 'Cloudflare zones could not be loaded.' : 'Select or enter a valid Cloudflare zone.';
+                feedbackEl.classList.remove('hidden', 'alert-success', 'alert-warning');
+                feedbackEl.classList.add('alert-error');
+            }
+        }
+    });
 
     scheduleDetection();
 }

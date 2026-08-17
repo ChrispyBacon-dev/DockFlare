@@ -25,10 +25,12 @@ from flask import current_app
 
 from app.core.state_manager import managed_rules, state_lock, save_state, get_agent, update_agent
 from app.core.cloudflare_api import (
-    get_zone_id_from_name, 
+    get_account_zone_inventory,
+    resolve_account_zone,
     create_cloudflare_dns_record,
     delete_cloudflare_dns_record
 )
+from app.core.zone_resolver import ZoneResolutionError
 from app.core.access_manager import (
     handle_access_policy_from_labels, 
     delete_cloudflare_access_application 
@@ -226,20 +228,34 @@ def reconcile_agent_report(agent_id, reported_containers):
                 logging.debug(f"[Reconcile-Agent] No hostname configs derived from agent {agent_id} reported containers.")
                 return False
 
+            zone_inventory = get_account_zone_inventory()
+            resolved_desired = {}
+            for rule_key, desired in desired_configs.items():
+                try:
+                    resolved_desired[rule_key] = resolve_account_zone(
+                        desired["hostname"],
+                        explicit_zone_name=desired.get("zone_name") or None,
+                        zones=zone_inventory["zones"],
+                        inventory_status=zone_inventory["status"],
+                        allow_unverified_default=True,
+                    )
+                except ZoneResolutionError as exc:
+                    logging.warning(f"[Reconcile-Agent] Zone resolution failed for {rule_key} ({exc.code}). Skipping.")
+
             with state_lock:
-                for rule_key, desired in desired_configs.items():
+                for rule_key, selected_zone in resolved_desired.items():
+                    desired = desired_configs[rule_key]
                     existing = managed_rules.get(rule_key)
-                    target_zone_id = None
-                    try:
-                        target_zone_id = get_zone_id_from_name(desired.get("zone_name")) if desired.get("zone_name") else current_app.config.get('CF_ZONE_ID')
-                    except Exception:
-                        target_zone_id = current_app.config.get('CF_ZONE_ID')
-                    if not target_zone_id:
-                        logging.warning(f"[Reconcile-Agent] Could not determine Zone ID for rule {rule_key} while reconciling agent {agent_id}. Skipping.")
-                        continue
+                    target_zone_id = selected_zone["id"]
 
                     if existing:
                         if existing.get("source") == "manual":
+                            continue
+                        if existing.get("rule_ui_override"):
+                            if existing.get("status") == "pending_deletion":
+                                existing["status"] = "active"
+                                existing["delete_at"] = None
+                                restored_any = True
                             continue
 
                         if existing.get("status") == "pending_deletion":
@@ -260,12 +276,24 @@ def reconcile_agent_report(agent_id, reported_containers):
                         if existing.get("zone_id") != target_zone_id:
                             existing["zone_id"] = target_zone_id
                             changed = True
+                        if existing.get("zone_name") != selected_zone.get("name"):
+                            existing["zone_name"] = selected_zone.get("name")
+                            changed = True
+                        if existing.get("zone_resolution_source") != selected_zone.get("source"):
+                            existing["zone_resolution_source"] = selected_zone.get("source")
+                            changed = True
                         if existing.get("no_tls_verify") != desired.get("no_tls_verify"):
                             existing["no_tls_verify"] = desired.get("no_tls_verify")
                             changed = True
                         if existing.get("source") != "agent" or existing.get("agent_id") != agent_id:
                             existing["source"] = "agent"
                             existing["agent_id"] = agent_id
+                            changed = True
+                        if existing.get("tunnel_id") != agent_record.get("assigned_tunnel_id"):
+                            existing["tunnel_id"] = agent_record.get("assigned_tunnel_id")
+                            changed = True
+                        if existing.get("tunnel_name") != agent_record.get("assigned_tunnel_name"):
+                            existing["tunnel_name"] = agent_record.get("assigned_tunnel_name")
                             changed = True
                         if changed:
                             restored_any = True
@@ -279,6 +307,8 @@ def reconcile_agent_report(agent_id, reported_containers):
                             "status": "active",
                             "delete_at": None,
                             "zone_id": target_zone_id,
+                            "zone_name": selected_zone.get("name"),
+                            "zone_resolution_source": selected_zone.get("source"),
                             "no_tls_verify": desired.get("no_tls_verify"),
                             "origin_server_name": desired.get("origin_server_name"),
                             "http_host_header": desired.get("http_host_header"),
@@ -290,7 +320,8 @@ def reconcile_agent_report(agent_id, reported_containers):
                             "source": "agent",
                             "agent_id": agent_id,
                             "access_group_id": None,
-                            "tunnel_name": current_app.config.get('TUNNEL_NAME') or None
+                            "tunnel_name": agent_record.get("assigned_tunnel_name"),
+                            "tunnel_id": agent_record.get("assigned_tunnel_id")
                         }
                         restored_any = True
                         logging.info(f"[Reconcile-Agent] Created missing rule {rule_key} for agent {agent_id} based on agent report.")
@@ -307,7 +338,7 @@ def reconcile_agent_report(agent_id, reported_containers):
                 try:
                     logging.info(f"[Reconcile-Agent] Triggering Cloudflare tunnel config update after restoring rules for agent {agent_id}.")
 
-                    t = threading.Thread(target=update_cloudflare_config, name=f"agent-reconcile-{agent_id}", daemon=True)
+                    t = threading.Thread(target=update_cloudflare_config, args=(agent_record.get("assigned_tunnel_id"),), name=f"agent-reconcile-{agent_id}", daemon=True)
                     t.start()
                 except Exception as e:
                     logging.error(f"[Reconcile-Agent] Failed to trigger Cloudflare update: {e}", exc_info=True)
@@ -335,6 +366,7 @@ def _run_reconciliation_logic():
         }
         
         running_labeled_rules_details = {}
+        container_scan_complete = True
         try:
             current_app.reconciliation_info["status"] = "Scanning containers for services and access policies..."
             containers = docker_client.containers.list(sparse=False, all=config.SCAN_ALL_NETWORKS)
@@ -347,6 +379,7 @@ def _run_reconciliation_logic():
                 if time.time() - reconciliation_start_time > 60:
                     logging.warning("[Reconcile] Timeout during container scanning phase.")
                     current_app.reconciliation_info["status"] = "Container scan timeout (partial data)"
+                    container_scan_complete = False
                     break
                 
                 batch = containers[i:i+batch_size]
@@ -368,6 +401,7 @@ def _run_reconciliation_logic():
                         logging.error(f"[Reconcile] Error processing container {c_obj.id[:12] if c_obj and c_obj.id else 'N/A'}: {e_cont_scan}")
             logging.info(f"[Reconcile] Found {len(running_labeled_rules_details)} running rules with DockFlare labels.")
         except Exception as e_phase1:
+            container_scan_complete = False
             logging.error(f"[Reconcile] Error in container scanning phase: {e_phase1}", exc_info=True)
             current_app.reconciliation_info["status"] = f"Container scan error: {str(e_phase1)}"
             
@@ -377,6 +411,19 @@ def _run_reconciliation_logic():
         processed_reconcile_items = 0
         hostnames_requiring_dns_setup = set()
         policy_jobs_map = {}
+        zone_inventory = get_account_zone_inventory()
+        resolved_running_rules = {}
+        for rule_key, desired_details in running_labeled_rules_details.items():
+            try:
+                resolved_running_rules[rule_key] = resolve_account_zone(
+                    desired_details["hostname"],
+                    explicit_zone_name=desired_details.get("zone_name") or None,
+                    zones=zone_inventory["zones"],
+                    inventory_status=zone_inventory["status"],
+                    allow_unverified_default=True,
+                )
+            except ZoneResolutionError as exc:
+                logging.error(f"[Reconcile] Zone resolution failed for {rule_key} ({exc.code}). Skipping.")
 
         with state_lock:
             now_utc = datetime.now(timezone.utc)
@@ -384,7 +431,8 @@ def _run_reconciliation_logic():
             effective_tunnel_id = tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
             master_tunnel_name = tunnel_state.get("name")
                             
-            for rule_key, desired_details in running_labeled_rules_details.items():
+            for rule_key, selected_zone in resolved_running_rules.items():
+                desired_details = running_labeled_rules_details[rule_key]
                 processed_reconcile_items +=1
                 current_app.reconciliation_info["processed_items"] = processed_reconcile_items
                 current_app.reconciliation_info["progress"] = min(100, int((processed_reconcile_items / current_app.reconciliation_info["total_items"]) * 100)) if current_app.reconciliation_info["total_items"] > 0 else 0
@@ -396,11 +444,16 @@ def _run_reconciliation_logic():
                 existing_rule = managed_rules.get(rule_key)
                 if existing_rule and existing_rule.get("source") == "manual":
                     continue
-
-                target_zone_id = get_zone_id_from_name(desired_details["zone_name"]) if desired_details["zone_name"] else current_app.config.get('CF_ZONE_ID')
-                if not target_zone_id:
-                    logging.error(f"[Reconcile] No zone ID for {rule_key}, skipping its reconciliation.")
+                if existing_rule and existing_rule.get("rule_ui_override"):
+                    if existing_rule.get("status") == "pending_deletion":
+                        existing_rule["status"] = "active"
+                        existing_rule["delete_at"] = None
+                        state_changed_locally = True
+                    if existing_rule.get("hostname") and existing_rule.get("zone_id"):
+                        hostnames_requiring_dns_setup.add((existing_rule.get("hostname"), existing_rule.get("zone_id"), existing_rule.get("tunnel_id") or effective_tunnel_id))
                     continue
+
+                target_zone_id = selected_zone["id"]
                 
                 if not existing_rule:
                     managed_rules[rule_key] = {
@@ -409,13 +462,16 @@ def _run_reconciliation_logic():
                         "service": desired_details["service"], 
                         "container_id": desired_details["container_id"],
                         "status": "active", "delete_at": None, "zone_id": target_zone_id,
+                        "zone_name": selected_zone.get("name"),
+                        "zone_resolution_source": selected_zone.get("source"),
                         "no_tls_verify": desired_details["no_tls_verify"],
                         "origin_server_name": desired_details.get("origin_server_name"),
                         "http_host_header": desired_details.get("http_host_header"),
                         "access_app_id": None, "access_policy_type": None, "access_app_config_hash": None,
                         "access_policy_ui_override": False, "rule_ui_override": False, "source": "docker",
                         "access_group_id": None,
-                        "tunnel_name": master_tunnel_name
+                        "tunnel_name": master_tunnel_name,
+                        "tunnel_id": effective_tunnel_id
                     }
                     existing_rule = managed_rules[rule_key]
                     state_changed_locally = True
@@ -440,6 +496,12 @@ def _run_reconciliation_logic():
                         existing_rule["zone_id"] = target_zone_id
                         changed_in_reconcile = True
                         needs_tunnel_config_update = True 
+                    if existing_rule.get("zone_name") != selected_zone.get("name"):
+                        existing_rule["zone_name"] = selected_zone.get("name")
+                        changed_in_reconcile = True
+                    if existing_rule.get("zone_resolution_source") != selected_zone.get("source"):
+                        existing_rule["zone_resolution_source"] = selected_zone.get("source")
+                        changed_in_reconcile = True
                     if existing_rule.get("container_id") != desired_details["container_id"]:
                         existing_rule["container_id"] = desired_details["container_id"]
                         changed_in_reconcile = True
@@ -458,6 +520,9 @@ def _run_reconciliation_logic():
                     
                     if existing_rule.get("tunnel_name") != master_tunnel_name:
                         existing_rule["tunnel_name"] = master_tunnel_name
+                        changed_in_reconcile = True
+                    if existing_rule.get("tunnel_id") != effective_tunnel_id:
+                        existing_rule["tunnel_id"] = effective_tunnel_id
                         changed_in_reconcile = True
 
                     existing_rule["source"] = "docker" 
@@ -479,7 +544,7 @@ def _run_reconciliation_logic():
                 
                 rule = managed_rules.get(rule_key_to_check)
                 if rule and rule.get("status") == "active":
-                    if rule.get("source", "docker") == "docker":
+                    if rule.get("source", "docker") == "docker" and container_scan_complete:
                         logging.info(f"[Reconcile] Docker-managed rule {rule_key_to_check} active but container/labels gone. Marking for deletion.")
                         rule["status"] = "pending_deletion"
                         grace_period = current_app.config.get('GRACE_PERIOD_SECONDS', 28800)
@@ -540,11 +605,11 @@ def _run_reconciliation_logic():
                 if time.time() - reconciliation_start_time > max_total_time - 5:
                     break
                 
-                if tunnel_id_dns:
+                if tunnel_id_dns and not hostname_dns.startswith('*.'):
                     create_cloudflare_dns_record(zone_id_dns, hostname_dns, tunnel_id_dns)
                     if config.USE_EXTERNAL_CLOUDFLARED:
                         time.sleep(0.1)
-                else:
+                elif not tunnel_id_dns:
                     logging.error(f"[Reconcile] Cannot setup DNS for {hostname_dns}: Tunnel ID is missing.")
                 
         current_app.reconciliation_info["in_progress"] = False

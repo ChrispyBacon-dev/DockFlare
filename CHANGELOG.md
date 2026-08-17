@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.1.4] - 2026-08-17
+
+### Fixed
+- **Frontend dependency audit:** Updated compatible DockFlare and webmail dependencies to address reported npm vulnerabilities while retaining Vite 5; DockFlare now audits cleanly, with the remaining webmail findings requiring a future major Vite upgrade.
+- **Centralized Cloudflare zone resolution:** Unified zone detection across manual rules, APIs, agents, Docker events, and reconciliation. Account-aware matching now handles multi-label and nested zones consistently while preserving safe DNS and rule migrations. Fixes [#389](https://github.com/ChrispyBacon-dev/DockFlare/issues/389).
+- **Read-only system Access policies:** Made `authenticated-default` and `public-default-bypass` read-only in both the UI and server. This prevents unsupported IdP edits from being reverted to the built-in OTP configuration; use a custom policy for Google, GitHub, or other IdPs. Addresses [#391](https://github.com/ChrispyBacon-dev/DockFlare/issues/391).
+
 ## [v3.1.3] - 2026-08-05
 
 ### Added

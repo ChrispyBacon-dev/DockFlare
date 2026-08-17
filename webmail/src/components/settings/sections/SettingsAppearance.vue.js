@@ -37,7 +37,7 @@ for (const [opt] of __VLS_getVForSourceType((__VLS_ctx.DATE_FORMAT_OPTIONS))) {
     __VLS_asFunctionalElement(__VLS_intrinsicElements.label, __VLS_intrinsicElements.label)({
         key: (opt.key),
         ...{ class: "flex items-center gap-4 cursor-pointer rounded-lg px-3 py-3 hover:bg-accent/50 transition-colors border border-transparent" },
-        ...{ class: (__VLS_ctx.mailStore.dateFormat === opt.key ? 'border-[#FBA612]/40 bg-[#FBA612]/5' : '') },
+        ...{ class: (__VLS_ctx.mailStore.dateFormat === opt.key ? 'border-df-accent/40 bg-df-accent/5' : '') },
     });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.input)({
         ...{ onChange: (...[$event]) => {
@@ -47,7 +47,7 @@ for (const [opt] of __VLS_getVForSourceType((__VLS_ctx.DATE_FORMAT_OPTIONS))) {
         name: "dateFormat",
         value: (opt.key),
         checked: (__VLS_ctx.mailStore.dateFormat === opt.key),
-        ...{ class: "accent-[#FBA612]" },
+        ...{ class: "accent-df-accent" },
     });
     __VLS_asFunctionalElement(__VLS_intrinsicElements.div, __VLS_intrinsicElements.div)({
         ...{ class: "flex-1 min-w-0" },
@@ -94,7 +94,7 @@ for (const [opt] of __VLS_getVForSourceType((__VLS_ctx.DATE_FORMAT_OPTIONS))) {
 /** @type {__VLS_StyleScopedClasses['transition-colors']} */ ;
 /** @type {__VLS_StyleScopedClasses['border']} */ ;
 /** @type {__VLS_StyleScopedClasses['border-transparent']} */ ;
-/** @type {__VLS_StyleScopedClasses['accent-[#FBA612]']} */ ;
+/** @type {__VLS_StyleScopedClasses['accent-df-accent']} */ ;
 /** @type {__VLS_StyleScopedClasses['flex-1']} */ ;
 /** @type {__VLS_StyleScopedClasses['min-w-0']} */ ;
 /** @type {__VLS_StyleScopedClasses['text-sm']} */ ;

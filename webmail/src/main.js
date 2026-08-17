@@ -4,7 +4,10 @@ import router from './router';
 import App from './App.vue';
 import './assets/styles/main.css';
 // Apply dark mode before mount to avoid flash
-if (localStorage.getItem('theme') === 'dark') {
+// Priority: explicit user preference → system preference
+const _storedTheme = localStorage.getItem('theme');
+const _prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+if (_storedTheme === 'dark' || (_storedTheme === null && _prefersDark)) {
     document.documentElement.classList.add('dark');
 }
 const app = createApp(App);

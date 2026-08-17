@@ -12,7 +12,7 @@ These labels control the fundamental routing and service definition for a contai
 | `dockflare.hostname` | **Required.** The public-facing hostname for your service. | `dockflare.hostname=myservice.example.com` |
 | `dockflare.service` | **Required.** The internal URL of the service that Cloudflare Tunnel should connect to. Can be `http`, `https`, `tcp`, `ssh`, `rdp`, `http_status:XXX`, or `bastion`. | `dockflare.service=http://my-app-container:8080` |
 | `dockflare.path` | The URL path to route to this service. Useful for exposing multiple services on the same hostname. | `dockflare.path=/api` |
-| `dockflare.zonename` | (Optional) Explicit Cloudflare zone (domain) where the DNS record should be created. If omitted, DockFlare now auto-detects the zone based on the hostname and only falls back to the configured default (`CF_ZONE_ID`) when auto-detect fails. | `dockflare.zonename=another-domain.com` |
+| `dockflare.zonename` | (Optional) Explicit Cloudflare zone containing the hostname. If omitted, the master selects the longest matching zone available to the configured account. Invalid explicit zones fail closed. The configured default (`CF_ZONE_ID`) is used only as a compatibility fallback when zone inventory is temporarily unavailable. | `dockflare.zonename=another-domain.com` |
 | `dockflare.no_tls_verify` | If set to `true`, disables TLS certificate verification for the connection between `cloudflared` and your origin service. Useful for origins with self-signed certificates. | `dockflare.no_tls_verify=true` |
 | `dockflare.originsrvname` | Sets a specific Server Name Indication (SNI) hostname for the TLS connection to the origin. This is also known as "Origin Server Name" in the Cloudflare dashboard. | `dockflare.originsrvname=internal.service.local` |
 | `dockflare.httpHostHeader` | Overrides the `Host` header sent from `cloudflared` to your origin service. | `dockflare.httpHostHeader=custom-host.internal` |
@@ -20,7 +20,7 @@ These labels control the fundamental routing and service definition for a contai
 | `dockflare.disable_chunked_encoding` | If set to `true`, disables chunked transfer encoding over HTTP/1.1. Useful for WSGI servers (Flask, Django, FastAPI) and other origins that don't properly support chunked requests. Only applies to HTTP/HTTPS services. | `dockflare.disable_chunked_encoding=true` |
 | `dockflare.match_sni_to_host` | If set to `true`, Cloudflare automatically sets the Server Name Indication (SNI) during the TLS handshake to match the incoming request's hostname. | `dockflare.match_sni_to_host=true` |
 
-> **Tip:** Starting with DockFlare v3.0, you can skip `dockflare.zonename` for most workloads. The master detects the correct Cloudflare zone by matching the hostname suffix and only falls back to the configured default zone when it cannot find a match. Provide the label when you intentionally want to place a record in a different zone.
+> **Tip:** You can skip `dockflare.zonename` for most workloads. The master uses a DNS-label-aware longest-suffix match, including multi-label and delegated nested zones. Use the label to select a specific containing zone when more than one accessible zone could own the hostname.
 
 > **Note:** Cloudflare's **Match SNI to Host** option is available in DockFlare manual rule configuration in the dashboard. It is not currently set through a Docker label.
 

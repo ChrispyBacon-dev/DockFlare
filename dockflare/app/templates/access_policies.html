@@ -118,15 +118,24 @@
                                                 </svg>
                                             </label>
                                             <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-64">
+                                                {% if details.get('system_policy') %}
+                                                <li class="disabled" title="{{ t('policies.cannot_edit_system') }}">
+                                                    <span class="pointer-events-none cursor-not-allowed select-none opacity-50">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>
+                                                        {{ t('common.edit') }} ({{ t('policies.read_only') }})
+                                                    </span>
+                                                </li>
+                                                {% else %}
                                                 <li>
                                                     <a class="edit-access-group-btn" data-group-id="{{ group_id }}" data-group-details="{{ details|tojson|forceescape }}" data-external="{{ 'true' if details.get('external_policy') else 'false' }}">
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>
                                                         {{ t('common.edit') }}
                                                     </a>
                                                 </li>
+                                                {% endif %}
                                                 {% if details.cloudflare_policy_id and ACCOUNT_ID_FOR_DISPLAY and ACCOUNT_ID_FOR_DISPLAY != "Not Configured" %}
                                                 <li>
-                                                    <a class="flex items-center gap-2" href="https://dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/one/access-controls/policies/{{ details.cloudflare_policy_id }}/edit" target="_blank" rel="noopener noreferrer">
+                                                    <a class="flex items-center gap-2" href="https://dash.cloudflare.com/{{ ACCOUNT_ID_FOR_DISPLAY }}/one/access-controls/policies{{ '/' + details.cloudflare_policy_id + '/edit' if not details.get('system_policy') else '' }}" target="_blank" rel="noopener noreferrer">
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg>
                                                         {{ t('policies.view_in_cloudflare') }}
                                                     </a>

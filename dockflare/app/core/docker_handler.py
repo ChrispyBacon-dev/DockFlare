@@ -28,36 +28,17 @@ from app import config, docker_client, cloudflared_agent_state, tunnel_state, pu
 
 from app.core.state_manager import managed_rules, state_lock, save_state
 from app.core.tunnel_manager import update_cloudflare_config
-from app.core.cloudflare_api import create_cloudflare_dns_record, get_zone_id_from_name, list_account_zones
+from app.core.cloudflare_api import create_cloudflare_dns_record, get_account_zone_inventory, resolve_account_zone
+from app.core.zone_resolver import ZoneResolutionError, normalize_dns_name
 from app.core.access_manager import handle_access_policy_from_labels
 from app.core.utils import get_rule_key, get_label, normalize_access_group_value
 
 def is_valid_hostname(hostname):
-    if not hostname:
-        return False
-    if hostname.startswith('*.'):
-        domain_part = hostname[2:]
-        if not domain_part or len(domain_part) > 253:
-            return False
-        for label in domain_part.split('.'):
-            if not label or len(label) > 63:
-                return False
-            if not all(c.isalnum() or c == '-' for c in label):
-                return False
-            if label.startswith('-') or label.endswith('-'):
-                return False
+    try:
+        normalize_dns_name(hostname)
         return True
-    if len(hostname) > 253:
+    except ZoneResolutionError:
         return False
-    labels = hostname.split('.')
-    for label in labels:
-        if not label or len(label) > 63:
-            return False
-        if not all(c.isalnum() or c == '-' for c in label):
-            return False
-        if label.startswith('-') or label.endswith('-'):
-            return False
-    return True
 
 def is_valid_service(service_str):
     if not service_str or not isinstance(service_str, str):
@@ -282,6 +263,7 @@ def process_container_start(container_obj):
             dns_targets = {}
             master_tunnel_id = tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
             master_tunnel_name = tunnel_state.get("name")
+            zone_inventory = get_account_zone_inventory()
 
             if not master_tunnel_name or master_tunnel_name == "dockflare-tunnel":
                 from app.core.cloudflare_api import get_tunnel_name_by_id
@@ -305,26 +287,20 @@ def process_container_start(container_obj):
                 disable_chunked_encoding_from_item = config_item.get("disable_chunked_encoding", False)
                 match_sni_to_host_from_item = config_item.get("match_sni_to_host", False)
 
-                target_zone_id = None
-                detected_zone_name = zone_name_from_item
-                if zone_name_from_item:
-                    target_zone_id = get_zone_id_from_name(zone_name_from_item)
-                    if not target_zone_id:
-                        logging.error(f"DOCKER_HANDLER: Failed Zone ID lookup for '{zone_name_from_item}' (rule {rule_key}). Attempting auto-detect.")
-                        target_zone_id = None
-                if not target_zone_id:
-                    detected_zone_id, detected_zone_name_candidate = _detect_zone_for_hostname(hostname)
-                    if detected_zone_id:
-                        target_zone_id = detected_zone_id
-                        detected_zone_name = detected_zone_name_candidate or detected_zone_name
-                if not target_zone_id and current_app.config.get('CF_ZONE_ID'):
-                    target_zone_id = current_app.config.get('CF_ZONE_ID')
-                    if not detected_zone_name:
-                        detected_zone_name = None
-                if not target_zone_id:
-                    logging.error(f"DOCKER_HANDLER: No Zone ID resolved for rule {rule_key}. Skipping DNS and rule update.")
+                try:
+                    selected_zone = resolve_account_zone(
+                        hostname,
+                        explicit_zone_name=zone_name_from_item or None,
+                        zones=zone_inventory["zones"],
+                        inventory_status=zone_inventory["status"],
+                        allow_unverified_default=True,
+                    )
+                except ZoneResolutionError as exc:
+                    logging.error(f"DOCKER_HANDLER: Zone resolution failed for {rule_key} ({exc.code}). Skipping rule.")
                     continue
-                config_item["zone_name"] = detected_zone_name
+                target_zone_id = selected_zone["id"]
+                config_item["zone_name"] = selected_zone.get("name")
+                config_item["zone_resolution_source"] = selected_zone.get("source")
                 
                 logging.debug(f"DOCKER_HANDLER_LOOP_ITEM: For rule_key: {rule_key}. Before lock.")
                 with state_lock:
@@ -358,6 +334,9 @@ def process_container_start(container_obj):
                             rule_data_changed = True
                         if existing_rule.get("zone_name") != config_item.get("zone_name"):
                             existing_rule["zone_name"] = config_item.get("zone_name")
+                            rule_data_changed = True
+                        if existing_rule.get("zone_resolution_source") != config_item.get("zone_resolution_source"):
+                            existing_rule["zone_resolution_source"] = config_item.get("zone_resolution_source")
                             rule_data_changed = True
                         if existing_rule.get("no_tls_verify") != no_tls_verify_from_item:
                             existing_rule["no_tls_verify"] = no_tls_verify_from_item
@@ -409,6 +388,7 @@ def process_container_start(container_obj):
                             "delete_at": None,
                             "zone_id": target_zone_id,
                             "zone_name": config_item.get("zone_name"),
+                            "zone_resolution_source": config_item.get("zone_resolution_source"),
                             "no_tls_verify": no_tls_verify_from_item,
                             "origin_server_name": origin_server_name_from_item,
                             "http_host_header": http_host_header_from_item,
@@ -464,18 +444,7 @@ def process_container_start(container_obj):
                     if effective_tunnel_id:
                         for hostname_dns, dns_details in dns_targets.items():
                             target_zone_id_for_dns_item = dns_details.get("zone_id")
-                            zone_name_dns_item = dns_details.get("zone_name")
-                            if not target_zone_id_for_dns_item and zone_name_dns_item:
-                                target_zone_id_for_dns_item = get_zone_id_from_name(zone_name_dns_item)
-                            if not target_zone_id_for_dns_item:
-                                detected_zone_id_dns, detected_zone_name_dns = _detect_zone_for_hostname(hostname_dns)
-                                if detected_zone_id_dns:
-                                    target_zone_id_for_dns_item = detected_zone_id_dns
-                                    if not zone_name_dns_item and detected_zone_name_dns:
-                                        dns_targets[hostname_dns]["zone_name"] = detected_zone_name_dns
-                            if not target_zone_id_for_dns_item and current_app.config.get('CF_ZONE_ID'):
-                                target_zone_id_for_dns_item = current_app.config.get('CF_ZONE_ID')
-                            if target_zone_id_for_dns_item:
+                            if target_zone_id_for_dns_item and not hostname_dns.startswith('*.'):
                                 dns_record_id_status = create_cloudflare_dns_record(target_zone_id_for_dns_item, hostname_dns, effective_tunnel_id)
                                 if dns_record_id_status and dns_record_id_status not in ["semaphore_timeout", "existing_record_unconfirmed"]:
                                     logging.info(f"DOCKER_HANDLER: DNS for {hostname_dns} in zone {target_zone_id_for_dns_item} OK (ID/Status: {dns_record_id_status}).")
@@ -483,7 +452,7 @@ def process_container_start(container_obj):
                                     logging.error(f"DOCKER_HANDLER: CRITICAL - Failed DNS for {hostname_dns} in zone {target_zone_id_for_dns_item}!")
                                     if cloudflared_agent_state:
                                         cloudflared_agent_state["last_action_status"] = f"Error: Failed DNS for {hostname_dns}."
-                            else:
+                            elif not target_zone_id_for_dns_item:
                                 logging.error(f"DOCKER_HANDLER: No Zone ID for DNS for {hostname_dns} - cannot manage record.")
                     else:
                         logging.error(f"DOCKER_HANDLER: Missing effective Tunnel ID - cannot manage DNS records for {container_name_val}.")
@@ -629,29 +598,3 @@ def start_event_listeners(stop_event):
         logging.info(f"Created event listener thread for prefix: {prefix}")
         
     return threads
-def _detect_zone_for_hostname(hostname):
-    if not hostname:
-        return None, None
-    try:
-        zones = list_account_zones()
-    except Exception as detection_error:
-        logging.error(f"DOCKER_HANDLER: Failed to retrieve zones for hostname '{hostname}': {detection_error}")
-        return None, None
-    if not zones:
-        return None, None
-    hostname_lower = hostname.lower().lstrip('.')
-    if hostname_lower.startswith('*.'):
-        hostname_lower = hostname_lower[2:]
-    matches = []
-    for zone in zones:
-        zone_name = (zone.get('name') or '').lower()
-        if not zone_name:
-            continue
-        if hostname_lower == zone_name or hostname_lower.endswith(f".{zone_name}"):
-            matches.append(zone)
-    if not matches:
-        return None, None
-    best_length = max(len(zone.get('name') or '') for zone in matches)
-    best_zones = [zone for zone in matches if len(zone.get('name') or '') == best_length]
-    chosen_zone = best_zones[0]
-    return chosen_zone.get('id'), chosen_zone.get('name')
