@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [v3.1.4] - Unreleased
+## [v3.1.4] - 2026-08-17
 
 ### Fixed
 - **Frontend dependency audit:** Updated compatible DockFlare and webmail dependencies to address reported npm vulnerabilities while retaining Vite 5; DockFlare now audits cleanly, with the remaining webmail findings requiring a future major Vite upgrade.
