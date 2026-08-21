@@ -84,6 +84,8 @@ $RECYCLE.BIN/
 .env
 .claude
 .docs
+dockflare-agent/overview.json
+dockflare-agent/data/
 data/state.json
 *.tmp
 *.bak

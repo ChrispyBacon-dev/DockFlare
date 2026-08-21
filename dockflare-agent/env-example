@@ -1,0 +1,9 @@
+DOCKFLARE_MASTER_URL=https://dockflare.example.com
+DOCKFLARE_API_KEY=agent_api_key_goes_here
+DOCKER_HOST=tcp://docker-socket-proxy:2375
+AGENT_DISPLAY_NAME=Production Server
+CLOUDFLARED_IMAGE=cloudflare/cloudflared:2025.9.0
+LOG_LEVEL=info
+TZ=Europe/Zurich
+CF_ACCESS_CLIENT_ID=
+CF_ACCESS_CLIENT_SECRET=
