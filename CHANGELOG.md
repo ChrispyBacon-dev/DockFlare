@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- **UI-overridden container lifecycle:** Recreated Docker and Agent-managed containers now reactivate their existing rules, refresh runtime ownership, and retain UI-controlled routing, origin, tunnel, and Access settings. Pending rules remain in tunnel ingress throughout the deletion grace period, while serialized per-tunnel cleanup and durable synchronization retries protect DNS and ingress during failures and races. Agent reporting now uses master-issued sessions, ordered observations, explicit inventory completeness, bounded payloads, and filtered DockFlare labels. Fixes [#388](https://github.com/ChrispyBacon-dev/DockFlare/issues/388).
+
 ## [v3.1.4] - 2026-08-17
 
 ### Fixed

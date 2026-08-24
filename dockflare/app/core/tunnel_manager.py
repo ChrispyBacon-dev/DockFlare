@@ -17,16 +17,42 @@
 # dockflare/app/core/tunnel_manager.py
 import copy
 import logging
-import json 
 import time 
+import threading
+from datetime import datetime, timezone
 from flask import current_app
 from app import config, docker_client
 from app import tunnel_state, cloudflared_agent_state 
 from app.core import cloudflare_api
-from app.core.state_manager import managed_rules, state_lock, list_agents, get_agent_rules 
+from app.core.state_manager import managed_rules, state_lock
 
 from docker.errors import NotFound, APIError 
 import requests 
+
+_tunnel_operation_locks = {}
+_tunnel_operation_locks_guard = threading.Lock()
+
+
+def get_tunnel_operation_lock(tunnel_id):
+    normalized_id = str(tunnel_id or "").strip()
+    if not normalized_id:
+        raise ValueError("tunnel_id is required")
+    with _tunnel_operation_locks_guard:
+        return _tunnel_operation_locks.setdefault(normalized_id, threading.RLock())
+
+
+def is_rule_ingress_eligible(rule, now=None):
+    if rule.get("status") == "active":
+        return True
+    if rule.get("status") != "pending_deletion":
+        return False
+    deadline = rule.get("delete_at")
+    if not isinstance(deadline, datetime):
+        return False
+    deadline = deadline.astimezone(timezone.utc) if deadline.tzinfo else deadline.replace(tzinfo=timezone.utc)
+    current = now or datetime.now(timezone.utc)
+    current = current.astimezone(timezone.utc) if current.tzinfo else current.replace(tzinfo=timezone.utc)
+    return deadline > current
 
 def initialize_tunnel():
     from app import app
@@ -128,93 +154,83 @@ def update_cloudflare_config(target_tunnel_id=None):
             return False
 
         logging.info(f"Preparing Cloudflare config update for tunnel {target_tunnel_id}")
+        operation_lock = get_tunnel_operation_lock(target_tunnel_id)
+        with operation_lock:
+            return _update_cloudflare_config_locked(target_tunnel_id, master_tunnel_id)
 
-        desired_ingress = _build_ingress_entries_for_tunnel(target_tunnel_id, master_tunnel_id)
 
-        try:
-            current_api_config_ruleset = cloudflare_api.get_current_cf_config(target_tunnel_id)
-        except Exception as exc:
-            logging.error(f"Failed to fetch current CF config for tunnel {target_tunnel_id}: {exc}")
-            if target_tunnel_id == master_tunnel_id:
-                tunnel_state["error"] = f"Failed get tunnel config: {exc}"
-            return False
+def _update_cloudflare_config_locked(target_tunnel_id, master_tunnel_id):
+    desired_ingress = _build_ingress_entries_for_tunnel(target_tunnel_id, master_tunnel_id)
 
-        if current_api_config_ruleset is None:
-            logging.error(f"Cloudflare returned no config for tunnel {target_tunnel_id}.")
-            return False
+    try:
+        current_api_config_ruleset = cloudflare_api.get_current_cf_config(target_tunnel_id)
+    except Exception as exc:
+        logging.error(f"Failed to fetch current CF config for tunnel {target_tunnel_id}: {exc}")
+        if target_tunnel_id == master_tunnel_id:
+            tunnel_state["error"] = f"Failed get tunnel config: {exc}"
+        return False
 
-        current_api_ingress_rules = current_api_config_ruleset.get("ingress", []) or []
-        desired_comparable = {_ingress_to_comparable(rule) for rule in desired_ingress}
-        preserved_rules = []
+    if current_api_config_ruleset is None:
+        logging.error(f"Cloudflare returned no config for tunnel {target_tunnel_id}.")
+        return False
 
-        for api_rule in current_api_ingress_rules:
-            if _is_catch_all_rule(api_rule):
+    current_api_ingress_rules = current_api_config_ruleset.get("ingress", []) or []
+    desired_comparable = {_ingress_to_comparable(rule) for rule in desired_ingress}
+    preserved_rules = []
+    for api_rule in current_api_ingress_rules:
+        if _is_catch_all_rule(api_rule):
+            preserved_rules.append(api_rule)
+            continue
+        hostname = api_rule.get("hostname") or ""
+        if "*" in hostname:
+            comp = _ingress_to_comparable(api_rule)
+            if comp not in desired_comparable:
                 preserved_rules.append(api_rule)
-                continue
-            hostname = api_rule.get("hostname") or ""
-            if "*" in hostname:
-                comp = _ingress_to_comparable(api_rule)
-                if comp not in desired_comparable:
-                    preserved_rules.append(api_rule)
 
-        if config.PRESERVE_UNMANAGED_CF_INGRESS_FIELDS:
-            final_ingress = [_merge_desired_with_current_fields(rule, current_api_ingress_rules) for rule in desired_ingress]
-        else:
-            final_ingress = list(desired_ingress)
-        seen = set(desired_comparable)
-        for preserved in preserved_rules:
-            comp = _ingress_to_comparable(preserved)
-            if comp not in seen:
-                final_ingress.append(preserved)
-                seen.add(comp)
+    if config.PRESERVE_UNMANAGED_CF_INGRESS_FIELDS:
+        final_ingress = [_merge_desired_with_current_fields(rule, current_api_ingress_rules) for rule in desired_ingress]
+    else:
+        final_ingress = list(desired_ingress)
+    seen = set(desired_comparable)
+    for preserved in preserved_rules:
+        comp = _ingress_to_comparable(preserved)
+        if comp not in seen:
+            final_ingress.append(preserved)
+            seen.add(comp)
+    if not any(_is_catch_all_rule(rule) for rule in final_ingress):
+        final_ingress.append({"service": "http_status:404"})
 
-        if not any(_is_catch_all_rule(rule) for rule in final_ingress):
-            final_ingress.append({"service": "http_status:404"})
+    final_comparable = {_ingress_to_comparable(rule) for rule in final_ingress}
+    current_comparable = {_ingress_to_comparable(rule) for rule in current_api_ingress_rules}
+    if current_comparable == final_comparable and len(current_api_ingress_rules) == len(final_ingress):
+        logging.info(f"Tunnel {target_tunnel_id}: Cloudflare ingress already up to date.")
+        return True
 
-        final_comparable = {_ingress_to_comparable(rule) for rule in final_ingress}
-        current_comparable = {_ingress_to_comparable(rule) for rule in current_api_ingress_rules}
-
-        if current_comparable == final_comparable and len(current_api_ingress_rules) == len(final_ingress):
-            logging.info(f"Tunnel {target_tunnel_id}: Cloudflare ingress already up to date.")
-            return True
-
-        logging.info(f"Tunnel {target_tunnel_id}: Updating Cloudflare ingress with {len(final_ingress)} entries (desired {len(desired_ingress)}, preserved {len(preserved_rules)})")
-
-        try:
-            account_id = current_app.config.get('CF_ACCOUNT_ID')
-            endpoint = f"/accounts/{account_id}/cfd_tunnel/{target_tunnel_id}/configurations"
-            cloudflare_api.cf_api_request("PUT", endpoint, json_data={"config": {"ingress": final_ingress}})
-            return True
-        except Exception as exc:
-            logging.error(f"Failed to update Cloudflare config for tunnel {target_tunnel_id}: {exc}", exc_info=True)
-            if target_tunnel_id == master_tunnel_id:
-                tunnel_state["error"] = f"Failed to set tunnel config: {exc}"
-            return False
+    logging.info(f"Tunnel {target_tunnel_id}: Updating Cloudflare ingress with {len(final_ingress)} entries (desired {len(desired_ingress)}, preserved {len(preserved_rules)})")
+    try:
+        account_id = current_app.config.get('CF_ACCOUNT_ID')
+        endpoint = f"/accounts/{account_id}/cfd_tunnel/{target_tunnel_id}/configurations"
+        cloudflare_api.cf_api_request("PUT", endpoint, json_data={"config": {"ingress": final_ingress}})
+        return True
+    except Exception as exc:
+        logging.error(f"Failed to update Cloudflare config for tunnel {target_tunnel_id}: {exc}", exc_info=True)
+        if target_tunnel_id == master_tunnel_id:
+            tunnel_state["error"] = f"Failed to set tunnel config: {exc}"
+        return False
 
 
 def _build_ingress_entries_for_tunnel(target_tunnel_id, master_tunnel_id):
     entries = []
+    now = datetime.now(timezone.utc)
     with state_lock:
         for rule_key, rule_details in managed_rules.items():
-            if rule_details.get("status") != "active":
+            if not is_rule_ingress_eligible(rule_details, now):
                 continue
             if not _rule_applies_to_tunnel(rule_details, target_tunnel_id, master_tunnel_id):
                 continue
             entry = _build_ingress_entry_from_rule(rule_details)
             if entry:
                 entries.append(entry)
-    if target_tunnel_id:
-        agents_map = list_agents()
-        for agent_id, agent_details in agents_map.items():
-            if agent_details.get("assigned_tunnel_id") != target_tunnel_id:
-                continue
-            agent_rules = get_agent_rules(agent_id)
-            for rule_details in agent_rules.values():
-                if rule_details.get("status") != "active":
-                    continue
-                entry = _build_ingress_entry_from_rule(rule_details)
-                if entry:
-                    entries.append(entry)
     entries.append({"service": "http_status:404"})
     unique_entries = []
     seen = set()

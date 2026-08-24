@@ -59,6 +59,8 @@
     "status.save_changes": "Save Changes",
     "status.rule_ui_override": "Rule UI Override",
     "status.ui_override": "UI Override",
+    "status.tunnel_sync_pending": "Tunnel sync pending",
+    "status.tunnel_sync_pending_help": "The desired route is saved locally and awaiting tunnel synchronization.",
     "status.docker_rule_overridden": "This Docker rule has been overridden via UI and no longer reflects container labels.",
     "status.ui_policy_override": "This policy is managed by the UI and overrides container labels.",
     "status.revert_to_docker_labels": "Revert to Docker Labels",

@@ -248,8 +248,11 @@
                                         {% if details.access_policy_ui_override and details.source != 'manual' %}
                                             <span class="badge badge-warning badge-xs ml-2 animate-pulse" title="{{ t('status.ui_policy_override') }}">{{ t('status.ui_override') }}</span>
                                         {% endif %}
-                                        {% if details.rule_ui_override and details.source == 'docker' %}
+                                        {% if details.rule_ui_override and details.source in ['docker', 'agent'] %}
                                             <span class="badge badge-error badge-xs ml-2 animate-pulse" title="{{ t('status.docker_rule_overridden') }}">{{ t('status.rule_ui_override') }}</span>
+                                        {% endif %}
+                                        {% if details.tunnel_sync_pending %}
+                                            <span class="badge badge-warning badge-xs ml-2 animate-pulse" title="{{ t('status.tunnel_sync_pending_help') }}">{{ t('status.tunnel_sync_pending') }}</span>
                                         {% endif %}
                                     </td>
                                     <td class="p-3 whitespace-nowrap text-sm opacity-70" data-role="expires-cell" data-label="{{ t('status.expires_in') }}">
@@ -312,7 +315,7 @@
                                                     </a>
                                                 </li>
                                                 {% endif %}
-                                                {% if details.rule_ui_override and details.source == 'docker' %}
+                                                {% if details.rule_ui_override and details.source in ['docker', 'agent'] %}
                                                 <li>
                                                     <a class="revert-rule-btn" data-rule-key="{{ hostname }}" data-display-hostname="{{ display_hostname }}">
                                                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">

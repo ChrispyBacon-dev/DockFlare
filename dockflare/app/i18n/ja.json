@@ -59,6 +59,8 @@
     "status.save_changes": "変更を保存",
     "status.rule_ui_override": "UI によるルール上書き",
     "status.ui_override": "UI 上書き",
+    "status.tunnel_sync_pending": "トンネル同期を保留中",
+    "status.tunnel_sync_pending_help": "目的のルートはローカルに保存され、トンネルの同期を待っています。",
     "status.docker_rule_overridden": "この Docker ルールは UI から上書きされており、コンテナ ラベルを反映していません。",
     "status.ui_policy_override": "このポリシーは UI で管理されており、コンテナ ラベルを上書きします。",
     "status.revert_to_docker_labels": "Docker ラベルに戻す",

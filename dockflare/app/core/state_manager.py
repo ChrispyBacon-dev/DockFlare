@@ -26,11 +26,29 @@ from app.core import agent_key_store
 from app.core.access_policy_rules import normalize_managed_access_group
 from app.core.utils import get_rule_key
 
+STATE_SCHEMA_VERSION = 2
+RULE_LIFECYCLE_DEFAULTS = {
+    "source_rule_key": None,
+    "tunnel_sync_pending": False,
+    "tunnel_sync_last_attempt_at": None,
+    "tunnel_sync_attempts": 0,
+    "lifecycle_generation": 0,
+}
+AGENT_PROTOCOL_DEFAULTS = {
+    "protocol_version": None,
+    "agent_session_id": None,
+    "last_event_sequence": 0,
+    "last_report_sequence": 0,
+    "last_complete_containers": None,
+}
+
 managed_rules = {}
 access_groups = {}
 agents = {}
 identity_providers = {}
 agent_cf_token = {}
+state_extensions = {}
+_state_write_blocked_reason = None
 state_lock = threading.RLock()
 logging.info(
     "STATE_MANAGER_INIT: managed_rules ID: %s, access_groups ID: %s, agents ID: %s, identity_providers ID: %s",
@@ -39,6 +57,62 @@ logging.info(
     id(agents),
     id(identity_providers)
 )
+
+
+def restore_rule_lifecycle(rule, container_id):
+    """Apply only runtime-owned lifecycle fields for a valid observation."""
+    changed = False
+    reactivated = False
+    if rule.get("container_id") != container_id:
+        rule["container_id"] = container_id
+        changed = True
+    if rule.get("status") != "active":
+        rule["status"] = "active"
+        rule["delete_at"] = None
+        changed = True
+        reactivated = True
+    elif rule.get("delete_at") is not None:
+        rule["delete_at"] = None
+        changed = True
+        reactivated = True
+    if changed:
+        rule["lifecycle_generation"] = int(rule.get("lifecycle_generation") or 0) + 1
+    return changed, reactivated
+
+
+def find_container_rule(observed_rule_key, source, agent_id=None):
+    """Find one compatible container-backed rule while the caller holds state_lock."""
+    def compatible(rule):
+        if rule.get("source", "docker") != source or source not in {"docker", "agent"}:
+            return False
+        return source != "agent" or rule.get("agent_id") == agent_id
+
+    direct = managed_rules.get(observed_rule_key)
+    if direct and compatible(direct):
+        competing = [
+            key for key, rule in managed_rules.items()
+            if key != observed_rule_key
+            and rule.get("source_rule_key") == observed_rule_key
+            and compatible(rule)
+        ]
+        if competing:
+            raise ValueError(f"Ambiguous container rule identity: {observed_rule_key}")
+        return observed_rule_key, direct
+    matches = [
+        (key, rule) for key, rule in managed_rules.items()
+        if rule.get("source_rule_key") == observed_rule_key and compatible(rule)
+    ]
+    if len(matches) > 1:
+        raise ValueError(f"Ambiguous container rule identity: {observed_rule_key}")
+    return matches[0] if matches else (None, None)
+
+
+def mark_rule_tunnel_sync_pending(rule):
+    if rule.get("tunnel_sync_pending"):
+        return False
+    rule["tunnel_sync_pending"] = True
+    rule["lifecycle_generation"] = int(rule.get("lifecycle_generation") or 0) + 1
+    return True
 
 def _deserialize_datetime(dt_str):
     if not dt_str:
@@ -54,14 +128,18 @@ def _deserialize_datetime(dt_str):
         return None
 
 def load_state():
+    global _state_write_blocked_reason
     logging.info(f"LOAD_STATE: Start. Initial managed_rules ID: {id(managed_rules)}, Current len: {len(managed_rules)}")
     state_dir = os.path.dirname(config.STATE_FILE_PATH)
     
     with state_lock:
+        _state_write_blocked_reason = None
         managed_rules.clear()
         access_groups.clear()
+        agents.clear()
         identity_providers.clear()
         agent_cf_token.clear()
+        state_extensions.clear()
         logging.info(
             "LOAD_STATE: After .clear(), managed_rules ID: %s, len: %s",
             id(managed_rules),
@@ -85,6 +163,12 @@ def load_state():
             with open(config.STATE_FILE_PATH, 'r') as f:
                 loaded_data = json.load(f)
 
+            schema_version = loaded_data.get("state_schema_version", 1) if isinstance(loaded_data, dict) and "managed_rules" in loaded_data else 1
+            if isinstance(schema_version, bool) or not isinstance(schema_version, int) or schema_version > STATE_SCHEMA_VERSION:
+                _state_write_blocked_reason = f"Unsupported state schema version: {schema_version}"
+                raise ValueError(f"Unsupported state schema version: {schema_version}")
+            _state_write_blocked_reason = None
+
             rules_to_load = {}
             groups_to_load = {}
 
@@ -95,6 +179,8 @@ def load_state():
                 agents_to_load = loaded_data.get("agents", {})
                 idps_to_load = loaded_data.get("identity_providers", {})
                 cf_token_to_load = loaded_data.get("agent_cf_token", {})
+                known_top_level = {"state_schema_version", "managed_rules", "access_groups", "agents", "identity_providers", "agent_cf_token"}
+                state_extensions.update({key: value for key, value in loaded_data.items() if key not in known_top_level})
             else:
                 logging.info("Loading state from old format (rules only). Will migrate on next save.")
                 rules_to_load = loaded_data
@@ -108,7 +194,11 @@ def load_state():
                 access_groups[group_id] = normalized_group
                 if changed:
                     group_migration_count += 1
-            agents.update(agents_to_load)
+            for agent_id, agent_data in agents_to_load.items():
+                agent_copy = dict(agent_data)
+                for field, default in AGENT_PROTOCOL_DEFAULTS.items():
+                    agent_copy.setdefault(field, default)
+                agents[agent_id] = agent_copy
             identity_providers.update(idps_to_load)
             agent_cf_token.update(cf_token_to_load)
             key_count = len(agent_key_store.list_keys())
@@ -139,6 +229,11 @@ def load_state():
                     rule_copy["delete_at"] = _deserialize_datetime(delete_at_val)
                 elif not isinstance(delete_at_val, (datetime, type(None))):
                     rule_copy["delete_at"] = None
+                sync_attempt_val = rule_copy.get("tunnel_sync_last_attempt_at")
+                if isinstance(sync_attempt_val, str):
+                    rule_copy["tunnel_sync_last_attempt_at"] = _deserialize_datetime(sync_attempt_val)
+                elif not isinstance(sync_attempt_val, (datetime, type(None))):
+                    rule_copy["tunnel_sync_last_attempt_at"] = None
 
                 rule_copy.setdefault("zone_id", None)
                 rule_copy.setdefault("access_app_id", None)
@@ -159,6 +254,8 @@ def load_state():
                 rule_copy.setdefault("http2_origin", False)
                 rule_copy.setdefault("disable_chunked_encoding", False)
                 rule_copy.setdefault("match_sni_to_host", False)
+                for field, default in RULE_LIFECYCLE_DEFAULTS.items():
+                    rule_copy.setdefault(field, default)
 
                 tunnel_name = rule_copy.get("tunnel_name")
                 if not tunnel_name or tunnel_name == "dockflare-tunnel":
@@ -168,7 +265,7 @@ def load_state():
 
                 managed_rules[final_key] = rule_copy
 
-            migration_needed = migrated_count > 0 or tunnel_name_migration_count > 0 or group_migration_count > 0
+            migration_needed = schema_version < STATE_SCHEMA_VERSION or migrated_count > 0 or tunnel_name_migration_count > 0 or group_migration_count > 0
             if migrated_count > 0:
                 logging.info(f"LOAD_STATE: Migrated {migrated_count} rules to the new key format.")
             if tunnel_name_migration_count > 0:
@@ -179,7 +276,7 @@ def load_state():
                 save_state()
             
             logging.info(f"LOAD_STATE: Loaded {len(managed_rules)} rules. managed_rules ID after populating: {id(managed_rules)}")
-        except (json.JSONDecodeError, IOError, OSError) as e:
+        except (json.JSONDecodeError, IOError, OSError, ValueError) as e:
             logging.error(f"LOAD_STATE: Error loading state from {config.STATE_FILE_PATH}: {e}. Starting fresh (already cleared).", exc_info=True)
         except Exception as e_load_unexp:
             logging.error(f"LOAD_STATE: Unexpected error loading state: {e_load_unexp}. Starting fresh (already cleared).", exc_info=True)
@@ -482,6 +579,12 @@ def ensure_authenticated_default_policy(flask_app=None):
 
 def save_state():
     with state_lock:
+        if _state_write_blocked_reason:
+            logging.error(
+                "SAVE_STATE: Refusing to overwrite state after a failed compatibility check: %s",
+                _state_write_blocked_reason,
+            )
+            return False
         current_thread_name = threading.current_thread().name
         logging.info(f"SAVE_STATE: Start. THREAD: {current_thread_name}. Items to save: {len(managed_rules)} rules, {len(access_groups)} access groups.")
 
@@ -521,15 +624,24 @@ def save_state():
                     "tunnel_id": rule.get("tunnel_id"),
                     "tunnel_name": rule.get("tunnel_name")
                 }
+                for field in RULE_LIFECYCLE_DEFAULTS:
+                    data_to_serialize[field] = rule.get(field, RULE_LIFECYCLE_DEFAULTS[field])
+                for field, value in rule.items():
+                    data_to_serialize.setdefault(field, value)
                 delete_at_val = rule.get("delete_at")
                 if isinstance(delete_at_val, datetime):
                     data_to_serialize["delete_at"] = delete_at_val.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
+                sync_attempt_val = rule.get("tunnel_sync_last_attempt_at")
+                if isinstance(sync_attempt_val, datetime):
+                    data_to_serialize["tunnel_sync_last_attempt_at"] = sync_attempt_val.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
                 serializable_rules[rule_key] = data_to_serialize
             except Exception as e_serialize_item:
                 logging.error(f"SAVE_STATE_LOOP_ERROR: THREAD: {current_thread_name}. Error preparing rule for serialization '{rule_key}': {e_serialize_item}. Rule data: {rule}", exc_info=True)
                 continue
         
         final_state_to_save = {
+            **state_extensions,
+            "state_schema_version": STATE_SCHEMA_VERSION,
             "managed_rules": serializable_rules,
             "access_groups": groups_to_iterate,
             "agents": agents_to_iterate,
@@ -544,16 +656,16 @@ def save_state():
                     os.makedirs(state_dir, exist_ok=True)
                 except OSError as e_mkdir:
                     logging.error(f"SAVE_STATE: THREAD: {current_thread_name}. Mkdir error {e_mkdir}. Save failed.")
-                    return
+                    return False
             temp_file_path = config.STATE_FILE_PATH + ".tmp"
             with open(temp_file_path, 'w') as f:
                 json.dump(final_state_to_save, f, indent=2)
             os.replace(temp_file_path, config.STATE_FILE_PATH)
             logging.info(f"SAVE_STATE: THREAD: {current_thread_name}. Successfully saved state to {config.STATE_FILE_PATH}")
+            return True
         except Exception as e_save_io:
             logging.error(f"SAVE_STATE: THREAD: {current_thread_name}. File I/O or other error: {e_save_io}", exc_info=True)
-        
-        logging.info(f"SAVE_STATE: End. THREAD: {current_thread_name}.")
+            return False
 
 def add_agent(agent_id, agent_data):
     """
@@ -627,8 +739,7 @@ def find_agent_id_by_key(key_id):
     info = agent_key_store.get_key(key_id)
     if not info:
         return None
-    owner = info.get('owner')
-    return owner
+    return info.get('bound_agent_id') or info.get('owner')
 
 def get_agent_key_info(key_id):
     """Return metadata for a given key or None."""
@@ -779,7 +890,9 @@ def serialize_managed_rule(rule_key: str, rule: Dict[str, Any]) -> Dict[str, Any
         "tunnel_name": rule.get("tunnel_name"),
         "access_policy_type": rule.get("access_policy_type"),
         "access_policy_ui_override": rule.get("access_policy_ui_override", False),
-        "rule_ui_override": rule.get("rule_ui_override", False)
+        "rule_ui_override": rule.get("rule_ui_override", False),
+        "source_rule_key": rule.get("source_rule_key"),
+        "tunnel_sync_pending": rule.get("tunnel_sync_pending", False),
     }
 
 

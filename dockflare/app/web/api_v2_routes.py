@@ -27,10 +27,11 @@ from flask_login import login_required
 
 from app import config, docker_client, tunnel_state, cloudflared_agent_state, publish_state_event
 from app.core.state_manager import (
-    managed_rules, access_groups, state_lock, save_state,
+    managed_rules, access_groups, agents, state_lock, save_state,
     add_agent, get_agent, update_agent, list_agents, remove_agent, add_agent_key, revoke_agent_key, find_agent_id_by_key, list_agent_keys, get_agent_key_info,
     get_services_snapshot, cleanup_expired_revoked_keys, get_revoked_keys_summary,
-    save_identity_provider, get_identity_provider, delete_identity_provider, list_identity_providers, get_idp_by_cloudflare_id, get_idp_id_by_name
+    save_identity_provider, get_identity_provider, delete_identity_provider, list_identity_providers, get_idp_by_cloudflare_id, get_idp_id_by_name,
+    find_container_rule, mark_rule_tunnel_sync_pending, restore_rule_lifecycle
 )
 from app.core import agent_key_store
 from app.core.tunnel_manager import (
@@ -65,7 +66,7 @@ from app.core.access_manager import (
 )
 from app.core.reconciler import reconcile_state_threaded
 from app.core.docker_handler import is_valid_hostname, is_valid_service
-from app.core.utils import get_rule_key, get_label, normalize_access_group_value, normalize_path_value
+from app.core.utils import get_rule_key, get_source_rule_key, get_label, normalize_access_group_value, normalize_path_value
 #----------------------------------------------------------!
 # UI endpoints are protected by session auth   nicht vergessen, immer checken bei änderungen.. don't waste time            !
 #----------------------------------------------------------!
@@ -146,21 +147,21 @@ def _ensure_agent_api_key(agent_id, agent_record, token):
         logging.warning(f"AGENT_AUTH: Token for agent {agent_id} is not active (status={status}).")
         return False
 
+    bound_agent_id = key_info.get("bound_agent_id")
     stored_token = agent_record.get("api_key")
-    if stored_token is None:
-        updated = update_agent(agent_id, {"api_key": token})
-        if not updated:
-            logging.error(f"AGENT_AUTH: Failed to persist API key binding for agent {agent_id}.")
-            return False
-    elif stored_token != token:
+    if bound_agent_id and bound_agent_id != agent_id:
+        logging.warning(f"AGENT_AUTH: Key binding mismatch for agent {agent_id}.")
+        return False
+    if stored_token is not None and stored_token != token:
         logging.warning(f"AGENT_AUTH: Token mismatch for agent {agent_id}.")
         return False
 
     meta_update = dict(key_info)
     now_iso = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
     meta_update["last_used_at"] = now_iso
-    if meta_update.get("bound_agent_id") != agent_id:
-        meta_update["bound_agent_id"] = agent_id
+    if not bound_agent_id:
+        logging.warning("AGENT_AUTH: Unbound key rejected outside registration.")
+        return False
     add_agent_key(token, meta_update)
     return True
 
@@ -776,7 +777,7 @@ def _authenticate_agent_request():
     owner = find_agent_id_by_key(token)
     return token, owner
 
-def process_agent_container_start(payload, agent_id):
+def process_agent_container_start(payload, agent_id, defer_side_effects=False):
     """
     Process a container_start event from an agent.
     Similar to process_container_start but works with provided labels.
@@ -789,13 +790,11 @@ def process_agent_container_start(payload, agent_id):
             container_name = container_data.get("name", "unknown")
 
             logging.info(f"AGENT_PROCESS_START: Processing container {container_name} ({container_id[:12]}) from agent {agent_id}")
-            logging.info(f"AGENT_PROCESS_START: Payload: {payload}")
-            logging.info(f"AGENT_PROCESS_START: Labels: {labels}")
 
             is_enabled = get_label(labels, "enable", "false").lower() in ["true", "1", "t", "yes"]
             if not is_enabled:
                 logging.debug(f"AGENT_PROCESS: Ignoring: {container_name} ({container_id[:12]}): 'enable' label not true.")
-                return
+                return None
             
             hostnames_to_process = []
 
@@ -963,7 +962,7 @@ def process_agent_container_start(payload, agent_id):
 
             if not hostnames_to_process:
                 logging.warning(f"AGENT_PROCESS: No valid hostname configs for {container_name} ({container_id[:12]}).")
-                return
+                return None
 
             logging.info(f"AGENT_PROCESS: Found {len(hostnames_to_process)} hostname configurations for container {container_name}")
 
@@ -978,12 +977,34 @@ def process_agent_container_start(payload, agent_id):
 
             policy_jobs_map = {}
             dns_targets = {}
-            zone_inventory = get_account_zone_inventory()
+            zone_inventory = None
             for config_item in hostnames_to_process:
                 hostname = config_item["hostname"]
                 service = config_item["service"]
                 path_from_item = config_item.get("path")
                 rule_key = get_rule_key(hostname, path_from_item)
+                source_rule_key = get_source_rule_key(hostname, path_from_item)
+
+                with state_lock:
+                    matched_key, matched_rule = find_container_rule(source_rule_key, "agent", agent_id)
+                    if matched_rule and matched_rule.get("rule_ui_override", False):
+                        changed, reactivated = restore_rule_lifecycle(matched_rule, container_id)
+                        if matched_rule.get("source_rule_key") is None and matched_key == rule_key:
+                            matched_rule["source_rule_key"] = source_rule_key
+                            matched_rule["lifecycle_generation"] = int(matched_rule.get("lifecycle_generation") or 0) + 1
+                            changed = True
+                        if reactivated:
+                            mark_rule_tunnel_sync_pending(matched_rule)
+                            needs_tunnel_config_update = True
+                        state_changed_locally |= changed
+                        if matched_rule.get("hostname") and matched_rule.get("zone_id"):
+                            dns_targets[matched_rule["hostname"]] = {"zone_id": matched_rule["zone_id"]}
+                        logging.info(
+                            "UI-overridden agent rule %s: lifecycle observation accepted for container %s; UI configuration preserved.",
+                            matched_key,
+                            container_id[:12],
+                        )
+                        continue
 
                 zone_name_from_item = config_item["zone_name"]
                 no_tls_verify_from_item = config_item["no_tls_verify"]
@@ -993,6 +1014,8 @@ def process_agent_container_start(payload, agent_id):
                 disable_chunked_encoding_from_item = config_item.get("disable_chunked_encoding", False)
                 match_sni_to_host_from_item = config_item.get("match_sni_to_host", False)
 
+                if zone_inventory is None:
+                    zone_inventory = get_account_zone_inventory()
                 try:
                     selected_zone = resolve_account_zone(
                         hostname,
@@ -1015,8 +1038,15 @@ def process_agent_container_start(payload, agent_id):
                     if existing_rule and existing_rule.get("source") == "manual":
                         logging.info(f"AGENT_PROCESS: Rule {rule_key} is manual, skipping.")
                         continue
+                    if existing_rule and (existing_rule.get("source") != "agent" or existing_rule.get("agent_id") != agent_id):
+                        logging.warning("AGENT_PROCESS: Rule %s ownership mismatch for agent %s; observation ignored.", rule_key, agent_id)
+                        continue
 
                     if existing_rule:
+                        original_existing_rule = copy.deepcopy(existing_rule)
+                        if existing_rule.get("source_rule_key") is None:
+                            existing_rule["source_rule_key"] = source_rule_key
+                            existing_rule["lifecycle_generation"] = int(existing_rule.get("lifecycle_generation") or 0) + 1
                         logging.debug(f"AGENT_PROCESS_UPD_RULE: Updating rule for {rule_key}")
 
                         rule_data_changed = False
@@ -1072,8 +1102,19 @@ def process_agent_container_start(payload, agent_id):
                             existing_rule["delete_at"] = None
                             rule_data_changed = True
 
-                        if rule_data_changed:
+                        tunnel_fields = (
+                            "hostname", "path", "service", "zone_id", "no_tls_verify",
+                            "origin_server_name", "http_host_header", "http2_origin",
+                            "disable_chunked_encoding", "match_sni_to_host", "tunnel_id",
+                        )
+                        requires_tunnel_update = (
+                            original_existing_rule.get("status") != existing_rule.get("status")
+                            or any(original_existing_rule.get(field) != existing_rule.get(field) for field in tunnel_fields)
+                        )
+                        if requires_tunnel_update:
+                            mark_rule_tunnel_sync_pending(existing_rule)
                             needs_tunnel_config_update = True
+                        if original_existing_rule != existing_rule:
                             state_changed_locally = True
 
                     else:
@@ -1103,7 +1144,12 @@ def process_agent_container_start(payload, agent_id):
                             "access_group_id": None,
                             "agent_id": agent_id,
                             "tunnel_name": assigned_tunnel_name,
-                            "tunnel_id": assigned_tunnel_id
+                            "tunnel_id": assigned_tunnel_id,
+                            "source_rule_key": source_rule_key,
+                            "tunnel_sync_pending": True,
+                            "tunnel_sync_last_attempt_at": None,
+                            "tunnel_sync_attempts": 0,
+                            "lifecycle_generation": 0,
                         }
                         existing_rule = managed_rules[rule_key]
                         state_changed_locally = True
@@ -1121,45 +1167,93 @@ def process_agent_container_start(payload, agent_id):
 
             policy_jobs = list(policy_jobs_map.items())
 
-            policy_state_changed = False
-            for rule_key, policy_payload in policy_jobs:
-                if handle_access_policy_from_labels(rule_key, copy.deepcopy(policy_payload)):
-                    policy_state_changed = True
-
-            if policy_state_changed:
-                state_changed_locally = True
+            plan = {
+                "agent_id": agent_id,
+                "state_changed": state_changed_locally,
+                "needs_tunnel_config_update": needs_tunnel_config_update,
+                "policy_jobs": policy_jobs,
+                "dns_targets": dns_targets,
+                "tunnel_id": assigned_tunnel_id,
+            }
+            if defer_side_effects:
+                return plan
 
             if state_changed_locally:
                 save_state()
                 publish_state_event('snapshot_refresh')
-
-            if needs_tunnel_config_update:
-                logging.info(f"AGENT_PROCESS: DNS and tunnel config update needed for agent {agent_id}.")
-                
-                agent_record = get_agent(agent_id)
-                if agent_record and agent_record.get("assigned_tunnel_id"):
-                    agent_tunnel_id = agent_record.get("assigned_tunnel_id")
-                    for hostname_dns, dns_details in dns_targets.items():
-                        target_zone_id_for_dns = dns_details.get("zone_id")
-                        if target_zone_id_for_dns and not hostname_dns.startswith('*.'):
-                            create_cloudflare_dns_record(target_zone_id_for_dns, hostname_dns, agent_tunnel_id)
-                        elif not target_zone_id_for_dns:
-                            logging.error(f"AGENT_PROCESS: Could not determine Zone ID for DNS record {hostname_dns}")
-    
-                    try:
-                        if update_cloudflare_config(agent_tunnel_id):
-                            logging.info(f"AGENT_PROCESS: Successfully updated tunnel config for agent {agent_id}")
-                        else:
-                            logging.error(f"AGENT_PROCESS: Failed to update tunnel config for agent {agent_id}")
-                    except Exception as e:
-                        logging.error(f"AGENT_PROCESS: Failed to update tunnel config for agent {agent_id}: {e}")
-                else:
-                    logging.error(f"AGENT_PROCESS: Agent {agent_id} not found or has no tunnel ID. Cannot send update command.")
+            _execute_agent_start_plan(plan)
+            return plan
     except Exception as e:
         logging.error(f"AGENT_PROCESS_START: Exception in process_agent_container_start: {e}", exc_info=True)
         raise
 
-def process_agent_container_stop(payload, agent_id):
+
+def _execute_agent_start_plan(plan):
+    """Apply Cloudflare work only after the associated Agent state is durable."""
+    if not plan:
+        return
+    policy_changed = False
+    for rule_key, policy_payload in plan.get("policy_jobs", []):
+        if handle_access_policy_from_labels(rule_key, copy.deepcopy(policy_payload)):
+            policy_changed = True
+    if policy_changed:
+        save_state()
+        publish_state_event('snapshot_refresh')
+
+    if not plan.get("needs_tunnel_config_update"):
+        return
+    agent_id = plan["agent_id"]
+    agent_tunnel_id = plan.get("tunnel_id")
+    if not agent_tunnel_id:
+        logging.error("AGENT_PROCESS: Agent %s has no tunnel ID; synchronization remains pending.", agent_id)
+        return
+    try:
+        if not update_cloudflare_config(agent_tunnel_id):
+            logging.error("AGENT_PROCESS: Failed to update tunnel config for agent %s", agent_id)
+            return
+        for hostname, details in plan.get("dns_targets", {}).items():
+            zone_id = details.get("zone_id")
+            if zone_id and not hostname.startswith('*.'):
+                create_cloudflare_dns_record(zone_id, hostname, agent_tunnel_id)
+            elif not zone_id:
+                logging.error("AGENT_PROCESS: Could not determine Zone ID for DNS record %s", hostname)
+        sync_changed = False
+        with state_lock:
+            for rule in managed_rules.values():
+                if rule.get("source") == "agent" and rule.get("agent_id") == agent_id and rule.get("tunnel_id") == agent_tunnel_id and rule.get("tunnel_sync_pending"):
+                    rule["tunnel_sync_pending"] = False
+                    rule["tunnel_sync_last_attempt_at"] = None
+                    rule["tunnel_sync_attempts"] = 0
+                    rule["lifecycle_generation"] = int(rule.get("lifecycle_generation") or 0) + 1
+                    sync_changed = True
+        if sync_changed:
+            save_state()
+        logging.info("AGENT_PROCESS: Successfully updated tunnel config for agent %s", agent_id)
+    except Exception:
+        logging.exception("AGENT_PROCESS: Failed to update tunnel config for agent %s", agent_id)
+
+
+def _coalesce_agent_start_plans(plans):
+    """Coalesce one accepted report into at most one tunnel write per Agent tunnel."""
+    combined = {}
+    for plan in plans:
+        key = (plan.get("agent_id"), plan.get("tunnel_id"))
+        merged = combined.setdefault(key, {
+            "agent_id": plan.get("agent_id"),
+            "tunnel_id": plan.get("tunnel_id"),
+            "state_changed": False,
+            "needs_tunnel_config_update": False,
+            "policy_jobs": [],
+            "dns_targets": {},
+        })
+        merged["state_changed"] |= bool(plan.get("state_changed"))
+        merged["needs_tunnel_config_update"] |= bool(plan.get("needs_tunnel_config_update"))
+        merged["policy_jobs"].extend(plan.get("policy_jobs", []))
+        merged["dns_targets"].update(plan.get("dns_targets", {}))
+    return list(combined.values())
+
+
+def process_agent_container_stop(payload, agent_id, received_at=None, persist=True):
     """
     Process a container_stop event from an agent.
     """
@@ -1185,13 +1279,17 @@ def process_agent_container_stop(payload, agent_id):
                     if rule.get("status") != "pending_deletion":
                         rule["status"] = "pending_deletion"
                         grace_delta = timedelta(seconds=grace_period)
-                        rule["delete_at"] = datetime.now(timezone.utc) + grace_delta
+                        rule["delete_at"] = (received_at or datetime.now(timezone.utc)) + grace_delta
+                        rule["lifecycle_generation"] = int(rule.get("lifecycle_generation") or 0) + 1
                         logging.info(f"AGENT_PROCESS_STOP: Rule for {rule_key} scheduled for deletion (grace period: {grace_period}s)")
-                save_state()
-                publish_state_event('snapshot_refresh')
+                if persist:
+                    save_state()
+                    publish_state_event('snapshot_refresh')
                 logging.info(f"AGENT_PROCESS_STOP: Scheduled {len(rule_keys_affected)} rules for deletion from agent {agent_id}")
+                return True
             else:
                 logging.info(f"AGENT_PROCESS_STOP: No active agent-managed rules found for container {container_id[:12]} from agent {agent_id}")
+        return False
 
 @api_v2_bp.route('/agents/generate-key', methods=['POST', 'GET'])
 def agents_generate_key():
@@ -1484,6 +1582,305 @@ def agents_list_api():
 
     return jsonify({"agents": agents_map, "agent_keys": keys_map}), 200
 
+def _agent_json_response(http_status, code, message=None, **fields):
+    body = {"status": "success" if http_status < 400 else "error", "code": code}
+    if message:
+        body["message"] = str(message)[:256]
+    body.update(fields)
+    return jsonify(body), http_status
+
+
+def _register_agent_request():
+    token, _owner = _authenticate_agent_request()
+    if not token:
+        return _agent_json_response(401, "unauthorized")
+    if request.content_length and request.content_length > config.AGENT_MAX_REQUEST_BYTES:
+        return _agent_json_response(413, "payload_too_large")
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _agent_json_response(400, "invalid_payload")
+
+    key_info = get_agent_key_info(token) or {}
+    bound_agent_id = key_info.get("bound_agent_id")
+    supplied_agent_id = data.get("agent_id")
+    if bound_agent_id and supplied_agent_id and supplied_agent_id != bound_agent_id:
+        return _agent_json_response(403, "agent_key_mismatch")
+    agent_id = bound_agent_id or str(uuid.uuid4())
+    existing = get_agent(agent_id)
+    if bound_agent_id and not existing:
+        return _agent_json_response(403, "agent_key_mismatch")
+
+    explicit_versions = "supported_protocol_versions" in data
+    versions = data.get("supported_protocol_versions")
+    if explicit_versions:
+        if not isinstance(versions, list) or not versions or any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 1 for value in versions
+        ):
+            return _agent_json_response(400, "invalid_payload")
+        supported = sorted(set(versions).intersection({1, 2}), reverse=True)
+        if not supported:
+            return _agent_json_response(409, "unsupported_protocol")
+        protocol_version = supported[0]
+    else:
+        protocol_version = 1
+
+    received_at = datetime.now(timezone.utc).isoformat()
+    session_id = secrets.token_urlsafe(32) if protocol_version == 2 else None
+    display_name = data.get("display_name") or data.get("hostname") or f"agent-{agent_id[:8]}"
+    record = dict(existing or {})
+    record.update({
+        "id": agent_id,
+        "display_name": record.get("display_name") if record.get("custom_name") else display_name,
+        "version": data.get("agent_version") or data.get("version"),
+        "last_seen": received_at,
+        "status": record.get("status") or ("pending" if config.AGENT_ENROLLMENT_REQUIRED else "enrolled"),
+        "protocol_version": protocol_version,
+        "agent_session_id": session_id,
+        "last_event_sequence": 0,
+        "last_report_sequence": 0,
+        "last_complete_containers": record.get("last_complete_containers"),
+        "commands": record.get("commands", []),
+        "meta": record.get("meta", {}),
+    })
+    with state_lock:
+        previous = agents.get(agent_id)
+        agents[agent_id] = record
+        if not save_state():
+            if previous is None:
+                agents.pop(agent_id, None)
+            else:
+                agents[agent_id] = previous
+            return _agent_json_response(503, "persistence_failed")
+
+    meta_update = dict(key_info)
+    meta_update.update({"bound_agent_id": agent_id, "status": "active", "last_used_at": received_at})
+    add_agent_key(token, meta_update)
+    return _agent_json_response(
+        200 if existing else 201,
+        "registered",
+        agent_id=agent_id,
+        protocol_version=protocol_version,
+        agent_session_id=session_id,
+    )
+
+
+def filter_reportable_labels(labels):
+    if not isinstance(labels, dict):
+        raise ValueError("labels")
+    if len(labels) > config.AGENT_MAX_LABELS:
+        raise OverflowError("labels")
+    filtered = {}
+    for key, value in labels.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise ValueError("labels")
+        if len(key.encode("utf-8")) > config.AGENT_MAX_LABEL_KEY_BYTES or len(value.encode("utf-8")) > config.AGENT_MAX_LABEL_VALUE_BYTES:
+            raise OverflowError("labels")
+        if key.startswith(("dockflare.", "cloudflare.tunnel.")):
+            filtered[key] = value
+    return filtered
+
+
+def _validated_agent_container(value):
+    if not isinstance(value, dict):
+        raise ValueError("container")
+    container_id = value.get("id")
+    container_name = value.get("name", "unknown")
+    if not isinstance(container_id, str) or not container_id:
+        raise ValueError("container_id")
+    if len(container_id.encode("utf-8")) > config.AGENT_MAX_CONTAINER_ID_BYTES:
+        raise OverflowError("container_id")
+    if not isinstance(container_name, str):
+        raise ValueError("container_name")
+    if len(container_name.encode("utf-8")) > config.AGENT_MAX_CONTAINER_NAME_BYTES:
+        raise OverflowError("container_name")
+    return {
+        "id": container_id,
+        "name": container_name,
+        "labels": filter_reportable_labels(value.get("labels", {})),
+        "status": str(value.get("status", "unknown"))[:32],
+    }
+
+
+def _container_source_bindings(container):
+    labels = container.get("labels", {})
+    bindings = set()
+    hostname = get_label(labels, "hostname")
+    if hostname:
+        try:
+            bindings.add((container["id"], get_source_rule_key(hostname, get_label(labels, "path"))))
+        except ZoneResolutionError:
+            pass
+    index = 0
+    while True:
+        indexed_hostname = get_label(labels, f"{index}.hostname")
+        if not indexed_hostname:
+            break
+        try:
+            bindings.add((container["id"], get_source_rule_key(indexed_hostname, get_label(labels, f"{index}.path", get_label(labels, "path")))))
+        except ZoneResolutionError:
+            pass
+        index += 1
+    return bindings
+
+
+def _agent_event_summary(event_type, received_at, protocol_version, sequence, result_code, container_id=None):
+    return {
+        "type": event_type,
+        "received_at": received_at.isoformat(),
+        "protocol_version": protocol_version,
+        "sequence": sequence,
+        "container_id": container_id[:12] if container_id else None,
+        "result": result_code,
+    }
+
+
+def _handle_agent_event_request(agent_id):
+    received_at = datetime.now(timezone.utc)
+    token, _owner = _authenticate_agent_request()
+    if not token:
+        return _agent_json_response(401, "unauthorized")
+    if request.content_length and request.content_length > config.AGENT_MAX_REQUEST_BYTES:
+        return _agent_json_response(413, "payload_too_large")
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return _agent_json_response(400, "invalid_payload")
+    event_type = payload.get("type")
+    if not isinstance(event_type, str) or len(event_type.encode("utf-8")) > config.AGENT_MAX_EVENT_TYPE_BYTES or event_type not in {"container_start", "container_stop", "status_report", "heartbeat", "hello", "tunnel_status"}:
+        return _agent_json_response(400, "invalid_payload")
+    agent = get_agent(agent_id)
+    if not agent or not _ensure_agent_api_key(agent_id, agent, token):
+        return _agent_json_response(403, "agent_key_mismatch")
+
+    is_v2 = agent.get("protocol_version") == 2
+    stream_field = "report_sequence" if event_type == "status_report" else "event_sequence"
+    last_field = "last_report_sequence" if event_type == "status_report" else "last_event_sequence"
+    sequence = None
+    if is_v2:
+        if payload.get("protocol_version") != 2 or payload.get("agent_session_id") != agent.get("agent_session_id"):
+            return _agent_json_response(409, "registration_required")
+        sequence = payload.get(stream_field)
+        if isinstance(sequence, bool) or not isinstance(sequence, int) or not 1 <= sequence <= 9223372036854775807:
+            return _agent_json_response(400, "invalid_payload")
+        previous_sequence = int(agent.get(last_field) or 0)
+        if sequence == previous_sequence:
+            return _agent_json_response(200, "duplicate_sequence")
+        if sequence < previous_sequence:
+            return _agent_json_response(409, "stale_sequence")
+
+    valid_containers = []
+    inventory_complete = False
+    inventory_malformed = False
+    tunnel_status_update = None
+    result_code = "accepted_noop"
+    try:
+        if event_type in {"container_start", "container_stop"}:
+            valid_containers = [_validated_agent_container(payload.get("container"))]
+        elif event_type == "status_report":
+            raw_containers = payload.get("containers") if is_v2 else payload.get("containers", (payload.get("container") or {}).get("containers"))
+            if is_v2 and payload.get("inventory_complete") is False and "containers" not in payload:
+                raw_containers = []
+            if not isinstance(raw_containers, list):
+                raise ValueError("containers")
+            if len(raw_containers) > config.AGENT_MAX_CONTAINERS:
+                raise OverflowError("containers")
+            for value in raw_containers:
+                try:
+                    valid_containers.append(_validated_agent_container(value))
+                except ValueError:
+                    inventory_malformed = True
+            inventory_complete = bool(
+                is_v2
+                and payload.get("inventory_complete") is True
+                and payload.get("inventory_scope") == "dockflare_enabled_running"
+                and not inventory_malformed
+            )
+        elif event_type == "tunnel_status":
+            tunnel_data = payload.get("tunnel") if isinstance(payload.get("tunnel"), dict) else payload
+            tunnel_status_update = {
+                "status": str(tunnel_data.get("status") or tunnel_data.get("state") or "unknown")[:64],
+                "name": str(tunnel_data.get("name") or "")[:255],
+                "version": str(tunnel_data.get("version") or "")[:128],
+            }
+    except OverflowError:
+        return _agent_json_response(413, "payload_too_large")
+    except ValueError:
+        return _agent_json_response(400, "invalid_payload")
+
+    with state_lock:
+        rules_before = copy.deepcopy(managed_rules)
+        agents_before = copy.deepcopy(agents)
+    side_effect_plans = []
+    try:
+        if event_type == "container_start":
+            plan = process_agent_container_start({"container": valid_containers[0]}, agent_id, defer_side_effects=True)
+            if plan:
+                side_effect_plans.append(plan)
+            result_code = "accepted"
+        elif event_type == "container_stop":
+            process_agent_container_stop({"container": valid_containers[0]}, agent_id, received_at, persist=False)
+            result_code = "accepted"
+        elif event_type == "status_report":
+            bindings = set()
+            for container in valid_containers:
+                bindings.update(_container_source_bindings(container))
+            for container in valid_containers:
+                plan = process_agent_container_start({"container": container}, agent_id, defer_side_effects=True)
+                if plan:
+                    side_effect_plans.append(plan)
+            if inventory_complete:
+                grace_period = current_app.config.get("GRACE_PERIOD_SECONDS", 28800)
+                with state_lock:
+                    for rule in managed_rules.values():
+                        if rule.get("source") != "agent" or rule.get("agent_id") != agent_id or rule.get("status") != "active":
+                            continue
+                        source_key = rule.get("source_rule_key")
+                        present = (rule.get("container_id"), source_key) in bindings if source_key else any(c["id"] == rule.get("container_id") for c in valid_containers)
+                        if not present:
+                            rule["status"] = "pending_deletion"
+                            rule["delete_at"] = received_at + timedelta(seconds=grace_period)
+                            rule["lifecycle_generation"] = int(rule.get("lifecycle_generation") or 0) + 1
+                result_code = "accepted"
+            else:
+                result_code = "inventory_incomplete"
+        elif event_type == "tunnel_status":
+            result_code = "accepted"
+    except Exception:
+        with state_lock:
+            managed_rules.clear()
+            managed_rules.update(rules_before)
+            agents.clear()
+            agents.update(agents_before)
+        logging.exception("AGENT_EVENT: Failed to stage event %s for agent %s", event_type, agent_id)
+        return _agent_json_response(500, "processing_failed")
+
+    with state_lock:
+        current_agent = agents.get(agent_id)
+        if not current_agent:
+            return _agent_json_response(409, "registration_required")
+        current_agent["last_seen"] = received_at.isoformat()
+        if is_v2:
+            current_agent[last_field] = sequence
+        if event_type == "status_report" and inventory_complete:
+            current_agent["last_complete_containers"] = valid_containers
+        if tunnel_status_update is not None:
+            current_agent["tunnel_status"] = tunnel_status_update
+            current_agent["tunnel_last_seen"] = received_at.isoformat()
+            current_agent["tunnel_version"] = tunnel_status_update["version"]
+        container_id = valid_containers[0]["id"] if len(valid_containers) == 1 else None
+        current_agent["last_event"] = _agent_event_summary(event_type, received_at, 2 if is_v2 else 1, sequence, result_code, container_id)
+        if not save_state():
+            managed_rules.clear()
+            managed_rules.update(rules_before)
+            agents.clear()
+            agents.update(agents_before)
+            return _agent_json_response(503, "persistence_failed")
+    publish_state_event("snapshot_refresh")
+    for plan in _coalesce_agent_start_plans(side_effect_plans):
+        _execute_agent_start_plan(plan)
+    http_status = 200 if result_code == "accepted" else 202
+    return _agent_json_response(http_status, result_code)
+
+
 @api_v2_bp.route('/agents/register', methods=['POST'])
 def agents_register():
     """
@@ -1492,65 +1889,7 @@ def agents_register():
     Body may include optional 'agent_id', 'display_name', 'version'.
     Returns agent_id and enrollment status.
     """
-    token, owner = _authenticate_agent_request()
-    if not token:
-        return jsonify({"status": "error", "message": "Missing or invalid Authorization header."}), 401
-
-    data = request.get_json() or {}
-    provided_agent_id = data.get('agent_id')
-    agent_id = provided_agent_id or str(uuid.uuid4())
-    display_name = data.get('display_name') or data.get('hostname') or f"agent-{agent_id[:8]}"
-    version = data.get('version')
-    now = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
-    
-    existing_agent_id = provided_agent_id or agent_id
-    existing_agent = get_agent(existing_agent_id)
-
-    if existing_agent:
-        if not _ensure_agent_api_key(existing_agent_id, existing_agent, token):
-            return jsonify({"status": "error", "message": "API key mismatch for agent."}), 403
-
-        logging.info(f"Agent re-registration: Found existing agent '{existing_agent_id}'. Updating last_seen and version.")
-        update_payload = {
-            "last_seen": now,
-            "version": version,
-        }
-
-        if not existing_agent.get("custom_name"):
-            update_payload["display_name"] = display_name
-        update_agent(existing_agent_id, update_payload)
-        agent_record = get_agent(existing_agent_id)
-        agent_id = existing_agent_id
-        http_status_code = 200 # OK
-    else:
-        logging.info(f"New agent registration: Creating record for agent '{agent_id}'.")
-        agent_record = {
-            "id": agent_id,
-            "display_name": display_name,
-            "version": version,
-            "last_seen": now,
-            "status": "pending" if config.AGENT_ENROLLMENT_REQUIRED else "enrolled",
-            "assigned_tunnel_name": None,
-            "assigned_tunnel_id": None,
-            "assigned_tunnel_token": None,
-            "commands": [],
-            "meta": {"registered_with_key_owner": owner},
-            "api_key": token
-        }
-        add_agent(agent_id, agent_record)
-        key_meta = get_agent_key_info(token) or {}
-        meta_update = dict(key_meta)
-        meta_update["bound_agent_id"] = agent_id
-        if owner and not meta_update.get("owner"):
-            meta_update["owner"] = owner
-        if not meta_update.get("created_at"):
-            meta_update["created_at"] = now
-        meta_update["status"] = "active"
-        meta_update["last_used_at"] = now
-        add_agent_key(token, meta_update)
-        http_status_code = 201 # Created
-
-    return jsonify({"status": "success", "agent_id": agent_id, "agent": agent_record}), http_status_code
+    return _register_agent_request()
 
 @api_v2_bp.route('/agents/<agent_id>/commands', methods=['GET'])
 def agents_get_commands(agent_id):
@@ -1582,6 +1921,8 @@ def agents_post_events(agent_id):
     Agents POST events (container start/stop, tunnel status).
     Auth via API key.
     """
+    return _handle_agent_event_request(agent_id)
+
     logging.info(f"AGENTS_EVENTS: Received request for agent {agent_id}")
     token, owner = _authenticate_agent_request()
     if not token:
@@ -1730,6 +2071,7 @@ def agents_enroll(agent_id):
     if not agent:
         return jsonify({"status": "error", "message": "Agent not found."}), 404
 
+    old_tunnel_id = agent.get("assigned_tunnel_id")
     try:
         from app.core.cloudflare_api import find_tunnel_via_api, create_tunnel_via_api
         found_id, found_token = find_tunnel_via_api(tunnel_name)
@@ -1760,12 +2102,32 @@ def agents_enroll(agent_id):
             rules_updated = False
             for rule in managed_rules.values():
                 if rule.get("source") == "agent" and rule.get("agent_id") == agent_id:
-                    if rule.get("tunnel_name") != tunnel_name:
+                    if rule.get("tunnel_name") != tunnel_name or rule.get("tunnel_id") != tunnel_id:
                         rule["tunnel_name"] = tunnel_name
+                        rule["tunnel_id"] = tunnel_id
+                        rule["tunnel_sync_pending"] = True
+                        rule["lifecycle_generation"] = int(rule.get("lifecycle_generation") or 0) + 1
                         rules_updated = True
             if rules_updated:
                 logging.info(f"Updated {len([r for r in managed_rules.values() if r.get('agent_id') == agent_id])} rules for agent {agent_id} with tunnel name '{tunnel_name}'.")
                 save_state()
+
+        old_updated = not old_tunnel_id or old_tunnel_id == tunnel_id or update_cloudflare_config(old_tunnel_id)
+        new_updated = update_cloudflare_config(tunnel_id)
+        if old_updated and new_updated:
+            dns_targets = []
+            with state_lock:
+                for rule in managed_rules.values():
+                    if rule.get("source") == "agent" and rule.get("agent_id") == agent_id:
+                        rule["tunnel_sync_pending"] = False
+                        rule["tunnel_sync_attempts"] = 0
+                        rule["tunnel_sync_last_attempt_at"] = None
+                        if rule.get("hostname") and rule.get("zone_id"):
+                            dns_targets.append((rule["zone_id"], rule["hostname"]))
+                save_state()
+            for zone_id, hostname in dns_targets:
+                if not hostname.startswith("*."):
+                    create_cloudflare_dns_record(zone_id, hostname, tunnel_id)
 
         return jsonify({"status": "success", "message": "Agent enrolled and command queued.", "command": cmd}), 200
     except Exception as e:
@@ -2369,9 +2731,6 @@ def update_rule_access_policy(rule_key):
 
 @api_v2_bp.route('/rules/<path:rule_key>/access-policy/revert-to-labels', methods=['POST'])
 def revert_rule_access_policy_to_labels(rule_key):
-    if not docker_client:
-        return jsonify({"status": "error", "message": "Docker client unavailable."}),
-
     app_id_to_delete_if_any = None
     state_changed_for_revert = False
     initial_rule_source = None
@@ -2399,14 +2758,15 @@ def revert_rule_access_policy_to_labels(rule_key):
             current_rule["auth_email"] = None
             state_changed_for_revert = True
             logging.info(f"API: Reverting manual rule '{rule_key}' access policy to none/public.")
-        elif initial_rule_source == "docker":
+        elif initial_rule_source in {"docker", "agent"}:
             current_rule["access_policy_ui_override"] = False
             state_changed_for_revert = True
-            logging.info(f"API: Reverting Docker rule '{rule_key}' access policy to be label-driven.")
+            logging.info(f"API: Reverting container-backed rule '{rule_key}' access policy to be label-driven.")
         else: 
             return jsonify({"status": "error", "message": f"Rule '{rule_key}' has unknown source '{initial_rule_source}'."}), 500
 
         if state_changed_for_revert:
+            current_rule["lifecycle_generation"] = int(current_rule.get("lifecycle_generation") or 0) + 1
             save_state()
 
     if initial_rule_source == "manual" and app_id_to_delete_if_any:
@@ -2424,8 +2784,16 @@ def revert_rule_access_policy_to_labels(rule_key):
         else:
             logging.info(f"API: Access App {app_id_to_delete_if_any} for reverted manual rule '{rule_key}' is shared, not deleting.")
 
-    reconcile_state_threaded()
-    return jsonify({"status": "success", "message": f"Access policy for '{rule_key}' reverted. Reconciliation triggered."}),
+    if initial_rule_source == "docker" and docker_client:
+        reconcile_state_threaded()
+    elif initial_rule_source == "agent":
+        agent_id = current_rule.get("agent_id")
+        agent = get_agent(agent_id)
+        containers = agent.get("last_complete_containers") if agent else None
+        if isinstance(containers, list):
+            from app.core.reconciler import reconcile_agent_report
+            reconcile_agent_report(agent_id, containers)
+    return jsonify({"status": "success", "message": f"Access policy for '{rule_key}' reverted."}),
 
 @api_v2_bp.route('/tunnels/account', methods=['GET'])
 def get_account_tunnels_api():

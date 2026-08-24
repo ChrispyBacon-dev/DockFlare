@@ -36,7 +36,7 @@ from app.core.user import User
 
 from app import config, docker_client, tunnel_state, cloudflared_agent_state, log_queue, state_update_queue, publish_state_event, limiter
 from app.core.cache import CACHE_ENABLED
-from app.core.state_manager import managed_rules, access_groups, state_lock, save_state, load_state
+from app.core.state_manager import managed_rules, access_groups, state_lock, save_state, load_state, get_agent
 from app.core.tunnel_manager import (
     start_cloudflared_container,
     stop_cloudflared_container,
@@ -842,9 +842,6 @@ def change_password():
 @bp.route('/revert_access_policy_to_labels/<path:hostname>', methods=['POST'])
 def revert_access_policy_to_labels(hostname):
     fqdn = hostname.split('|')[0]
-    if not docker_client:
-        return redirect(url_for('web.status_page'))
-    
     action_status_message = f"Attempting to revert Access Policy for '{fqdn}' to label configuration..."
     app_id_to_delete_if_any = None
     state_changed_for_revert = False
@@ -857,7 +854,10 @@ def revert_access_policy_to_labels(hostname):
             return redirect(url_for('web.status_page'))
         
         app_id_to_delete_if_any = current_rule.get("access_app_id")
+        source = current_rule.get("source")
+        agent_id = current_rule.get("agent_id")
         current_rule["access_policy_ui_override"] = False
+        current_rule["lifecycle_generation"] = int(current_rule.get("lifecycle_generation") or 0) + 1
         state_changed_for_revert = True
         if state_changed_for_revert:
             save_state()
@@ -867,8 +867,18 @@ def revert_access_policy_to_labels(hostname):
         if delete_cloudflare_access_application(app_id_to_delete_if_any):
             pass
     
-    reconcile_state_threaded() 
-    action_status_message += " Reconciliation triggered."
+    if source == "docker" and docker_client:
+        reconcile_state_threaded()
+        action_status_message += " Reconciliation triggered."
+    elif source == "agent":
+        agent = get_agent(agent_id)
+        containers = agent.get("last_complete_containers") if agent else None
+        if isinstance(containers, list):
+            from app.core.reconciler import reconcile_agent_report
+            reconcile_agent_report(agent_id, containers)
+            action_status_message += " Agent reconciliation triggered."
+        else:
+            action_status_message += " Waiting for the next Agent report."
     cloudflared_agent_state["last_action_status"] = action_status_message
     return redirect(url_for('web.status_page'))
 
@@ -1580,26 +1590,35 @@ def ui_revert_docker_rule_route():
             cloudflared_agent_state["last_action_status"] = f"Error: Rule '{rule_key}' not found."
             return redirect(url_for('web.status_page'))
 
-        if existing.get("source") != "docker":
-            cloudflared_agent_state["last_action_status"] = f"Error: Rule '{rule_key}' is not a Docker rule."
+        source = existing.get("source")
+        if source not in {"docker", "agent"}:
+            cloudflared_agent_state["last_action_status"] = f"Error: Rule '{rule_key}' is not container-backed."
             return redirect(url_for('web.status_page'))
 
         if not existing.get("rule_ui_override", False):
             cloudflared_agent_state["last_action_status"] = f"Info: Rule '{rule_key}' is not UI-overridden."
             return redirect(url_for('web.status_page'))
 
-        # Revert the rule back to Docker label control
         existing["rule_ui_override"] = False
+        existing["lifecycle_generation"] = int(existing.get("lifecycle_generation") or 0) + 1
         save_state()
 
-        cloudflared_agent_state["last_action_status"] = f"Success: Rule '{rule_key}' reverted to Docker label control. Reconciliation will update it based on container labels."
+        cloudflared_agent_state["last_action_status"] = f"Success: Rule '{rule_key}' reverted to label control."
 
-    # Trigger reconciliation to pick up Docker labels
     try:
-        from app.core.reconciler import reconcile_state_threaded
-        reconcile_state_threaded()
+        if source == "docker":
+            from app.core.reconciler import reconcile_state_threaded
+            reconcile_state_threaded()
+        else:
+            from app.core.reconciler import reconcile_agent_report
+            agent = get_agent(existing.get("agent_id"))
+            containers = agent.get("last_complete_containers") if agent else None
+            if isinstance(containers, list):
+                reconcile_agent_report(existing.get("agent_id"), containers)
+            else:
+                cloudflared_agent_state["last_action_status"] += " Waiting for the next Agent report."
     except Exception as e:
-        logging.error(f"Failed to trigger reconciliation after Docker rule revert: {e}")
+        logging.error(f"Failed to trigger reconciliation after rule revert: {e}")
 
     return redirect(url_for('web.status_page'))
 
@@ -1610,10 +1629,6 @@ def ui_edit_manual_rule_route():
     Expects a hidden 'edit_rule_key' form field identifying the rule key to edit.
     Only rules with source != 'docker' (manual or agent) are editable via UI.
     """
-    if not docker_client:
-        cloudflared_agent_state["last_action_status"] = "Error: Docker client unavailable."
-        return redirect(url_for('web.status_page'))
-
     rule_key = request.form.get('edit_rule_key')
     if not rule_key:
         cloudflared_agent_state["last_action_status"] = "Error: Missing rule key for edit."
@@ -1625,7 +1640,7 @@ def ui_edit_manual_rule_route():
             cloudflared_agent_state["last_action_status"] = f"Error: Rule '{rule_key}' not found."
             return redirect(url_for('web.status_page'))
         existing = copy.deepcopy(existing)
-        is_docker_rule = existing.get("source") == "docker"
+        is_container_backed = existing.get("source") in {"docker", "agent"}
     
     subdomain_input = request.form.get('edit_subdomain', '').strip()
     domain_name_input = request.form.get('edit_domain_name', '').strip()
@@ -1831,12 +1846,13 @@ def ui_edit_manual_rule_route():
             "access_app_config_hash": access_app_config_hash,
             "access_group_id": access_group_id,
             "access_policy_ui_override": True,
-            "rule_ui_override": is_docker_rule,
+            "rule_ui_override": is_container_backed,
             "source": existing.get("source", "manual"),
             "agent_id": existing.get("agent_id"),
             "tunnel_id": target_tunnel_id,
             "tunnel_name": target_tunnel_name
         })
+    rule_entry["lifecycle_generation"] = int(existing.get("lifecycle_generation") or 0) + 1
 
     with state_lock:
         conflicting = managed_rules.get(new_key)

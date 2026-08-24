@@ -159,6 +159,96 @@ class AgentTunnelConfigTests(unittest.TestCase):
         create_dns.assert_not_called()
         update_tunnel.assert_not_called()
 
+    def test_agent_override_reactivation_preserves_ui_configuration_without_zone_lookup(self):
+        with state_lock:
+            agents["agent-1"] = {
+                "id": "agent-1",
+                "assigned_tunnel_id": "agent-tunnel",
+                "assigned_tunnel_name": "Agent Tunnel",
+            }
+            managed_rules["app.example.com|"] = {
+                "hostname": "app.example.com",
+                "path": None,
+                "service": "https://ui-owned:443",
+                "container_id": "old",
+                "status": "pending_deletion",
+                "delete_at": None,
+                "zone_id": "zone-1",
+                "source": "agent",
+                "agent_id": "agent-1",
+                "tunnel_id": "agent-tunnel",
+                "tunnel_name": "Agent Tunnel",
+                "rule_ui_override": True,
+            }
+        payload = {"container": {
+            "id": "replacement",
+            "name": "app",
+            "labels": {
+                "dockflare.enable": "true",
+                "dockflare.hostname": "app.example.com",
+                "dockflare.service": "http://label-owned:8080",
+            },
+        }}
+        with app.app_context(), \
+             patch.object(api_v2_routes, "get_account_zone_inventory", side_effect=AssertionError("zone lookup must not run")), \
+             patch.object(api_v2_routes, "save_state", return_value=True), \
+             patch.object(api_v2_routes, "publish_state_event"), \
+             patch.object(api_v2_routes, "create_cloudflare_dns_record", return_value="dns-id"), \
+             patch.object(api_v2_routes, "update_cloudflare_config", return_value=True):
+            api_v2_routes.process_agent_container_start(payload, "agent-1")
+        rule = managed_rules["app.example.com|"]
+        self.assertEqual(rule["container_id"], "replacement")
+        self.assertEqual(rule["status"], "active")
+        self.assertEqual(rule["service"], "https://ui-owned:443")
+        self.assertEqual(rule["tunnel_id"], "agent-tunnel")
+
+    def test_container_id_refresh_does_not_rewrite_tunnel_configuration(self):
+        with state_lock:
+            agents["agent-1"] = {
+                "id": "agent-1",
+                "assigned_tunnel_id": "agent-tunnel",
+                "assigned_tunnel_name": "Agent Tunnel",
+            }
+            managed_rules["app.example.com|"] = {
+                "hostname": "app.example.com",
+                "path": None,
+                "service": "http://app:8080",
+                "container_id": "old-container",
+                "status": "active",
+                "delete_at": None,
+                "zone_id": "zone-1",
+                "zone_name": "example.com",
+                "zone_resolution_source": "hostname",
+                "source": "agent",
+                "agent_id": "agent-1",
+                "tunnel_id": "agent-tunnel",
+                "tunnel_name": "Agent Tunnel",
+                "source_rule_key": "app.example.com|",
+                "no_tls_verify": False,
+                "http2_origin": False,
+                "disable_chunked_encoding": False,
+                "match_sni_to_host": False,
+            }
+        payload = {"container": {
+            "id": "new-container",
+            "name": "app",
+            "labels": {
+                "dockflare.enable": "true",
+                "dockflare.hostname": "app.example.com",
+                "dockflare.service": "http://app:8080",
+            },
+        }}
+        inventory = {"zones": [{"id": "zone-1", "name": "example.com"}], "status": "complete", "error": None}
+        with app.app_context(), \
+             patch.object(api_v2_routes, "get_account_zone_inventory", return_value=inventory), \
+             patch.object(api_v2_routes, "save_state", return_value=True), \
+             patch.object(api_v2_routes, "publish_state_event"), \
+             patch.object(api_v2_routes, "handle_access_policy_from_labels", return_value=False), \
+             patch.object(api_v2_routes, "update_cloudflare_config") as update_tunnel:
+            api_v2_routes.process_agent_container_start(payload, "agent-1")
+        self.assertEqual(managed_rules["app.example.com|"]["container_id"], "new-container")
+        update_tunnel.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

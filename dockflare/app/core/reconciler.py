@@ -23,7 +23,16 @@ from datetime import datetime, timedelta, timezone
 from app import config, docker_client, tunnel_state, publish_state_event
 from flask import current_app 
 
-from app.core.state_manager import managed_rules, state_lock, save_state, get_agent, update_agent
+from app.core.state_manager import (
+    find_container_rule,
+    managed_rules,
+    mark_rule_tunnel_sync_pending,
+    restore_rule_lifecycle,
+    state_lock,
+    save_state,
+    get_agent,
+    update_agent,
+)
 from app.core.cloudflare_api import (
     get_account_zone_inventory,
     resolve_account_zone,
@@ -35,8 +44,8 @@ from app.core.access_manager import (
     handle_access_policy_from_labels, 
     delete_cloudflare_access_application 
 )
-from app.core.tunnel_manager import update_cloudflare_config
-from app.core.utils import get_rule_key, get_label
+from app.core.tunnel_manager import get_tunnel_operation_lock, update_cloudflare_config
+from app.core.utils import get_rule_key, get_source_rule_key, get_label
 
 def _get_hostname_configs_from_container(container_obj):
     labels = container_obj.labels
@@ -195,8 +204,7 @@ def reconcile_agent_report(agent_id, reported_containers):
                     last_auto_dt = last_auto_dt.replace(tzinfo=timezone.utc) if last_auto_dt.tzinfo is None else last_auto_dt.astimezone(timezone.utc)
                     elapsed = (now_dt - last_auto_dt).total_seconds()
                     if elapsed < cooldown:
-                        logging.info(f"[Reconcile-Agent] Auto-restore cooldown active for agent {agent_id} ({elapsed:.1f}s < {cooldown}s). Skipping.")
-                        return False
+                        logging.debug(f"[Reconcile-Agent] Cooldown active for agent {agent_id}; current observations will still be evaluated.")
                 except Exception:
                     logging.debug(f"[Reconcile-Agent] Could not parse last_auto_restore_at for agent {agent_id}; continuing.")
             
@@ -205,6 +213,7 @@ def reconcile_agent_report(agent_id, reported_containers):
                 return False
 
             restored_any = False
+            sync_needed = False
             desired_configs = {}
 
             for c in reported_containers:
@@ -228,9 +237,28 @@ def reconcile_agent_report(agent_id, reported_containers):
                 logging.debug(f"[Reconcile-Agent] No hostname configs derived from agent {agent_id} reported containers.")
                 return False
 
-            zone_inventory = get_account_zone_inventory()
+            overridden_keys = set()
+            with state_lock:
+                for observed_key, desired in desired_configs.items():
+                    source_key = get_source_rule_key(desired["hostname"], desired.get("path"))
+                    matched_key, existing = find_container_rule(source_key, "agent", agent_id)
+                    if not existing or not existing.get("rule_ui_override"):
+                        continue
+                    changed, reactivated = restore_rule_lifecycle(existing, desired.get("container_id"))
+                    if existing.get("source_rule_key") is None and matched_key == observed_key:
+                        existing["source_rule_key"] = source_key
+                        existing["lifecycle_generation"] = int(existing.get("lifecycle_generation") or 0) + 1
+                        changed = True
+                    if reactivated:
+                        mark_rule_tunnel_sync_pending(existing)
+                        sync_needed = True
+                    restored_any |= changed
+                    overridden_keys.add(observed_key)
+
+            unresolved_desired = {key: value for key, value in desired_configs.items() if key not in overridden_keys}
+            zone_inventory = get_account_zone_inventory() if unresolved_desired else None
             resolved_desired = {}
-            for rule_key, desired in desired_configs.items():
+            for rule_key, desired in unresolved_desired.items():
                 try:
                     resolved_desired[rule_key] = resolve_account_zone(
                         desired["hostname"],
@@ -249,12 +277,22 @@ def reconcile_agent_report(agent_id, reported_containers):
                     target_zone_id = selected_zone["id"]
 
                     if existing:
+                        original_existing = copy.deepcopy(existing)
                         if existing.get("source") == "manual":
                             continue
+                        if existing.get("source") != "agent" or existing.get("agent_id") != agent_id:
+                            logging.warning("[Reconcile-Agent] Ownership mismatch for %s; observation ignored.", rule_key)
+                            continue
+                        if existing.get("source_rule_key") is None:
+                            existing["source_rule_key"] = get_source_rule_key(desired["hostname"], desired.get("path"))
+                            existing["lifecycle_generation"] = int(existing.get("lifecycle_generation") or 0) + 1
+                            restored_any = True
                         if existing.get("rule_ui_override"):
                             if existing.get("status") == "pending_deletion":
                                 existing["status"] = "active"
                                 existing["delete_at"] = None
+                                mark_rule_tunnel_sync_pending(existing)
+                                sync_needed = True
                                 restored_any = True
                             continue
 
@@ -298,6 +336,17 @@ def reconcile_agent_report(agent_id, reported_containers):
                         if changed:
                             restored_any = True
                             logging.info(f"[Reconcile-Agent] Updated rule {rule_key} from agent {agent_id} report.")
+                        tunnel_fields = (
+                            "hostname", "path", "service", "zone_id", "no_tls_verify",
+                            "origin_server_name", "http_host_header", "http2_origin",
+                            "disable_chunked_encoding", "match_sni_to_host", "tunnel_id",
+                        )
+                        if (
+                            original_existing.get("status") != existing.get("status")
+                            or any(original_existing.get(field) != existing.get(field) for field in tunnel_fields)
+                        ):
+                            mark_rule_tunnel_sync_pending(existing)
+                            sync_needed = True
                     else:
                         managed_rules[rule_key] = {
                             "hostname": desired["hostname"],
@@ -321,9 +370,15 @@ def reconcile_agent_report(agent_id, reported_containers):
                             "agent_id": agent_id,
                             "access_group_id": None,
                             "tunnel_name": agent_record.get("assigned_tunnel_name"),
-                            "tunnel_id": agent_record.get("assigned_tunnel_id")
+                            "tunnel_id": agent_record.get("assigned_tunnel_id"),
+                            "source_rule_key": get_source_rule_key(desired["hostname"], desired.get("path")),
+                            "tunnel_sync_pending": True,
+                            "tunnel_sync_last_attempt_at": None,
+                            "tunnel_sync_attempts": 0,
+                            "lifecycle_generation": 0,
                         }
                         restored_any = True
+                        sync_needed = True
                         logging.info(f"[Reconcile-Agent] Created missing rule {rule_key} for agent {agent_id} based on agent report.")
 
                 if restored_any:
@@ -334,11 +389,10 @@ def reconcile_agent_report(agent_id, reported_containers):
                     save_state()
                     publish_state_event('snapshot_refresh')
 
-            if restored_any:
+            if sync_needed:
                 try:
-                    logging.info(f"[Reconcile-Agent] Triggering Cloudflare tunnel config update after restoring rules for agent {agent_id}.")
-
-                    t = threading.Thread(target=update_cloudflare_config, args=(agent_record.get("assigned_tunnel_id"),), name=f"agent-reconcile-{agent_id}", daemon=True)
+                    logging.info(f"[Reconcile-Agent] Triggering pending tunnel synchronization for agent {agent_id}.")
+                    t = threading.Thread(target=retry_pending_tunnel_sync, kwargs={"force": True}, name=f"agent-reconcile-{agent_id}", daemon=True)
                     t.start()
                 except Exception as e:
                     logging.error(f"[Reconcile-Agent] Failed to trigger Cloudflare update: {e}", exc_info=True)
@@ -411,9 +465,33 @@ def _run_reconciliation_logic():
         processed_reconcile_items = 0
         hostnames_requiring_dns_setup = set()
         policy_jobs_map = {}
-        zone_inventory = get_account_zone_inventory()
+        overridden_observed_keys = set()
+        effective_tunnel_id = tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
+        with state_lock:
+            for observed_key, desired_details in running_labeled_rules_details.items():
+                source_key = get_source_rule_key(desired_details["hostname"], desired_details.get("path"))
+                matched_key, existing_rule = find_container_rule(source_key, "docker")
+                if not existing_rule or not existing_rule.get("rule_ui_override"):
+                    continue
+                changed, reactivated = restore_rule_lifecycle(existing_rule, desired_details["container_id"])
+                if existing_rule.get("source_rule_key") is None and matched_key == observed_key:
+                    existing_rule["source_rule_key"] = source_key
+                    existing_rule["lifecycle_generation"] = int(existing_rule.get("lifecycle_generation") or 0) + 1
+                    changed = True
+                if reactivated:
+                    mark_rule_tunnel_sync_pending(existing_rule)
+                    needs_tunnel_config_update = True
+                state_changed_locally |= changed
+                overridden_observed_keys.add(observed_key)
+                if existing_rule.get("hostname") and existing_rule.get("zone_id"):
+                    hostnames_requiring_dns_setup.add((existing_rule["hostname"], existing_rule["zone_id"], existing_rule.get("tunnel_id") or effective_tunnel_id))
         resolved_running_rules = {}
-        for rule_key, desired_details in running_labeled_rules_details.items():
+        rules_requiring_resolution = {
+            key: details for key, details in running_labeled_rules_details.items()
+            if key not in overridden_observed_keys
+        }
+        zone_inventory = get_account_zone_inventory() if rules_requiring_resolution else None
+        for rule_key, desired_details in rules_requiring_resolution.items():
             try:
                 resolved_running_rules[rule_key] = resolve_account_zone(
                     desired_details["hostname"],
@@ -428,7 +506,6 @@ def _run_reconciliation_logic():
         with state_lock:
             now_utc = datetime.now(timezone.utc)
             current_managed_rule_keys_in_state = set(managed_rules.keys())
-            effective_tunnel_id = tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
             master_tunnel_name = tunnel_state.get("name")
                             
             for rule_key, selected_zone in resolved_running_rules.items():
@@ -444,10 +521,19 @@ def _run_reconciliation_logic():
                 existing_rule = managed_rules.get(rule_key)
                 if existing_rule and existing_rule.get("source") == "manual":
                     continue
+                if existing_rule and existing_rule.get("source", "docker") != "docker":
+                    logging.warning("[Reconcile] Rule %s belongs to another source; observation ignored.", rule_key)
+                    continue
+                if existing_rule and existing_rule.get("source_rule_key") is None:
+                    existing_rule["source_rule_key"] = get_source_rule_key(desired_details["hostname"], desired_details.get("path"))
+                    existing_rule["lifecycle_generation"] = int(existing_rule.get("lifecycle_generation") or 0) + 1
+                    state_changed_locally = True
                 if existing_rule and existing_rule.get("rule_ui_override"):
                     if existing_rule.get("status") == "pending_deletion":
                         existing_rule["status"] = "active"
                         existing_rule["delete_at"] = None
+                        mark_rule_tunnel_sync_pending(existing_rule)
+                        needs_tunnel_config_update = True
                         state_changed_locally = True
                     if existing_rule.get("hostname") and existing_rule.get("zone_id"):
                         hostnames_requiring_dns_setup.add((existing_rule.get("hostname"), existing_rule.get("zone_id"), existing_rule.get("tunnel_id") or effective_tunnel_id))
@@ -471,12 +557,18 @@ def _run_reconciliation_logic():
                         "access_policy_ui_override": False, "rule_ui_override": False, "source": "docker",
                         "access_group_id": None,
                         "tunnel_name": master_tunnel_name,
-                        "tunnel_id": effective_tunnel_id
+                        "tunnel_id": effective_tunnel_id,
+                        "source_rule_key": get_source_rule_key(desired_details["hostname"], desired_details.get("path")),
+                        "tunnel_sync_pending": True,
+                        "tunnel_sync_last_attempt_at": None,
+                        "tunnel_sync_attempts": 0,
+                        "lifecycle_generation": 0,
                     }
                     existing_rule = managed_rules[rule_key]
                     state_changed_locally = True
                     needs_tunnel_config_update = True
                 else:
+                    original_existing_rule = copy.deepcopy(existing_rule)
                     changed_in_reconcile = False
                     if existing_rule.get("status") == "pending_deletion":
                         existing_rule["status"] = "active"
@@ -528,13 +620,34 @@ def _run_reconciliation_logic():
                     existing_rule["source"] = "docker" 
                     if changed_in_reconcile:
                         state_changed_locally = True
+                    tunnel_fields = (
+                        "hostname", "path", "service", "zone_id", "no_tls_verify",
+                        "origin_server_name", "http_host_header", "http2_origin",
+                        "disable_chunked_encoding", "match_sni_to_host", "tunnel_id",
+                    )
+                    if (
+                        original_existing_rule.get("status") != existing_rule.get("status")
+                        or any(original_existing_rule.get(field) != existing_rule.get(field) for field in tunnel_fields)
+                    ):
+                        mark_rule_tunnel_sync_pending(existing_rule)
                 
                 hostnames_requiring_dns_setup.add((desired_details["hostname"], target_zone_id, effective_tunnel_id))
                 
                 if not existing_rule.get("access_policy_ui_override", False):
                     policy_jobs_map[rule_key] = copy.deepcopy(desired_details)
             
-            rule_keys_in_state_but_not_running = list(current_managed_rule_keys_in_state - set(running_labeled_rules_details.keys()))
+            observed_source_keys = {
+                get_source_rule_key(details["hostname"], details.get("path"))
+                for details in running_labeled_rules_details.values()
+            }
+            rule_keys_in_state_but_not_running = [
+                key for key in current_managed_rule_keys_in_state
+                if key not in running_labeled_rules_details
+                and not (
+                    managed_rules.get(key, {}).get("source_rule_key")
+                    and managed_rules[key]["source_rule_key"] in observed_source_keys
+                )
+            ]
             for rule_key_to_check in rule_keys_in_state_but_not_running:
                 processed_reconcile_items +=1 
                 current_app.reconciliation_info["processed_items"] = processed_reconcile_items
@@ -581,16 +694,23 @@ def _run_reconciliation_logic():
 
         if needs_tunnel_config_update:
             current_app.reconciliation_info["status"] = "Updating Cloudflare tunnel configuration..."
-            if not config.USE_EXTERNAL_CLOUDFLARED:
-                if not update_cloudflare_config():
-                    logging.error("[Reconcile] Failed to update Cloudflare tunnel configuration.")
-                    current_app.reconciliation_info["status"] = "Error: Failed tunnel config update."
-                else:
-                    logging.info("[Reconcile] Cloudflare tunnel configuration updated successfully.")
-                    current_app.reconciliation_info["status"] = "Tunnel configuration updated."
+            if not update_cloudflare_config(effective_tunnel_id):
+                logging.error("[Reconcile] Failed to update Cloudflare tunnel configuration.")
+                current_app.reconciliation_info["status"] = "Error: Failed tunnel config update."
             else:
-                logging.info("[Reconcile] External mode: Skipping DockFlare-managed tunnel config update.")
-                current_app.reconciliation_info["status"] = "Tunnel config update skipped (external mode)."
+                logging.info("[Reconcile] Cloudflare tunnel configuration updated successfully.")
+                current_app.reconciliation_info["status"] = "Tunnel configuration updated."
+                sync_state_changed = False
+                with state_lock:
+                    for rule in managed_rules.values():
+                        if rule.get("source", "docker") == "docker" and _effective_rule_tunnel_id(rule) == effective_tunnel_id and rule.get("tunnel_sync_pending"):
+                            rule["tunnel_sync_pending"] = False
+                            rule["tunnel_sync_last_attempt_at"] = None
+                            rule["tunnel_sync_attempts"] = 0
+                            rule["lifecycle_generation"] = int(rule.get("lifecycle_generation") or 0) + 1
+                            sync_state_changed = True
+                if sync_state_changed:
+                    save_state()
         
         if hostnames_requiring_dns_setup:
             unique_dns_setups = list(hostnames_requiring_dns_setup)
@@ -648,107 +768,152 @@ def reconcile_state_threaded():
     reconcile_thread.start()
     logging.info(f"Started reconciliation in background thread {reconcile_thread.name}")
 
-def cleanup_expired_rules(stop_event_param):
-    from app import app as main_app_instance_for_context
-    logging.info("Starting cleanup task for expired rules...")
-    if stop_event_param is None:
-        logging.error("cleanup_expired_rules called with None stop_event_param. Task will not run correctly.")
-        return
+def _effective_rule_tunnel_id(rule):
+    explicit_tunnel_id = rule.get("tunnel_id")
+    if explicit_tunnel_id:
+        return explicit_tunnel_id
+    return config.EXTERNAL_TUNNEL_ID if config.USE_EXTERNAL_CLOUDFLARED else tunnel_state.get("id")
 
-    while not stop_event_param.is_set():
-        next_check_time = time.time() + config.CLEANUP_INTERVAL_SECONDS
-        with main_app_instance_for_context.app_context():
-            try:
-                logging.debug("Running cleanup check for expired rules...")
-                rules_to_delete_keys = []
-                now_utc = datetime.now(timezone.utc)
-                state_changed_in_cleanup = False
 
+def _candidate_still_matches(candidate):
+    rule = managed_rules.get(candidate["key"])
+    if not rule:
+        return False
+    return (
+        rule.get("status") == candidate["status"]
+        and rule.get("delete_at") == candidate["delete_at"]
+        and rule.get("container_id") == candidate["container_id"]
+        and rule.get("source", "docker") == candidate["source"]
+        and rule.get("agent_id") == candidate["agent_id"]
+        and rule.get("lifecycle_generation", 0) == candidate["lifecycle_generation"]
+        and rule.get("tunnel_id") == candidate["tunnel_id"]
+    )
+
+
+def cleanup_expired_rules_once(now=None):
+    current_time = now or datetime.now(timezone.utc)
+    candidates = []
+    with state_lock:
+        for key, rule in managed_rules.items():
+            if rule.get("source", "docker") not in {"docker", "agent"} or rule.get("status") != "pending_deletion":
+                continue
+            deadline = rule.get("delete_at")
+            if isinstance(deadline, datetime):
+                deadline = deadline.astimezone(timezone.utc) if deadline.tzinfo else deadline.replace(tzinfo=timezone.utc)
+                if deadline > current_time:
+                    continue
+            candidates.append({
+                "key": key,
+                "status": rule.get("status"),
+                "delete_at": rule.get("delete_at"),
+                "container_id": rule.get("container_id"),
+                "source": rule.get("source", "docker"),
+                "agent_id": rule.get("agent_id"),
+                "lifecycle_generation": rule.get("lifecycle_generation", 0),
+                "tunnel_id": rule.get("tunnel_id"),
+                "effective_tunnel_id": _effective_rule_tunnel_id(rule),
+                "hostname": rule.get("hostname"),
+                "zone_id": rule.get("zone_id"),
+                "access_app_id": rule.get("access_app_id"),
+            })
+
+    groups = {}
+    for candidate in candidates:
+        groups.setdefault(candidate["effective_tunnel_id"], []).append(candidate)
+    committed = 0
+    for tunnel_id in sorted(groups, key=lambda value: str(value or "")):
+        if not tunnel_id:
+            logging.error("Cleanup retained %s rules because their effective tunnel is missing.", len(groups[tunnel_id]))
+            continue
+        with get_tunnel_operation_lock(tunnel_id):
+            with state_lock:
+                valid = [candidate for candidate in groups[tunnel_id] if _candidate_still_matches(candidate)]
+            if not valid or not update_cloudflare_config(tunnel_id):
+                continue
+            successful = []
+            for candidate in valid:
                 with state_lock:
-                    for rule_key, details in managed_rules.items():
-                        if details.get("status") == "pending_deletion" and details.get("source", "docker") in ["docker", "agent"]:
-                            delete_at = details.get("delete_at")
-                            if isinstance(delete_at, datetime):
-                                delete_at_utc = delete_at.astimezone(timezone.utc) if delete_at.tzinfo else delete_at.replace(tzinfo=timezone.utc)
-                                if delete_at_utc <= now_utc:
-                                    rules_to_delete_keys.append(rule_key)
-                            else:
-                                logging.warning(f"Rule {rule_key} pending delete but has invalid/missing delete_at. Marking for immediate deletion.")
-                                rules_to_delete_keys.append(rule_key)
-
-                    for rule_key, details in managed_rules.items():
-                        if details.get("source") == "manual" and details.get("status") == "pending_deletion":
-                            logging.warning(f"{details.get('source', 'unknown').title()} rule {rule_key} found 'pending_deletion'. Resetting to 'active'.")
-                            details["status"] = "active"
-                            details["delete_at"] = None
-                            state_changed_in_cleanup = True
-                
-                if state_changed_in_cleanup and not rules_to_delete_keys:
+                    if not _candidate_still_matches(candidate):
+                        continue
+                    dns_shared = any(
+                        key != candidate["key"]
+                        and rule.get("hostname") == candidate["hostname"]
+                        and rule.get("zone_id") == candidate["zone_id"]
+                        and _effective_rule_tunnel_id(rule) == tunnel_id
+                        for key, rule in managed_rules.items()
+                    )
+                    app_shared = candidate["access_app_id"] and any(
+                        key != candidate["key"] and rule.get("access_app_id") == candidate["access_app_id"]
+                        for key, rule in managed_rules.items()
+                    )
+                if candidate["hostname"] and not dns_shared and not delete_cloudflare_dns_record(candidate["zone_id"], candidate["hostname"], tunnel_id):
+                    continue
+                if candidate["access_app_id"] and not app_shared and not delete_cloudflare_access_application(candidate["access_app_id"]):
+                    continue
+                successful.append(candidate)
+            with state_lock:
+                for candidate in successful:
+                    if _candidate_still_matches(candidate):
+                        del managed_rules[candidate["key"]]
+                        committed += 1
+                if successful:
                     save_state()
+    if committed:
+        publish_state_event("snapshot_refresh")
+    return committed
 
-                if rules_to_delete_keys:
-                    logging.info(f"Found {len(rules_to_delete_keys)} expired rules to process: {rules_to_delete_keys}")
-                    effective_tunnel_id = tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
 
-                    rules_being_deleted = {}
-                    with state_lock:
-                        for key in rules_to_delete_keys:
-                            if key in managed_rules:
-                                rules_being_deleted[key] = managed_rules[key]
+def retry_pending_tunnel_sync(now=None, force=False):
+    current_time = now or datetime.now(timezone.utc)
+    pending_tunnels = set()
+    with state_lock:
+        for rule in managed_rules.values():
+            if rule.get("tunnel_sync_pending"):
+                tunnel_id = _effective_rule_tunnel_id(rule)
+                if tunnel_id:
+                    pending_tunnels.add(tunnel_id)
+    changed = False
+    for tunnel_id in sorted(pending_tunnels):
+        with state_lock:
+            rules = [rule for rule in managed_rules.values() if rule.get("tunnel_sync_pending") and _effective_rule_tunnel_id(rule) == tunnel_id]
+            eligible = force
+            if not eligible:
+                for rule in rules:
+                    last_attempt = rule.get("tunnel_sync_last_attempt_at")
+                    if not isinstance(last_attempt, datetime) or (current_time - last_attempt).total_seconds() >= config.TUNNEL_SYNC_RETRY_SECONDS:
+                        eligible = True
+                        break
+            if not eligible:
+                continue
+            for rule in rules:
+                rule["tunnel_sync_last_attempt_at"] = current_time
+                rule["tunnel_sync_attempts"] = int(rule.get("tunnel_sync_attempts") or 0) + 1
+                changed = True
+        success = update_cloudflare_config(tunnel_id)
+        if success:
+            with state_lock:
+                for rule in managed_rules.values():
+                    if rule.get("tunnel_sync_pending") and _effective_rule_tunnel_id(rule) == tunnel_id:
+                        rule["tunnel_sync_pending"] = False
+                        rule["tunnel_sync_last_attempt_at"] = None
+                        rule["tunnel_sync_attempts"] = 0
+                        rule["lifecycle_generation"] = int(rule.get("lifecycle_generation") or 0) + 1
+                        changed = True
+    if changed:
+        save_state()
+        publish_state_event("snapshot_refresh")
+    return changed
 
-                    for rule_key, delete_info in rules_being_deleted.items():
-                        hostname_del = delete_info.get("hostname")
-                        access_app_id_del = delete_info.get("access_app_id")
 
-                        is_hostname_still_used = any(
-                            k not in rules_to_delete_keys and r.get("hostname") == hostname_del
-                            for k, r in managed_rules.items()
-                        )
-
-                        if hostname_del and not is_hostname_still_used:
-                            logging.info(f"Hostname '{hostname_del}' is no longer used. Deleting its DNS record.")
-                            delete_cloudflare_dns_record(delete_info.get("zone_id"), hostname_del, effective_tunnel_id)
-                        elif hostname_del:
-                            logging.info(f"Skipping DNS delete for '{hostname_del}' as it is still used by other rules.")
-
-                        is_app_id_still_used = any(
-                            k not in rules_to_delete_keys and r.get("access_app_id") == access_app_id_del
-                            for k, r in managed_rules.items()
-                        )
-
-                        if access_app_id_del and not is_app_id_still_used:
-                            logging.info(f"Access App ID '{access_app_id_del}' is no longer used. Deleting it.")
-                            delete_cloudflare_access_application(access_app_id_del)
-                        elif access_app_id_del:
-                            logging.info(f"Skipping Access App delete for '{access_app_id_del}' as it is still used by other rules.")
-
-                    config_updated = False
-                    if not config.USE_EXTERNAL_CLOUDFLARED:
-                        logging.info("Updating Cloudflare config to remove expired ingress rules...")
-                        if update_cloudflare_config():
-                            config_updated = True
-                        else:
-                            logging.error("Failed to update Cloudflare tunnel config during rule cleanup. Rules will remain in local state temporarily.")
-                    else:
-                        config_updated = True
-
-                    if config_updated:
-                        with state_lock:
-                            deleted_count = 0
-                            for key in rules_to_delete_keys:
-                                if key in managed_rules:
-                                    del managed_rules[key]
-                                    deleted_count += 1
-                            if deleted_count > 0:
-                                logging.info(f"Removed {deleted_count} expired rules from local state.")
-                                save_state()
-                                publish_state_event('snapshot_refresh')
-
-            except Exception as e_cleanup:
-                logging.error(f"Error in cleanup task loop: {e_cleanup}", exc_info=True)
-
-        wait_duration = max(0, next_check_time - time.time())
-        if not stop_event_param.is_set():
-            stop_event_param.wait(wait_duration)
-
-    logging.info("Cleanup task for expired rules stopped.")
+def cleanup_expired_rules(stop_event_param):
+    from app import app as main_app
+    if stop_event_param is None:
+        return
+    while not stop_event_param.is_set():
+        with main_app.app_context():
+            try:
+                cleanup_expired_rules_once()
+                retry_pending_tunnel_sync()
+            except Exception:
+                logging.exception("Expired-rule cleanup pass failed.")
+        stop_event_param.wait(config.CLEANUP_INTERVAL_SECONDS)

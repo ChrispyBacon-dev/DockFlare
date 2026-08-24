@@ -8,7 +8,8 @@ import logging
 import tempfile
 import http.server
 import socketserver
-from threading import Thread
+import random
+from threading import Thread, Lock
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import cloudflare_api
@@ -21,8 +22,8 @@ def is_dockflare_enabled(labels):
     """Check if container has DockFlare enabled using new or legacy labels."""
     if not labels:
         return False
-    return (labels.get("dockflare.enable") == "true" or
-            labels.get("cloudflare.tunnel.enable") == "true")
+    values = (labels.get("dockflare.enable"), labels.get("cloudflare.tunnel.enable"))
+    return any(isinstance(value, str) and value.lower() in {"true", "1", "t", "yes"} for value in values)
 
 
 def _normalize_cloudflared_image(raw_value, default_image):
@@ -67,6 +68,7 @@ load_dotenv()
 
 MASTER_URL = os.getenv("DOCKFLARE_MASTER_URL")
 API_KEY = os.getenv("DOCKFLARE_API_KEY")
+AGENT_VERSION = os.getenv("DOCKFLARE_AGENT_VERSION", "1.1.0")
 CF_ACCESS_CLIENT_ID = os.getenv("CF_ACCESS_CLIENT_ID", "")
 CF_ACCESS_CLIENT_SECRET = os.getenv("CF_ACCESS_CLIENT_SECRET", "")
 
@@ -88,6 +90,14 @@ else:
 AGENT_ID_FILE = "/app/data/agent_id.txt"
 TUNNEL_STATE_FILE = "/app/data/tunnel_state.json"
 AGENT_ID = None  # Will be assigned by the master
+PROTOCOL_VERSION = None
+AGENT_SESSION_ID = None
+_event_sequence = 0
+_report_sequence = 0
+_protocol_lock = Lock()
+_event_send_lock = Lock()
+_report_send_lock = Lock()
+_registration_lock = Lock()
 
 # --- Tunnel Management Globals ---
 tunnel_container = None
@@ -100,6 +110,83 @@ desired_tunnel_state = "unknown"
 # --- Health / Monitoring Globals ---
 thread_health_status = {}
 last_successful_master_contact = None
+
+
+def _configured_health_port():
+    try:
+        value = int(os.getenv("HEALTH_CHECK_PORT", "8080"))
+        return value if 1 <= value <= 65535 else 8080
+    except ValueError:
+        return 8080
+
+
+HEALTH_CHECK_PORT = _configured_health_port()
+
+
+def filter_reportable_labels(labels):
+    return {
+        key: value for key, value in (labels or {}).items()
+        if isinstance(key, str)
+        and isinstance(value, str)
+        and key.startswith(("dockflare.", "cloudflare.tunnel."))
+    }
+
+
+def normalize_docker_event_type(action):
+    if action == "start":
+        return "container_start"
+    if action in {"stop", "die"}:
+        return "container_stop"
+    return None
+
+
+def apply_registration_response(data):
+    global AGENT_ID, PROTOCOL_VERSION, AGENT_SESSION_ID, _event_sequence, _report_sequence
+    agent_id = data.get("agent_id") if isinstance(data, dict) else None
+    protocol = data.get("protocol_version") if isinstance(data, dict) else None
+    session_id = data.get("agent_session_id") if isinstance(data, dict) else None
+    if not agent_id:
+        return False
+    if protocol == 2 and not session_id:
+        return False
+    if protocol not in (None, 1, 2):
+        return False
+    with _protocol_lock:
+        AGENT_ID = agent_id
+        PROTOCOL_VERSION = protocol or 1
+        AGENT_SESSION_ID = session_id if protocol == 2 else None
+        _event_sequence = 0
+        _report_sequence = 0
+    return True
+
+
+def next_event_sequence():
+    global _event_sequence
+    with _protocol_lock:
+        _event_sequence += 1
+        return _event_sequence
+
+
+def next_report_sequence():
+    global _report_sequence
+    with _protocol_lock:
+        _report_sequence += 1
+        return _report_sequence
+
+
+def collect_complete_inventory(docker_client):
+    containers = []
+    for container in docker_client.containers.list():
+        labels = getattr(container, "labels", None) or {}
+        if not is_dockflare_enabled(labels):
+            continue
+        containers.append({
+            "id": str(container.id),
+            "name": str(container.name),
+            "labels": filter_reportable_labels(labels),
+            "status": str(getattr(container, "status", "unknown")),
+        })
+    return containers
 
 
 def fetch_cloudflared_version(container):
@@ -263,7 +350,7 @@ def register_with_master():
     """
     Registers the agent with the DockFlare Master instance and retrieves an agent ID.
     """
-    global AGENT_ID
+    global AGENT_ID, last_successful_master_contact
     if not MASTER_URL or not API_KEY:
         logging.error("Error: DOCKFLARE_MASTER_URL and DOCKFLARE_API_KEY must be set.")
         return False
@@ -277,7 +364,9 @@ def register_with_master():
             default_display_name = f"agent-{AGENT_ID[:8]}" if AGENT_ID else "dockflare-agent"
             payload = {
                 "display_name": custom_display_name or default_display_name,
-                "version": "1.0.0",
+                "version": AGENT_VERSION,
+                "agent_version": AGENT_VERSION,
+                "supported_protocol_versions": [2, 1],
             }
             if AGENT_ID:
                 payload["agent_id"] = AGENT_ID
@@ -286,8 +375,7 @@ def register_with_master():
             response.raise_for_status()
             data = response.json()
             new_agent_id = data.get("agent_id")
-
-            if not new_agent_id:
+            if not apply_registration_response(data):
                 logging.error("Master did not provide an agent_id. Retrying in 60s...")
                 time.sleep(60)
                 continue
@@ -297,11 +385,54 @@ def register_with_master():
 
             AGENT_ID = new_agent_id
             save_agent_id(AGENT_ID)
+            last_successful_master_contact = datetime.now(timezone.utc)
             logging.info(f"Successfully registered with master. Agent ID: {AGENT_ID}")
             return True
         except requests.exceptions.RequestException as e:
             logging.error(f"Error registering with master: {e}. Retrying in 60s...")
             time.sleep(60)
+
+def _safe_response_code(response):
+    try:
+        data = response.json()
+        return str(data.get("code") or "unknown")[:64]
+    except (ValueError, AttributeError):
+        return "invalid_response"
+
+
+def _post_agent_payload(payload):
+    global last_successful_master_contact
+    endpoint = f"{MASTER_URL}/api/v2/agents/{AGENT_ID}/events"
+    for attempt in range(3):
+        try:
+            response = requests.post(endpoint, json=payload, headers=get_headers(), timeout=15)
+            code = _safe_response_code(response)
+            accepted_code = code in {"accepted", "accepted_noop", "duplicate_sequence", "inventory_incomplete"}
+            if response.status_code in (200, 202) and (accepted_code or PROTOCOL_VERSION == 1):
+                last_successful_master_contact = datetime.now(timezone.utc)
+                return True
+            if response.status_code == 409 and code == "registration_required":
+                with _registration_lock:
+                    if register_with_master():
+                        return False
+            if response.status_code == 429 or response.status_code >= 500:
+                if attempt < 2:
+                    retry_after = response.headers.get("Retry-After") if hasattr(response, "headers") else None
+                    try:
+                        retry_delay = min(60.0, max(0.0, float(retry_after)))
+                    except (TypeError, ValueError):
+                        retry_delay = (2 ** attempt) + random.random()
+                    time.sleep(retry_delay)
+                    continue
+            logging.error("Master rejected Agent request (status=%s, code=%s)", response.status_code, code)
+            return False
+        except requests.exceptions.RequestException as exc:
+            if attempt == 2:
+                logging.error("Agent request failed after bounded retries: %s", type(exc).__name__)
+                return False
+            time.sleep((2 ** attempt) + random.random())
+    return False
+
 
 def report_event_to_master(event_type, container_data=None):
     """
@@ -311,44 +442,60 @@ def report_event_to_master(event_type, container_data=None):
         logging.debug("report_event_to_master called but AGENT_ID is missing; skipping.")
         return
     try:
-        from datetime import datetime, timezone
         payload = {
             "type": event_type,
-            "timestamp": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         if container_data:
-            payload["container"] = container_data
-
-        headers = get_headers()
-        endpoint = f"{MASTER_URL}/api/v2/agents/{AGENT_ID}/events"
-
-        # Log endpoint and payload at debug level so container logs show activity without being too noisy at info.
-        logging.debug(f"Reporting to master endpoint={endpoint} payload_type={event_type} payload_keys={list(payload.keys())}")
-
-        response = requests.post(endpoint, json=payload, headers=headers, timeout=15)
-        try:
-            response.raise_for_status()
-            logging.info(f"Successfully reported event to master: {event_type} (status={response.status_code})")
-        except requests.exceptions.HTTPError as httpe:
-            logging.error(f"HTTP error reporting event to master: {httpe} status={getattr(response, 'status_code', 'unknown')} body={getattr(response, 'text', '')}")
-            raise
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error reporting event to master: {e}")
-
-def listen_for_docker_events(client, label_prefix):
-    thread_health_status[f"events_listener_{label_prefix.strip('.')}"] = "running"
-    logging.info(f"Performing initial scan of running containers for prefix {label_prefix}...")
-    try:
-        for container in client.containers.list():
-            if container.labels.get(f"{label_prefix}enable") == "true":
-                logging.info(f"Found existing container to report for {label_prefix}: {container.name}")
-                report_event_to_master("container_start", {
-                    "id": container.id,
-                    "name": container.name,
-                    "labels": container.labels
+            safe_container = dict(container_data)
+            safe_container["labels"] = filter_reportable_labels(safe_container.get("labels", {}))
+            payload["container"] = safe_container
+        with _event_send_lock:
+            if PROTOCOL_VERSION == 2:
+                payload.update({
+                    "protocol_version": 2,
+                    "agent_session_id": AGENT_SESSION_ID,
+                    "event_sequence": next_event_sequence(),
                 })
-    except Exception as e:
-        logging.error(f"Error during initial container scan for {label_prefix}: {e}")
+            return _post_agent_payload(payload)
+    except Exception as exc:
+        logging.error("Could not build Agent event: %s", type(exc).__name__)
+        return False
+
+
+def send_status_report(containers=None, inventory_complete=True):
+    if not AGENT_ID:
+        return False
+    with _report_send_lock:
+        if PROTOCOL_VERSION != 2:
+            return report_event_to_master("status_report", {"containers": containers or []})
+        payload = {
+            "type": "status_report",
+            "protocol_version": 2,
+            "agent_session_id": AGENT_SESSION_ID,
+            "report_sequence": next_report_sequence(),
+            "inventory_complete": bool(inventory_complete),
+            "inventory_scope": "dockflare_enabled_running",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        if inventory_complete:
+            payload["containers"] = containers or []
+        return _post_agent_payload(payload)
+
+def listen_for_docker_events(client, label_prefix, initial_scan=True):
+    thread_health_status[f"events_listener_{label_prefix.strip('.')}"] = "running"
+    if initial_scan:
+        logging.info("Performing one initial scan of running DockFlare containers...")
+        try:
+            for container in client.containers.list():
+                if is_dockflare_enabled(container.labels):
+                    report_event_to_master("container_start", {
+                        "id": container.id,
+                        "name": container.name,
+                        "labels": container.labels,
+                    })
+        except Exception as e:
+            logging.error(f"Error during initial container scan: {e}")
 
     logging.info(f"Listening for Docker events with prefix {label_prefix}...")
     event_filters = {
@@ -363,7 +510,7 @@ def listen_for_docker_events(client, label_prefix):
                     container_id = event['id']
                     try:
                         container = client.containers.get(container_id)
-                        event_type = f"container_{action}"
+                        event_type = normalize_docker_event_type(action)
                         logging.info(f"Detected event '{action}' for container {container.name} ({label_prefix})")
                         report_event_to_master(event_type, {
                             "id": container_id,
@@ -372,7 +519,13 @@ def listen_for_docker_events(client, label_prefix):
                         })
                     except docker.errors.NotFound:
                         logging.warning(f"Container {container_id[:12]} not found after event '{action}' ({label_prefix}). Reporting to master.")
-                        report_event_to_master({"action": action, "container_id": container_id})
+                        event_type = normalize_docker_event_type(action)
+                        actor = event.get("Actor", {}).get("Attributes", {}) or {}
+                        report_event_to_master(event_type, {
+                            "id": container_id,
+                            "name": actor.get("name", "unknown"),
+                            "labels": filter_reportable_labels(actor),
+                        })
             except Exception as e:
                 logging.error(f"An error occurred in the event loop for {label_prefix}: {e}")
     except Exception as e:
@@ -382,8 +535,8 @@ def listen_for_docker_events(client, label_prefix):
 def start_event_listeners(client):
     threads = []
     label_prefixes = ["dockflare.", "cloudflare.tunnel."]
-    for prefix in label_prefixes:
-        thread = Thread(target=listen_for_docker_events, args=(client, prefix), daemon=True)
+    for index, prefix in enumerate(label_prefixes):
+        thread = Thread(target=listen_for_docker_events, args=(client, prefix, index == 0), daemon=True)
         threads.append(thread)
     return threads
 
@@ -391,7 +544,7 @@ def manage_tunnels(client):
     """
     Periodically polls for commands from the master and manages a cloudflared container.
     """
-    global tunnel_container, current_tunnel_token, current_tunnel_id, current_tunnel_version, current_tunnel_name, desired_tunnel_state
+    global tunnel_container, current_tunnel_token, current_tunnel_id, current_tunnel_version, current_tunnel_name, desired_tunnel_state, last_successful_master_contact
     logging.info("Tunnel management thread started.")
 
     while True:
@@ -403,6 +556,7 @@ def manage_tunnels(client):
             endpoint = f"{MASTER_URL}/api/v2/agents/{AGENT_ID}/commands"
             response = requests.get(endpoint, headers=headers, timeout=15)
             response.raise_for_status()
+            last_successful_master_contact = datetime.now(timezone.utc)
             commands = response.json().get("commands", [])
 
             for cmd in commands:
@@ -514,21 +668,12 @@ def periodic_status_reporter(client):
             logging.info("Sending heartbeat to master.")
             report_event_to_master("heartbeat")
 
-            containers = []
-            for container in client.containers.list():
-                labels = getattr(container, 'labels', {}) or {}
-                if is_dockflare_enabled(labels):
-                    containers.append({
-                        "id": container.id,
-                        "name": container.name,
-                        "labels": labels,
-                        "status": getattr(container, 'status', None)
-                    })
-
+            containers = collect_complete_inventory(client)
             logging.info(f"Sending status_report to master (containers={len(containers)})")
-            report_event_to_master("status_report", {"containers": containers})
+            send_status_report(containers, True)
         except Exception as e:
             logging.error(f"Periodic reporter error: {e}")
+            send_status_report(inventory_complete=False)
         time.sleep(REPORT_INTERVAL_SECONDS)
 
 def cleanup():
@@ -629,6 +774,8 @@ if __name__ == "__main__":
                 t.start()
             monitor_thread = Thread(target=tunnel_health_monitor, args=(docker_client,), daemon=True)
             monitor_thread.start()
+            health_thread = Thread(target=run_health_check_server, daemon=True)
+            health_thread.start()
             while True:
                 time.sleep(1)
 

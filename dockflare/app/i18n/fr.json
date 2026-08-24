@@ -59,6 +59,8 @@
     "status.save_changes": "Enregistrer les modifications",
     "status.rule_ui_override": "Règle remplacée via l'interface",
     "status.ui_override": "Remplacement UI",
+    "status.tunnel_sync_pending": "Synchronisation du tunnel en attente",
+    "status.tunnel_sync_pending_help": "La route souhaitée est enregistrée localement et attend la synchronisation du tunnel.",
     "status.docker_rule_overridden": "Cette règle Docker a été remplacée via l'interface et ne reflète plus les labels du conteneur.",
     "status.ui_policy_override": "Cette politique est gérée via l'interface et remplace les labels du conteneur.",
     "status.revert_to_docker_labels": "Revenir aux labels Docker",

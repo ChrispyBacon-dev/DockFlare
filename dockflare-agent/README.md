@@ -167,6 +167,12 @@ dockflare-agent/
    - `tunnel_health_monitor` verifies the managed `cloudflared` container remains healthy.
 4. **Shutdown** – `cleanup()` stops and removes the managed tunnel container before the agent exits.
 
+### Master authority and protocol compatibility
+
+The DockFlare Master is authoritative for rule ownership, lifecycle decisions, tunnel assignment, ingress, DNS, and Access configuration. Agents report filtered Docker observations and execute runtime commands; they do not calculate desired Cloudflare configuration.
+
+Current Agents advertise protocol versions 2 and 1 during registration. A compatible master selects the protocol and issues a new process-session identifier. Protocol v2 sends independently ordered lifecycle and inventory streams, and a complete inventory is accepted only after the Agent finishes a full Docker scan. If scanning fails, the Agent sends an explicitly incomplete report so the master cannot infer that containers disappeared. Deploy the compatible master before upgrading Agents; legacy Agents remain positive-observation-only during a mixed-version rollout.
+
 ### Cloudflare Helper Module
 
 `app/cloudflare_api.py` provides the thin wrapper that the agent uses to proxy Cloudflare API calls through the master:
@@ -199,6 +205,7 @@ The agent is configured using environment variables, typically through the `.env
 | `AGENT_DISPLAY_NAME` | ❌ | Human-readable name for the agent (`Production Server`, `NAS Server`). Falls back to `agent-{8chars}` if not set. |
 | `CLOUDFLARED_NETWORK_NAME` | ❌ | Docker network used for the managed tunnel (`cloudflare-net` by default). |
 | `LOG_LEVEL` | ❌ | Python logging level (`INFO` by default). |
+| `HEALTH_CHECK_PORT` | ❌ | Internal health endpoint port (`8080` by default). |
 | `REPORT_INTERVAL_SECONDS` | ❌ | Cadence for status reports (defaults to `30`). |
 | `TZ` | ❌ | Host timezone exposed to the container (`UTC` by default). |
 

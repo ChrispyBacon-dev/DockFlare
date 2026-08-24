@@ -59,6 +59,8 @@
   "status.save_changes": "Uložiť zmeny",
   "status.rule_ui_override": "Pravidlo prepísané v UI",
   "status.ui_override": "Prepísané v UI",
+  "status.tunnel_sync_pending": "Čaká sa na synchronizáciu tunela",
+  "status.tunnel_sync_pending_help": "Požadovaná trasa je uložená lokálne a čaká na synchronizáciu tunela.",
   "status.docker_rule_overridden": "Toto pravidlo Docker bolo prepísané v UI a už nezodpovedá labelom kontajnera.",
   "status.ui_policy_override": "Túto politiku spravuje UI a má prednosť pred labelmi kontajnera.",
   "status.revert_to_docker_labels": "Obnoviť podľa Docker labelov",
