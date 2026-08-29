@@ -21,16 +21,27 @@ class FakeContainer:
 
 
 class FakeContainers:
-    def __init__(self, values):
+    def __init__(self, values, missing_ids=None):
         self.values = values
+        self.by_id = {container.id: container for container in values}
+        self.missing_ids = set(missing_ids or [])
 
     def list(self):
         return list(self.values)
 
+    def get(self, container_id):
+        if container_id in self.missing_ids or container_id not in self.by_id:
+            raise agent.docker.errors.NotFound("container not found")
+        return self.by_id[container_id]
+
 
 class FakeDocker:
-    def __init__(self, values):
-        self.containers = FakeContainers(values)
+    def __init__(self, values, events=None, missing_ids=None):
+        self.containers = FakeContainers(values, missing_ids)
+        self.event_values = list(events or [])
+
+    def events(self, **_kwargs):
+        return iter(self.event_values)
 
 
 class AgentProducerProtocolTests(unittest.TestCase):
@@ -98,6 +109,75 @@ class AgentProducerProtocolTests(unittest.TestCase):
         self.assertEqual(agent.normalize_docker_event_type("stop"), "container_stop")
         self.assertEqual(agent.normalize_docker_event_type("die"), "container_stop")
         self.assertIsNone(agent.normalize_docker_event_type("destroy"))
+
+    def test_event_container_id_prefers_canonical_actor_shape(self):
+        event = {
+            "Actor": {"ID": "actor-id"},
+            "id": "legacy-id",
+        }
+        self.assertEqual(agent.get_docker_event_container_id(event), "actor-id")
+        self.assertEqual(agent.get_docker_event_container_id({"id": "legacy-id"}), "legacy-id")
+        self.assertIsNone(agent.get_docker_event_container_id({"Actor": {"Attributes": {}}}))
+
+    def test_start_event_uses_actor_id(self):
+        container = FakeContainer("container-id", "service", {
+            "dockflare.enable": "true",
+            "dockflare.hostname": "service.example.com",
+        })
+        client = FakeDocker([container], events=[{
+            "Type": "container",
+            "Action": "start",
+            "Actor": {"ID": "container-id", "Attributes": {"name": "service"}},
+        }])
+
+        with patch.object(agent, "report_event_to_master") as report:
+            agent.listen_for_docker_events(client, "dockflare.", initial_scan=False)
+
+        report.assert_called_once_with("container_start", {
+            "id": "container-id",
+            "name": "service",
+            "labels": container.labels,
+        })
+
+    def test_stop_and_die_not_found_events_use_actor_fallback(self):
+        for action in ("stop", "die"):
+            with self.subTest(action=action):
+                client = FakeDocker([], missing_ids={"removed-id"}, events=[{
+                    "Type": "container",
+                    "Action": action,
+                    "Actor": {
+                        "ID": "removed-id",
+                        "Attributes": {
+                            "name": "removed-service",
+                            "dockflare.enable": "true",
+                            "private.label": "do-not-send",
+                        },
+                    },
+                }])
+
+                with patch.object(agent, "report_event_to_master") as report:
+                    agent.listen_for_docker_events(client, "dockflare.", initial_scan=False)
+
+                report.assert_called_once_with("container_stop", {
+                    "id": "removed-id",
+                    "name": "removed-service",
+                    "labels": {"dockflare.enable": "true"},
+                })
+
+    def test_missing_event_id_is_ignored_without_payload_logging(self):
+        client = FakeDocker([], events=[{
+            "Type": "container",
+            "Action": "start",
+            "Actor": {"Attributes": {"name": "service", "secret": "do-not-log"}},
+        }])
+
+        with patch.object(agent, "report_event_to_master") as report, \
+             patch.object(agent.logging, "warning") as warning:
+            agent.listen_for_docker_events(client, "dockflare.", initial_scan=False)
+
+        report.assert_not_called()
+        warning.assert_called_once()
+        self.assertNotIn("secret", " ".join(str(value) for value in warning.call_args.args))
 
 
 if __name__ == "__main__":

@@ -482,6 +482,19 @@ def send_status_report(containers=None, inventory_complete=True):
             payload["containers"] = containers or []
         return _post_agent_payload(payload)
 
+
+def get_docker_event_container_id(event):
+    if not isinstance(event, dict):
+        return None
+
+    actor = event.get("Actor")
+    actor_id = actor.get("ID") if isinstance(actor, dict) else None
+    for value in (actor_id, event.get("id"), event.get("ID")):
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
 def listen_for_docker_events(client, label_prefix, initial_scan=True):
     thread_health_status[f"events_listener_{label_prefix.strip('.')}"] = "running"
     if initial_scan:
@@ -506,8 +519,15 @@ def listen_for_docker_events(client, label_prefix, initial_scan=True):
         for event in client.events(decode=True, filters=event_filters):
             try:
                 if event.get("Type") == "container" and event.get("Action") in ["start", "stop", "die"]:
-                    action = event['Action']
-                    container_id = event['id']
+                    action = event["Action"]
+                    container_id = get_docker_event_container_id(event)
+                    if not container_id:
+                        logging.warning(
+                            "Ignoring Docker '%s' event without a container identifier (%s)",
+                            action,
+                            label_prefix,
+                        )
+                        continue
                     try:
                         container = client.containers.get(container_id)
                         event_type = normalize_docker_event_type(action)
