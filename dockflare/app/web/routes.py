@@ -36,7 +36,15 @@ from app.core.user import User
 
 from app import config, docker_client, tunnel_state, cloudflared_agent_state, log_queue, state_update_queue, publish_state_event, limiter
 from app.core.cache import CACHE_ENABLED
-from app.core.state_manager import managed_rules, access_groups, state_lock, save_state, load_state, get_agent
+from app.core.state_manager import (
+    access_groups,
+    agent_inventory_contains_rule,
+    get_agent,
+    load_state,
+    managed_rules,
+    save_state,
+    state_lock,
+)
 from app.core.tunnel_manager import (
     start_cloudflared_container,
     stop_cloudflared_container,
@@ -873,7 +881,7 @@ def revert_access_policy_to_labels(hostname):
     elif source == "agent":
         agent = get_agent(agent_id)
         containers = agent.get("last_complete_containers") if agent else None
-        if isinstance(containers, list):
+        if agent_inventory_contains_rule(containers, current_rule):
             from app.core.reconciler import reconcile_agent_report
             reconcile_agent_report(agent_id, containers)
             action_status_message += " Agent reconciliation triggered."
@@ -1575,10 +1583,6 @@ def ui_revert_docker_rule_route():
     """
     Reverts a UI-overridden Docker rule back to label-driven configuration.
     """
-    if not docker_client:
-        cloudflared_agent_state["last_action_status"] = "Error: Docker client unavailable."
-        return redirect(url_for('web.status_page'))
-
     rule_key = request.form.get('rule_key')
     if not rule_key:
         cloudflared_agent_state["last_action_status"] = "Error: Missing rule key for revert."
@@ -1599,6 +1603,10 @@ def ui_revert_docker_rule_route():
             cloudflared_agent_state["last_action_status"] = f"Info: Rule '{rule_key}' is not UI-overridden."
             return redirect(url_for('web.status_page'))
 
+        if source == "docker" and not docker_client:
+            cloudflared_agent_state["last_action_status"] = "Error: Docker client unavailable."
+            return redirect(url_for('web.status_page'))
+
         existing["rule_ui_override"] = False
         existing["lifecycle_generation"] = int(existing.get("lifecycle_generation") or 0) + 1
         save_state()
@@ -1613,7 +1621,7 @@ def ui_revert_docker_rule_route():
             from app.core.reconciler import reconcile_agent_report
             agent = get_agent(existing.get("agent_id"))
             containers = agent.get("last_complete_containers") if agent else None
-            if isinstance(containers, list):
+            if agent_inventory_contains_rule(containers, existing):
                 reconcile_agent_report(existing.get("agent_id"), containers)
             else:
                 cloudflared_agent_state["last_action_status"] += " Waiting for the next Agent report."

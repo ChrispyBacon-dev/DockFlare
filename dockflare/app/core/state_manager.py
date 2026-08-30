@@ -24,7 +24,7 @@ from typing import Dict, Any, List
 from app import config
 from app.core import agent_key_store
 from app.core.access_policy_rules import normalize_managed_access_group
-from app.core.utils import get_rule_key
+from app.core.utils import get_label, get_rule_key, get_source_rule_key
 
 STATE_SCHEMA_VERSION = 2
 RULE_LIFECYCLE_DEFAULTS = {
@@ -105,6 +105,40 @@ def find_container_rule(observed_rule_key, source, agent_id=None):
     if len(matches) > 1:
         raise ValueError(f"Ambiguous container rule identity: {observed_rule_key}")
     return matches[0] if matches else (None, None)
+
+
+def agent_inventory_contains_rule(containers, rule):
+    """Return whether a stored Agent inventory contains the rule's current binding."""
+    if not isinstance(containers, list):
+        return False
+    container_id = rule.get("container_id")
+    source_rule_key = rule.get("source_rule_key")
+    if not container_id or not source_rule_key:
+        return False
+    for container in containers:
+        if not isinstance(container, dict) or container.get("id") != container_id:
+            continue
+        labels = container.get("labels") or {}
+        hostname = get_label(labels, "hostname")
+        if hostname:
+            try:
+                if get_source_rule_key(hostname, get_label(labels, "path")) == source_rule_key:
+                    return True
+            except ValueError:
+                pass
+        index = 0
+        while True:
+            hostname = get_label(labels, f"{index}.hostname")
+            if not hostname:
+                break
+            path = get_label(labels, f"{index}.path", get_label(labels, "path"))
+            try:
+                if get_source_rule_key(hostname, path) == source_rule_key:
+                    return True
+            except ValueError:
+                pass
+            index += 1
+    return False
 
 
 def mark_rule_tunnel_sync_pending(rule):

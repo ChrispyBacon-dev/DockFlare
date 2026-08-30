@@ -11,6 +11,7 @@ from app.core import docker_handler
 from app.core import reconciler
 from app.core import cloudflare_api
 from app.core.state_manager import (
+    agent_inventory_contains_rule,
     find_container_rule,
     managed_rules,
     restore_rule_lifecycle,
@@ -18,6 +19,8 @@ from app.core.state_manager import (
 )
 from app.core import state_manager
 from app.core.utils import get_source_rule_key
+from app import app as flask_app
+from app.web import routes as web_routes
 
 
 class RuleLifecycleTests(unittest.TestCase):
@@ -99,6 +102,75 @@ class RuleLifecycleTests(unittest.TestCase):
                 }
             with self.assertRaisesRegex(ValueError, "Ambiguous container rule identity"):
                 find_container_rule("source.example.com|", "docker")
+
+    def test_agent_inventory_must_contain_current_rule_binding(self):
+        rule = {
+            "container_id": "replacement",
+            "source_rule_key": "app.example.com|/api",
+        }
+        current = [{
+            "id": "replacement",
+            "labels": {
+                "dockflare.0.hostname": "app.example.com",
+                "dockflare.0.path": "/api",
+            },
+        }]
+        stale = [{
+            "id": "previous",
+            "labels": {
+                "dockflare.0.hostname": "app.example.com",
+                "dockflare.0.path": "/api",
+            },
+        }]
+
+        self.assertTrue(agent_inventory_contains_rule(current, rule))
+        self.assertFalse(agent_inventory_contains_rule(stale, rule))
+        self.assertFalse(agent_inventory_contains_rule(None, rule))
+        self.assertFalse(agent_inventory_contains_rule([{
+            "id": "replacement",
+            "labels": {"dockflare.hostname": "invalid hostname"},
+        }], rule))
+
+    def test_agent_revert_does_not_require_local_docker_socket(self):
+        with state_lock:
+            managed_rules["app.example.com|"] = {
+                "source": "agent",
+                "agent_id": "agent-a",
+                "rule_ui_override": True,
+                "lifecycle_generation": 2,
+            }
+
+        with flask_app.test_request_context(
+            "/ui/docker-rules/revert",
+            method="POST",
+            data={"rule_key": "app.example.com|"},
+        ), patch.object(web_routes, "docker_client", None), patch.object(
+            web_routes, "save_state", return_value=True
+        ), patch.object(web_routes, "get_agent", return_value=None):
+            response = web_routes.ui_revert_docker_rule_route()
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(managed_rules["app.example.com|"]["rule_ui_override"])
+        self.assertIn("Waiting for the next Agent report", web_routes.cloudflared_agent_state["last_action_status"])
+
+    def test_docker_revert_still_requires_local_docker_socket(self):
+        with state_lock:
+            managed_rules["app.example.com|"] = {
+                "source": "docker",
+                "rule_ui_override": True,
+                "lifecycle_generation": 2,
+            }
+
+        with flask_app.test_request_context(
+            "/ui/docker-rules/revert",
+            method="POST",
+            data={"rule_key": "app.example.com|"},
+        ), patch.object(web_routes, "docker_client", None):
+            response = web_routes.ui_revert_docker_rule_route()
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(managed_rules["app.example.com|"]["rule_ui_override"])
+        self.assertEqual(web_routes.cloudflared_agent_state["last_action_status"], "Error: Docker client unavailable.")
 
     def test_tunnel_lock_registry_is_stable_per_tunnel(self):
         first = tunnel_manager.get_tunnel_operation_lock(" tunnel-a ")

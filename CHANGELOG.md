@@ -5,7 +5,12 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
-- **UI-overridden container lifecycle:** Recreated Docker and Agent-managed containers now reactivate their existing rules, refresh runtime ownership, and retain UI-controlled routing, origin, tunnel, and Access settings. Pending rules remain in tunnel ingress throughout the deletion grace period, while serialized per-tunnel cleanup and durable synchronization retries protect DNS and ingress during failures and races. Agent reporting now uses master-issued sessions, ordered observations, explicit inventory completeness, bounded payloads, and filtered DockFlare labels. Fixes [#388](https://github.com/ChrispyBacon-dev/DockFlare/issues/388).
+- **UI-overridden container lifecycle:** Recreated Docker and Agent-managed containers now reactivate their existing rules, refresh only their runtime container association, and retain UI-controlled routing, origin, tunnel, and Access settings. Fixes [#388](https://github.com/ChrispyBacon-dev/DockFlare/issues/388).
+  - Added stable source-rule identity so UI-renamed container-backed rules remain associated with their originating Docker or Agent label binding without creating duplicates.
+  - Kept pending rules in tunnel ingress for the full deletion grace period, with generation-aware cleanup, per-tunnel serialization, DNS ownership checks, and durable synchronization retries protecting routes during failures and event races.
+  - Made full-rule and Access-policy ownership independently reversible for both Docker and Agent sources. Agent reverts no longer depend on a local Docker socket and apply stored inventory only when it matches the rule's current container and source binding; otherwise DockFlare safely waits for the next authenticated Agent observation.
+  - Added content fingerprinting to the main browser script so updated rule-editor logic is loaded after an upgrade instead of a stale cached asset. The editor continues to submit the immutable source rule key rather than inferring ownership from editable hostname or path fields.
+  - Strengthened Agent reporting with master-issued sessions, ordered event and report streams, explicit inventory completeness, bounded payloads, filtered DockFlare label namespaces, normalized Docker lifecycle events, and safe reconnect behavior.
 
 ## [v3.1.4] - 2026-08-17
 

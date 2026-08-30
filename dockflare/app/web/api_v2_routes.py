@@ -31,7 +31,8 @@ from app.core.state_manager import (
     add_agent, get_agent, update_agent, list_agents, remove_agent, add_agent_key, revoke_agent_key, find_agent_id_by_key, list_agent_keys, get_agent_key_info,
     get_services_snapshot, cleanup_expired_revoked_keys, get_revoked_keys_summary,
     save_identity_provider, get_identity_provider, delete_identity_provider, list_identity_providers, get_idp_by_cloudflare_id, get_idp_id_by_name,
-    find_container_rule, mark_rule_tunnel_sync_pending, restore_rule_lifecycle
+    agent_inventory_contains_rule, find_container_rule,
+    mark_rule_tunnel_sync_pending, restore_rule_lifecycle
 )
 from app.core import agent_key_store
 from app.core.tunnel_manager import (
@@ -2790,7 +2791,7 @@ def revert_rule_access_policy_to_labels(rule_key):
         agent_id = current_rule.get("agent_id")
         agent = get_agent(agent_id)
         containers = agent.get("last_complete_containers") if agent else None
-        if isinstance(containers, list):
+        if agent_inventory_contains_rule(containers, current_rule):
             from app.core.reconciler import reconcile_agent_report
             reconcile_agent_report(agent_id, containers)
     return jsonify({"status": "success", "message": f"Access policy for '{rule_key}' reverted."}),
