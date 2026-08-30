@@ -26,7 +26,7 @@ from app.core import agent_key_store
 from app.core.access_policy_rules import normalize_managed_access_group
 from app.core.utils import get_label, get_rule_key, get_source_rule_key
 
-STATE_SCHEMA_VERSION = 2
+STATE_SCHEMA_VERSION = 3
 RULE_LIFECYCLE_DEFAULTS = {
     "source_rule_key": None,
     "tunnel_sync_pending": False,
@@ -45,6 +45,7 @@ AGENT_PROTOCOL_DEFAULTS = {
 managed_rules = {}
 access_groups = {}
 agents = {}
+agent_decommissions = {}
 identity_providers = {}
 agent_cf_token = {}
 state_extensions = {}
@@ -192,6 +193,7 @@ def load_state():
         managed_rules.clear()
         access_groups.clear()
         agents.clear()
+        agent_decommissions.clear()
         identity_providers.clear()
         agent_cf_token.clear()
         state_extensions.clear()
@@ -232,14 +234,16 @@ def load_state():
                 rules_to_load = loaded_data.get("managed_rules", {})
                 groups_to_load = loaded_data.get("access_groups", {})
                 agents_to_load = loaded_data.get("agents", {})
+                decommissions_to_load = loaded_data.get("agent_decommissions", {})
                 idps_to_load = loaded_data.get("identity_providers", {})
                 cf_token_to_load = loaded_data.get("agent_cf_token", {})
-                known_top_level = {"state_schema_version", "managed_rules", "access_groups", "agents", "identity_providers", "agent_cf_token"}
+                known_top_level = {"state_schema_version", "managed_rules", "access_groups", "agents", "agent_decommissions", "identity_providers", "agent_cf_token"}
                 state_extensions.update({key: value for key, value in loaded_data.items() if key not in known_top_level})
             else:
                 logging.info("Loading state from old format (rules only). Will migrate on next save.")
                 rules_to_load = loaded_data
                 agents_to_load = {}
+                decommissions_to_load = {}
                 idps_to_load = {}
                 cf_token_to_load = {}
 
@@ -254,6 +258,12 @@ def load_state():
                 for field, default in AGENT_PROTOCOL_DEFAULTS.items():
                     agent_copy.setdefault(field, default)
                 agents[agent_id] = agent_copy
+            if isinstance(decommissions_to_load, dict):
+                agent_decommissions.update(
+                    (operation_id, dict(operation))
+                    for operation_id, operation in decommissions_to_load.items()
+                    if isinstance(operation_id, str) and isinstance(operation, dict)
+                )
             identity_providers.update(idps_to_load)
             agent_cf_token.update(cf_token_to_load)
             key_count = len(agent_key_store.list_keys())
@@ -647,6 +657,7 @@ def save_state():
         rules_to_iterate = list(managed_rules.items())
         groups_to_iterate = dict(access_groups)
         agents_to_iterate = dict(agents)
+        decommissions_to_iterate = dict(agent_decommissions)
         idps_to_iterate = dict(identity_providers)
         cf_token_to_iterate = dict(agent_cf_token)
 
@@ -700,6 +711,7 @@ def save_state():
             "managed_rules": serializable_rules,
             "access_groups": groups_to_iterate,
             "agents": agents_to_iterate,
+            "agent_decommissions": decommissions_to_iterate,
             "identity_providers": idps_to_iterate,
             "agent_cf_token": cf_token_to_iterate
         }

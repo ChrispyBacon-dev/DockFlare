@@ -35,6 +35,7 @@ from app.core.tunnel_manager import (
 )
 from app.core.docker_handler import start_event_listeners, process_container_start
 from app.core.reconciler import cleanup_expired_rules, reconcile_state_threaded
+from app.core.agent_decommission import timeout_worker as agent_decommission_timeout_worker
 
 stop_event = threading.Event()
 background_threads_list = []
@@ -317,6 +318,14 @@ def main_application_entrypoint():
 
     load_state()
     logging.info("Initial state loading from file complete.")
+    decommission_timeout_thread = threading.Thread(
+        target=agent_decommission_timeout_worker,
+        args=(stop_event,),
+        name="AgentDecommissionTimeout",
+        daemon=True,
+    )
+    decommission_timeout_thread.start()
+    background_threads_list.append(decommission_timeout_thread)
     
     ensure_default_bypass_policy(flask_app=app)
     logging.info("Default bypass policy initialization complete.")

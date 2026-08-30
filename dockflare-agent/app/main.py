@@ -13,6 +13,7 @@ from threading import Thread, Lock
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import cloudflare_api
+import decommission as decommission_runtime
 
 DEFAULT_CLOUDFLARED_IMAGE = "cloudflare/cloudflared:2025.9.0"
 _SHA256_HEX_RE = re.compile(r"^[A-Fa-f0-9]{64}$")
@@ -106,6 +107,7 @@ current_tunnel_id = None
 current_tunnel_version = None
 current_tunnel_name = None
 desired_tunnel_state = "unknown"
+decommission_tombstone = None
 
 # --- Health / Monitoring Globals ---
 thread_health_status = {}
@@ -271,7 +273,7 @@ def _write_secure_file(path, writer):
 
 def ensure_cloudflared_running(client):
     global tunnel_container, current_tunnel_version
-    if desired_tunnel_state != "running" or not current_tunnel_token or not current_tunnel_name:
+    if decommission_tombstone or desired_tunnel_state != "running" or not current_tunnel_token or not current_tunnel_name:
         return
     try:
         existing = client.containers.get('dockflare-agent-tunnel')
@@ -377,6 +379,7 @@ def register_with_master():
                 "version": AGENT_VERSION,
                 "agent_version": AGENT_VERSION,
                 "supported_protocol_versions": [2, 1],
+                "capabilities": ["decommission.v1", "tunnel_stop.v1", "self_stop.v1"],
             }
             if AGENT_ID:
                 payload["agent_id"] = AGENT_ID
@@ -448,7 +451,7 @@ def report_event_to_master(event_type, container_data=None):
     """
     Sends a JSON payload to the master's reporting endpoint.
     """
-    if not AGENT_ID:
+    if not AGENT_ID or decommission_tombstone:
         logging.debug("report_event_to_master called but AGENT_ID is missing; skipping.")
         return
     try:
@@ -474,7 +477,7 @@ def report_event_to_master(event_type, container_data=None):
 
 
 def send_status_report(containers=None, inventory_complete=True):
-    if not AGENT_ID:
+    if not AGENT_ID or decommission_tombstone:
         return False
     with _report_send_lock:
         if PROTOCOL_VERSION != 2:
@@ -570,6 +573,92 @@ def start_event_listeners(client):
         threads.append(thread)
     return threads
 
+
+def post_decommission_ack(operation_id, payload):
+    global last_successful_master_contact
+    endpoint = f"{MASTER_URL}/api/v2/agents/{AGENT_ID}/decommission/{operation_id}/ack"
+    body = dict(payload)
+    body["operation_id"] = operation_id
+    if PROTOCOL_VERSION == 2:
+        body["agent_session_id"] = AGENT_SESSION_ID
+    try:
+        response = requests.post(endpoint, json=body, headers=get_headers(), timeout=60)
+        if response.status_code == 200 and _safe_response_code(response) == "acknowledged":
+            last_successful_master_contact = datetime.now(timezone.utc)
+            return True
+        logging.error(
+            "Master rejected decommission acknowledgement (status=%s, code=%s)",
+            response.status_code,
+            _safe_response_code(response),
+        )
+    except requests.exceptions.RequestException as exc:
+        logging.error("Decommission acknowledgement failed: %s", type(exc).__name__)
+    return False
+
+
+def prepare_decommission(client, command):
+    global desired_tunnel_state, decommission_tombstone
+    operation_id = command.get("operation_id")
+    command_id = command.get("command_id")
+    if not operation_id or not command_id or command.get("requested_self_action") != "stop":
+        return False
+    try:
+        decommission_tombstone = decommission_runtime.persist_tombstone(operation_id, AGENT_ID, "prepared")
+        desired_tunnel_state = "stopped"
+        save_tunnel_state()
+    except Exception:
+        logging.error("Could not persist decommission preparation state.")
+        return post_decommission_ack(operation_id, {
+            "command_id": command_id,
+            "phase": "prepared",
+            "tombstone_persisted": False,
+            "tunnel_container": "failed",
+            "error_code": "tombstone_persistence_failed",
+        })
+
+    tunnel_result, tunnel_image = decommission_runtime.stop_tunnel_container(client)
+    self_image = decommission_runtime.self_image_reference(client)
+    payload = {
+        "command_id": command_id,
+        "phase": "prepared",
+        "tombstone_persisted": True,
+        "tunnel_container": tunnel_result,
+        "self_stop_capability": "supported" if self_image else "manual",
+        "agent_image": self_image,
+        "cloudflared_image": tunnel_image or CLOUDFLARED_IMAGE,
+    }
+    if tunnel_result == "failed":
+        payload["error_code"] = "tunnel_stop_failed"
+    return post_decommission_ack(operation_id, payload)
+
+
+def finalize_decommission(client, command):
+    global current_tunnel_token, current_tunnel_id, current_tunnel_name
+    global desired_tunnel_state, decommission_tombstone
+    operation_id = command.get("operation_id")
+    command_id = command.get("command_id")
+    if not operation_id or not command_id:
+        return False
+    try:
+        decommission_tombstone = decommission_runtime.persist_tombstone(operation_id, AGENT_ID, "finalized")
+        current_tunnel_token = None
+        current_tunnel_id = None
+        current_tunnel_name = None
+        desired_tunnel_state = "stopped"
+        save_tunnel_state()
+    except Exception:
+        logging.error("Could not persist final decommission state.")
+        return False
+    self_stop_supported = decommission_runtime.resolve_self_container(client) is not None
+    acknowledged = post_decommission_ack(operation_id, {
+        "command_id": command_id,
+        "phase": "shutdown_scheduled",
+        "self_stop_capability": "supported" if self_stop_supported else "manual",
+    })
+    if acknowledged and self_stop_supported:
+        return decommission_runtime.schedule_self_stop(client)
+    return acknowledged
+
 def manage_tunnels(client):
     """
     Periodically polls for commands from the master and manages a cloudflared container.
@@ -578,6 +667,9 @@ def manage_tunnels(client):
     logging.info("Tunnel management thread started.")
 
     while True:
+        if decommission_tombstone and decommission_tombstone.get("phase") == "finalized":
+            logging.info("Agent decommission is finalized; command polling is stopped.")
+            return
         if not AGENT_ID:
             time.sleep(10)
             continue
@@ -591,7 +683,16 @@ def manage_tunnels(client):
 
             for cmd in commands:
                 action = cmd.get("action")
-                if action == "start_tunnel":
+                if action == "prepare_decommission":
+                    prepare_decommission(client, cmd)
+
+                elif action == "finalize_decommission":
+                    finalize_decommission(client, cmd)
+
+                elif decommission_tombstone:
+                    logging.warning("Ignoring tunnel command while Agent decommission is active.")
+
+                elif action == "start_tunnel":
                     tunnel_token = cmd.get("token")
                     tunnel_name = cmd.get("tunnel_name")
                     tunnel_id = cmd.get("tunnel_id")
@@ -690,6 +791,9 @@ def periodic_status_reporter(client):
     """
     logging.info("Status reporter thread started.")
     while True:
+        if decommission_tombstone:
+            time.sleep(REPORT_INTERVAL_SECONDS)
+            continue
         if not AGENT_ID:
             time.sleep(5)
             continue
@@ -731,8 +835,9 @@ class HealthCheckHandler(http.server.SimpleHTTPRequestHandler):
             if last_successful_master_contact:
                 seconds_since_contact = int((datetime.now(timezone.utc) - last_successful_master_contact).total_seconds())
 
-            status = "unhealthy"
-            if AGENT_ID:
+            lifecycle = decommission_tombstone.get("phase") if decommission_tombstone else "active"
+            status = "decommissioned" if lifecycle == "finalized" else "prepared" if lifecycle == "prepared" else "unhealthy"
+            if AGENT_ID and not decommission_tombstone:
                 if seconds_since_contact is not None and seconds_since_contact < 120:
                     status = "healthy"
                 elif seconds_since_contact is not None and seconds_since_contact < 300:
@@ -750,6 +855,7 @@ class HealthCheckHandler(http.server.SimpleHTTPRequestHandler):
                 "status": status,
                 "agent_id": AGENT_ID,
                 "registered": AGENT_ID is not None,
+                "lifecycle": lifecycle,
                 "tunnel": {
                     "state": desired_tunnel_state,
                     "name": current_tunnel_name,
@@ -765,7 +871,7 @@ class HealthCheckHandler(http.server.SimpleHTTPRequestHandler):
                 "threads": thread_health_status.copy()
             }
 
-            http_status = 200 if status == "healthy" else 503
+            http_status = 200 if status in {"healthy", "prepared", "decommissioned"} else 503
             self.send_response(http_status)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
@@ -786,21 +892,29 @@ def run_health_check_server():
         thread_health_status["health_server"] = "failed"
 
 if __name__ == "__main__":
+    decommission_tombstone = decommission_runtime.load_tombstone()
     load_agent_id()
     load_tunnel_state()
-    if register_with_master():
+    if decommission_tombstone and decommission_tombstone.get("phase") == "finalized":
+        logging.warning("Agent is finalized and will remain dormant until its deployment is removed or reset.")
+        Thread(target=run_health_check_server, daemon=True).start()
+        while True:
+            time.sleep(60)
+    elif register_with_master():
         docker_client = docker.from_env()
         try:
-            ensure_cloudflared_running(docker_client)
+            if not decommission_tombstone:
+                ensure_cloudflared_running(docker_client)
             tunnel_thread = Thread(target=manage_tunnels, args=(docker_client,), daemon=True)
             tunnel_thread.start()
-            status_thread = Thread(target=periodic_status_reporter, args=(docker_client,), daemon=True)
-            status_thread.start()
-            event_threads = start_event_listeners(docker_client)
-            for t in event_threads:
-                t.start()
-            monitor_thread = Thread(target=tunnel_health_monitor, args=(docker_client,), daemon=True)
-            monitor_thread.start()
+            if not decommission_tombstone:
+                status_thread = Thread(target=periodic_status_reporter, args=(docker_client,), daemon=True)
+                status_thread.start()
+                event_threads = start_event_listeners(docker_client)
+                for t in event_threads:
+                    t.start()
+                monitor_thread = Thread(target=tunnel_health_monitor, args=(docker_client,), daemon=True)
+                monitor_thread.start()
             health_thread = Thread(target=run_health_check_server, daemon=True)
             health_thread.start()
             while True:

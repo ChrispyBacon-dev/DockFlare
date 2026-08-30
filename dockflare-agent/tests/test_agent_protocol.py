@@ -51,6 +51,8 @@ class AgentProducerProtocolTests(unittest.TestCase):
         agent.AGENT_SESSION_ID = None
         agent._event_sequence = 0
         agent._report_sequence = 0
+        agent.decommission_tombstone = None
+        agent.desired_tunnel_state = "unknown"
 
     def test_registration_context_requires_v2_session_and_resets_sequences(self):
         self.assertFalse(agent.apply_registration_response({
@@ -185,6 +187,31 @@ class AgentProducerProtocolTests(unittest.TestCase):
         report.assert_not_called()
         warning.assert_called_once()
         self.assertNotIn("secret", " ".join(str(value) for value in warning.call_args.args))
+
+    def test_prepare_persists_tombstone_and_desired_stop_before_docker_stop(self):
+        agent.AGENT_ID = "agent-a"
+        order = []
+        command = {"operation_id": "operation-a", "command_id": "command-a", "requested_self_action": "stop"}
+        with patch.object(agent.decommission_runtime, "persist_tombstone", side_effect=lambda *_args: order.append("tombstone") or {"phase": "prepared"}), \
+             patch.object(agent, "save_tunnel_state", side_effect=lambda: order.append("desired_stop")), \
+             patch.object(agent.decommission_runtime, "stop_tunnel_container", side_effect=lambda _client: order.append("docker_stop") or ("stopped", "cloudflare/cloudflared:latest")), \
+             patch.object(agent.decommission_runtime, "self_image_reference", return_value="alplat/dockflare-agent:dev"), \
+             patch.object(agent, "post_decommission_ack", side_effect=lambda *_args: order.append("ack") or True):
+            self.assertTrue(agent.prepare_decommission(object(), command))
+        self.assertEqual(order, ["tombstone", "desired_stop", "docker_stop", "ack"])
+        self.assertEqual(agent.desired_tunnel_state, "stopped")
+
+    def test_finalize_schedules_self_stop_only_after_ack_success(self):
+        agent.AGENT_ID = "agent-a"
+        command = {"operation_id": "operation-a", "command_id": "command-a"}
+        order = []
+        with patch.object(agent.decommission_runtime, "persist_tombstone", return_value={"phase": "finalized"}), \
+             patch.object(agent, "save_tunnel_state"), \
+             patch.object(agent.decommission_runtime, "resolve_self_container", return_value=object()), \
+             patch.object(agent, "post_decommission_ack", side_effect=lambda *_args: order.append("ack") or True), \
+             patch.object(agent.decommission_runtime, "schedule_self_stop", side_effect=lambda _client: order.append("stop") or True):
+            self.assertTrue(agent.finalize_decommission(object(), command))
+        self.assertEqual(order, ["ack", "stop"])
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 services:
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy:v0.4.1
-    container_name: docker-socket-proxy
+    container_name: dockflare-socket-proxy
     restart: unless-stopped
     environment:
       - DOCKER_HOST=unix:///var/run/docker.sock
@@ -12,6 +12,7 @@ services:
       - POST=1
       - PING=1
       - EXEC=1
+      - DELETE=0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:

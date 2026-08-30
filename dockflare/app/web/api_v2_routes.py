@@ -36,6 +36,7 @@ from app.core.state_manager import (
     mark_rule_tunnel_sync_pending, restore_rule_lifecycle
 )
 from app.core import agent_key_store
+from app.core import agent_decommission
 from app.core.tunnel_manager import (
     start_cloudflared_container,
     stop_cloudflared_container,
@@ -75,6 +76,7 @@ _AGENT_ENDPOINT_ALLOWLIST = {
     'api_v2.agents_register',
     'api_v2.agents_get_commands',
     'api_v2.agents_post_events',
+    'api_v2.agents_decommission_ack',
 }
 
 _UI_ENDPOINT_ALLOWLIST = {
@@ -141,6 +143,7 @@ _PUBLIC_AGENT_FIELDS = {
     "assigned_tunnel_id", "assigned_tunnel_name", "migration_status",
     "tunnel_status", "connector_version", "connector_origin_ip",
     "connector_platform", "connector_colos",
+    "decommission_operation_id", "decommission_state", "capabilities",
 }
 _PUBLIC_AGENT_KEY_FIELDS = {
     "owner", "created_at", "status", "last_used_at", "bound_agent_id",
@@ -1561,6 +1564,8 @@ def _register_agent_request():
     received_at = datetime.now(timezone.utc).isoformat()
     session_id = secrets.token_urlsafe(32) if protocol_version == 2 else None
     display_name = data.get("display_name") or data.get("hostname") or f"agent-{agent_id[:8]}"
+    capabilities = data.get("capabilities") if isinstance(data.get("capabilities"), list) else []
+    capabilities = [value for value in capabilities if isinstance(value, str) and len(value) <= 64][:32]
     record = dict(existing or {})
     record.update({
         "id": agent_id,
@@ -1575,6 +1580,7 @@ def _register_agent_request():
         "last_complete_containers": record.get("last_complete_containers"),
         "commands": record.get("commands", []),
         "meta": record.get("meta", {}),
+        "capabilities": capabilities,
     })
     with state_lock:
         previous = agents.get(agent_id)
@@ -1684,6 +1690,8 @@ def _handle_agent_event_request(agent_id):
     agent = get_agent(agent_id)
     if not agent or not _ensure_agent_api_key(agent_id, agent, token):
         return _agent_json_response(403, "agent_key_mismatch")
+    if agent.get("decommission_operation_id"):
+        return _agent_json_response(409, "agent_decommissioning")
 
     is_v2 = agent.get("protocol_version") == 2
     stream_field = "report_sequence" if event_type == "status_report" else "event_sequence"
@@ -1844,10 +1852,59 @@ def agents_get_commands(agent_id):
         return jsonify({"status": "error", "message": "API key mismatch for agent."}), 403
     agent = get_agent(agent_id)
 
-    commands = agent.get("commands", [])
+    commands = list(agent.get("commands", []))
+    durable_command = agent_decommission.command_for_agent(agent_id)
+    if durable_command:
+        commands.append(durable_command)
     # clear commands after delivery
-    update_agent(agent_id, {"commands": [] , "last_seen": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()})
+    update_agent(agent_id, {"commands": [], "last_seen": datetime.now(timezone.utc).isoformat()})
     return jsonify({"status": "success", "commands": commands}), 200
+
+
+@api_v2_bp.route('/agents/<agent_id>/decommission/<operation_id>/ack', methods=['POST'])
+def agents_decommission_ack(agent_id, operation_id):
+    token = _extract_bearer_token()
+    if not token:
+        return _agent_json_response(401, "unauthorized")
+    if request.content_length and request.content_length > config.AGENT_MAX_REQUEST_BYTES:
+        return _agent_json_response(413, "payload_too_large")
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return _agent_json_response(400, "invalid_payload")
+    key_info = get_agent_key_info(token) or {}
+    if not key_info:
+        return _agent_json_response(401, "unauthorized")
+    agent = get_agent(agent_id)
+    operation = agent_decommission.get_operation(operation_id)
+    if not agent:
+        duplicate_final = (
+            operation
+            and operation.get("agent_id") == agent_id
+            and operation.get("state") in agent_decommission.TERMINAL_STATES
+            and key_info.get("bound_agent_id") == agent_id
+            and key_info.get("status") == "revoked"
+            and payload.get("command_id") in operation.get("acknowledged_commands", [])
+        )
+        if duplicate_final:
+            return _agent_json_response(200, "acknowledged", operation=agent_decommission.serialize_operation(operation))
+        return _agent_json_response(403, "agent_key_mismatch")
+    if not _ensure_agent_api_key(agent_id, agent, token):
+        return _agent_json_response(403, "agent_key_mismatch")
+    if agent.get("protocol_version") == 2 and payload.get("agent_session_id") != agent.get("agent_session_id"):
+        return _agent_json_response(409, "registration_required")
+    try:
+        operation, should_cleanup = agent_decommission.record_ack(agent_id, operation_id, payload)
+        if should_cleanup:
+            operation = agent_decommission.run_master_cleanup(operation_id)
+        elif operation.get("state") == "shutdown_scheduled":
+            operation = agent_decommission.complete_finalization(operation_id)
+        return _agent_json_response(
+            200,
+            "acknowledged",
+            operation=agent_decommission.serialize_operation(operation),
+        )
+    except agent_decommission.DecommissionError as error:
+        return _agent_json_response(error.http_status, error.code)
 
 @api_v2_bp.route('/agents/<agent_id>/events', methods=['POST'])
 def agents_post_events(agent_id):
@@ -2004,6 +2061,8 @@ def agents_enroll(agent_id):
     agent = get_agent(agent_id)
     if not agent:
         return jsonify({"status": "error", "message": "Agent not found."}), 404
+    if agent.get("decommission_operation_id"):
+        return jsonify({"status": "error", "message": "Agent decommission is in progress."}), 409
 
     old_tunnel_id = agent.get("assigned_tunnel_id")
     try:
@@ -2013,9 +2072,11 @@ def agents_enroll(agent_id):
             created_id, created_token = create_tunnel_via_api(tunnel_name)
             tunnel_id = created_id
             token = created_token
+            tunnel_ownership = "created_exclusive"
         else:
             tunnel_id = found_id
             token = found_token
+            tunnel_ownership = "adopted"
 
         if not tunnel_id:
             return jsonify({"status": "error", "message": "Failed to create/find tunnel."}), 500
@@ -2027,6 +2088,7 @@ def agents_enroll(agent_id):
             "assigned_tunnel_name": tunnel_name,
             "assigned_tunnel_id": tunnel_id,
             "assigned_tunnel_token": token,
+            "assigned_tunnel_ownership": tunnel_ownership,
             "status": "enrolled",
             "commands": existing_cmds,
             "last_enrolled_at": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
@@ -2068,113 +2130,69 @@ def agents_enroll(agent_id):
         logging.error(f"Error enrolling agent {agent_id}: {e}", exc_info=True)
         return jsonify({"status": "error", "message": f"Exception during enrollment: {e}"}), 500
 
-@api_v2_bp.route('/agents/<agent_id>/remove', methods=['POST'])
-def agents_remove(agent_id):
-    """
-    Admin endpoint to remove an agent and clean up associated resources.
-    This will:
-    - Delete the Cloudflare tunnel
-    - Remove DNS records associated with the tunnel
-    - Remove rules created by this agent
-    - Remove the agent from state
-    """
-    agent = get_agent(agent_id)
-    if not agent:
-        return jsonify({"status": "error", "message": "Agent not found."}), 404
 
-    tunnel_id = agent.get("assigned_tunnel_id")
-    tunnel_name = agent.get("assigned_tunnel_name")
+def _start_agent_decommission_response(agent_id):
+    try:
+        operation, _created = agent_decommission.start_decommission(agent_id)
+        public_operation = agent_decommission.serialize_operation(operation)
+        return jsonify({
+            "status": "accepted",
+            "operation_id": operation["operation_id"],
+            "operation": public_operation,
+            "status_url": f"/api/v2/agent-decommissions/{operation['operation_id']}",
+        }), 202
+    except agent_decommission.DecommissionError as error:
+        return jsonify({"status": "error", "code": error.code, "message": error.code}), error.http_status
 
-    cleanup_results = {"tunnel_deleted": False, "dns_records_deleted": 0, "rules_removed": 0}
 
-    if tunnel_id:
-        try:
+@api_v2_bp.route('/agents/<agent_id>/decommission', methods=['POST'])
+def agents_decommission_start(agent_id):
+    return _start_agent_decommission_response(agent_id)
 
-            try:
-                all_tunnels = get_all_account_cloudflare_tunnels()
-                tunnel_exists = any(t.get("id") == tunnel_id for t in all_tunnels)
-            except Exception as check_err:
-                logging.warning(f"Failed to check if tunnel {tunnel_id} exists on Cloudflare: {check_err}. Assuming it exists and trying to delete.")
-                tunnel_exists = True
 
-            if tunnel_exists:
-                try:
-                    success = delete_tunnel_via_api(tunnel_id)
-                    cleanup_results["tunnel_deleted"] = success
-                    if success:
-                        logging.info(f"Successfully deleted tunnel {tunnel_id} for agent {agent_id}")
-                    else:
-                        logging.error(f"Failed to delete tunnel {tunnel_id} for agent {agent_id}")
-                except Exception as delete_err:
-                    logging.error(f"Exception while deleting tunnel {tunnel_id}: {delete_err}")
-                    cleanup_results["tunnel_deleted"] = False
-            else:
-                logging.info(f"Tunnel {tunnel_id} for agent {agent_id} no longer exists on Cloudflare (already deleted)")
-                cleanup_results["tunnel_deleted"] = True  # Consider it successful since it's already gone
-        except Exception as e:
-            logging.error(f"Exception while processing tunnel deletion for {tunnel_id}: {e}")
-            cleanup_results["tunnel_deleted"] = False
-
-    if tunnel_id:
-        try:
-            
-            cf_zone_id = current_app.config.get('CF_ZONE_ID')
-            scan_zone_names = current_app.config.get('TUNNEL_DNS_SCAN_ZONE_NAMES', [])
-            zone_ids_to_scan = set()
-            if cf_zone_id:
-                zone_ids_to_scan.add(cf_zone_id)
-            with state_lock:
-                zone_ids_to_scan.update(
-                    rule.get("zone_id")
-                    for rule in managed_rules.values()
-                    if rule.get("status") == "active" and rule.get("zone_id")
-                )
-            for zone_name in scan_zone_names:
-                try:
-                    zone_id = get_zone_id_from_name(zone_name)
-                    if zone_id:
-                        zone_ids_to_scan.add(zone_id)
-                except Exception as zone_err:
-                    logging.warning(f"Failed to get zone ID for {zone_name}: {zone_err}")
-
-            for zone_id in zone_ids_to_scan:
-                try:
-                    dns_records = get_dns_records_for_tunnel(zone_id, tunnel_id)
-                    for record in dns_records:
-                        hostname = record.get("name")
-                        if hostname:
-                            success = delete_cloudflare_dns_record(zone_id, hostname, tunnel_id)
-                            if success:
-                                cleanup_results["dns_records_deleted"] += 1
-                                logging.info(f"Deleted DNS record {hostname} for tunnel {tunnel_id}")
-                except Exception as dns_err:
-                    logging.error(f"Failed to cleanup DNS records in zone {zone_id} for tunnel {tunnel_id}: {dns_err}")
-        except Exception as e:
-            logging.error(f"Failed to cleanup DNS records for tunnel {tunnel_id}: {e}")
-
-    with state_lock:
-        rules_to_remove = []
-        for rule_key, rule in managed_rules.items():
-            if rule.get("source") == "agent" and rule.get("agent_id") == agent_id:
-                rules_to_remove.append(rule_key)
-
-        for rule_key in rules_to_remove:
-            del managed_rules[rule_key]
-            cleanup_results["rules_removed"] += 1
-            logging.info(f"Removed rule {rule_key} for agent {agent_id}")
-
-        save_state()
-
-    success = remove_agent(agent_id)
-    if success:
-        logging.info(f"Successfully removed agent {agent_id}")
+@api_v2_bp.route('/agents/<agent_id>/decommission-preview', methods=['GET'])
+def agents_decommission_preview(agent_id):
+    try:
         return jsonify({
             "status": "success",
-            "message": f"Agent {agent_id} removed successfully.",
-            "cleanup": cleanup_results
+            "preview": agent_decommission.preview_decommission(agent_id),
         }), 200
-    else:
-        return jsonify({"status": "error", "message": "Failed to remove agent from state."}), 500
+    except agent_decommission.DecommissionError as error:
+        return jsonify({"status": "error", "code": error.code, "message": error.code}), error.http_status
+
+
+@api_v2_bp.route('/agent-decommissions/<operation_id>', methods=['GET'])
+def agents_decommission_status(operation_id):
+    operation = agent_decommission.get_operation(operation_id)
+    if not operation:
+        return jsonify({"status": "error", "code": "operation_not_found", "message": "operation_not_found"}), 404
+    return jsonify({"status": "success", "operation": agent_decommission.serialize_operation(operation)}), 200
+
+
+@api_v2_bp.route('/agent-decommissions/<operation_id>/retry', methods=['POST'])
+def agents_decommission_retry(operation_id):
+    try:
+        operation = agent_decommission.retry_operation(operation_id)
+        return jsonify({"status": "accepted", "operation": agent_decommission.serialize_operation(operation)}), 202
+    except agent_decommission.DecommissionError as error:
+        return jsonify({"status": "error", "code": error.code, "message": error.code}), error.http_status
+
+
+@api_v2_bp.route('/agent-decommissions/<operation_id>/force', methods=['POST'])
+def agents_decommission_force(operation_id):
+    try:
+        operation = agent_decommission.force_cleanup(operation_id)
+        return jsonify({"status": "success", "operation": agent_decommission.serialize_operation(operation)}), 200
+    except agent_decommission.DecommissionError as error:
+        return jsonify({"status": "error", "code": error.code, "message": error.code}), error.http_status
+
+@api_v2_bp.route('/agents/<agent_id>/remove', methods=['POST'])
+def agents_remove(agent_id):
+    return _start_agent_decommission_response(agent_id)
+
+
+def _agent_decommission_blocks_action(agent_record):
+    return bool(agent_record and agent_record.get("decommission_operation_id"))
 
 @api_v2_bp.route('/agents/<agent_id>/trigger-migration', methods=['POST'])
 def trigger_agent_migration(agent_id):
@@ -2185,6 +2203,8 @@ def trigger_agent_migration(agent_id):
         agent_record = get_agent(agent_id)
         if not agent_record:
             return jsonify({"status": "error", "message": "Agent not found."}), 404
+        if _agent_decommission_blocks_action(agent_record):
+            return jsonify({"status": "error", "message": "Agent decommission is in progress."}), 409
 
         assigned_tunnel_id = agent_record.get("assigned_tunnel_id")
         if not assigned_tunnel_id:
@@ -2216,6 +2236,8 @@ def redeploy_agent_tunnel(agent_id):
         agent_record = get_agent(agent_id)
         if not agent_record:
             return jsonify({"status": "error", "message": "Agent not found."}), 404
+        if _agent_decommission_blocks_action(agent_record):
+            return jsonify({"status": "error", "message": "Agent decommission is in progress."}), 409
 
         if agent_record.get("status") != "enrolled":
             return jsonify({"status": "error", "message": "Agent not enrolled."}), 400
@@ -2255,6 +2277,8 @@ def roll_agent_api_key(agent_id):
         agent_record = get_agent(agent_id)
         if not agent_record:
             return jsonify({"status": "error", "message": "Agent not found."}), 404
+        if _agent_decommission_blocks_action(agent_record):
+            return jsonify({"status": "error", "message": "Agent decommission is in progress."}), 409
 
         old_api_key = agent_record.get("api_key")
 
@@ -2293,6 +2317,8 @@ def rename_agent(agent_id):
         agent_record = get_agent(agent_id)
         if not agent_record:
             return jsonify({"status": "error", "message": "Agent not found."}), 404
+        if _agent_decommission_blocks_action(agent_record):
+            return jsonify({"status": "error", "message": "Agent decommission is in progress."}), 409
 
         data = request.get_json() or {}
         display_name = data.get('display_name', '').strip()

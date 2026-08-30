@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Safe Agent decommissioning:** Replaced immediate Agent deletion with a durable prepare, ownership-safe Cloudflare cleanup, and final Agent shutdown workflow. Decommissioned Agents persist a local tombstone, stop their managed tunnel without Docker delete permission, revoke their API key only after final acknowledgement, and cannot silently recreate the tunnel after restart. The Agents UI now shows retryable progress and provides separately acknowledged host cleanup commands that remove the Agent Docker deployment while preserving the shared external `cloudflare-net` network.
+
 ### Fixed
 - **UI-overridden container lifecycle:** Recreated Docker and Agent-managed containers now reactivate their existing rules, refresh only their runtime container association, and retain UI-controlled routing, origin, tunnel, and Access settings. Fixes [#388](https://github.com/ChrispyBacon-dev/DockFlare/issues/388).
   - Added stable source-rule identity so UI-renamed container-backed rules remain associated with their originating Docker or Agent label binding without creating duplicates.

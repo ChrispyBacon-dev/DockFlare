@@ -174,6 +174,7 @@ def generate_compose_content(key_id, public_url, cloudflared_image="cloudflare/c
       - PING=1
       - INFO=1
       - EXEC=1
+      - DELETE=0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:

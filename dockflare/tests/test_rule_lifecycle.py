@@ -245,7 +245,7 @@ class RuleLifecycleTests(unittest.TestCase):
             with patch.object(state_manager.config, "STATE_FILE_PATH", str(state_path)):
                 self.assertTrue(state_manager.save_state())
                 persisted = json.loads(state_path.read_text())
-                self.assertEqual(persisted["state_schema_version"], 2)
+                self.assertEqual(persisted["state_schema_version"], 3)
                 self.assertEqual(persisted["managed_rules"]["app.example.com|"]["extension"], {"preserved": True})
                 with state_lock:
                     managed_rules.clear()
