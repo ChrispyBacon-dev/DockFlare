@@ -107,6 +107,27 @@ def find_container_rule(observed_rule_key, source, agent_id=None):
     return matches[0] if matches else (None, None)
 
 
+def restore_container_rule_key(observed_rule_key, hostname, path, source, agent_id=None):
+    """Move one label-controlled rule back to its immutable source key."""
+    matched_key, rule = find_container_rule(observed_rule_key, source, agent_id)
+    if not rule or matched_key == observed_rule_key or rule.get("rule_ui_override"):
+        return rule, None
+
+    previous = {
+        "key": matched_key,
+        "hostname": rule.get("hostname"),
+        "zone_id": rule.get("zone_id"),
+        "tunnel_id": rule.get("tunnel_id"),
+    }
+    managed_rules.pop(matched_key)
+    managed_rules[observed_rule_key] = rule
+    rule["hostname"] = hostname
+    rule["path"] = path
+    rule["source_rule_key"] = observed_rule_key
+    rule["lifecycle_generation"] = int(rule.get("lifecycle_generation") or 0) + 1
+    return rule, previous
+
+
 def agent_inventory_contains_rule(containers, rule):
     """Return whether a stored Agent inventory contains the rule's current binding."""
     if not isinstance(containers, list):

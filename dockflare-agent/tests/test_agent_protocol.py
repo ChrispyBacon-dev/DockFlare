@@ -79,6 +79,13 @@ class AgentProducerProtocolTests(unittest.TestCase):
             "dockflare.hostname": "one.example.com",
         })
 
+    def test_inventory_scan_failure_sends_explicit_incomplete_report(self):
+        with patch.object(agent, "collect_complete_inventory", side_effect=RuntimeError("docker unavailable")), \
+             patch.object(agent, "send_status_report", return_value=True) as send_report:
+            self.assertTrue(agent.send_inventory_report(object()))
+
+        send_report.assert_called_once_with(inventory_complete=False)
+
     def test_status_report_uses_top_level_v2_shape(self):
         agent.apply_registration_response({
             "agent_id": "agent-a", "protocol_version": 2, "agent_session_id": "master-session",

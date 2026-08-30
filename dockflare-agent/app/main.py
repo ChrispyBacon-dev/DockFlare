@@ -189,6 +189,16 @@ def collect_complete_inventory(docker_client):
     return containers
 
 
+def send_inventory_report(docker_client):
+    """Send one inventory report without ever claiming a failed scan is complete."""
+    try:
+        containers = collect_complete_inventory(docker_client)
+    except Exception as exc:
+        logging.error("Docker inventory scan failed: %s", type(exc).__name__)
+        return send_status_report(inventory_complete=False)
+    return send_status_report(containers, True)
+
+
 def fetch_cloudflared_version(container):
     try:
         exec_result = container.exec_run("cloudflared --version")
@@ -688,12 +698,9 @@ def periodic_status_reporter(client):
             logging.info("Sending heartbeat to master.")
             report_event_to_master("heartbeat")
 
-            containers = collect_complete_inventory(client)
-            logging.info(f"Sending status_report to master (containers={len(containers)})")
-            send_status_report(containers, True)
+            send_inventory_report(client)
         except Exception as e:
             logging.error(f"Periodic reporter error: {e}")
-            send_status_report(inventory_complete=False)
         time.sleep(REPORT_INTERVAL_SECONDS)
 
 def cleanup():

@@ -16,6 +16,7 @@
 #
 # dockflare/app/web/api_v2_routes.py
 import copy
+import hashlib
 import logging
 import time
 import json
@@ -46,7 +47,6 @@ from app.core.cloudflare_api import (
     create_cloudflare_dns_record,
     delete_cloudflare_dns_record,
     get_zone_id_from_name,
-    get_zone_details_by_id,
     delete_tunnel_via_api,
     list_account_zones,
     get_account_zone_inventory,
@@ -54,8 +54,6 @@ from app.core.cloudflare_api import (
 )
 from app.core.zone_resolver import ZoneResolutionError
 from app.core.access_manager import (
-    check_for_tld_access_policy,
-    get_cloudflare_account_email,
     delete_cloudflare_access_application,
     create_cloudflare_access_application,
     update_cloudflare_access_application,
@@ -137,6 +135,78 @@ def serialize_rule(rule_data):
         serialized["delete_at"] = dt_obj.isoformat()
     return serialized
 
+
+_PUBLIC_AGENT_FIELDS = {
+    "id", "display_name", "version", "status", "last_seen",
+    "assigned_tunnel_id", "assigned_tunnel_name", "migration_status",
+    "tunnel_status", "connector_version", "connector_origin_ip",
+    "connector_platform", "connector_colos",
+}
+_PUBLIC_AGENT_KEY_FIELDS = {
+    "owner", "created_at", "status", "last_used_at", "bound_agent_id",
+    "revoked_at",
+}
+_PUBLIC_TUNNEL_FIELDS = {"id", "name", "status", "created_at", "deleted_at"}
+
+
+def _agent_key_reference(key_token):
+    """Return a stable non-secret identifier for an Agent API key."""
+    return hashlib.sha256(key_token.encode("utf-8")).hexdigest()
+
+
+def _resolve_agent_key_identifier(identifier):
+    """Resolve a public key reference, retaining raw-key API compatibility."""
+    keys = list_agent_keys()
+    if identifier in keys:
+        return identifier
+    for key_token in keys:
+        if secrets.compare_digest(_agent_key_reference(key_token), identifier):
+            return key_token
+    return None
+
+
+def _serialize_agent_keys(keys):
+    return {
+        _agent_key_reference(key_token): {
+            field: copy.deepcopy(metadata[field])
+            for field in _PUBLIC_AGENT_KEY_FIELDS
+            if field in metadata
+        }
+        for key_token, metadata in keys.items()
+        if isinstance(key_token, str) and isinstance(metadata, dict)
+    }
+
+
+def _serialize_agent(agent_id, agent_data, now_dt, heartbeat_timeout):
+    source = agent_data if isinstance(agent_data, dict) else {}
+    result = {
+        field: copy.deepcopy(source[field])
+        for field in _PUBLIC_AGENT_FIELDS
+        if field in source
+    }
+    result["id"] = agent_id
+    online = False
+    try:
+        last_seen = result.get("last_seen")
+        if last_seen:
+            last_seen_dt = datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
+            if last_seen_dt.tzinfo is None:
+                last_seen_dt = last_seen_dt.replace(tzinfo=timezone.utc)
+            online = (now_dt - last_seen_dt.astimezone(timezone.utc)).total_seconds() <= heartbeat_timeout
+    except (TypeError, ValueError):
+        online = False
+    result["online"] = online
+    result["health"] = "connected" if online else "disconnected"
+    return result
+
+
+def _serialize_tunnels(tunnels):
+    return [
+        {field: tunnel[field] for field in _PUBLIC_TUNNEL_FIELDS if field in tunnel}
+        for tunnel in tunnels or []
+        if isinstance(tunnel, dict)
+    ]
+
 def _ensure_agent_api_key(agent_id, agent_record, token):
     key_info = get_agent_key_info(token)
     if not key_info:
@@ -176,166 +246,47 @@ def list_services():
 
 @api_v2_bp.route('/overview', methods=['GET'])
 def get_overview_data():
-    rules_for_api = {}
-    api_tunnel_state = {}
-    api_agent_state = {}
-    initialization_status_api = {}
-    tld_policy_exists_val_api = False
-    account_email_for_tld_api = None
-    relevant_zone_name_for_tld_policy_api = None
-
-    all_account_tunnels_list_api = get_all_account_cloudflare_tunnels()
-    tunnel_names_map = {}
-    tunnel_status_map = {}
-    try:
-        for t in all_account_tunnels_list_api or []:
-            tid = t.get("id")
-            if tid:
-                tunnel_status_map[tid] = {
-                    "status": t.get("status") or "unknown",
-                    "name": t.get("name")
-                }
-                if t.get("name"):
-                    tunnel_names_map[tid] = t.get("name")
-    except Exception as _e:
-        logging.error(f"Error while building tunnel_status_map: {_e}", exc_info=True)
-
-    zone_lookup_map = {}
-    try:
-        for zone in list_account_zones() or []:
-            zid = zone.get("id")
-            zname = zone.get("name")
-            if zid and zname:
-                zone_lookup_map[zid] = zname
-    except Exception as zone_list_error:
-        logging.debug(f"Could not build zone lookup map: {zone_list_error}")
-
-    with state_lock:
-        rules_snapshot = {hostname_key: rule_value.copy() for hostname_key, rule_value in managed_rules.items()}
-        api_tunnel_state = tunnel_state.copy()
-        api_agent_state = cloudflared_agent_state.copy()
-
-    initialization_status_api = {
-        "complete": api_tunnel_state.get("id") is not None or config.EXTERNAL_TUNNEL_ID,
-        "in_progress": not (api_tunnel_state.get("id") or config.EXTERNAL_TUNNEL_ID) and \
-                        api_tunnel_state.get("status_message", "").lower().startswith("init")
+    all_account_tunnels = _serialize_tunnels(get_all_account_cloudflare_tunnels())
+    tunnel_status = {
+        tunnel["id"]: {"status": tunnel.get("status") or "unknown", "name": tunnel.get("name")}
+        for tunnel in all_account_tunnels
+        if tunnel.get("id")
     }
+    with state_lock:
+        rules_for_api = {
+            rule_key: serialize_rule(rule_data)
+            for rule_key, rule_data in managed_rules.items()
+        }
+        api_tunnel_state = {
+            field: copy.deepcopy(tunnel_state[field])
+            for field in ("id", "name", "status", "status_message")
+            if field in tunnel_state
+        }
 
-    state_updates = {}
-    effective_tunnel_id_cache = None
-
-    for hostname_key, rule_snapshot in rules_snapshot.items():
-        serialized_rule = serialize_rule(rule_snapshot)
-        tunnel_id_value = serialized_rule.get("tunnel_id")
-        if not tunnel_id_value and rule_snapshot.get("source") == "manual":
-            if effective_tunnel_id_cache is None:
-                effective_tunnel_id_cache = get_effective_tunnel_id()
-            if effective_tunnel_id_cache:
-                tunnel_id_value = effective_tunnel_id_cache
-                serialized_rule["tunnel_id"] = effective_tunnel_id_cache
-                state_updates.setdefault(hostname_key, {})["tunnel_id"] = effective_tunnel_id_cache
-        if tunnel_id_value:
-            tunnel_name_value = serialized_rule.get("tunnel_name")
-            if not tunnel_name_value or tunnel_name_value in ("", "N/A"):
-                tunnel_name_lookup = tunnel_names_map.get(tunnel_id_value)
-                if not tunnel_name_lookup:
-                    master_tunnel_id = api_tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
-                    if tunnel_id_value == master_tunnel_id:
-                        tunnel_name_lookup = api_tunnel_state.get("name")
-                if tunnel_name_lookup:
-                    serialized_rule["tunnel_name"] = tunnel_name_lookup
-                    state_updates.setdefault(hostname_key, {})["tunnel_name"] = tunnel_name_lookup
-        zone_id_value = serialized_rule.get("zone_id")
-        if zone_id_value and not serialized_rule.get("zone_name"):
-            zone_name_lookup = zone_lookup_map.get(zone_id_value)
-            if zone_name_lookup:
-                serialized_rule["zone_name"] = zone_name_lookup
-                state_updates.setdefault(hostname_key, {})["zone_name"] = zone_name_lookup
-        rules_for_api[hostname_key] = serialized_rule
-
-    if state_updates:
-        state_changed = False
-        with state_lock:
-            for hostname_key, updates in state_updates.items():
-                rule_ref = managed_rules.get(hostname_key)
-                if not rule_ref:
-                    continue
-                for field, value in updates.items():
-                    if rule_ref.get(field) != value:
-                        rule_ref[field] = value
-                        state_changed = True
-        if state_changed:
-            save_state()
-
-    cf_zone_id = current_app.config.get('CF_ZONE_ID')
-    if cf_zone_id and docker_client:
-        zone_details = get_zone_details_by_id(cf_zone_id)
-        if zone_details and zone_details.get("name"):
-            relevant_zone_name_for_tld_policy_api = zone_details.get("name")
-        if relevant_zone_name_for_tld_policy_api:
-            tld_policy_exists_val_api = check_for_tld_access_policy(relevant_zone_name_for_tld_policy_api)
-            if not tld_policy_exists_val_api:
-                account_email_for_tld_api = get_cloudflare_account_email()
-
-    agents_list_api = list_agents()
-    agent_keys_list_api = list_agent_keys()
-
-    try:
-        now_dt = datetime.utcnow().replace(tzinfo=timezone.utc)
-        heartbeat_timeout = getattr(config, "AGENT_HEARTBEAT_TIMEOUT", 60)
-        processed_agents = {}
-        for a_id, a in agents_list_api.items():
-            processed = dict(a) if isinstance(a, dict) else {"id": a_id}
-            last_seen_str = processed.get("last_seen")
-            online = False
-            try:
-                if last_seen_str:
-                    
-                    if last_seen_str.endswith('Z'):
-                        last_seen_dt = datetime.fromisoformat(last_seen_str.replace('Z', '+00:00'))
-                    else:
-                        last_seen_dt = datetime.fromisoformat(last_seen_str)
-                    last_seen_dt = last_seen_dt.replace(tzinfo=timezone.utc) if last_seen_dt.tzinfo is None else last_seen_dt.astimezone(timezone.utc)
-                    delta_secs = (now_dt - last_seen_dt).total_seconds()
-                    online = delta_secs <= heartbeat_timeout
-                else:
-                    online = False
-            except Exception:
-                online = False
-
-            processed["online"] = online
-            processed["health"] = "connected" if online else "disconnected"
-            
-            try:
-                assigned_tid = processed.get("assigned_tunnel_id")
-                if assigned_tid:
-                    ts = tunnel_status_map.get(assigned_tid)
-                    if ts:
-                        existing_ts = processed.get("tunnel_status") or {}
-                        if existing_ts.get("version") and "version" not in ts:
-                            ts = dict(ts)
-                            ts["version"] = existing_ts.get("version")
-                        processed["tunnel_status"] = ts
-            except Exception as _te:
-                logging.debug(f"Unable to enrich agent {a_id} with tunnel_status: {_te}")
-
-            try:
-                from app.core.cloudflare_api import get_tunnel_connector_info
-                tunnel_id = processed.get("assigned_tunnel_id")
-                if tunnel_id:
-                    connector = get_tunnel_connector_info(tunnel_id)
-                    if connector:
-                        processed["connector_version"] = connector.get("version")
-                        processed["connector_origin_ip"] = connector.get("origin_ip")
-                        processed["connector_platform"] = connector.get("platform")
-                        processed["connector_colos"] = connector.get("colos")
-            except Exception as _ce:
-                logging.warning("Could not enrich agent %s with connector info: %s", a_id, _ce)
-
-            processed_agents[a_id] = processed
-        agents_list_api = processed_agents
-    except Exception as e:
-        logging.error(f"Error while computing agent health fields: {e}", exc_info=True)
+    now_dt = datetime.now(timezone.utc)
+    heartbeat_timeout = getattr(config, "AGENT_HEARTBEAT_TIMEOUT", 60)
+    agents_list_api = {
+        agent_id: _serialize_agent(agent_id, agent_data, now_dt, heartbeat_timeout)
+        for agent_id, agent_data in list_agents().items()
+    }
+    for agent_id, processed in agents_list_api.items():
+        assigned_tunnel_id = processed.get("assigned_tunnel_id")
+        if assigned_tunnel_id in tunnel_status:
+            processed["tunnel_status"] = tunnel_status[assigned_tunnel_id]
+        if not assigned_tunnel_id:
+            continue
+        try:
+            from app.core.cloudflare_api import get_tunnel_connector_info
+            connector = get_tunnel_connector_info(assigned_tunnel_id)
+            if connector:
+                processed.update({
+                    "connector_version": connector.get("version"),
+                    "connector_origin_ip": connector.get("origin_ip"),
+                    "connector_platform": connector.get("platform"),
+                    "connector_colos": connector.get("colos"),
+                })
+        except Exception as connector_error:
+            logging.warning("Could not enrich agent %s with connector info: %s", agent_id, connector_error)
 
     log_stream_url = "/stream-logs"
     try:
@@ -343,32 +294,32 @@ def get_overview_data():
     except RuntimeError as e:
         logging.error(f"RuntimeError generating url_for for 'web.stream_logs_route': {e}. Falling back to static path.")
 
-    cf_account_id = current_app.config.get('CF_ACCOUNT_ID')
+    cf_account_id = current_app.config.get("CF_ACCOUNT_ID")
+    cf_zone_id = current_app.config.get("CF_ZONE_ID")
     return jsonify({
         "tunnel_state": api_tunnel_state,
-        "agent_state": api_agent_state,
-        "initialization": initialization_status_api,
-        "display_token": tunnel_state.get("token"), 
+        "agent_state": {},
+        "initialization": {
+            "complete": bool(api_tunnel_state.get("id") or config.EXTERNAL_TUNNEL_ID),
+            "in_progress": not (api_tunnel_state.get("id") or config.EXTERNAL_TUNNEL_ID)
+            and api_tunnel_state.get("status_message", "").lower().startswith("init"),
+        },
         "cloudflared_container_name": current_app.config.get('CLOUDFLARED_CONTAINER_NAME'),
         "docker_available": docker_client is not None,
         "external_cloudflared": config.USE_EXTERNAL_CLOUDFLARED,
         "external_tunnel_id": config.EXTERNAL_TUNNEL_ID,
         "rules": rules_for_api,
-        "all_account_tunnels": all_account_tunnels_list_api,
+        "all_account_tunnels": all_account_tunnels,
         "config_status": {
             "cf_account_id_configured": bool(cf_account_id),
-            "account_id_for_display": cf_account_id if cf_account_id else "Not Configured",
             "cf_zone_id_configured": bool(cf_zone_id),
-            "relevant_zone_name_for_tld_policy": relevant_zone_name_for_tld_policy_api,
-            "tld_policy_exists": tld_policy_exists_val_api,
-            "account_email_for_tld": account_email_for_tld_api,
         },
         "reconciliation_info": getattr(current_app, 'reconciliation_info', {
             "in_progress": False, "progress": 0, "total_items": 0,
             "processed_items": 0, "status": "Not started"
         }),
         "agents": agents_list_api,
-        "agent_keys": agent_keys_list_api,
+        "agent_keys": _serialize_agent_keys(list_agent_keys()),
         "log_stream_path": log_stream_url
     })
 
@@ -1328,9 +1279,12 @@ def agents_revoke_key():
     Payload: { "key": "<key_token>" }
     """
     data = request.get_json() or {}
-    key = data.get('key')
-    if not key:
+    key_identifier = data.get('key')
+    if not key_identifier:
         return jsonify({"status": "error", "message": "Missing 'key' in payload."}), 400
+    key = _resolve_agent_key_identifier(key_identifier)
+    if not key:
+        return jsonify({"status": "error", "message": "Key not found."}), 404
     ok = revoke_agent_key(key)
     if ok:
         affected_agents = []
@@ -1356,7 +1310,8 @@ def delete_agent_key_permanently(key_id):
         return jsonify({"status": "error", "message": "Missing key ID"}), 400
 
     
-    key_info = get_agent_key_info(key_id)
+    key_token = _resolve_agent_key_identifier(key_id)
+    key_info = get_agent_key_info(key_token) if key_token else None
     if not key_info:
         return jsonify({"status": "error", "message": "Key not found"}), 404
 
@@ -1367,14 +1322,14 @@ def delete_agent_key_permanently(key_id):
     
     owner = key_info.get("owner", "unknown")
     revoked_at = key_info.get("revoked_at", "unknown")
-    logging.info(f"ADMIN: Permanently deleting revoked key {key_id[:8]}... (owner: {owner}, revoked: {revoked_at})")
+    logging.info("ADMIN: Permanently deleting revoked Agent key (owner: %s, revoked: %s)", owner, revoked_at)
     
-    agent_key_store.remove_key(key_id)
+    agent_key_store.remove_key(key_token)
 
     return jsonify({
         "status": "success",
         "message": "Key permanently deleted",
-        "deleted_key": key_id[:8] + "...",
+        "deleted_key": _agent_key_reference(key_token)[:8] + "...",
         "owner": owner
     }), 200
 
@@ -1479,7 +1434,8 @@ def agents_cf_service_token_delete():
 @api_v2_bp.route('/agents/deploy-info/<key_id>', methods=['GET'])
 def agents_deploy_info(key_id):
     from app.core.service_token_manager import generate_compose_content, generate_deploy_script
-    key_info = get_agent_key_info(key_id)
+    key_token = _resolve_agent_key_identifier(key_id)
+    key_info = get_agent_key_info(key_token) if key_token else None
     if not key_info:
         return jsonify({"status": "error", "message": "Key not found"}), 404
     if key_info.get("status") != "active":
@@ -1490,8 +1446,8 @@ def agents_deploy_info(key_id):
         return jsonify({"status": "error", "message": "DOCKFLARE_PUBLIC_URL is not configured"}), 400
 
     try:
-        script_content = generate_deploy_script(key_id, public_url)
-        compose_content = generate_compose_content(key_id, public_url)
+        script_content = generate_deploy_script(key_token, public_url)
+        compose_content = generate_compose_content(key_token, public_url)
         return jsonify({
             "status": "success",
             "script_content": script_content,
@@ -1507,7 +1463,8 @@ def agents_deploy_info(key_id):
 @api_v2_bp.route('/agents/deploy-script/<key_id>', methods=['GET'])
 def agents_deploy_script(key_id):
     from app.core.service_token_manager import generate_deploy_script
-    key_info = get_agent_key_info(key_id)
+    key_token = _resolve_agent_key_identifier(key_id)
+    key_info = get_agent_key_info(key_token) if key_token else None
     if not key_info:
         return jsonify({"status": "error", "message": "Key not found"}), 404
     if key_info.get("status") != "active":
@@ -1518,7 +1475,7 @@ def agents_deploy_script(key_id):
         return jsonify({"status": "error", "message": "DOCKFLARE_PUBLIC_URL is not configured"}), 400
 
     try:
-        script = generate_deploy_script(key_id, public_url)
+        script = generate_deploy_script(key_token, public_url)
         from flask import Response
         return Response(script, mimetype="text/x-shellscript")
     except ValueError as e:
@@ -1533,39 +1490,12 @@ def agents_list_api():
     """
     Admin endpoint to list known agents and keys.
     """
-    agents_map = list_agents()
-    keys_map = list_agent_keys()
-
-    try:
-        now_dt = datetime.utcnow().replace(tzinfo=timezone.utc)
-        heartbeat_timeout = getattr(config, "AGENT_HEARTBEAT_TIMEOUT", 60)
-        processed_agents = {}
-        for a_id, a in agents_map.items():
-            processed = dict(a) if isinstance(a, dict) else {"id": a_id}
-            last_seen_str = processed.get("last_seen")
-            online = False
-            try:
-                if last_seen_str:
-                    
-                    if last_seen_str.endswith('Z'):
-                        last_seen_dt = datetime.fromisoformat(last_seen_str.replace('Z', '+00:00'))
-                    else:
-                        last_seen_dt = datetime.fromisoformat(last_seen_str)
-                    last_seen_dt = last_seen_dt.replace(tzinfo=timezone.utc) if last_seen_dt.tzinfo is None else last_seen_dt.astimezone(timezone.utc)
-                    delta_secs = (now_dt - last_seen_dt).total_seconds()
-                    online = delta_secs <= heartbeat_timeout
-                else:
-                    online = False
-            except Exception:
-                online = False
-
-            processed["online"] = online
-            processed["health"] = "connected" if online else "disconnected"
-            processed.pop("api_key", None)
-            processed_agents[a_id] = processed
-        agents_map = processed_agents
-    except Exception as e:
-        logging.error(f"Error while computing agent health fields in agents_list_api: {e}", exc_info=True)
+    now_dt = datetime.now(timezone.utc)
+    heartbeat_timeout = getattr(config, "AGENT_HEARTBEAT_TIMEOUT", 60)
+    agents_map = {
+        agent_id: _serialize_agent(agent_id, agent_data, now_dt, heartbeat_timeout)
+        for agent_id, agent_data in list_agents().items()
+    }
 
     try:
         from app.core.cloudflare_api import get_tunnel_connector_info
@@ -1581,7 +1511,10 @@ def agents_list_api():
     except Exception as e:
         logging.warning("Could not enrich agents with connector info: %s", e)
 
-    return jsonify({"agents": agents_map, "agent_keys": keys_map}), 200
+    return jsonify({
+        "agents": agents_map,
+        "agent_keys": _serialize_agent_keys(list_agent_keys()),
+    }), 200
 
 def _agent_json_response(http_status, code, message=None, **fields):
     body = {"status": "success" if http_status < 400 else "error", "code": code}

@@ -201,6 +201,37 @@ class AgentProtocolTests(unittest.TestCase):
         self.assertEqual(agents["agent-a"]["last_event_sequence"], 0)
         publish.assert_not_called()
 
+    def test_persistence_failure_rolls_back_complete_inventory(self):
+        previous_inventory = [{"id": "container-a", "name": "app", "labels": {}}]
+        with state_lock:
+            agents["agent-a"] = {
+                "id": "agent-a", "protocol_version": 2, "agent_session_id": "session",
+                "last_report_sequence": 0, "last_event_sequence": 0,
+                "last_complete_containers": copy.deepcopy(previous_inventory),
+            }
+            managed_rules["app.example.com|"] = {
+                "source": "agent", "agent_id": "agent-a", "status": "active",
+                "container_id": "container-a", "source_rule_key": "app.example.com|",
+            }
+        payload = {
+            "type": "status_report", "protocol_version": 2,
+            "agent_session_id": "session", "report_sequence": 1,
+            "inventory_complete": True, "inventory_scope": "dockflare_enabled_running",
+            "containers": [],
+        }
+        with app.test_request_context("/events", method="POST", json=payload), \
+             patch.object(api_v2_routes, "_authenticate_agent_request", return_value=("key", None)), \
+             patch.object(api_v2_routes, "_ensure_agent_api_key", return_value=True), \
+             patch.object(api_v2_routes, "save_state", return_value=False), \
+             patch.object(api_v2_routes, "publish_state_event") as publish:
+            response, status = api_v2_routes._handle_agent_event_request("agent-a")
+
+        self.assertEqual((status, response.get_json()["code"]), (503, "persistence_failed"))
+        self.assertEqual(managed_rules["app.example.com|"]["status"], "active")
+        self.assertEqual(agents["agent-a"]["last_report_sequence"], 0)
+        self.assertEqual(agents["agent-a"]["last_complete_containers"], previous_inventory)
+        publish.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

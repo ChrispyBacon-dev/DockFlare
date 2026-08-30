@@ -2,7 +2,9 @@ import pathlib
 import tempfile
 import unittest
 
-from app import get_static_asset_version
+from flask import render_template_string
+
+from app import app, get_static_asset_version
 
 
 class StaticAssetVersionTests(unittest.TestCase):
@@ -22,6 +24,20 @@ class StaticAssetVersionTests(unittest.TestCase):
         version = get_static_asset_version("/missing/dockflare/main.js")
         self.assertTrue(version)
         self.assertNotIn("/", version)
+
+    def test_base_template_renders_fingerprinted_main_script(self):
+        main_js_path = pathlib.Path(app.static_folder) / "js" / "main.js"
+        expected_version = get_static_asset_version(main_js_path)
+
+        with app.test_request_context("/"):
+            rendered = render_template_string(
+                '{% extends "base.html" %}{% block content %}{% endblock %}'
+            )
+
+        self.assertIn(
+            f'src="/static/js/main.js?v={expected_version}"',
+            rendered,
+        )
 
 
 if __name__ == "__main__":

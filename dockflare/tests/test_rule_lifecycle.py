@@ -14,6 +14,7 @@ from app.core.state_manager import (
     agent_inventory_contains_rule,
     find_container_rule,
     managed_rules,
+    restore_container_rule_key,
     restore_rule_lifecycle,
     state_lock,
 )
@@ -130,6 +131,51 @@ class RuleLifecycleTests(unittest.TestCase):
             "id": "replacement",
             "labels": {"dockflare.hostname": "invalid hostname"},
         }], rule))
+
+    def test_label_control_restores_ui_renamed_rule_to_source_key(self):
+        with state_lock:
+            managed_rules["renamed.example.com|"] = {
+                "hostname": "renamed.example.com",
+                "path": None,
+                "source": "docker",
+                "source_rule_key": "source.example.com|",
+                "rule_ui_override": False,
+                "zone_id": "zone-a",
+                "tunnel_id": "tunnel-a",
+                "lifecycle_generation": 4,
+            }
+            rule, previous = restore_container_rule_key(
+                "source.example.com|",
+                "source.example.com",
+                None,
+                "docker",
+            )
+
+        self.assertNotIn("renamed.example.com|", managed_rules)
+        self.assertIs(managed_rules["source.example.com|"], rule)
+        self.assertEqual(rule["hostname"], "source.example.com")
+        self.assertEqual(rule["lifecycle_generation"], 5)
+        self.assertEqual(previous, {
+            "key": "renamed.example.com|",
+            "hostname": "renamed.example.com",
+            "zone_id": "zone-a",
+            "tunnel_id": "tunnel-a",
+        })
+
+    def test_agent_label_control_restores_only_matching_agent_source_key(self):
+        with state_lock:
+            managed_rules["renamed.example.com|"] = {
+                "hostname": "renamed.example.com", "path": None,
+                "source": "agent", "agent_id": "agent-a",
+                "source_rule_key": "source.example.com|", "rule_ui_override": False,
+            }
+            rule, previous = restore_container_rule_key(
+                "source.example.com|", "source.example.com", None, "agent", "agent-a",
+            )
+
+        self.assertIs(managed_rules["source.example.com|"], rule)
+        self.assertEqual(rule["hostname"], "source.example.com")
+        self.assertEqual(previous["key"], "renamed.example.com|")
 
     def test_agent_revert_does_not_require_local_docker_socket(self):
         with state_lock:

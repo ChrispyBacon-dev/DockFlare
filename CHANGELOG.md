@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
   - Made full-rule and Access-policy ownership independently reversible for both Docker and Agent sources. Agent reverts no longer depend on a local Docker socket and apply stored inventory only when it matches the rule's current container and source binding; otherwise DockFlare safely waits for the next authenticated Agent observation.
   - Added content fingerprinting to the main browser script so updated rule-editor logic is loaded after an upgrade instead of a stale cached asset. The editor continues to submit the immutable source rule key rather than inferring ownership from editable hostname or path fields.
   - Strengthened Agent reporting with master-issued sessions, ordered event and report streams, explicit inventory completeness, bounded payloads, filtered DockFlare label namespaces, normalized Docker lifecycle events, and safe reconnect behavior.
+- **Overview API secret exposure and read side effects:** Removed reusable tunnel, Agent session, Agent API-key, and account material from overview/list responses. Agent-key actions now use stable non-authorizing references, while explicit key-generation and deployment flows retain their intended one-time credential behavior. `GET /api/v2/overview` no longer backfills or persists rule state.
 
 ## [v3.1.4] - 2026-08-17
 

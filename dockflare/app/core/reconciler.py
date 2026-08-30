@@ -27,6 +27,7 @@ from app.core.state_manager import (
     find_container_rule,
     managed_rules,
     mark_rule_tunnel_sync_pending,
+    restore_container_rule_key,
     restore_rule_lifecycle,
     state_lock,
     save_state,
@@ -215,6 +216,7 @@ def reconcile_agent_report(agent_id, reported_containers):
             restored_any = False
             sync_needed = False
             desired_configs = {}
+            dns_rekeys = []
 
             for c in reported_containers:
                 labels = c.get("labels", {}) or {}
@@ -273,7 +275,32 @@ def reconcile_agent_report(agent_id, reported_containers):
             with state_lock:
                 for rule_key, selected_zone in resolved_desired.items():
                     desired = desired_configs[rule_key]
-                    existing = managed_rules.get(rule_key)
+                    source_key = get_source_rule_key(desired["hostname"], desired.get("path"))
+                    existing, previous_source_render = restore_container_rule_key(
+                        source_key,
+                        desired["hostname"],
+                        desired.get("path"),
+                        "agent",
+                        agent_id,
+                    )
+                    if previous_source_render:
+                        restored_any = True
+                        sync_needed = True
+                        mark_rule_tunnel_sync_pending(existing)
+                        old_tuple = (
+                            previous_source_render.get("hostname"),
+                            previous_source_render.get("zone_id"),
+                            previous_source_render.get("tunnel_id"),
+                        )
+                        new_tuple = (
+                            existing.get("hostname"),
+                            existing.get("zone_id"),
+                            existing.get("tunnel_id"),
+                        )
+                        if all(old_tuple) and all(new_tuple) and old_tuple != new_tuple:
+                            dns_rekeys.append((old_tuple, new_tuple))
+                    if existing is None:
+                        existing = managed_rules.get(rule_key)
                     target_zone_id = selected_zone["id"]
 
                     if existing:
@@ -392,7 +419,37 @@ def reconcile_agent_report(agent_id, reported_containers):
             if sync_needed:
                 try:
                     logging.info(f"[Reconcile-Agent] Triggering pending tunnel synchronization for agent {agent_id}.")
-                    t = threading.Thread(target=retry_pending_tunnel_sync, kwargs={"force": True}, name=f"agent-reconcile-{agent_id}", daemon=True)
+                    def sync_agent_changes():
+                        retry_pending_tunnel_sync(force=True)
+                        for old_tuple, new_tuple in dns_rekeys:
+                            with state_lock:
+                                new_rule_ready = any(
+                                    rule.get("status") == "active"
+                                    and not rule.get("tunnel_sync_pending")
+                                    and (
+                                        rule.get("hostname"), rule.get("zone_id"),
+                                        _effective_rule_tunnel_id(rule),
+                                    ) == new_tuple
+                                    for rule in managed_rules.values()
+                                )
+                            if not new_rule_ready:
+                                continue
+                            dns_result = create_cloudflare_dns_record(new_tuple[1], new_tuple[0], new_tuple[2])
+                            if not dns_result or dns_result in {"semaphore_timeout", "existing_record_unconfirmed"}:
+                                continue
+                            with state_lock:
+                                old_tuple_owned = any(
+                                    rule.get("status") == "active"
+                                    and (
+                                        rule.get("hostname"), rule.get("zone_id"),
+                                        _effective_rule_tunnel_id(rule),
+                                    ) == old_tuple
+                                    for rule in managed_rules.values()
+                                )
+                            if not old_tuple_owned:
+                                delete_cloudflare_dns_record(old_tuple[1], old_tuple[0], old_tuple[2])
+
+                    t = threading.Thread(target=sync_agent_changes, name=f"agent-reconcile-{agent_id}", daemon=True)
                     t.start()
                 except Exception as e:
                     logging.error(f"[Reconcile-Agent] Failed to trigger Cloudflare update: {e}", exc_info=True)
@@ -464,6 +521,7 @@ def _run_reconciliation_logic():
         current_app.reconciliation_info["processed_items"] = 0 
         processed_reconcile_items = 0
         hostnames_requiring_dns_setup = set()
+        dns_cleanup_after_sync = set()
         policy_jobs_map = {}
         overridden_observed_keys = set()
         effective_tunnel_id = tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
@@ -518,7 +576,32 @@ def _run_reconciliation_logic():
                 if time.time() - reconciliation_start_time > max_total_time - 30:
                     break
 
-                existing_rule = managed_rules.get(rule_key)
+                source_key = get_source_rule_key(
+                    desired_details["hostname"],
+                    desired_details.get("path"),
+                )
+                existing_rule, previous_source_render = restore_container_rule_key(
+                    source_key,
+                    desired_details["hostname"],
+                    desired_details.get("path"),
+                    "docker",
+                )
+                if previous_source_render:
+                    state_changed_locally = True
+                    needs_tunnel_config_update = True
+                    mark_rule_tunnel_sync_pending(existing_rule)
+                    if (
+                        previous_source_render.get("hostname")
+                        and previous_source_render.get("zone_id")
+                        and previous_source_render.get("tunnel_id")
+                    ):
+                        dns_cleanup_after_sync.add((
+                            previous_source_render["hostname"],
+                            previous_source_render["zone_id"],
+                            previous_source_render["tunnel_id"],
+                        ))
+                if existing_rule is None:
+                    existing_rule = managed_rules.get(rule_key)
                 if existing_rule and existing_rule.get("source") == "manual":
                     continue
                 if existing_rule and existing_rule.get("source", "docker") != "docker":
@@ -731,6 +814,23 @@ def _run_reconciliation_logic():
                         time.sleep(0.1)
                 elif not tunnel_id_dns:
                     logging.error(f"[Reconcile] Cannot setup DNS for {hostname_dns}: Tunnel ID is missing.")
+
+        for old_hostname, old_zone_id, old_tunnel_id in dns_cleanup_after_sync:
+            with state_lock:
+                sync_pending = any(
+                    rule.get("tunnel_sync_pending")
+                    and _effective_rule_tunnel_id(rule) == old_tunnel_id
+                    for rule in managed_rules.values()
+                )
+                still_owned = any(
+                    rule.get("status") == "active"
+                    and rule.get("hostname") == old_hostname
+                    and rule.get("zone_id") == old_zone_id
+                    and _effective_rule_tunnel_id(rule) == old_tunnel_id
+                    for rule in managed_rules.values()
+                )
+            if not sync_pending and not still_owned and not old_hostname.startswith("*."):
+                delete_cloudflare_dns_record(old_zone_id, old_hostname, old_tunnel_id)
                 
         current_app.reconciliation_info["in_progress"] = False
         current_app.reconciliation_info["progress"] = 100 
