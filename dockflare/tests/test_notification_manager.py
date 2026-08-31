@@ -8,6 +8,7 @@ from app.core.notification_manager import (
     DEFAULT_NOTIFICATION_CONFIG,
     NotificationManager,
     normalize_notification_config,
+    public_resource_url,
     redact_destination,
     sanitize_service,
 )
@@ -101,6 +102,14 @@ class NotificationConfigurationTests(unittest.TestCase):
         self.assertNotIn("password", sanitized)
         self.assertNotIn("query-secret", sanitized)
 
+    def test_public_resource_url_is_clickable_and_rejects_unsafe_hosts(self):
+        self.assertEqual(
+            public_resource_url("uat-agent-a.dockflare.app", "/status"),
+            "https://uat-agent-a.dockflare.app/status",
+        )
+        self.assertIsNone(public_resource_url("*.dockflare.app", None))
+        self.assertIsNone(public_resource_url("user@example.com", None))
+
     def test_validation_reports_only_line_and_scheme(self):
         manager = NotificationManager()
         with patch.object(manager, "_load_apprise", return_value=FakeAppriseModule):
@@ -150,10 +159,45 @@ class NotificationManagerTests(unittest.TestCase):
         self.manager._queue.join()
         call = FakeApprise.instances[-1].calls[-1]
         self.assertEqual(call["notify_type"], "success")
-        self.assertIn("one.example.test", call["body"])
+        self.assertIn("https://one.example.test", call["body"])
         self.assertIn("and 1 more", call["body"])
         self.assertNotIn("three.example.test", call["body"])
         stop_event.set()
+
+    def test_single_rule_notification_prioritizes_service_and_groups_ids(self):
+        title, body = self.manager._render({
+            "event_type": "rule.activated",
+            "context": {
+                "source": "agent",
+                "container_name": "uat-agent-a-nginx",
+                "container_id": "container-short",
+                "agent_id": "agent-short",
+                "tunnel_name": "tunnel1",
+                "tunnel_id": "tunnel-short",
+                "resources": [{"hostname": "uat-agent-a.dockflare.app"}],
+                "public_url": "https://unstable.dockflare.app/",
+            },
+        })
+        self.assertEqual(title, "✅ DockFlare — Rule activated")
+        self.assertTrue(body.startswith("Service: https://uat-agent-a.dockflare.app\nSource: Agent"))
+        self.assertIn("\n\nTechnical details\nContainer ID: container-short", body)
+        self.assertTrue(body.endswith("Dashboard: https://unstable.dockflare.app/"))
+
+    def test_health_and_failure_events_have_actionable_status(self):
+        title, body = self.manager._render({
+            "event_type": "agent.offline",
+            "context": {"agent_name": "Edge A", "agent_id": "agent-a"},
+        })
+        self.assertEqual(title, "🔴 DockFlare — Agent offline")
+        self.assertIn("Status: Offline", body)
+        self.assertIn("Agent: Edge A", body)
+
+        title, body = self.manager._render({
+            "event_type": "cloudflare.dns_failure",
+            "context": {"hostname": "app.example.com", "operation": "create", "source": "docker"},
+        })
+        self.assertEqual(title, "❌ DockFlare — DNS operation failed")
+        self.assertTrue(body.startswith("Service: https://app.example.com\nOperation: create\nSource: Docker"))
 
     def test_bootstrap_suppresses_routine_events_but_allows_failures(self):
         self.manager.begin_bootstrap()

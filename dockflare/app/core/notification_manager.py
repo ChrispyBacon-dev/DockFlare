@@ -56,19 +56,26 @@ RECOVERY_PAIRS = {
 }
 
 TITLE_MAP = {
-    "rule.activated": "DockFlare: rule activated",
-    "rule.restored": "DockFlare: rule restored",
-    "rule.pending_deletion": "DockFlare: rule scheduled for deletion",
-    "rule.deleted": "DockFlare: rule deleted",
-    "cloudflare.tunnel_failure": "DockFlare: tunnel update failed",
-    "cloudflare.dns_failure": "DockFlare: DNS operation failed",
-    "cloudflare.access_failure": "DockFlare: Access operation failed",
-    "docker.listener_failure": "DockFlare: Docker listener stopped",
-    "agent.offline": "DockFlare: Agent offline",
-    "agent.online": "DockFlare: Agent recovered",
-    "tunnel.down": "DockFlare: tunnel down",
-    "tunnel.recovered": "DockFlare: tunnel recovered",
-    "notification.test": "DockFlare: test notification",
+    "rule.activated": "✅ DockFlare — Rule activated",
+    "rule.restored": "✅ DockFlare — Rule restored",
+    "rule.pending_deletion": "⚠️ DockFlare — Rule scheduled for deletion",
+    "rule.deleted": "ℹ️ DockFlare — Rule deleted",
+    "cloudflare.tunnel_failure": "❌ DockFlare — Tunnel update failed",
+    "cloudflare.dns_failure": "❌ DockFlare — DNS operation failed",
+    "cloudflare.access_failure": "❌ DockFlare — Access operation failed",
+    "docker.listener_failure": "❌ DockFlare — Docker listener stopped",
+    "agent.offline": "🔴 DockFlare — Agent offline",
+    "agent.online": "🟢 DockFlare — Agent recovered",
+    "tunnel.down": "🔴 DockFlare — Tunnel down",
+    "tunnel.recovered": "🟢 DockFlare — Tunnel recovered",
+    "notification.test": "🔔 DockFlare — Test notification",
+}
+
+STATUS_MAP = {
+    "agent.offline": "Offline",
+    "agent.online": "Online",
+    "tunnel.down": "Down",
+    "tunnel.recovered": "Running",
 }
 
 
@@ -137,6 +144,32 @@ def redact_destination(url):
     if not scheme or not scheme.replace("+", "").replace("-", "").isalnum():
         return "configured destination"
     return f"{scheme}://configured destination"
+
+
+def public_resource_url(hostname, path=None):
+    """Return a safe HTTPS URL for a public rule hostname, if it is linkable."""
+    if not isinstance(hostname, str):
+        return None
+    hostname = hostname.strip()
+    if not hostname or hostname.startswith("*.") or any(char in hostname for char in ("@", "?", "#", "/")):
+        return None
+    try:
+        parsed = urlsplit(f"https://{hostname}")
+        if not parsed.hostname or parsed.username or parsed.password:
+            return None
+        # Reject values that urlsplit normalized into something other than a host[:port].
+        if parsed.netloc.lower() != hostname.lower():
+            return None
+        if parsed.port is not None and not 1 <= parsed.port <= 65535:
+            return None
+    except (TypeError, ValueError):
+        return None
+    safe_path = str(path or "").strip()
+    if safe_path and not safe_path.startswith("/"):
+        safe_path = f"/{safe_path}"
+    if any(char in safe_path for char in ("?", "#", "\r", "\n")):
+        return None
+    return urlunsplit(("https", hostname, safe_path, "", ""))[:768]
 
 
 class NotificationManager:
@@ -441,53 +474,80 @@ class NotificationManager:
     def _render(self, event):
         event_type = event["event_type"]
         context = event["context"]
-        title = TITLE_MAP.get(event_type, "DockFlare notification")
+        title = TITLE_MAP.get(event_type, "🔔 DockFlare — Notification")
         resources = context.get("resources") if isinstance(context.get("resources"), list) else []
         if len(resources) > 1 and event_type.startswith("rule."):
-            title = title.replace("rule ", f"{len(resources)} rules ")
+            title = title.replace("Rule ", f"{len(resources)} rules ")
 
         lines = []
         message = context.get("message")
         if message:
             lines.append(str(message))
-        scalar_fields = (
-            ("operation", "Operation"),
-            ("hostname", "Hostname"),
-            ("path", "Path"),
-            ("source", "Source"),
-            ("container_name", "Container"),
-            ("container_id", "Container ID"),
-            ("agent_name", "Agent"),
-            ("agent_id", "Agent ID"),
-            ("tunnel_name", "Tunnel"),
-            ("tunnel_id", "Tunnel ID"),
-            ("delete_at", "Deletion deadline"),
-            ("grace_period_seconds", "Grace period (seconds)"),
-            ("retry_count", "Retry count"),
-        )
-        for key, label in scalar_fields:
-            if context.get(key) not in (None, ""):
-                lines.append(f"{label}: {context[key]}")
-        if context.get("service"):
-            service = sanitize_service(context["service"])
-            if service:
-                lines.append(f"Service: {service}")
 
         if resources:
-            lines.append("Affected resources:")
-            for resource in resources[:self._resource_limit]:
+            rendered_resources = []
+            for resource in resources[: self._resource_limit]:
                 if not isinstance(resource, dict):
                     continue
                 hostname = str(resource.get("hostname") or resource.get("key") or "resource")[:255]
                 path = str(resource.get("path") or "")[:255]
-                lines.append(f"- {hostname}{path}")
+                clickable_url = public_resource_url(hostname, path)
+                rendered_resources.append(clickable_url or f"{hostname}{path}")
+            if len(rendered_resources) == 1:
+                lines.append(f"Service: {rendered_resources[0]}")
+            elif rendered_resources:
+                lines.append("Affected services:")
+                lines.extend(f"- {resource}" for resource in rendered_resources)
             omitted = len(resources) - self._resource_limit
             if omitted > 0:
                 lines.append(f"- ... and {omitted} more")
+
+        if not resources and context.get("hostname"):
+            service_url = public_resource_url(context["hostname"], context.get("path"))
+            if service_url:
+                lines.append(f"Service: {service_url}")
+            else:
+                lines.append(f"Hostname: {context['hostname']}")
+
+        if context.get("operation"):
+            lines.append(f"Operation: {context['operation']}")
+        if event_type in STATUS_MAP:
+            lines.append(f"Status: {STATUS_MAP[event_type]}")
+        if context.get("source"):
+            source = str(context["source"])
+            lines.append(f"Source: {source[:1].upper()}{source[1:]}")
+        for key, label in (("container_name", "Container"), ("agent_name", "Agent"), ("tunnel_name", "Tunnel")):
+            if context.get(key) not in (None, ""):
+                lines.append(f"{label}: {context[key]}")
+
+        if context.get("delete_at"):
+            lines.append(f"Deletion deadline: {context['delete_at']}")
+        if context.get("grace_period_seconds"):
+            lines.append(f"Grace period: {context['grace_period_seconds']} seconds")
+        if context.get("retry_count"):
+            lines.append(f"Retry count: {context['retry_count']}")
+        if context.get("service"):
+            origin = sanitize_service(context["service"])
+            if origin:
+                lines.append(f"Origin: {origin}")
+
+        technical_fields = [
+            (label, context[key])
+            for key, label in (("container_id", "Container ID"), ("agent_id", "Agent ID"), ("tunnel_id", "Tunnel ID"))
+            if context.get(key) not in (None, "")
+        ]
+        if technical_fields:
+            if lines and lines[-1] != "":
+                lines.append("")
+            lines.append("Technical details")
+            lines.extend(f"{label}: {value}" for label, value in technical_fields)
+
         if context.get("public_url"):
             public_url = sanitize_service(context["public_url"])
             if public_url:
-                lines.append(f"DockFlare: {public_url}")
+                if lines and lines[-1] != "":
+                    lines.append("")
+                lines.append(f"Dashboard: {public_url}")
         if not lines:
             lines.append(f"Event: {event_type}")
         body = "\n".join(lines)
