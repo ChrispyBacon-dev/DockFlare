@@ -455,6 +455,8 @@
     "agents.decommission_manual_message": "Master cleanup completed and Agent access was revoked, but the Agent could not schedule its own stop. The remote Agent container may still be running and requires the host cleanup steps below.",
     "agents.decommission_forced_message": "Master cleanup completed without confirmed remote shutdown. Remote containers may still be running and require the host cleanup steps below.",
     "agents.decommission_waiting_prepare": "Waiting for the Agent to persist its safety marker and stop the tunnel container.",
+    "agents.decommission_contacting_and_stopping": "Contacting the Agent and waiting for the tunnel to stop…",
+    "agents.decommission_working_hint": "Operation in progress — this may take up to 3 minutes.",
     "agents.decommission_remote_prepared": "The Agent is prepared and the tunnel container is stopped or absent.",
     "agents.decommission_cleaning_master": "Cleaning safely owned Cloudflare and DockFlare resources.",
     "agents.decommission_waiting_finalize": "Waiting for the Agent to acknowledge final shutdown scheduling.",

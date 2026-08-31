@@ -249,11 +249,13 @@
 </dialog>
 
 <dialog id="modal-decommission-agent" class="modal">
-  <div class="modal-box w-11/12 max-w-3xl">
-    <h3 class="font-bold text-lg">{{ t('agents.decommission_title') }}</h3>
-    <div class="flex items-center justify-between gap-3 py-3">
-      <p id="decommission-summary" class="min-w-0 text-sm font-medium"></p>
-      <span id="decommission-agent-status" class="badge badge-sm hidden shrink-0"></span>
+  <div class="modal-box decommission-modal-box w-11/12 max-w-5xl">
+    <div class="decommission-modal-header">
+      <h3 class="font-bold text-lg">{{ t('agents.decommission_title') }}</h3>
+      <div class="flex items-center justify-between gap-3 py-3">
+        <p id="decommission-summary" class="min-w-0 text-sm font-medium"></p>
+        <span id="decommission-agent-status" class="badge badge-sm hidden shrink-0"></span>
+      </div>
     </div>
     <div id="decommission-preflight" class="hidden mb-4 rounded-md border border-base-300 bg-base-200/50 p-4">
       <dl class="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-6">
@@ -299,7 +301,16 @@
       <li class="step" data-phase="shutdown_scheduled">{{ t('agents.decommission_revoke_access') }}</li>
       <li class="step" data-phase="completed">{{ t('agents.decommission_complete') }}</li>
     </ol>
-    <div id="decommission-message" class="text-sm mb-4" aria-live="polite"></div>
+    <div id="decommission-status" class="mb-4" role="status" aria-live="polite" aria-atomic="true">
+      <div id="decommission-working" class="decommission-working-panel hidden items-center gap-3 rounded-md border p-3">
+        <span class="loading loading-spinner decommission-working-spinner text-primary shrink-0" aria-hidden="true"></span>
+        <div>
+          <p id="decommission-working-message" class="text-sm font-medium"></p>
+          <p class="mt-1 text-xs text-base-content/60">{{ t('agents.decommission_working_hint') }}</p>
+        </div>
+      </div>
+      <div id="decommission-message" class="text-sm"></div>
+    </div>
     <div id="decommission-cleanup" class="hidden space-y-4">
       <div class="alert alert-info"><span>{{ t('agents.decommission_host_responsibility') }}</span></div>
       <label class="label cursor-pointer justify-start gap-3">
@@ -321,7 +332,7 @@
       </div>
       <p class="text-xs text-base-content/60">{{ t('agents.decommission_network_preserved') }}</p>
     </div>
-    <div class="modal-action">
+    <div class="modal-action decommission-modal-actions">
       <button id="btn-start-decommission" class="btn btn-error">{{ t('agents.decommission_action') }}</button>
       <button id="btn-retry-decommission" class="btn btn-warning hidden">{{ t('agents.decommission_retry') }}</button>
       <button id="btn-force-decommission" class="btn btn-error btn-outline hidden">{{ t('agents.decommission_force') }}</button>
@@ -519,6 +530,51 @@
   vertical-align: top !important;
 }
 
+.decommission-modal-box {
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+.decommission-modal-header {
+  position: sticky;
+  top: -1.5rem;
+  z-index: 10;
+  margin: -1.5rem -1.5rem 0;
+  padding: 1.5rem 1.5rem 0;
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+}
+
+.decommission-modal-actions {
+  position: sticky;
+  bottom: -1.5rem;
+  z-index: 10;
+  margin-right: -1.5rem;
+  margin-bottom: -1.5rem;
+  margin-left: -1.5rem;
+  padding: 1rem 1.5rem 1.5rem;
+  border-top: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+}
+
+.decommission-working-panel {
+  border-color: oklch(var(--p) / 0.3);
+  background: oklch(var(--p) / 0.1);
+}
+
+.decommission-working-spinner {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+#decommission-progress .decommission-active-step::after,
+#decommission-progress.decommission-preparing .step:nth-child(2)::after {
+  animation: decommission-step-pulse 1.4s ease-in-out infinite;
+}
+
+#decommission-progress.decommission-preparing .step:nth-child(2)::before {
+  animation: decommission-connector-pulse 1.4s ease-in-out infinite;
+}
+
 /* Animations */
 @keyframes led-pulse-critical {
   0% {
@@ -556,6 +612,25 @@
   0% { background-color: #1f2937; }
   50% { background-color: #065f46; }
   100% { background-color: #1f2937; }
+}
+
+@keyframes decommission-step-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(var(--p) / 0.4); }
+  50% { box-shadow: 0 0 0 0.45rem oklch(var(--p) / 0); }
+}
+
+@keyframes decommission-connector-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #decommission-progress .decommission-active-step::after,
+  #decommission-progress.decommission-preparing .step:nth-child(2)::after,
+  #decommission-progress.decommission-preparing .step:nth-child(2)::before,
+  #decommission-working .loading {
+    animation: none;
+  }
 }
 </style>
 
@@ -1123,11 +1198,16 @@
     document.getElementById('decommission-files-command').textContent = '';
     document.getElementById('decommission-preflight').classList.add('hidden');
     document.getElementById('decommission-progress').classList.add('hidden');
+    document.getElementById('decommission-progress').classList.remove('decommission-preparing');
+    document.getElementById('decommission-working').classList.add('hidden');
+    document.getElementById('decommission-working').classList.remove('flex');
+    document.getElementById('decommission-message').classList.remove('hidden');
     document.getElementById('decommission-agent-status').classList.add('hidden');
     currentDecommissionPreview = null;
     document.querySelectorAll('#decommission-progress .step').forEach(step => {
-      step.classList.remove('step-primary', 'step-error');
+      step.classList.remove('step-primary', 'step-error', 'decommission-active-step');
       step.removeAttribute('aria-current');
+      step.removeAttribute('data-content');
     });
   };
 
@@ -1179,14 +1259,24 @@
     document.getElementById('decommission-progress').classList.remove('hidden');
     renderDecommissionPreflight(operation);
     const phaseIndex = decommissionPhaseOrder[operation.state] ?? 0;
+    const complete = ['completed', 'forced_completed'].includes(operation.state);
+    const failed = operation.state.endsWith('failed') || operation.state === 'timed_out';
+    const running = !complete && !failed;
+    const progress = document.getElementById('decommission-progress');
+    progress.classList.toggle('decommission-preparing', operation.state === 'waiting_for_prepare');
     document.querySelectorAll('#decommission-progress .step').forEach((step, index) => {
       step.classList.toggle('step-primary', index <= phaseIndex);
-      step.classList.toggle('step-error', operation.state.endsWith('failed') && index === phaseIndex);
+      step.classList.toggle('step-error', failed && index === phaseIndex);
+      step.classList.toggle('decommission-active-step', running && index === phaseIndex);
+      if (index < phaseIndex || (complete && index <= phaseIndex)) step.setAttribute('data-content', '✓');
+      else if (failed && index === phaseIndex) step.setAttribute('data-content', '!');
+      else step.removeAttribute('data-content');
       if (index === phaseIndex) step.setAttribute('aria-current', 'step');
       else step.removeAttribute('aria-current');
     });
     const message = document.getElementById('decommission-message');
-    const complete = ['completed', 'forced_completed'].includes(operation.state);
+    const working = document.getElementById('decommission-working');
+    const workingMessage = document.getElementById('decommission-working-message');
     if (operation.state === 'completed') {
       message.textContent = operation.remote_results?.agent_container === 'manual_required'
         ? t('agents.decommission_manual_message')
@@ -1200,7 +1290,12 @@
         : '';
       message.textContent = errorText ? `${stateText} ${errorText}` : stateText;
     }
-    const failed = operation.state.endsWith('failed') || operation.state === 'timed_out';
+    workingMessage.textContent = operation.state === 'waiting_for_prepare'
+      ? t('agents.decommission_contacting_and_stopping')
+      : message.textContent;
+    working.classList.toggle('hidden', !running);
+    working.classList.toggle('flex', running);
+    message.classList.toggle('hidden', running);
     const agent = window.lastFetchedData?.agents?.[operation.agent_id];
     if (agent) currentDecommissionAgentOnline = agent.online;
     document.getElementById('btn-retry-decommission').classList.toggle('hidden', !failed);
@@ -1222,6 +1317,11 @@
     if (!currentDecommissionOperationId) return;
     const result = await apiCall(`/api/v2/agent-decommissions/${currentDecommissionOperationId}`);
     if (result && result.operation) renderDecommissionOperation(result.operation);
+  };
+
+  const setDecommissionActionPending = (button, pending) => {
+    button.disabled = pending;
+    button.setAttribute('aria-busy', pending ? 'true' : 'false');
   };
 
   const openDecommissionModal = async (agentId, operationId = null) => {
@@ -1286,16 +1386,28 @@
     document.getElementById('btn-start-decommission').addEventListener('click', async () => {
       const confirmed = await dfConfirm(t('agents.decommission_confirm'), t('agents.decommission_title'));
       if (!confirmed) return;
-      const result = await apiCall(`/api/v2/agents/${currentDecommissionAgentId}/decommission`, 'POST');
-      if (result?.operation) {
-        renderDecommissionOperation(result.operation);
-        if (!decommissionPollTimer) decommissionPollTimer = setInterval(pollDecommission, 2000);
+      const button = document.getElementById('btn-start-decommission');
+      setDecommissionActionPending(button, true);
+      try {
+        const result = await apiCall(`/api/v2/agents/${currentDecommissionAgentId}/decommission`, 'POST');
+        if (result?.operation) {
+          renderDecommissionOperation(result.operation);
+          if (!decommissionPollTimer) decommissionPollTimer = setInterval(pollDecommission, 2000);
+        }
+      } finally {
+        setDecommissionActionPending(button, false);
       }
     });
 
     document.getElementById('btn-retry-decommission').addEventListener('click', async () => {
-      const result = await apiCall(`/api/v2/agent-decommissions/${currentDecommissionOperationId}/retry`, 'POST');
-      if (result?.operation) renderDecommissionOperation(result.operation);
+      const button = document.getElementById('btn-retry-decommission');
+      setDecommissionActionPending(button, true);
+      try {
+        const result = await apiCall(`/api/v2/agent-decommissions/${currentDecommissionOperationId}/retry`, 'POST');
+        if (result?.operation) renderDecommissionOperation(result.operation);
+      } finally {
+        setDecommissionActionPending(button, false);
+      }
     });
 
     document.getElementById('btn-force-decommission').addEventListener('click', async () => {
