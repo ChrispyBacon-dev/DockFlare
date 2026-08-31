@@ -47,6 +47,7 @@ from app.core.access_manager import (
 )
 from app.core.tunnel_manager import get_tunnel_operation_lock, update_cloudflare_config
 from app.core.utils import get_rule_key, get_source_rule_key, get_label
+from app.core import notification_manager
 
 def _get_hostname_configs_from_container(container_obj):
     labels = container_obj.labels
@@ -780,6 +781,11 @@ def _run_reconciliation_logic():
             if not update_cloudflare_config(effective_tunnel_id):
                 logging.error("[Reconcile] Failed to update Cloudflare tunnel configuration.")
                 current_app.reconciliation_info["status"] = "Error: Failed tunnel config update."
+                notification_manager.emit(
+                    "cloudflare.tunnel_failure",
+                    str(effective_tunnel_id or "master"),
+                    {"tunnel_id": str(effective_tunnel_id or "")[:12], "operation": "reconciliation update"},
+                )
             else:
                 logging.info("[Reconcile] Cloudflare tunnel configuration updated successfully.")
                 current_app.reconciliation_info["status"] = "Tunnel configuration updated."
@@ -809,11 +815,26 @@ def _run_reconciliation_logic():
                     break
                 
                 if tunnel_id_dns and not hostname_dns.startswith('*.'):
-                    create_cloudflare_dns_record(zone_id_dns, hostname_dns, tunnel_id_dns)
+                    try:
+                        dns_result = create_cloudflare_dns_record(zone_id_dns, hostname_dns, tunnel_id_dns)
+                    except Exception:
+                        logging.exception("[Reconcile] DNS creation raised for %s.", hostname_dns)
+                        dns_result = None
+                    if not dns_result or dns_result in {"semaphore_timeout", "existing_record_unconfirmed"}:
+                        notification_manager.emit(
+                            "cloudflare.dns_failure",
+                            f"{zone_id_dns}:{hostname_dns}",
+                            {"hostname": hostname_dns, "operation": "reconciliation create"},
+                        )
                     if config.USE_EXTERNAL_CLOUDFLARED:
                         time.sleep(0.1)
                 elif not tunnel_id_dns:
                     logging.error(f"[Reconcile] Cannot setup DNS for {hostname_dns}: Tunnel ID is missing.")
+                    notification_manager.emit(
+                        "cloudflare.tunnel_failure",
+                        hostname_dns,
+                        {"hostname": hostname_dns, "operation": "reconciliation resolve tunnel"},
+                    )
 
         for old_hostname, old_zone_id, old_tunnel_id in dns_cleanup_after_sync:
             with state_lock:
@@ -830,7 +851,12 @@ def _run_reconciliation_logic():
                     for rule in managed_rules.values()
                 )
             if not sync_pending and not still_owned and not old_hostname.startswith("*."):
-                delete_cloudflare_dns_record(old_zone_id, old_hostname, old_tunnel_id)
+                if not delete_cloudflare_dns_record(old_zone_id, old_hostname, old_tunnel_id):
+                    notification_manager.emit(
+                        "cloudflare.dns_failure",
+                        f"{old_zone_id}:{old_hostname}",
+                        {"hostname": old_hostname, "operation": "reconciliation delete"},
+                    )
                 
         current_app.reconciliation_info["in_progress"] = False
         current_app.reconciliation_info["progress"] = 100 
@@ -921,6 +947,10 @@ def cleanup_expired_rules_once(now=None):
     for candidate in candidates:
         groups.setdefault(candidate["effective_tunnel_id"], []).append(candidate)
     committed = 0
+    committed_candidates = []
+    tunnel_failures = []
+    dns_failures = []
+    access_failures = []
     for tunnel_id in sorted(groups, key=lambda value: str(value or "")):
         if not tunnel_id:
             logging.error("Cleanup retained %s rules because their effective tunnel is missing.", len(groups[tunnel_id]))
@@ -928,7 +958,10 @@ def cleanup_expired_rules_once(now=None):
         with get_tunnel_operation_lock(tunnel_id):
             with state_lock:
                 valid = [candidate for candidate in groups[tunnel_id] if _candidate_still_matches(candidate)]
-            if not valid or not update_cloudflare_config(tunnel_id):
+            if not valid:
+                continue
+            if not update_cloudflare_config(tunnel_id):
+                tunnel_failures.append(tunnel_id)
                 continue
             successful = []
             for candidate in valid:
@@ -947,8 +980,10 @@ def cleanup_expired_rules_once(now=None):
                         for key, rule in managed_rules.items()
                     )
                 if candidate["hostname"] and not dns_shared and not delete_cloudflare_dns_record(candidate["zone_id"], candidate["hostname"], tunnel_id):
+                    dns_failures.append(candidate)
                     continue
                 if candidate["access_app_id"] and not app_shared and not delete_cloudflare_access_application(candidate["access_app_id"]):
+                    access_failures.append(candidate)
                     continue
                 successful.append(candidate)
             with state_lock:
@@ -956,10 +991,45 @@ def cleanup_expired_rules_once(now=None):
                     if _candidate_still_matches(candidate):
                         del managed_rules[candidate["key"]]
                         committed += 1
+                        committed_candidates.append(candidate)
                 if successful:
                     save_state()
     if committed:
         publish_state_event("snapshot_refresh")
+        notification_manager.emit(
+            "rule.deleted",
+            f"cleanup:{int(current_time.timestamp())}",
+            {
+                "source": "cleanup",
+                "resources": [
+                    {
+                        "key": candidate["key"],
+                        "hostname": candidate.get("hostname"),
+                        "source": candidate.get("source"),
+                    }
+                    for candidate in committed_candidates
+                ],
+                "public_url": config.DOCKFLARE_PUBLIC_URL,
+            },
+        )
+    for tunnel_id in tunnel_failures:
+        notification_manager.emit(
+            "cloudflare.tunnel_failure",
+            tunnel_id,
+            {"tunnel_id": str(tunnel_id)[:12], "operation": "cleanup update"},
+        )
+    for candidate in dns_failures:
+        notification_manager.emit(
+            "cloudflare.dns_failure",
+            f"{candidate.get('zone_id')}:{candidate.get('hostname')}",
+            {"hostname": candidate.get("hostname"), "operation": "delete", "source": candidate.get("source")},
+        )
+    for candidate in access_failures:
+        notification_manager.emit(
+            "cloudflare.access_failure",
+            candidate["key"],
+            {"hostname": candidate.get("hostname"), "operation": "delete", "source": candidate.get("source")},
+        )
     return committed
 
 
@@ -990,6 +1060,16 @@ def retry_pending_tunnel_sync(now=None, force=False):
                 rule["tunnel_sync_attempts"] = int(rule.get("tunnel_sync_attempts") or 0) + 1
                 changed = True
         success = update_cloudflare_config(tunnel_id)
+        if not success:
+            notification_manager.emit(
+                "cloudflare.tunnel_failure",
+                tunnel_id,
+                {
+                    "tunnel_id": str(tunnel_id)[:12],
+                    "operation": "retry pending synchronization",
+                    "retry_count": max((int(rule.get("tunnel_sync_attempts") or 0) for rule in rules), default=0),
+                },
+            )
         if success:
             with state_lock:
                 for rule in managed_rules.values():

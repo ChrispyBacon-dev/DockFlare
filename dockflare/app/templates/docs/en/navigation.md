@@ -20,6 +20,7 @@ This documentation provides comprehensive information for DockFlare. Whether you
     *   [State-Persistence](State-Persistence.md)
 *   **Configuration**
     *   [Container Labels](Container-Labels.md)
+    *   [Apprise Notifications](Apprise-Notifications.md)
     *   [Identity Providers](Identity-Providers.md)
     *   [OAuth Provider Setup](OAuth-Provider-Setup.md)
 *   **Usage Guide**

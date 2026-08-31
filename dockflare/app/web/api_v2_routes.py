@@ -37,6 +37,7 @@ from app.core.state_manager import (
 )
 from app.core import agent_key_store
 from app.core import agent_decommission
+from app.core import notification_manager
 from app.core.tunnel_manager import (
     start_cloudflared_container,
     stop_cloudflared_container,
@@ -536,6 +537,7 @@ def create_manual_rule_api():
             save_state()
             state_changed = True
 
+    access_success = True
     if access_group_ids_list:
         from app import config
         rule = managed_rules.get(rule_key)
@@ -585,6 +587,7 @@ def create_manual_rule_api():
                             logging.info(f"API: Successfully updated Access Application for {rule_key}")
                         else:
                             logging.error(f"API: Failed to update Access Application for {rule_key}")
+                            access_success = False
                     else:
                         logging.info(f"API: Creating new Access Application for rule {rule_key}")
                         from app.core.access_manager import create_cloudflare_access_application
@@ -607,8 +610,17 @@ def create_manual_rule_api():
                             logging.info(f"API: Created Access Application ID '{new_app_id}' for {rule_key}")
                         else:
                             logging.error(f"API: Failed to create Access Application for {rule_key}")
+                            access_success = False
                 except Exception as e:
                     logging.error(f"API: Error creating/updating Access Application for {rule_key}: {e}", exc_info=True)
+                    access_success = False
+
+        if not access_success:
+            notification_manager.emit(
+                "cloudflare.access_failure",
+                rule_key,
+                {"hostname": hostname, "path": normalized_path, "operation": "apply policy", "source": "manual"},
+            )
 
     if state_changed:
         publish_state_event('snapshot_refresh')
@@ -628,6 +640,18 @@ def create_manual_rule_api():
         update_cloudflare_config(master_tunnel_id)
     dns_success = bool(dns_result) and dns_result not in {"semaphore_timeout", "existing_record_unconfirmed"}
     if not dns_success or not tunnel_update_success:
+        if not dns_success:
+            notification_manager.emit(
+                "cloudflare.dns_failure",
+                f"{zone_id}:{hostname}",
+                {"hostname": hostname, "path": normalized_path, "operation": "create", "source": "manual"},
+            )
+        if not tunnel_update_success:
+            notification_manager.emit(
+                "cloudflare.tunnel_failure",
+                tunnel_id,
+                {"hostname": hostname, "tunnel_id": tunnel_id[:12], "tunnel_name": tunnel_name, "operation": "update", "source": "manual"},
+            )
         with state_lock:
             if previous_rule_snapshot is None:
                 managed_rules.pop(rule_key, None)
@@ -673,6 +697,18 @@ def create_manual_rule_api():
         if old_tuple != new_tuple and not old_tuple_still_owned and all(old_tuple) and not old_tuple[0].startswith('*.'):
             delete_cloudflare_dns_record(old_tuple[1], old_tuple[0], old_tuple[2])
     status_code = 201 if state_changed else 200
+    if previous_rule_snapshot is None and state_changed and access_success:
+        notification_manager.emit(
+            "rule.activated",
+            rule_key,
+            {
+                "source": "manual",
+                "tunnel_id": tunnel_id[:12],
+                "tunnel_name": tunnel_name,
+                "resources": [{"key": rule_key, "hostname": hostname, "path": normalized_path, "source": "manual"}],
+                "public_url": config.DOCKFLARE_PUBLIC_URL,
+            },
+        )
     return jsonify({"rule_key": rule_key}), status_code
 
 @api_v2_bp.route('/reconciliation-status', methods=['GET'])
@@ -923,6 +959,8 @@ def process_agent_container_start(payload, agent_id, defer_side_effects=False):
 
             state_changed_locally = False
             needs_tunnel_config_update = False
+            activated_resources = []
+            restored_resources = []
 
             agent_record = get_agent(agent_id)
             assigned_tunnel_name = agent_record.get("assigned_tunnel_name") if agent_record else "Unknown"
@@ -951,6 +989,12 @@ def process_agent_container_start(payload, agent_id, defer_side_effects=False):
                         if reactivated:
                             mark_rule_tunnel_sync_pending(matched_rule)
                             needs_tunnel_config_update = True
+                            restored_resources.append({
+                                "key": matched_key,
+                                "hostname": matched_rule.get("hostname"),
+                                "path": matched_rule.get("path"),
+                                "source": "agent",
+                            })
                         state_changed_locally |= changed
                         if matched_rule.get("hostname") and matched_rule.get("zone_id"):
                             dns_targets[matched_rule["hostname"]] = {"zone_id": matched_rule["zone_id"]}
@@ -981,6 +1025,11 @@ def process_agent_container_start(payload, agent_id, defer_side_effects=False):
                     )
                 except ZoneResolutionError as exc:
                     logging.error(f"AGENT_PROCESS: Zone resolution failed for {rule_key} ({exc.code}). Skipping.")
+                    notification_manager.emit(
+                        "cloudflare.dns_failure",
+                        rule_key,
+                        {"hostname": hostname, "path": path_from_item, "operation": "zone resolution", "source": "agent", "agent_id": agent_id[:12]},
+                    )
                     continue
                 target_zone_id = selected_zone["id"]
                 zone_name_from_item = selected_zone.get("name")
@@ -1056,6 +1105,12 @@ def process_agent_container_start(payload, agent_id, defer_side_effects=False):
                             existing_rule["status"] = "active"
                             existing_rule["delete_at"] = None
                             rule_data_changed = True
+                            restored_resources.append({
+                                "key": rule_key,
+                                "hostname": hostname,
+                                "path": path_from_item,
+                                "source": "agent",
+                            })
 
                         tunnel_fields = (
                             "hostname", "path", "service", "zone_id", "no_tls_verify",
@@ -1109,6 +1164,12 @@ def process_agent_container_start(payload, agent_id, defer_side_effects=False):
                         existing_rule = managed_rules[rule_key]
                         state_changed_locally = True
                         needs_tunnel_config_update = True
+                        activated_resources.append({
+                            "key": rule_key,
+                            "hostname": hostname,
+                            "path": path_from_item,
+                            "source": "agent",
+                        })
 
                     dns_targets[hostname] = {
                         "zone_id": target_zone_id,
@@ -1129,6 +1190,11 @@ def process_agent_container_start(payload, agent_id, defer_side_effects=False):
                 "policy_jobs": policy_jobs,
                 "dns_targets": dns_targets,
                 "tunnel_id": assigned_tunnel_id,
+                "tunnel_name": assigned_tunnel_name,
+                "container_id": container_id,
+                "container_name": container_name,
+                "activated_resources": activated_resources,
+                "restored_resources": restored_resources,
             }
             if defer_side_effects:
                 return plan
@@ -1149,8 +1215,16 @@ def _execute_agent_start_plan(plan):
         return
     policy_changed = False
     for rule_key, policy_payload in plan.get("policy_jobs", []):
-        if handle_access_policy_from_labels(rule_key, copy.deepcopy(policy_payload)):
-            policy_changed = True
+        try:
+            if handle_access_policy_from_labels(rule_key, copy.deepcopy(policy_payload)):
+                policy_changed = True
+        except Exception:
+            notification_manager.emit(
+                "cloudflare.access_failure",
+                rule_key,
+                {"hostname": policy_payload.get("hostname"), "path": policy_payload.get("path"), "operation": "apply policy", "source": "agent", "agent_id": str(plan.get("agent_id") or "")[:12]},
+            )
+            raise
     if policy_changed:
         save_state()
         publish_state_event('snapshot_refresh')
@@ -1161,17 +1235,45 @@ def _execute_agent_start_plan(plan):
     agent_tunnel_id = plan.get("tunnel_id")
     if not agent_tunnel_id:
         logging.error("AGENT_PROCESS: Agent %s has no tunnel ID; synchronization remains pending.", agent_id)
+        notification_manager.emit(
+            "cloudflare.tunnel_failure",
+            agent_id,
+            {"agent_id": str(agent_id)[:12], "operation": "resolve tunnel", "source": "agent"},
+        )
         return
     try:
         if not update_cloudflare_config(agent_tunnel_id):
             logging.error("AGENT_PROCESS: Failed to update tunnel config for agent %s", agent_id)
+            notification_manager.emit(
+                "cloudflare.tunnel_failure",
+                agent_tunnel_id,
+                {"agent_id": str(agent_id)[:12], "tunnel_id": str(agent_tunnel_id)[:12], "tunnel_name": plan.get("tunnel_name"), "operation": "update", "source": "agent"},
+            )
             return
+        remote_success = True
         for hostname, details in plan.get("dns_targets", {}).items():
             zone_id = details.get("zone_id")
             if zone_id and not hostname.startswith('*.'):
-                create_cloudflare_dns_record(zone_id, hostname, agent_tunnel_id)
+                try:
+                    dns_result = create_cloudflare_dns_record(zone_id, hostname, agent_tunnel_id)
+                except Exception:
+                    logging.exception("AGENT_PROCESS: DNS creation raised for %s", hostname)
+                    dns_result = None
+                if not dns_result or dns_result in {"semaphore_timeout", "existing_record_unconfirmed"}:
+                    remote_success = False
+                    notification_manager.emit(
+                        "cloudflare.dns_failure",
+                        f"{zone_id}:{hostname}",
+                        {"hostname": hostname, "operation": "create", "source": "agent", "agent_id": str(agent_id)[:12]},
+                    )
             elif not zone_id:
                 logging.error("AGENT_PROCESS: Could not determine Zone ID for DNS record %s", hostname)
+                remote_success = False
+                notification_manager.emit(
+                    "cloudflare.dns_failure",
+                    hostname,
+                    {"hostname": hostname, "operation": "create", "source": "agent", "agent_id": str(agent_id)[:12]},
+                )
         sync_changed = False
         with state_lock:
             for rule in managed_rules.values():
@@ -1184,8 +1286,27 @@ def _execute_agent_start_plan(plan):
         if sync_changed:
             save_state()
         logging.info("AGENT_PROCESS: Successfully updated tunnel config for agent %s", agent_id)
+        if remote_success:
+            common_context = {
+                "agent_id": str(agent_id)[:12],
+                "tunnel_id": str(agent_tunnel_id)[:12],
+                "tunnel_name": plan.get("tunnel_name"),
+                "container_id": str(plan.get("container_id") or "")[:12],
+                "container_name": plan.get("container_name"),
+                "source": "agent",
+                "public_url": config.DOCKFLARE_PUBLIC_URL,
+            }
+            if plan.get("activated_resources"):
+                notification_manager.emit("rule.activated", str(plan.get("container_id") or agent_id), {**common_context, "resources": plan["activated_resources"]})
+            if plan.get("restored_resources"):
+                notification_manager.emit("rule.restored", str(plan.get("container_id") or agent_id), {**common_context, "resources": plan["restored_resources"]})
     except Exception:
         logging.exception("AGENT_PROCESS: Failed to update tunnel config for agent %s", agent_id)
+        notification_manager.emit(
+            "cloudflare.tunnel_failure",
+            str(agent_tunnel_id),
+            {"agent_id": str(agent_id)[:12], "tunnel_id": str(agent_tunnel_id)[:12], "operation": "update", "source": "agent"},
+        )
 
 
 def _coalesce_agent_start_plans(plans):
@@ -1200,11 +1321,18 @@ def _coalesce_agent_start_plans(plans):
             "needs_tunnel_config_update": False,
             "policy_jobs": [],
             "dns_targets": {},
+            "tunnel_name": plan.get("tunnel_name"),
+            "container_id": plan.get("container_id"),
+            "container_name": plan.get("container_name"),
+            "activated_resources": [],
+            "restored_resources": [],
         })
         merged["state_changed"] |= bool(plan.get("state_changed"))
         merged["needs_tunnel_config_update"] |= bool(plan.get("needs_tunnel_config_update"))
         merged["policy_jobs"].extend(plan.get("policy_jobs", []))
         merged["dns_targets"].update(plan.get("dns_targets", {}))
+        merged["activated_resources"].extend(plan.get("activated_resources", []))
+        merged["restored_resources"].extend(plan.get("restored_resources", []))
     return list(combined.values())
 
 
@@ -1218,6 +1346,9 @@ def process_agent_container_stop(payload, agent_id, received_at=None, persist=Tr
 
         logging.info(f"AGENT_PROCESS_STOP: Processing stop for container {container_id[:12]} from agent {agent_id}")
 
+        pending_resources = []
+        delete_at_value = None
+        grace_period = current_app.config.get('GRACE_PERIOD_SECONDS', 28800)
         with state_lock:
             rule_keys_affected = []
             for r_key, details in managed_rules.items():
@@ -1228,7 +1359,6 @@ def process_agent_container_stop(payload, agent_id, received_at=None, persist=Tr
                     rule_keys_affected.append(r_key)
 
             if rule_keys_affected:
-                grace_period = current_app.config.get('GRACE_PERIOD_SECONDS', 28800)
                 for rule_key in rule_keys_affected:
                     rule = managed_rules[rule_key]
                     if rule.get("status") != "pending_deletion":
@@ -1237,14 +1367,21 @@ def process_agent_container_stop(payload, agent_id, received_at=None, persist=Tr
                         rule["delete_at"] = (received_at or datetime.now(timezone.utc)) + grace_delta
                         rule["lifecycle_generation"] = int(rule.get("lifecycle_generation") or 0) + 1
                         logging.info(f"AGENT_PROCESS_STOP: Rule for {rule_key} scheduled for deletion (grace period: {grace_period}s)")
+                        delete_at_value = rule["delete_at"].isoformat()
+                        pending_resources.append({"key": rule_key, "hostname": rule.get("hostname"), "path": rule.get("path"), "source": "agent"})
                 if persist:
                     save_state()
                     publish_state_event('snapshot_refresh')
                 logging.info(f"AGENT_PROCESS_STOP: Scheduled {len(rule_keys_affected)} rules for deletion from agent {agent_id}")
-                return True
             else:
                 logging.info(f"AGENT_PROCESS_STOP: No active agent-managed rules found for container {container_id[:12]} from agent {agent_id}")
-        return False
+        if persist and pending_resources:
+            notification_manager.emit(
+                "rule.pending_deletion",
+                container_id,
+                {"container_id": container_id[:12], "agent_id": str(agent_id)[:12], "source": "agent", "delete_at": delete_at_value, "grace_period_seconds": grace_period, "resources": pending_resources, "public_url": config.DOCKFLARE_PUBLIC_URL},
+            )
+        return bool(pending_resources)
 
 @api_v2_bp.route('/agents/generate-key', methods=['POST', 'GET'])
 def agents_generate_key():
@@ -1752,6 +1889,8 @@ def _handle_agent_event_request(agent_id):
         rules_before = copy.deepcopy(managed_rules)
         agents_before = copy.deepcopy(agents)
     side_effect_plans = []
+    pending_notification_resources = []
+    pending_notification_deadline = None
     try:
         if event_type == "container_start":
             plan = process_agent_container_start({"container": valid_containers[0]}, agent_id, defer_side_effects=True)
@@ -1816,7 +1955,39 @@ def _handle_agent_event_request(agent_id):
             agents.clear()
             agents.update(agents_before)
             return _agent_json_response(503, "persistence_failed")
+        for rule_key, rule in managed_rules.items():
+            previous_rule = rules_before.get(rule_key)
+            if (
+                rule.get("source") == "agent"
+                and rule.get("agent_id") == agent_id
+                and rule.get("status") == "pending_deletion"
+                and (not previous_rule or previous_rule.get("status") != "pending_deletion")
+            ):
+                pending_notification_resources.append({
+                    "key": rule_key,
+                    "hostname": rule.get("hostname"),
+                    "path": rule.get("path"),
+                    "source": "agent",
+                })
+                deadline = rule.get("delete_at")
+                if isinstance(deadline, datetime):
+                    pending_notification_deadline = deadline.isoformat()
     publish_state_event("snapshot_refresh")
+    if pending_notification_resources:
+        container_id = valid_containers[0]["id"] if len(valid_containers) == 1 else agent_id
+        notification_manager.emit(
+            "rule.pending_deletion",
+            container_id,
+            {
+                "container_id": str(container_id)[:12],
+                "agent_id": str(agent_id)[:12],
+                "source": "agent",
+                "delete_at": pending_notification_deadline,
+                "grace_period_seconds": current_app.config.get("GRACE_PERIOD_SECONDS", 28800),
+                "resources": pending_notification_resources,
+                "public_url": config.DOCKFLARE_PUBLIC_URL,
+            },
+        )
     for plan in _coalesce_agent_start_plans(side_effect_plans):
         _execute_agent_start_plan(plan)
     http_status = 200 if result_code == "accepted" else 202
@@ -2347,6 +2518,7 @@ def agent_start():
     if not docker_client:
         return jsonify({"status": "error", "message": "Docker client not available."}),
         
+    notification_manager.suppress_tunnel_health(tunnel_state.get("id"), 120)
     start_cloudflared_container()
     time.sleep(0.5)
     return jsonify({
@@ -2362,6 +2534,7 @@ def agent_stop():
     if not docker_client:
         return jsonify({"status": "error", "message": "Docker client not available."}),
 
+    notification_manager.suppress_tunnel_health(tunnel_state.get("id"), 300)
     stop_cloudflared_container()
     time.sleep(0.5)
     return jsonify({
@@ -2429,6 +2602,31 @@ def delete_manual_rule(rule_key):
     config_update_success = update_cloudflare_config(tunnel_id_for_delete)
 
     publish_state_event('snapshot_refresh')
+
+    if not dns_deleted_ok:
+        notification_manager.emit(
+            "cloudflare.dns_failure",
+            f"{zone_id_for_delete}:{hostname_for_dns_operations}",
+            {"hostname": hostname_for_dns_operations, "operation": "delete", "source": "manual"},
+        )
+    if not access_app_deleted_ok:
+        notification_manager.emit(
+            "cloudflare.access_failure",
+            rule_key,
+            {"hostname": hostname_for_dns_operations, "operation": "delete", "source": "manual"},
+        )
+    if not config_update_success:
+        notification_manager.emit(
+            "cloudflare.tunnel_failure",
+            str(tunnel_id_for_delete),
+            {"hostname": hostname_for_dns_operations, "tunnel_id": str(tunnel_id_for_delete)[:12], "operation": "delete rule update", "source": "manual"},
+        )
+    if config_update_success and dns_deleted_ok and access_app_deleted_ok:
+        notification_manager.emit(
+            "rule.deleted",
+            rule_key,
+            {"source": "manual", "resources": [{"key": rule_key, "hostname": hostname_for_dns_operations, "source": "manual"}], "public_url": config.DOCKFLARE_PUBLIC_URL},
+        )
 
     if config_update_success:
         message = f"Manual rule {rule_key} deleted."
@@ -2502,6 +2700,24 @@ def force_delete_rule(rule_key):
     }
     if not all(results.values()):
         status_code = 207 
+
+    notification_context = {
+        "hostname": hostname_for_dns,
+        "operation": "force delete",
+        "source": rule_details_copy.get("source") or "manual",
+    }
+    if not dns_deleted:
+        notification_manager.emit("cloudflare.dns_failure", f"{zone_id_for_delete}:{hostname_for_dns}", notification_context)
+    if not access_app_deleted:
+        notification_manager.emit("cloudflare.access_failure", rule_key, notification_context)
+    if not config_updated:
+        notification_manager.emit("cloudflare.tunnel_failure", effective_tunnel_id, notification_context)
+    if status_code == 200:
+        notification_manager.emit(
+            "rule.deleted",
+            rule_key,
+            {**notification_context, "resources": [{"key": rule_key, "hostname": hostname_for_dns, "source": notification_context["source"]}], "public_url": config.DOCKFLARE_PUBLIC_URL},
+        )
 
     return jsonify({
         "status": "success" if status_code == 200 else "warning",

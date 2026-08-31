@@ -23,6 +23,7 @@ import sys
 import os
 import json
 import secrets
+import copy
 from cryptography.fernet import Fernet
 
 from app import app, docker_client, tunnel_state, cloudflared_agent_state, config
@@ -36,11 +37,13 @@ from app.core.tunnel_manager import (
 from app.core.docker_handler import start_event_listeners, process_container_start
 from app.core.reconciler import cleanup_expired_rules, reconcile_state_threaded
 from app.core.agent_decommission import timeout_worker as agent_decommission_timeout_worker
+from app.core import notification_manager
 
 stop_event = threading.Event()
 background_threads_list = []
 agent_status_updater_thread = None
 main_initialization_thread = None
+notification_health_thread = None
 
 
 def _restart_if_requested():
@@ -55,7 +58,7 @@ def _restart_if_requested():
         sys.exit(0)
 
 def run_all_background_tasks():
-    global background_threads_list, agent_status_updater_thread 
+    global background_threads_list, agent_status_updater_thread, notification_health_thread
     
     threads_to_start = []
     if not docker_client:
@@ -86,6 +89,14 @@ def run_all_background_tasks():
         logging.info("Starting periodic agent status updater thread...")
         agent_status_updater_thread = threading.Thread(target=periodic_agent_status_updater, name="AgentStatusUpdater", daemon=True)
         threads_to_start.append(agent_status_updater_thread)
+
+    if notification_health_thread is None or not notification_health_thread.is_alive():
+        notification_health_thread = threading.Thread(
+            target=periodic_notification_health_monitor,
+            name="NotificationHealthMonitor",
+            daemon=True,
+        )
+        threads_to_start.append(notification_health_thread)
     
     for t in threads_to_start:
         t.start()
@@ -108,12 +119,62 @@ def periodic_agent_status_updater():
         stop_event.wait(config.AGENT_STATUS_UPDATE_INTERVAL_SECONDS)
     logging.info("Periodic agent status updater task stopped.")
 
+
+def periodic_notification_health_monitor():
+    from app.core.state_manager import agents, agent_decommissions, state_lock
+
+    logging.info("Notification health monitor starting...")
+    while not stop_event.is_set():
+        try:
+            with state_lock:
+                agents_snapshot = copy.deepcopy(agents)
+                decommissioning_ids = {
+                    operation.get("agent_id")
+                    for operation in agent_decommissions.values()
+                    if operation.get("state") not in {"completed", "failed", "cancelled"}
+                }
+                local_status = cloudflared_agent_state.get("container_status")
+                local_tunnel_id = tunnel_state.get("id") or config.EXTERNAL_TUNNEL_ID
+                local_tunnel_name = tunnel_state.get("name")
+            notification_manager.check_agent_health(
+                agents_snapshot,
+                config.AGENT_HEARTBEAT_TIMEOUT,
+                decommissioning_ids=decommissioning_ids,
+            )
+            if not config.USE_EXTERNAL_CLOUDFLARED:
+                notification_manager.check_tunnel_health(
+                    local_tunnel_id,
+                    local_status,
+                    {"tunnel_id": str(local_tunnel_id or "")[:12], "tunnel_name": local_tunnel_name or ""},
+                )
+            for agent_id, agent in agents_snapshot.items():
+                assigned_tunnel_id = agent.get("assigned_tunnel_id")
+                tunnel_status = (agent.get("tunnel_status") or {}).get("status")
+                if assigned_tunnel_id and tunnel_status:
+                    notification_manager.check_tunnel_health(
+                        assigned_tunnel_id,
+                        tunnel_status,
+                        {
+                            "tunnel_id": str(assigned_tunnel_id)[:12],
+                            "tunnel_name": agent.get("assigned_tunnel_name") or "",
+                            "agent_id": str(agent_id)[:12],
+                            "agent_name": agent.get("display_name") or "",
+                        },
+                        intentional=agent_id in decommissioning_ids,
+                    )
+        except Exception:
+            logging.exception("Notification health monitor pass failed.")
+        stop_event.wait(config.NOTIFICATION_HEALTH_INTERVAL_SECONDS)
+    logging.info("Notification health monitor stopped.")
+
 def start_core_services():
     global background_threads_list 
 
     logging.info("Core services initialization process started.")
     if not docker_client:
         logging.error("Docker client unavailable. Critical functionalities will be affected.")
+        notification_manager.end_bootstrap()
+        run_all_background_tasks()
         return
 
     initialize_tunnel()
@@ -246,6 +307,7 @@ def start_core_services():
         except Exception as e:
             logging.debug(f"Could not refresh email sending status on startup: {e}")
 
+    notification_manager.end_bootstrap()
     run_all_background_tasks()
 
 def perform_initial_setup_and_tasks():
@@ -318,6 +380,10 @@ def main_application_entrypoint():
 
     load_state()
     logging.info("Initial state loading from file complete.")
+    notification_manager.configure(config.NOTIFICATION_CONFIG)
+    notification_manager.begin_bootstrap()
+    notification_worker = notification_manager.start(stop_event)
+    background_threads_list.append(notification_worker)
     decommission_timeout_thread = threading.Thread(
         target=agent_decommission_timeout_worker,
         args=(stop_event,),
@@ -425,6 +491,7 @@ def main_application_entrypoint():
     finally:
         logging.info("Shutdown sequence initiated...")
         stop_event.set() 
+        notification_manager.stop(timeout_seconds=5)
         
         if main_initialization_thread and main_initialization_thread.is_alive():
             logging.info("Waiting for main initialization thread to complete (timeout 15s)...")
