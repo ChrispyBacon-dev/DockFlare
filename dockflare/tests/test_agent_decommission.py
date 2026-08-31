@@ -371,8 +371,12 @@ class AgentDecommissionTests(unittest.TestCase):
         with app.test_request_context("/agents"):
             rendered = render_template("agents.html")
         self.assertIn("modal-decommission-agent", rendered)
+        self.assertIn("<dl class=", rendered)
+        self.assertIn('id="decommission-last-contact"', rendered)
+        self.assertIn('id="decommission-agent-status"', rendered)
         self.assertIn("confirm-agent-data-delete", rendered)
         self.assertIn("confirm-agent-files-delete", rendered)
+        self.assertNotIn("whitespace-pre-line", rendered)
         self.assertNotIn("AGENT_DECOMMISSION_SPEC", rendered)
 
 
