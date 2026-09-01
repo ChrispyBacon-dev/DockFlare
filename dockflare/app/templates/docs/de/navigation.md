@@ -20,6 +20,8 @@ Diese Dokumentation bietet einen umfassenden Überblick über DockFlare. Egal, o
     *   [Persistenz des Status](State-Persistence.md)
 *   **Konfiguration**
     *   [Container-Labels](Container-Labels.md)
+    *   [Apprise Notifications (English)](Apprise-Notifications.md)
+    *   [Discord & Apprise API Setup (English)](Discord-Apprise-Notifications.md)
     *   [Identitätsanbieter](Identity-Providers.md)
     *   [Einrichtung von OAuth-Anbietern](OAuth-Provider-Setup.md)
 *   **Benutzerhandbuch**

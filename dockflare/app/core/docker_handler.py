@@ -26,12 +26,20 @@ from flask import current_app
 
 from app import config, docker_client, cloudflared_agent_state, tunnel_state, publish_state_event
 
-from app.core.state_manager import managed_rules, state_lock, save_state
+from app.core.state_manager import (
+    find_container_rule,
+    managed_rules,
+    mark_rule_tunnel_sync_pending,
+    restore_rule_lifecycle,
+    save_state,
+    state_lock,
+)
 from app.core.tunnel_manager import update_cloudflare_config
 from app.core.cloudflare_api import create_cloudflare_dns_record, get_account_zone_inventory, resolve_account_zone
 from app.core.zone_resolver import ZoneResolutionError, normalize_dns_name
 from app.core.access_manager import handle_access_policy_from_labels
-from app.core.utils import get_rule_key, get_label, normalize_access_group_value
+from app.core.utils import get_rule_key, get_source_rule_key, get_label, normalize_access_group_value
+from app.core import notification_manager
 
 def is_valid_hostname(hostname):
     try:
@@ -80,6 +88,8 @@ def process_container_start(container_obj):
 
         container_id_val = None
         container_name_val = "UnknownContainer"
+        activated_resources = []
+        restored_resources = []
         
         try:
             container_id_val = container_obj.id
@@ -263,7 +273,7 @@ def process_container_start(container_obj):
             dns_targets = {}
             master_tunnel_id = tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
             master_tunnel_name = tunnel_state.get("name")
-            zone_inventory = get_account_zone_inventory()
+            zone_inventory = None
 
             if not master_tunnel_name or master_tunnel_name == "dockflare-tunnel":
                 from app.core.cloudflare_api import get_tunnel_name_by_id
@@ -278,6 +288,36 @@ def process_container_start(container_obj):
                 service = config_item["service"]
                 path_from_item = config_item.get("path")
                 rule_key = get_rule_key(hostname, path_from_item)
+                source_rule_key = get_source_rule_key(hostname, path_from_item)
+
+                with state_lock:
+                    matched_key, matched_rule = find_container_rule(source_rule_key, "docker")
+                    if matched_rule and matched_rule.get("rule_ui_override", False):
+                        changed, reactivated = restore_rule_lifecycle(matched_rule, container_id_val)
+                        if matched_rule.get("source_rule_key") is None and matched_key == rule_key:
+                            matched_rule["source_rule_key"] = source_rule_key
+                            matched_rule["lifecycle_generation"] = int(matched_rule.get("lifecycle_generation") or 0) + 1
+                            changed = True
+                        if reactivated:
+                            mark_rule_tunnel_sync_pending(matched_rule)
+                            needs_tunnel_config_update_for_this_container = True
+                            restored_resources.append({
+                                "key": matched_key,
+                                "hostname": matched_rule.get("hostname"),
+                                "path": matched_rule.get("path"),
+                                "source": "docker",
+                            })
+                        state_changed_locally_for_this_container |= changed
+                        if matched_rule.get("hostname") and matched_rule.get("zone_id"):
+                            dns_targets[matched_rule["hostname"]] = {"zone_id": matched_rule["zone_id"]}
+                        outcome = "lifecycle restored" if reactivated else "container association refreshed"
+                        logging.info(
+                            "UI-overridden rule %s: %s for container %s; UI configuration preserved.",
+                            matched_key,
+                            outcome,
+                            container_id_val[:12],
+                        )
+                        continue
                 
                 zone_name_from_item = config_item["zone_name"]
                 no_tls_verify_from_item = config_item["no_tls_verify"]
@@ -287,6 +327,8 @@ def process_container_start(container_obj):
                 disable_chunked_encoding_from_item = config_item.get("disable_chunked_encoding", False)
                 match_sni_to_host_from_item = config_item.get("match_sni_to_host", False)
 
+                if zone_inventory is None:
+                    zone_inventory = get_account_zone_inventory()
                 try:
                     selected_zone = resolve_account_zone(
                         hostname,
@@ -297,6 +339,11 @@ def process_container_start(container_obj):
                     )
                 except ZoneResolutionError as exc:
                     logging.error(f"DOCKER_HANDLER: Zone resolution failed for {rule_key} ({exc.code}). Skipping rule.")
+                    notification_manager.emit(
+                        "cloudflare.dns_failure",
+                        rule_key,
+                        {"hostname": hostname, "path": path_from_item, "operation": "zone resolution", "source": "docker"},
+                    )
                     continue
                 target_zone_id = selected_zone["id"]
                 config_item["zone_name"] = selected_zone.get("name")
@@ -309,6 +356,9 @@ def process_container_start(container_obj):
                     if existing_rule and existing_rule.get("source") == "manual":
                         logging.info(f"DOCKER_HANDLER: Rule {rule_key} is manual, skipping for {container_name_val}.")
                         continue
+                    if existing_rule and existing_rule.get("source", "docker") != "docker":
+                        logging.warning("DOCKER_HANDLER: Rule %s belongs to another source; observation ignored.", rule_key)
+                        continue
 
                     if existing_rule and existing_rule.get("rule_ui_override", False):
                         logging.info(f"DOCKER_HANDLER: Rule {rule_key} is UI-overridden, skipping Docker updates for {container_name_val}.")
@@ -317,6 +367,9 @@ def process_container_start(container_obj):
                     original_existing_rule_for_comparison = copy.deepcopy(existing_rule) if existing_rule else None
                     
                     if existing_rule:
+                        if existing_rule.get("source_rule_key") is None:
+                            existing_rule["source_rule_key"] = source_rule_key
+                            existing_rule["lifecycle_generation"] = int(existing_rule.get("lifecycle_generation") or 0) + 1
                         logging.debug(f"DOCKER_HANDLER_UPD_RULE_PRE: Updating rule for {rule_key}. Current: {existing_rule}")
 
                         rule_data_changed = False
@@ -369,8 +422,24 @@ def process_container_start(container_obj):
                             existing_rule["status"] = "active"
                             existing_rule["delete_at"] = None
                             rule_data_changed = True
+                            restored_resources.append({
+                                "key": rule_key,
+                                "hostname": hostname,
+                                "path": path_from_item,
+                                "source": "docker",
+                            })
 
-                        if rule_data_changed:
+                        tunnel_fields = (
+                            "hostname", "path", "service", "zone_id", "no_tls_verify",
+                            "origin_server_name", "http_host_header", "http2_origin",
+                            "disable_chunked_encoding", "match_sni_to_host", "tunnel_id",
+                        )
+                        requires_tunnel_update = (
+                            original_existing_rule_for_comparison.get("status") != existing_rule.get("status")
+                            or any(original_existing_rule_for_comparison.get(field) != existing_rule.get(field) for field in tunnel_fields)
+                        )
+                        if requires_tunnel_update:
+                            mark_rule_tunnel_sync_pending(existing_rule)
                             needs_tunnel_config_update_for_this_container = True
 
                         if original_existing_rule_for_comparison != existing_rule:
@@ -403,11 +472,22 @@ def process_container_start(container_obj):
                             "source": "docker",
                             "access_group_id": None,
                             "tunnel_id": master_tunnel_id,
-                            "tunnel_name": master_tunnel_name
+                            "tunnel_name": master_tunnel_name,
+                            "source_rule_key": source_rule_key,
+                            "tunnel_sync_pending": True,
+                            "tunnel_sync_last_attempt_at": None,
+                            "tunnel_sync_attempts": 0,
+                            "lifecycle_generation": 0,
                         }
                         existing_rule = managed_rules[rule_key]
                         state_changed_locally_for_this_container = True
                         needs_tunnel_config_update_for_this_container = True
+                        activated_resources.append({
+                            "key": rule_key,
+                            "hostname": hostname,
+                            "path": path_from_item,
+                            "source": "docker",
+                        })
                         logging.debug(f"DOCKER_HANDLER_NEW_RULE_POST: Added {rule_key}. Rule: {existing_rule}")
 
                     dns_targets[hostname] = {
@@ -424,8 +504,21 @@ def process_container_start(container_obj):
 
             policy_state_changed = False
             for rule_key, policy_payload in policy_jobs:
-                if handle_access_policy_from_labels(rule_key, copy.deepcopy(policy_payload)):
-                    policy_state_changed = True
+                try:
+                    if handle_access_policy_from_labels(rule_key, copy.deepcopy(policy_payload)):
+                        policy_state_changed = True
+                except Exception:
+                    notification_manager.emit(
+                        "cloudflare.access_failure",
+                        rule_key,
+                        {
+                            "hostname": policy_payload.get("hostname"),
+                            "path": policy_payload.get("path"),
+                            "operation": "apply policy",
+                            "source": "docker",
+                        },
+                    )
+                    raise
 
             if policy_state_changed:
                 state_changed_locally_for_this_container = True
@@ -439,25 +532,98 @@ def process_container_start(container_obj):
             if needs_tunnel_config_update_for_this_container:
                 logging.info(f"DOCKER_HANDLER: Triggering tunnel config update for {container_name_val}.")
                 if update_cloudflare_config():
+                    remote_success = True
+                    sync_state_changed = False
+                    with state_lock:
+                        for rule in managed_rules.values():
+                            if rule.get("source") == "docker" and rule.get("tunnel_sync_pending"):
+                                rule["tunnel_sync_pending"] = False
+                                rule["tunnel_sync_last_attempt_at"] = None
+                                rule["tunnel_sync_attempts"] = 0
+                                rule["lifecycle_generation"] = int(rule.get("lifecycle_generation") or 0) + 1
+                                sync_state_changed = True
+                    if sync_state_changed:
+                        save_state()
                     logging.info(f"DOCKER_HANDLER: Tunnel config update successful for {container_name_val}.")
                     effective_tunnel_id = tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
                     if effective_tunnel_id:
                         for hostname_dns, dns_details in dns_targets.items():
                             target_zone_id_for_dns_item = dns_details.get("zone_id")
                             if target_zone_id_for_dns_item and not hostname_dns.startswith('*.'):
-                                dns_record_id_status = create_cloudflare_dns_record(target_zone_id_for_dns_item, hostname_dns, effective_tunnel_id)
+                                try:
+                                    dns_record_id_status = create_cloudflare_dns_record(
+                                        target_zone_id_for_dns_item, hostname_dns, effective_tunnel_id
+                                    )
+                                except Exception:
+                                    logging.exception("DOCKER_HANDLER: DNS creation raised for %s.", hostname_dns)
+                                    dns_record_id_status = None
                                 if dns_record_id_status and dns_record_id_status not in ["semaphore_timeout", "existing_record_unconfirmed"]:
                                     logging.info(f"DOCKER_HANDLER: DNS for {hostname_dns} in zone {target_zone_id_for_dns_item} OK (ID/Status: {dns_record_id_status}).")
                                 elif not dns_record_id_status:
                                     logging.error(f"DOCKER_HANDLER: CRITICAL - Failed DNS for {hostname_dns} in zone {target_zone_id_for_dns_item}!")
+                                    remote_success = False
+                                    notification_manager.emit(
+                                        "cloudflare.dns_failure",
+                                        f"{target_zone_id_for_dns_item}:{hostname_dns}",
+                                        {"hostname": hostname_dns, "operation": "create", "source": "docker"},
+                                    )
                                     if cloudflared_agent_state:
                                         cloudflared_agent_state["last_action_status"] = f"Error: Failed DNS for {hostname_dns}."
+                                elif dns_record_id_status in ["semaphore_timeout", "existing_record_unconfirmed"]:
+                                    remote_success = False
+                                    notification_manager.emit(
+                                        "cloudflare.dns_failure",
+                                        f"{target_zone_id_for_dns_item}:{hostname_dns}",
+                                        {"hostname": hostname_dns, "operation": "create", "source": "docker"},
+                                    )
                             elif not target_zone_id_for_dns_item:
                                 logging.error(f"DOCKER_HANDLER: No Zone ID for DNS for {hostname_dns} - cannot manage record.")
+                                remote_success = False
+                                notification_manager.emit(
+                                    "cloudflare.dns_failure",
+                                    hostname_dns,
+                                    {"hostname": hostname_dns, "operation": "create", "source": "docker"},
+                                )
                     else:
                         logging.error(f"DOCKER_HANDLER: Missing effective Tunnel ID - cannot manage DNS records for {container_name_val}.")
+                        remote_success = False
+                        notification_manager.emit(
+                            "cloudflare.tunnel_failure",
+                            container_id_val,
+                            {"container_name": container_name_val, "container_id": container_id_val[:12], "operation": "resolve tunnel", "source": "docker"},
+                        )
+                    if remote_success:
+                        common_context = {
+                            "container_name": container_name_val,
+                            "container_id": container_id_val[:12],
+                            "source": "docker",
+                            "public_url": config.DOCKFLARE_PUBLIC_URL,
+                        }
+                        if activated_resources:
+                            notification_manager.emit(
+                                "rule.activated",
+                                container_id_val,
+                                {**common_context, "resources": activated_resources},
+                            )
+                        if restored_resources:
+                            notification_manager.emit(
+                                "rule.restored",
+                                container_id_val,
+                                {**common_context, "resources": restored_resources},
+                            )
                 else:
                     logging.error(f"DOCKER_HANDLER: Failed to update Cloudflare tunnel config for {container_name_val}. DNS records not managed.")
+                    notification_manager.emit(
+                        "cloudflare.tunnel_failure",
+                        str(tunnel_state.get("id") or config.EXTERNAL_TUNNEL_ID or container_id_val),
+                        {
+                            "container_name": container_name_val,
+                            "container_id": container_id_val[:12],
+                            "tunnel_id": str(tunnel_state.get("id") or config.EXTERNAL_TUNNEL_ID or "")[:12],
+                            "operation": "update",
+                            "source": "docker",
+                        },
+                    )
 
 
         except NotFound:
@@ -478,6 +644,8 @@ def schedule_container_stop(container_id_val):
         logging.info(f"Processing stop event for container {container_id_val[:12]}.")
         
         state_changed_after_stop_processing = False
+        pending_resources = []
+        delete_at_value = None
         with state_lock:
             rule_keys_affected_by_stop = []
             for r_key, details in managed_rules.items():
@@ -494,7 +662,15 @@ def schedule_container_stop(container_id_val):
                         rule["status"] = "pending_deletion"
                         grace_delta = timedelta(seconds=grace_period)
                         rule["delete_at"] = datetime.now(timezone.utc) + grace_delta
+                        rule["lifecycle_generation"] = int(rule.get("lifecycle_generation") or 0) + 1
                         logging.info(f"Rule for {rule_key_to_schedule} (from stopped container {container_id_val[:12]}) scheduled for deletion at {rule['delete_at'].isoformat()}")
+                        delete_at_value = rule['delete_at'].isoformat()
+                        pending_resources.append({
+                            "key": rule_key_to_schedule,
+                            "hostname": rule.get("hostname"),
+                            "path": rule.get("path"),
+                            "source": "docker",
+                        })
                         state_changed_after_stop_processing = True
                     else:
                         logging.info(f"Rule for {rule_key_to_schedule} from stopped container {container_id_val[:12]} was already pending deletion.")
@@ -504,6 +680,19 @@ def schedule_container_stop(container_id_val):
             if state_changed_after_stop_processing:
                 save_state()
                 publish_state_event('snapshot_refresh')
+        if pending_resources:
+            notification_manager.emit(
+                "rule.pending_deletion",
+                container_id_val,
+                {
+                    "container_id": container_id_val[:12],
+                    "source": "docker",
+                    "delete_at": delete_at_value,
+                    "grace_period_seconds": current_app.config.get('GRACE_PERIOD_SECONDS', 28800),
+                    "resources": pending_resources,
+                    "public_url": config.DOCKFLARE_PUBLIC_URL,
+                },
+            )
 
 def docker_event_listener(stop_event_param, label_prefix):
     if not docker_client:
@@ -580,6 +769,11 @@ def docker_event_listener(stop_event_param, label_prefix):
 
     if error_count >= max_errors:
         logging.error(f"Docker event listener for {label_prefix} stopping after multiple consecutive errors.")
+        notification_manager.emit(
+            "docker.listener_failure",
+            label_prefix,
+            {"message": "The Docker event listener stopped after repeated connection failures."},
+        )
     logging.info(f"Docker event listener for {label_prefix} stopped.")
 
 def start_event_listeners(stop_event):

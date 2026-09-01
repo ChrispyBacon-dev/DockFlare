@@ -248,6 +248,100 @@
   <form method="dialog" class="modal-backdrop"><button>{{ t('common.close') }}</button></form>
 </dialog>
 
+<dialog id="modal-decommission-agent" class="modal">
+  <div class="modal-box decommission-modal-box w-11/12 max-w-5xl">
+    <div class="decommission-modal-header">
+      <h3 class="font-bold text-lg">{{ t('agents.decommission_title') }}</h3>
+      <div class="flex items-center justify-between gap-3 py-3">
+        <p id="decommission-summary" class="min-w-0 text-sm font-medium"></p>
+        <span id="decommission-agent-status" class="badge badge-sm hidden shrink-0"></span>
+      </div>
+    </div>
+    <div id="decommission-preflight" class="hidden mb-4 rounded-md border border-base-300 bg-base-200/50 p-4">
+      <dl class="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-6">
+        <div>
+          <dt class="text-xs uppercase tracking-wide text-base-content/60">{{ t('agents.decommission_last_contact') }}</dt>
+          <dd id="decommission-last-contact" class="mt-1 text-sm font-medium"></dd>
+        </div>
+        <div>
+          <dt class="text-xs uppercase tracking-wide text-base-content/60">{{ t('agents.decommission_assigned_tunnel') }}</dt>
+          <dd id="decommission-assigned-tunnel" class="mt-1 text-sm font-medium break-all"></dd>
+        </div>
+        <div>
+          <dt class="text-xs uppercase tracking-wide text-base-content/60">{{ t('agents.decommission_tunnel_disposition') }}</dt>
+          <dd id="decommission-tunnel-disposition" class="mt-1 text-sm font-medium"></dd>
+        </div>
+        <div>
+          <dt class="text-xs uppercase tracking-wide text-base-content/60">{{ t('agents.decommission_remote_tunnel_action') }}</dt>
+          <dd id="decommission-tunnel-action" class="mt-1 text-sm font-medium"></dd>
+        </div>
+        <div>
+          <dt class="text-xs uppercase tracking-wide text-base-content/60">{{ t('agents.decommission_remote_agent_action') }}</dt>
+          <dd id="decommission-agent-action" class="mt-1 text-sm font-medium"></dd>
+        </div>
+        <div>
+          <dt class="text-xs uppercase tracking-wide text-base-content/60">{{ t('agents.decommission_container_names') }}</dt>
+          <dd id="decommission-container-names" class="mt-1 text-sm font-mono break-all"></dd>
+        </div>
+        <div>
+          <dt class="text-xs uppercase tracking-wide text-base-content/60">{{ t('agents.decommission_preserved_network') }}</dt>
+          <dd id="decommission-preserved-network" class="mt-1 text-sm font-mono"></dd>
+        </div>
+      </dl>
+      <p class="mt-4 border-t border-base-300 pt-2 text-xs text-base-content/70">{{ t('agents.decommission_reverse_deploy_notice') }}</p>
+    </div>
+    <div class="alert alert-warning mb-4">
+      <span>{{ t('agents.decommission_warning') }}</span>
+    </div>
+    <ol id="decommission-progress" class="steps steps-vertical sm:steps-horizontal hidden w-full text-xs mb-4">
+      <li class="step" data-phase="waiting_for_prepare">{{ t('agents.decommission_contact') }}</li>
+      <li class="step" data-phase="remote_prepared">{{ t('agents.decommission_stop_tunnel') }}</li>
+      <li class="step" data-phase="master_cleanup">{{ t('agents.decommission_cloudflare') }}</li>
+      <li class="step" data-phase="waiting_for_finalize">{{ t('agents.decommission_schedule_agent') }}</li>
+      <li class="step" data-phase="shutdown_scheduled">{{ t('agents.decommission_revoke_access') }}</li>
+      <li class="step" data-phase="completed">{{ t('agents.decommission_complete') }}</li>
+    </ol>
+    <div id="decommission-status" class="mb-4" role="status" aria-live="polite" aria-atomic="true">
+      <div id="decommission-working" class="decommission-working-panel hidden items-center gap-3 rounded-md border p-3">
+        <span class="loading loading-spinner decommission-working-spinner text-primary shrink-0" aria-hidden="true"></span>
+        <div>
+          <p id="decommission-working-message" class="text-sm font-medium"></p>
+          <p class="mt-1 text-xs text-base-content/60">{{ t('agents.decommission_working_hint') }}</p>
+        </div>
+      </div>
+      <div id="decommission-message" class="text-sm"></div>
+    </div>
+    <div id="decommission-cleanup" class="hidden space-y-4">
+      <div class="alert alert-info"><span>{{ t('agents.decommission_host_responsibility') }}</span></div>
+      <label class="label cursor-pointer justify-start gap-3">
+        <input id="confirm-agent-data-delete" type="checkbox" class="checkbox checkbox-warning">
+        <span class="label-text">{{ t('agents.decommission_confirm_data') }}</span>
+      </label>
+      <div class="relative bg-base-200 p-3 rounded-md">
+        <pre id="decommission-docker-command" class="font-mono text-xs whitespace-pre-wrap break-all"></pre>
+        <button id="copy-decommission-docker" class="btn btn-ghost btn-sm absolute top-1 right-1" disabled>{{ t('common.copy') }}</button>
+      </div>
+      <div class="alert alert-error"><span>{{ t('agents.decommission_files_warning') }}</span></div>
+      <label class="label cursor-pointer justify-start gap-3">
+        <input id="confirm-agent-files-delete" type="checkbox" class="checkbox checkbox-error">
+        <span class="label-text">{{ t('agents.decommission_confirm_files') }}</span>
+      </label>
+      <div class="relative bg-base-200 p-3 rounded-md">
+        <pre id="decommission-files-command" class="font-mono text-xs whitespace-pre-wrap break-all"></pre>
+        <button id="copy-decommission-files" class="btn btn-ghost btn-sm absolute top-1 right-1" disabled>{{ t('common.copy') }}</button>
+      </div>
+      <p class="text-xs text-base-content/60">{{ t('agents.decommission_network_preserved') }}</p>
+    </div>
+    <div class="modal-action decommission-modal-actions">
+      <button id="btn-start-decommission" class="btn btn-error">{{ t('agents.decommission_action') }}</button>
+      <button id="btn-retry-decommission" class="btn btn-warning hidden">{{ t('agents.decommission_retry') }}</button>
+      <button id="btn-force-decommission" class="btn btn-error btn-outline hidden">{{ t('agents.decommission_force') }}</button>
+      <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-decommission-agent').close()">{{ t('common.cancel') }}</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>{{ t('common.close') }}</button></form>
+</dialog>
+
 <dialog id="modal-deploy-agent" class="modal">
   <div class="modal-box w-11/12 max-w-3xl">
     <h3 class="font-bold text-lg">{{ t('agents.deploy_agent') }}</h3>
@@ -436,6 +530,51 @@
   vertical-align: top !important;
 }
 
+.decommission-modal-box {
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+.decommission-modal-header {
+  position: sticky;
+  top: -1.5rem;
+  z-index: 10;
+  margin: -1.5rem -1.5rem 0;
+  padding: 1.5rem 1.5rem 0;
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+}
+
+.decommission-modal-actions {
+  position: sticky;
+  bottom: -1.5rem;
+  z-index: 10;
+  margin-right: -1.5rem;
+  margin-bottom: -1.5rem;
+  margin-left: -1.5rem;
+  padding: 1rem 1.5rem 1.5rem;
+  border-top: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+}
+
+.decommission-working-panel {
+  border-color: oklch(var(--p) / 0.3);
+  background: oklch(var(--p) / 0.1);
+}
+
+.decommission-working-spinner {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+#decommission-progress .decommission-active-step::after,
+#decommission-progress.decommission-preparing .step:nth-child(2)::after {
+  animation: decommission-step-pulse 1.4s ease-in-out infinite;
+}
+
+#decommission-progress.decommission-preparing .step:nth-child(2)::before {
+  animation: decommission-connector-pulse 1.4s ease-in-out infinite;
+}
+
 /* Animations */
 @keyframes led-pulse-critical {
   0% {
@@ -473,6 +612,25 @@
   0% { background-color: #1f2937; }
   50% { background-color: #065f46; }
   100% { background-color: #1f2937; }
+}
+
+@keyframes decommission-step-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(var(--p) / 0.4); }
+  50% { box-shadow: 0 0 0 0.45rem oklch(var(--p) / 0); }
+}
+
+@keyframes decommission-connector-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #decommission-progress .decommission-active-step::after,
+  #decommission-progress.decommission-preparing .step:nth-child(2)::after,
+  #decommission-progress.decommission-preparing .step:nth-child(2)::before,
+  #decommission-working .loading {
+    animation: none;
+  }
 }
 </style>
 
@@ -642,13 +800,12 @@
 
   const copyToClipboard = (text, buttonElement) => {
     navigator.clipboard.writeText(text).then(() => {
-      const originalText = buttonElement.innerHTML;
-      buttonElement.innerHTML = 'Copied!';
+      buttonElement.innerHTML = t('common.copied');
       setTimeout(() => {
-        buttonElement.innerHTML = 'Copy';
+        buttonElement.innerHTML = t('common.copy');
       }, 2000);
-    }, async (err) => {
-      await dfAlert('Failed to copy text: ' + err, 'Error');
+    }, async () => {
+      await dfAlert(t('common.copy_failed'), t('js.text.error'));
     });
   };
 
@@ -671,7 +828,10 @@
 
       const enrollmentBadge = getStatusBadge(agent.status);
       const healthBadge = getStatusBadge(agent.health || (agent.online ? 'connected' : 'disconnected'));
-      const statusHtml = `${enrollmentBadge} ${healthBadge}`;
+      const decommissionBadge = agent.decommission_operation_id
+        ? `<span class="badge badge-warning badge-sm">${t('agents.decommissioning')}</span>`
+        : '';
+      const statusHtml = `${enrollmentBadge} ${healthBadge} ${decommissionBadge}`;
 
       const ledStripHtml = createLedStrip(agentId, agent.last_seen, agent.online);
       const na = '<span class="text-base-content/30">—</span>';
@@ -724,7 +884,8 @@
           <button class="btn btn-ghost btn-sm agent-action-trigger"
             data-agent-id="${agentId}"
             data-enrolled="${agent.status === 'enrolled'}"
-            data-has-tunnel="${!!agent.assigned_tunnel_name}">
+            data-has-tunnel="${!!agent.assigned_tunnel_name}"
+            data-decommission-operation="${agent.decommission_operation_id || ''}">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z" />
             </svg>
@@ -732,7 +893,9 @@
         </td>
       `;
 
-      if (agent.online === false) {
+      if (agent.decommission_operation_id) {
+        tr.style.borderLeft = '4px solid #f59e0b';
+      } else if (agent.online === false) {
         tr.style.backgroundColor = '#fff5f5';
         tr.style.borderLeft = '4px solid #f87171';
       }
@@ -968,6 +1131,224 @@
   setInterval(refreshData, 5000);
   setInterval(updateLedStrips, 1000); // Update LED strips every second
 
+  let currentDecommissionAgentId = null;
+  let currentDecommissionOperationId = null;
+  let currentDecommissionState = null;
+  let currentDecommissionAgentOnline = null;
+  let currentDecommissionPreview = null;
+  let decommissionPollTimer = null;
+
+  const decommissionPhaseOrder = {
+    waiting_for_prepare: 0,
+    prepare_failed: 0,
+    timed_out: 0,
+    remote_prepared: 1,
+    master_cleanup: 2,
+    cleanup_failed: 2,
+    waiting_for_finalize: 3,
+    finalize_failed: 3,
+    shutdown_scheduled: 4,
+    completed: 5,
+    forced_completed: 5,
+    force_failed: 3,
+  };
+
+  const decommissionMessageKeys = {
+    waiting_for_prepare: 'agents.decommission_waiting_prepare',
+    remote_prepared: 'agents.decommission_remote_prepared',
+    master_cleanup: 'agents.decommission_cleaning_master',
+    waiting_for_finalize: 'agents.decommission_waiting_finalize',
+    shutdown_scheduled: 'agents.decommission_shutdown_scheduled',
+    prepare_failed: 'agents.decommission_prepare_failed',
+    cleanup_failed: 'agents.decommission_cleanup_failed',
+    finalize_failed: 'agents.decommission_finalize_failed',
+    force_failed: 'agents.decommission_force_failed',
+    timed_out: 'agents.decommission_timed_out',
+  };
+
+  const decommissionErrorKeys = {
+    agent_timeout: 'agents.decommission_error_agent_timeout',
+    tombstone_persistence_failed: 'agents.decommission_error_tombstone',
+    tunnel_stop_failed: 'agents.decommission_error_tunnel_stop',
+    access_cleanup_failed: 'agents.decommission_error_access',
+    dns_cleanup_failed: 'agents.decommission_error_dns',
+    tunnel_cleanup_failed: 'agents.decommission_error_tunnel',
+    tunnel_sync_failed: 'agents.decommission_error_tunnel_sync',
+    persistence_failed: 'agents.decommission_error_persistence',
+    key_revocation_failed: 'agents.decommission_error_key',
+  };
+
+  const decommissionDispositionKeys = {
+    delete_exclusive: 'agents.decommission_disposition_delete',
+    preserve_shared: 'agents.decommission_disposition_shared',
+    preserve_adopted: 'agents.decommission_disposition_adopted',
+    unknown: 'agents.decommission_disposition_unknown',
+  };
+
+  const resetDecommissionModal = () => {
+    document.getElementById('decommission-cleanup').classList.add('hidden');
+    document.getElementById('btn-start-decommission').classList.remove('hidden');
+    document.getElementById('btn-retry-decommission').classList.add('hidden');
+    document.getElementById('btn-force-decommission').classList.add('hidden');
+    document.getElementById('confirm-agent-data-delete').checked = false;
+    document.getElementById('confirm-agent-files-delete').checked = false;
+    document.getElementById('copy-decommission-docker').disabled = true;
+    document.getElementById('copy-decommission-files').disabled = true;
+    document.getElementById('decommission-docker-command').textContent = '';
+    document.getElementById('decommission-files-command').textContent = '';
+    document.getElementById('decommission-preflight').classList.add('hidden');
+    document.getElementById('decommission-progress').classList.add('hidden');
+    document.getElementById('decommission-progress').classList.remove('decommission-preparing');
+    document.getElementById('decommission-working').classList.add('hidden');
+    document.getElementById('decommission-working').classList.remove('flex');
+    document.getElementById('decommission-message').classList.remove('hidden');
+    document.getElementById('decommission-agent-status').classList.add('hidden');
+    currentDecommissionPreview = null;
+    document.querySelectorAll('#decommission-progress .step').forEach(step => {
+      step.classList.remove('step-primary', 'step-error', 'decommission-active-step');
+      step.removeAttribute('aria-current');
+      step.removeAttribute('data-content');
+    });
+  };
+
+  const renderDecommissionPreflight = (value) => {
+    currentDecommissionPreview = {
+      ...(currentDecommissionPreview || {}),
+      ...value,
+      resource_plan: {
+        ...(currentDecommissionPreview?.resource_plan || {}),
+        ...(value.resource_plan || {}),
+      },
+      remote_actions: {
+        ...(currentDecommissionPreview?.remote_actions || {}),
+        ...(value.remote_actions || {}),
+      },
+    };
+    const preview = currentDecommissionPreview;
+    const plan = preview.resource_plan || {};
+    const remoteActions = preview.remote_actions || {};
+    const hostPlan = preview.host_cleanup_plan || {};
+    const names = preview.container_names || [hostPlan.tunnel_container_name, hostPlan.agent_container_name].filter(Boolean);
+    const tunnelAction = t('agents.decommission_stop_only');
+    const agentActionValue = preview.remote_results?.agent_container || remoteActions.agent_container;
+    const agentAction = ['manual', 'manual_required'].includes(agentActionValue)
+      ? t('agents.decommission_manual_required')
+      : t('agents.decommission_stop_scheduled');
+    document.getElementById('decommission-last-contact').textContent = preview.last_seen
+      ? new Date(preview.last_seen).toLocaleString()
+      : t('agents.decommission_unknown');
+    document.getElementById('decommission-assigned-tunnel').textContent = preview.assigned_tunnel_name || t('agents.decommission_unknown');
+    document.getElementById('decommission-tunnel-disposition').textContent = t(
+      decommissionDispositionKeys[plan.tunnel_disposition] || 'agents.decommission_disposition_unknown'
+    );
+    document.getElementById('decommission-tunnel-action').textContent = tunnelAction;
+    document.getElementById('decommission-agent-action').textContent = agentAction;
+    document.getElementById('decommission-container-names').textContent = names.join(', ') || t('agents.decommission_unknown');
+    document.getElementById('decommission-preserved-network').textContent = (
+      preview.preserve_networks || hostPlan.preserve_networks || ['cloudflare-net']
+    ).join(', ');
+    const element = document.getElementById('decommission-preflight');
+    element.classList.remove('hidden');
+  };
+
+  const renderDecommissionOperation = (operation) => {
+    currentDecommissionState = operation.state;
+    currentDecommissionOperationId = operation.operation_id;
+    localStorage.setItem('dockflare-agent-decommission-operation', operation.operation_id);
+    document.getElementById('btn-start-decommission').classList.add('hidden');
+    document.getElementById('decommission-progress').classList.remove('hidden');
+    renderDecommissionPreflight(operation);
+    const phaseIndex = decommissionPhaseOrder[operation.state] ?? 0;
+    const complete = ['completed', 'forced_completed'].includes(operation.state);
+    const failed = operation.state.endsWith('failed') || operation.state === 'timed_out';
+    const running = !complete && !failed;
+    const progress = document.getElementById('decommission-progress');
+    progress.classList.toggle('decommission-preparing', operation.state === 'waiting_for_prepare');
+    document.querySelectorAll('#decommission-progress .step').forEach((step, index) => {
+      step.classList.toggle('step-primary', index <= phaseIndex);
+      step.classList.toggle('step-error', failed && index === phaseIndex);
+      step.classList.toggle('decommission-active-step', running && index === phaseIndex);
+      if (index < phaseIndex || (complete && index <= phaseIndex)) step.setAttribute('data-content', '✓');
+      else if (failed && index === phaseIndex) step.setAttribute('data-content', '!');
+      else step.removeAttribute('data-content');
+      if (index === phaseIndex) step.setAttribute('aria-current', 'step');
+      else step.removeAttribute('aria-current');
+    });
+    const message = document.getElementById('decommission-message');
+    const working = document.getElementById('decommission-working');
+    const workingMessage = document.getElementById('decommission-working-message');
+    if (operation.state === 'completed') {
+      message.textContent = operation.remote_results?.agent_container === 'manual_required'
+        ? t('agents.decommission_manual_message')
+        : t('agents.decommission_completed_message');
+    } else if (operation.state === 'forced_completed') {
+      message.textContent = t('agents.decommission_forced_message');
+    } else {
+      const stateText = t(decommissionMessageKeys[operation.state] || 'agents.decommission_state_unknown');
+      const errorText = operation.last_error_code
+        ? t(decommissionErrorKeys[operation.last_error_code] || 'agents.decommission_error_generic')
+        : '';
+      message.textContent = errorText ? `${stateText} ${errorText}` : stateText;
+    }
+    workingMessage.textContent = operation.state === 'waiting_for_prepare'
+      ? t('agents.decommission_contacting_and_stopping')
+      : message.textContent;
+    working.classList.toggle('hidden', !running);
+    working.classList.toggle('flex', running);
+    message.classList.toggle('hidden', running);
+    const agent = window.lastFetchedData?.agents?.[operation.agent_id];
+    if (agent) currentDecommissionAgentOnline = agent.online;
+    document.getElementById('btn-retry-decommission').classList.toggle('hidden', !failed);
+    const mayForceOffline = operation.state === 'waiting_for_prepare' && currentDecommissionAgentOnline === false;
+    document.getElementById('btn-force-decommission').classList.toggle('hidden', !failed && !mayForceOffline);
+    if (complete && operation.cleanup_commands) {
+      document.getElementById('decommission-cleanup').classList.remove('hidden');
+      document.getElementById('decommission-docker-command').textContent = operation.cleanup_commands.docker || '';
+      document.getElementById('decommission-files-command').textContent = operation.cleanup_commands.deployment_files || '';
+      if (decommissionPollTimer) {
+        clearInterval(decommissionPollTimer);
+        decommissionPollTimer = null;
+      }
+      fetchData();
+    }
+  };
+
+  const pollDecommission = async () => {
+    if (!currentDecommissionOperationId) return;
+    const result = await apiCall(`/api/v2/agent-decommissions/${currentDecommissionOperationId}`);
+    if (result && result.operation) renderDecommissionOperation(result.operation);
+  };
+
+  const setDecommissionActionPending = (button, pending) => {
+    button.disabled = pending;
+    button.setAttribute('aria-busy', pending ? 'true' : 'false');
+  };
+
+  const openDecommissionModal = async (agentId, operationId = null) => {
+    resetDecommissionModal();
+    currentDecommissionAgentId = agentId;
+    currentDecommissionOperationId = operationId;
+    const agent = window.lastFetchedData?.agents?.[agentId];
+    currentDecommissionAgentOnline = typeof agent?.online === 'boolean' ? agent.online : null;
+    const label = agent?.display_name || agentId || t('agents.decommission_unknown_agent');
+    const abbreviatedId = agentId ? ` (${agentId.slice(0, 8)}…)` : '';
+    document.getElementById('decommission-summary').textContent = `${label}${abbreviatedId}`;
+    const statusBadge = document.getElementById('decommission-agent-status');
+    statusBadge.textContent = agent?.online ? t('agents.decommission_online_short') : t('agents.decommission_offline_short');
+    statusBadge.className = `badge badge-sm shrink-0 ${agent?.online ? 'badge-success' : 'badge-warning'}`;
+    document.getElementById('decommission-message').textContent = agent?.online
+      ? t('agents.decommission_ready')
+      : t('agents.decommission_offline');
+    document.getElementById('modal-decommission-agent').showModal();
+    if (operationId) {
+      await pollDecommission();
+      if (!decommissionPollTimer) decommissionPollTimer = setInterval(pollDecommission, 2000);
+    } else {
+      const result = await apiCall(`/api/v2/agents/${agentId}/decommission-preview`);
+      if (result?.preview) renderDecommissionPreflight(result.preview);
+    }
+  };
+
   const openRenameModal = async (agentId) => {
     const data = window.lastFetchedData;
     if (!data || !data.agents || !data.agents[agentId]) {
@@ -985,6 +1366,69 @@
     fetchData();
     loadCfTokenStatus();
     updateLedStrips();
+
+    const retainedOperation = localStorage.getItem('dockflare-agent-decommission-operation');
+    if (retainedOperation) {
+      resetDecommissionModal();
+      currentDecommissionOperationId = retainedOperation;
+      document.getElementById('decommission-summary').textContent = t('agents.decommission_resume');
+      document.getElementById('modal-decommission-agent').showModal();
+      pollDecommission();
+      decommissionPollTimer = setInterval(pollDecommission, 2000);
+    }
+
+    document.getElementById('modal-decommission-agent').addEventListener('close', () => {
+      if (['completed', 'forced_completed'].includes(currentDecommissionState)) {
+        localStorage.removeItem('dockflare-agent-decommission-operation');
+      }
+    });
+
+    document.getElementById('btn-start-decommission').addEventListener('click', async () => {
+      const confirmed = await dfConfirm(t('agents.decommission_confirm'), t('agents.decommission_title'));
+      if (!confirmed) return;
+      const button = document.getElementById('btn-start-decommission');
+      setDecommissionActionPending(button, true);
+      try {
+        const result = await apiCall(`/api/v2/agents/${currentDecommissionAgentId}/decommission`, 'POST');
+        if (result?.operation) {
+          renderDecommissionOperation(result.operation);
+          if (!decommissionPollTimer) decommissionPollTimer = setInterval(pollDecommission, 2000);
+        }
+      } finally {
+        setDecommissionActionPending(button, false);
+      }
+    });
+
+    document.getElementById('btn-retry-decommission').addEventListener('click', async () => {
+      const button = document.getElementById('btn-retry-decommission');
+      setDecommissionActionPending(button, true);
+      try {
+        const result = await apiCall(`/api/v2/agent-decommissions/${currentDecommissionOperationId}/retry`, 'POST');
+        if (result?.operation) renderDecommissionOperation(result.operation);
+      } finally {
+        setDecommissionActionPending(button, false);
+      }
+    });
+
+    document.getElementById('btn-force-decommission').addEventListener('click', async () => {
+      const confirmed = await dfConfirm(t('agents.decommission_force_confirm'), t('agents.decommission_force'));
+      if (!confirmed) return;
+      const result = await apiCall(`/api/v2/agent-decommissions/${currentDecommissionOperationId}/force`, 'POST');
+      if (result?.operation) renderDecommissionOperation(result.operation);
+    });
+
+    document.getElementById('confirm-agent-data-delete').addEventListener('change', (event) => {
+      document.getElementById('copy-decommission-docker').disabled = !event.target.checked;
+    });
+    document.getElementById('confirm-agent-files-delete').addEventListener('change', (event) => {
+      document.getElementById('copy-decommission-files').disabled = !event.target.checked;
+    });
+    document.getElementById('copy-decommission-docker').addEventListener('click', (event) => {
+      copyToClipboard(document.getElementById('decommission-docker-command').textContent, event.currentTarget);
+    });
+    document.getElementById('copy-decommission-files').addEventListener('click', (event) => {
+      copyToClipboard(document.getElementById('decommission-files-command').textContent, event.currentTarget);
+    });
 
     document.getElementById('btn-generate-key').addEventListener('click', () => {
       document.getElementById('generated-key-container').classList.add('hidden');
@@ -1041,6 +1485,19 @@
       const agentId = btn.dataset.agentId;
       const isEnrolled = btn.dataset.enrolled === 'true';
       const hasTunnel = btn.dataset.hasTunnel === 'true';
+      const decommissionOperation = btn.dataset.decommissionOperation;
+
+      if (decommissionOperation) {
+        agentFloatingMenuList.innerHTML = `
+          <li><a class="btn-remove" data-agent-id="${agentId}" data-operation-id="${decommissionOperation}">${t('agents.decommission_view')}</a></li>
+        `;
+        agentFloatingMenu.classList.remove('hidden');
+        const rect = btn.getBoundingClientRect();
+        agentFloatingMenu.style.top = `${rect.bottom + 4}px`;
+        agentFloatingMenu.style.left = `${Math.max(4, rect.right - 208)}px`;
+        agentFloatingMenu._trigger = btn;
+        return;
+      }
 
       agentFloatingMenuList.innerHTML = `
         <li ${isEnrolled && hasTunnel ? 'class="disabled"' : ''}>
@@ -1078,7 +1535,7 @@
         <li>
           <a class="btn-remove text-error" data-agent-id="${agentId}">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
-            Remove Agent
+            ${t('agents.decommission_action')}
           </a>
         </li>
       `;
@@ -1144,15 +1601,10 @@
 
         document.getElementById('modal-enroll-agent').showModal();
       } else if (e.target.closest('.btn-remove')) {
-        const agentId = e.target.closest('.btn-remove').getAttribute('data-agent-id');
-        const confirmed = await dfConfirm(`Are you sure you want to remove agent "${agentId}"? This will also delete the associated Cloudflare tunnel and all related resources.`, 'Remove Agent');
-        if (confirmed) {
-          const success = await apiCall(`/api/v2/agents/${agentId}/remove`, 'POST');
-          if (success) {
-            await dfAlert('Agent removed successfully.', 'Success');
-            fetchData();
-          }
-        }
+        const button = e.target.closest('.btn-remove');
+        const agentId = button.getAttribute('data-agent-id');
+        const operationId = button.getAttribute('data-operation-id');
+        openDecommissionModal(agentId, operationId);
       } else if (e.target.closest('.btn-roll-key')) {
         const agentId = e.target.closest('.btn-roll-key').getAttribute('data-agent-id');
         const confirmed = await dfConfirm(`Are you sure you want to roll the API key for agent "${agentId}"? The agent will need to be updated with the new key.`, 'Roll API Key');

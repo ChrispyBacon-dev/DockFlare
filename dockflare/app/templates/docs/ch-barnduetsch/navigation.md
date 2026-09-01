@@ -18,6 +18,8 @@ DockFlare isch e sälber hosteti Ingress-Lösig, wo dir d Verwaltig vo Cloudflar
     *   [Persistänte Status](State-Persistence.md)
 *   **Istellige**
     *   [Container-Labels](Container-Labels.md)
+    *   [Apprise Notifications (English)](Apprise-Notifications.md)
+    *   [Discord & Apprise API Setup (English)](Discord-Apprise-Notifications.md)
     *   [Identity Providers](Identity-Providers.md)
     *   [OAuth-Provider iirichte](OAuth-Provider-Setup.md)
 *   **Bruuch**

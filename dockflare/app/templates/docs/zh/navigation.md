@@ -20,6 +20,8 @@ DockFlare 是一款功能强大的自托管入口控制器，可简化 Cloudflar
     * [状态持久化](State-Persistence.md)
 * **配置**
     * [容器标签](Container-Labels.md)
+    * [Apprise Notifications (English)](Apprise-Notifications.md)
+    * [Discord & Apprise API Setup (English)](Discord-Apprise-Notifications.md)
     * [身份提供商](Identity-Providers.md)
     * [OAuth 提供程序设置](OAuth-Provider-Setup.md)
 * **使用指南**

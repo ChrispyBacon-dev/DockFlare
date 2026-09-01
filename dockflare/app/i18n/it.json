@@ -59,6 +59,8 @@
     "status.save_changes": "Salva modifiche",
     "status.rule_ui_override": "Regola sovrascritta dall'interfaccia",
     "status.ui_override": "Override UI",
+    "status.tunnel_sync_pending": "Sincronizzazione tunnel in sospeso",
+    "status.tunnel_sync_pending_help": "La rotta desiderata è salvata localmente e attende la sincronizzazione del tunnel.",
     "status.docker_rule_overridden": "Questa regola Docker è stata sovrascritta dall'interfaccia e non riflette più le etichette del container.",
     "status.ui_policy_override": "Questo criterio è gestito dall'interfaccia e sovrascrive le etichette del container.",
     "status.revert_to_docker_labels": "Ripristina etichette Docker",

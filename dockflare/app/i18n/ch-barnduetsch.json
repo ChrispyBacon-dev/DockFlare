@@ -59,6 +59,8 @@
     "status.save_changes": "Änderige speichere",
     "status.rule_ui_override": "Regle via UI überschriebe",
     "status.ui_override": "UI-Override",
+    "status.tunnel_sync_pending": "Tunnel-Synchronisierung usstehend",
+    "status.tunnel_sync_pending_help": "D gwünschti Route isch lokal gspeicheret und wartet uf d Tunnel-Synchronisierung.",
     "status.docker_rule_overridden": "Die Docker-Regle isch via UI überschriebe worde u stimmt nüm mit de Container-Labels überei.",
     "status.ui_policy_override": "Die Richtlinie wird via UI verwaltet u überschrybt d Container-Labels.",
     "status.revert_to_docker_labels": "Uf Docker-Labels zrüggsetze",

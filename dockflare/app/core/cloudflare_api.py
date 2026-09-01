@@ -495,6 +495,12 @@ def delete_cloudflare_dns_record(zone_id, hostname, tunnel_id):
         if not record_id:
             logging.warning(f"DNS record for {hostname} in zone {zone_id} (for tunnel {tunnel_id}) not found to delete. Assuming success or already deleted.")
             return True
+        if not is_correct_tunnel:
+            logging.warning(
+                "Preserving DNS record for %s because it does not point to the expected tunnel.",
+                hostname,
+            )
+            return False
        
         logging.info(f"Attempting to delete DNS record for {hostname} in zone {zone_id} (ID: {record_id})")
         endpoint = f"/zones/{zone_id}/dns_records/{record_id}"

@@ -20,6 +20,8 @@ Dokumentasi ini menyajikan panduan lengkap untuk DockFlare. Baik Anda pengguna b
     *   [Persistensi State](State-Persistence.md)
 *   **Konfigurasi**
     *   [Label Container](Container-Labels.md)
+    *   [Apprise Notifications (English)](Apprise-Notifications.md)
+    *   [Discord & Apprise API Setup (English)](Discord-Apprise-Notifications.md)
     *   [Identity Provider](Identity-Providers.md)
     *   [Setup OAuth Provider](OAuth-Provider-Setup.md)
 *   **Panduan Penggunaan**

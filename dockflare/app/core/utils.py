@@ -17,11 +17,22 @@
 # dockflare/app/core/utils.py
 from app import config
 from app.core.container_name import build_cloudflared_container_name
+from app.core.zone_resolver import normalize_dns_name
 
 
 def get_rule_key(hostname, path):
     path_str = str(path or "").strip()
     return f"{hostname}|{path_str}"
+
+
+def get_source_rule_key(hostname, path):
+    """Return the canonical immutable identity derived from source labels."""
+    raw_hostname = str(hostname or "").strip()
+    wildcard = raw_hostname.startswith("*.")
+    normalized_hostname = normalize_dns_name(raw_hostname[2:] if wildcard else raw_hostname)
+    if wildcard:
+        normalized_hostname = f"*.{normalized_hostname}"
+    return get_rule_key(normalized_hostname, path)
 
 
 def get_label(labels, key_suffix, default=None):

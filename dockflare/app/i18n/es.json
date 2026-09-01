@@ -59,6 +59,8 @@
     "status.save_changes": "Guardar cambios",
     "status.rule_ui_override": "Regla sobrescrita desde la interfaz",
     "status.ui_override": "Sobrescritura de UI",
+    "status.tunnel_sync_pending": "Sincronización del túnel pendiente",
+    "status.tunnel_sync_pending_help": "La ruta deseada está guardada localmente y espera la sincronización del túnel.",
     "status.docker_rule_overridden": "Esta regla de Docker se ha sobrescrito desde la interfaz y ya no refleja las etiquetas del contenedor.",
     "status.ui_policy_override": "Esta política se gestiona desde la interfaz y sobrescribe las etiquetas del contenedor.",
     "status.revert_to_docker_labels": "Volver a las etiquetas de Docker",

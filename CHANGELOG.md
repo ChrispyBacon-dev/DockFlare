@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Apprise notifications:** Added opt-in, encrypted notification destinations for rule lifecycle, Cloudflare failures, Docker listener failures, Agent enrollment, decommission lifecycle, Agent health, tunnel health, and explicit Access Policy management. Event controls are grouped by area, with routine administrative events opt-in and failure/terminal observability enabled by default. Delivery uses a bounded background queue with cooldowns, startup and intentional-action suppression, redacted settings/status output, and authenticated test delivery. Addresses [#302](https://github.com/ChrispyBacon-dev/DockFlare/issues/302).
+- **Safe Agent decommissioning:** Replaced immediate Agent deletion with a durable prepare, ownership-safe Cloudflare cleanup, and final Agent shutdown workflow. Decommissioned Agents persist a local tombstone, stop their managed tunnel without Docker delete permission, revoke their API key only after final acknowledgement, and cannot silently recreate the tunnel after restart. The Agents UI now shows retryable progress and provides separately acknowledged host cleanup commands that remove the Agent Docker deployment while preserving the shared external `cloudflare-net` network.
+
+### Fixed
+- **Frontend dependency refresh:** Updated compatible PostCSS, Axios, DOMPurify, Vue, and transitive dependencies.
+- **UI-overridden container lifecycle:** Recreated Docker and Agent-managed containers now reactivate their existing rules, refresh only their runtime container association, and retain UI-controlled routing, origin, tunnel, and Access settings. Fixes [#388](https://github.com/ChrispyBacon-dev/DockFlare/issues/388).
+  - Added stable source-rule identity so UI-renamed container-backed rules remain associated with their originating Docker or Agent label binding without creating duplicates.
+  - Kept pending rules in tunnel ingress for the full deletion grace period, with generation-aware cleanup, per-tunnel serialization, DNS ownership checks, and durable synchronization retries protecting routes during failures and event races.
+  - Made full-rule and Access-policy ownership independently reversible for both Docker and Agent sources. Agent reverts no longer depend on a local Docker socket and apply stored inventory only when it matches the rule's current container and source binding; otherwise DockFlare safely waits for the next authenticated Agent observation.
+  - Added content fingerprinting to the main browser script so updated rule-editor logic is loaded after an upgrade instead of a stale cached asset. The editor continues to submit the immutable source rule key rather than inferring ownership from editable hostname or path fields.
+  - Strengthened Agent reporting with master-issued sessions, ordered event and report streams, explicit inventory completeness, bounded payloads, filtered DockFlare label namespaces, normalized Docker lifecycle events, and safe reconnect behavior.
+- **Overview API secret exposure and read side effects:** Removed reusable tunnel, Agent session, Agent API-key, and account material from overview/list responses. Agent-key actions now use stable non-authorizing references, while explicit key-generation and deployment flows retain their intended one-time credential behavior. `GET /api/v2/overview` no longer backfills or persists rule state.
+
 ## [v3.1.4] - 2026-08-17
 
 ### Fixed

@@ -682,7 +682,7 @@
         };
     </script>
     <script src="{{ url_for('static', filename='js/tom-select.complete.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js', v=main_js_version) }}"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>
