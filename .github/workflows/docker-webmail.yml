@@ -29,7 +29,7 @@ jobs:
   build_self_hosted:
     runs-on: self-hosted
 
-    timeout-minutes: 3
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -75,11 +75,14 @@ jobs:
           push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=dockflare-webmail
+          cache-to: type=gha,mode=max,scope=dockflare-webmail
 
   build_github_hosted_fallback:
     needs: build_self_hosted
     if: failure() || cancelled()
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -125,3 +128,5 @@ jobs:
           push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=dockflare-webmail
+          cache-to: type=gha,mode=max,scope=dockflare-webmail

@@ -34,7 +34,7 @@ concurrency:
 jobs:
   build_self_hosted:
     runs-on: self-hosted
-    timeout-minutes: 3
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -87,6 +87,7 @@ jobs:
     needs: build_self_hosted
     if: failure() || cancelled()
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
