@@ -16,6 +16,7 @@
 #
 # dockflare/app/web/api_v2_routes.py
 import copy
+import hashlib
 import logging
 import time
 import json
@@ -27,12 +28,16 @@ from flask_login import login_required
 
 from app import config, docker_client, tunnel_state, cloudflared_agent_state, publish_state_event
 from app.core.state_manager import (
-    managed_rules, access_groups, state_lock, save_state,
+    managed_rules, access_groups, agents, state_lock, save_state,
     add_agent, get_agent, update_agent, list_agents, remove_agent, add_agent_key, revoke_agent_key, find_agent_id_by_key, list_agent_keys, get_agent_key_info,
     get_services_snapshot, cleanup_expired_revoked_keys, get_revoked_keys_summary,
-    save_identity_provider, get_identity_provider, delete_identity_provider, list_identity_providers, get_idp_by_cloudflare_id, get_idp_id_by_name
+    save_identity_provider, get_identity_provider, delete_identity_provider, list_identity_providers, get_idp_by_cloudflare_id, get_idp_id_by_name,
+    agent_inventory_contains_rule, find_container_rule,
+    mark_rule_tunnel_sync_pending, restore_rule_lifecycle
 )
 from app.core import agent_key_store
+from app.core import agent_decommission
+from app.core import notification_manager
 from app.core.tunnel_manager import (
     start_cloudflared_container,
     stop_cloudflared_container,
@@ -44,7 +49,6 @@ from app.core.cloudflare_api import (
     create_cloudflare_dns_record,
     delete_cloudflare_dns_record,
     get_zone_id_from_name,
-    get_zone_details_by_id,
     delete_tunnel_via_api,
     list_account_zones,
     get_account_zone_inventory,
@@ -52,8 +56,6 @@ from app.core.cloudflare_api import (
 )
 from app.core.zone_resolver import ZoneResolutionError
 from app.core.access_manager import (
-    check_for_tld_access_policy,
-    get_cloudflare_account_email,
     delete_cloudflare_access_application,
     create_cloudflare_access_application,
     update_cloudflare_access_application,
@@ -65,7 +67,7 @@ from app.core.access_manager import (
 )
 from app.core.reconciler import reconcile_state_threaded
 from app.core.docker_handler import is_valid_hostname, is_valid_service
-from app.core.utils import get_rule_key, get_label, normalize_access_group_value, normalize_path_value
+from app.core.utils import get_rule_key, get_source_rule_key, get_label, normalize_access_group_value, normalize_path_value
 #----------------------------------------------------------!
 # UI endpoints are protected by session auth   nicht vergessen, immer checken bei änderungen.. don't waste time            !
 #----------------------------------------------------------!
@@ -75,6 +77,7 @@ _AGENT_ENDPOINT_ALLOWLIST = {
     'api_v2.agents_register',
     'api_v2.agents_get_commands',
     'api_v2.agents_post_events',
+    'api_v2.agents_decommission_ack',
 }
 
 _UI_ENDPOINT_ALLOWLIST = {
@@ -135,6 +138,79 @@ def serialize_rule(rule_data):
         serialized["delete_at"] = dt_obj.isoformat()
     return serialized
 
+
+_PUBLIC_AGENT_FIELDS = {
+    "id", "display_name", "version", "status", "last_seen",
+    "assigned_tunnel_id", "assigned_tunnel_name", "migration_status",
+    "tunnel_status", "connector_version", "connector_origin_ip",
+    "connector_platform", "connector_colos",
+    "decommission_operation_id", "decommission_state", "capabilities",
+}
+_PUBLIC_AGENT_KEY_FIELDS = {
+    "owner", "created_at", "status", "last_used_at", "bound_agent_id",
+    "revoked_at",
+}
+_PUBLIC_TUNNEL_FIELDS = {"id", "name", "status", "created_at", "deleted_at"}
+
+
+def _agent_key_reference(key_token):
+    """Return a stable non-secret identifier for an Agent API key."""
+    return hashlib.sha256(key_token.encode("utf-8")).hexdigest()
+
+
+def _resolve_agent_key_identifier(identifier):
+    """Resolve a public key reference, retaining raw-key API compatibility."""
+    keys = list_agent_keys()
+    if identifier in keys:
+        return identifier
+    for key_token in keys:
+        if secrets.compare_digest(_agent_key_reference(key_token), identifier):
+            return key_token
+    return None
+
+
+def _serialize_agent_keys(keys):
+    return {
+        _agent_key_reference(key_token): {
+            field: copy.deepcopy(metadata[field])
+            for field in _PUBLIC_AGENT_KEY_FIELDS
+            if field in metadata
+        }
+        for key_token, metadata in keys.items()
+        if isinstance(key_token, str) and isinstance(metadata, dict)
+    }
+
+
+def _serialize_agent(agent_id, agent_data, now_dt, heartbeat_timeout):
+    source = agent_data if isinstance(agent_data, dict) else {}
+    result = {
+        field: copy.deepcopy(source[field])
+        for field in _PUBLIC_AGENT_FIELDS
+        if field in source
+    }
+    result["id"] = agent_id
+    online = False
+    try:
+        last_seen = result.get("last_seen")
+        if last_seen:
+            last_seen_dt = datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
+            if last_seen_dt.tzinfo is None:
+                last_seen_dt = last_seen_dt.replace(tzinfo=timezone.utc)
+            online = (now_dt - last_seen_dt.astimezone(timezone.utc)).total_seconds() <= heartbeat_timeout
+    except (TypeError, ValueError):
+        online = False
+    result["online"] = online
+    result["health"] = "connected" if online else "disconnected"
+    return result
+
+
+def _serialize_tunnels(tunnels):
+    return [
+        {field: tunnel[field] for field in _PUBLIC_TUNNEL_FIELDS if field in tunnel}
+        for tunnel in tunnels or []
+        if isinstance(tunnel, dict)
+    ]
+
 def _ensure_agent_api_key(agent_id, agent_record, token):
     key_info = get_agent_key_info(token)
     if not key_info:
@@ -146,21 +222,21 @@ def _ensure_agent_api_key(agent_id, agent_record, token):
         logging.warning(f"AGENT_AUTH: Token for agent {agent_id} is not active (status={status}).")
         return False
 
+    bound_agent_id = key_info.get("bound_agent_id")
     stored_token = agent_record.get("api_key")
-    if stored_token is None:
-        updated = update_agent(agent_id, {"api_key": token})
-        if not updated:
-            logging.error(f"AGENT_AUTH: Failed to persist API key binding for agent {agent_id}.")
-            return False
-    elif stored_token != token:
+    if bound_agent_id and bound_agent_id != agent_id:
+        logging.warning(f"AGENT_AUTH: Key binding mismatch for agent {agent_id}.")
+        return False
+    if stored_token is not None and stored_token != token:
         logging.warning(f"AGENT_AUTH: Token mismatch for agent {agent_id}.")
         return False
 
     meta_update = dict(key_info)
     now_iso = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
     meta_update["last_used_at"] = now_iso
-    if meta_update.get("bound_agent_id") != agent_id:
-        meta_update["bound_agent_id"] = agent_id
+    if not bound_agent_id:
+        logging.warning("AGENT_AUTH: Unbound key rejected outside registration.")
+        return False
     add_agent_key(token, meta_update)
     return True
 
@@ -174,166 +250,47 @@ def list_services():
 
 @api_v2_bp.route('/overview', methods=['GET'])
 def get_overview_data():
-    rules_for_api = {}
-    api_tunnel_state = {}
-    api_agent_state = {}
-    initialization_status_api = {}
-    tld_policy_exists_val_api = False
-    account_email_for_tld_api = None
-    relevant_zone_name_for_tld_policy_api = None
-
-    all_account_tunnels_list_api = get_all_account_cloudflare_tunnels()
-    tunnel_names_map = {}
-    tunnel_status_map = {}
-    try:
-        for t in all_account_tunnels_list_api or []:
-            tid = t.get("id")
-            if tid:
-                tunnel_status_map[tid] = {
-                    "status": t.get("status") or "unknown",
-                    "name": t.get("name")
-                }
-                if t.get("name"):
-                    tunnel_names_map[tid] = t.get("name")
-    except Exception as _e:
-        logging.error(f"Error while building tunnel_status_map: {_e}", exc_info=True)
-
-    zone_lookup_map = {}
-    try:
-        for zone in list_account_zones() or []:
-            zid = zone.get("id")
-            zname = zone.get("name")
-            if zid and zname:
-                zone_lookup_map[zid] = zname
-    except Exception as zone_list_error:
-        logging.debug(f"Could not build zone lookup map: {zone_list_error}")
-
-    with state_lock:
-        rules_snapshot = {hostname_key: rule_value.copy() for hostname_key, rule_value in managed_rules.items()}
-        api_tunnel_state = tunnel_state.copy()
-        api_agent_state = cloudflared_agent_state.copy()
-
-    initialization_status_api = {
-        "complete": api_tunnel_state.get("id") is not None or config.EXTERNAL_TUNNEL_ID,
-        "in_progress": not (api_tunnel_state.get("id") or config.EXTERNAL_TUNNEL_ID) and \
-                        api_tunnel_state.get("status_message", "").lower().startswith("init")
+    all_account_tunnels = _serialize_tunnels(get_all_account_cloudflare_tunnels())
+    tunnel_status = {
+        tunnel["id"]: {"status": tunnel.get("status") or "unknown", "name": tunnel.get("name")}
+        for tunnel in all_account_tunnels
+        if tunnel.get("id")
     }
+    with state_lock:
+        rules_for_api = {
+            rule_key: serialize_rule(rule_data)
+            for rule_key, rule_data in managed_rules.items()
+        }
+        api_tunnel_state = {
+            field: copy.deepcopy(tunnel_state[field])
+            for field in ("id", "name", "status", "status_message")
+            if field in tunnel_state
+        }
 
-    state_updates = {}
-    effective_tunnel_id_cache = None
-
-    for hostname_key, rule_snapshot in rules_snapshot.items():
-        serialized_rule = serialize_rule(rule_snapshot)
-        tunnel_id_value = serialized_rule.get("tunnel_id")
-        if not tunnel_id_value and rule_snapshot.get("source") == "manual":
-            if effective_tunnel_id_cache is None:
-                effective_tunnel_id_cache = get_effective_tunnel_id()
-            if effective_tunnel_id_cache:
-                tunnel_id_value = effective_tunnel_id_cache
-                serialized_rule["tunnel_id"] = effective_tunnel_id_cache
-                state_updates.setdefault(hostname_key, {})["tunnel_id"] = effective_tunnel_id_cache
-        if tunnel_id_value:
-            tunnel_name_value = serialized_rule.get("tunnel_name")
-            if not tunnel_name_value or tunnel_name_value in ("", "N/A"):
-                tunnel_name_lookup = tunnel_names_map.get(tunnel_id_value)
-                if not tunnel_name_lookup:
-                    master_tunnel_id = api_tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
-                    if tunnel_id_value == master_tunnel_id:
-                        tunnel_name_lookup = api_tunnel_state.get("name")
-                if tunnel_name_lookup:
-                    serialized_rule["tunnel_name"] = tunnel_name_lookup
-                    state_updates.setdefault(hostname_key, {})["tunnel_name"] = tunnel_name_lookup
-        zone_id_value = serialized_rule.get("zone_id")
-        if zone_id_value and not serialized_rule.get("zone_name"):
-            zone_name_lookup = zone_lookup_map.get(zone_id_value)
-            if zone_name_lookup:
-                serialized_rule["zone_name"] = zone_name_lookup
-                state_updates.setdefault(hostname_key, {})["zone_name"] = zone_name_lookup
-        rules_for_api[hostname_key] = serialized_rule
-
-    if state_updates:
-        state_changed = False
-        with state_lock:
-            for hostname_key, updates in state_updates.items():
-                rule_ref = managed_rules.get(hostname_key)
-                if not rule_ref:
-                    continue
-                for field, value in updates.items():
-                    if rule_ref.get(field) != value:
-                        rule_ref[field] = value
-                        state_changed = True
-        if state_changed:
-            save_state()
-
-    cf_zone_id = current_app.config.get('CF_ZONE_ID')
-    if cf_zone_id and docker_client:
-        zone_details = get_zone_details_by_id(cf_zone_id)
-        if zone_details and zone_details.get("name"):
-            relevant_zone_name_for_tld_policy_api = zone_details.get("name")
-        if relevant_zone_name_for_tld_policy_api:
-            tld_policy_exists_val_api = check_for_tld_access_policy(relevant_zone_name_for_tld_policy_api)
-            if not tld_policy_exists_val_api:
-                account_email_for_tld_api = get_cloudflare_account_email()
-
-    agents_list_api = list_agents()
-    agent_keys_list_api = list_agent_keys()
-
-    try:
-        now_dt = datetime.utcnow().replace(tzinfo=timezone.utc)
-        heartbeat_timeout = getattr(config, "AGENT_HEARTBEAT_TIMEOUT", 60)
-        processed_agents = {}
-        for a_id, a in agents_list_api.items():
-            processed = dict(a) if isinstance(a, dict) else {"id": a_id}
-            last_seen_str = processed.get("last_seen")
-            online = False
-            try:
-                if last_seen_str:
-                    
-                    if last_seen_str.endswith('Z'):
-                        last_seen_dt = datetime.fromisoformat(last_seen_str.replace('Z', '+00:00'))
-                    else:
-                        last_seen_dt = datetime.fromisoformat(last_seen_str)
-                    last_seen_dt = last_seen_dt.replace(tzinfo=timezone.utc) if last_seen_dt.tzinfo is None else last_seen_dt.astimezone(timezone.utc)
-                    delta_secs = (now_dt - last_seen_dt).total_seconds()
-                    online = delta_secs <= heartbeat_timeout
-                else:
-                    online = False
-            except Exception:
-                online = False
-
-            processed["online"] = online
-            processed["health"] = "connected" if online else "disconnected"
-            
-            try:
-                assigned_tid = processed.get("assigned_tunnel_id")
-                if assigned_tid:
-                    ts = tunnel_status_map.get(assigned_tid)
-                    if ts:
-                        existing_ts = processed.get("tunnel_status") or {}
-                        if existing_ts.get("version") and "version" not in ts:
-                            ts = dict(ts)
-                            ts["version"] = existing_ts.get("version")
-                        processed["tunnel_status"] = ts
-            except Exception as _te:
-                logging.debug(f"Unable to enrich agent {a_id} with tunnel_status: {_te}")
-
-            try:
-                from app.core.cloudflare_api import get_tunnel_connector_info
-                tunnel_id = processed.get("assigned_tunnel_id")
-                if tunnel_id:
-                    connector = get_tunnel_connector_info(tunnel_id)
-                    if connector:
-                        processed["connector_version"] = connector.get("version")
-                        processed["connector_origin_ip"] = connector.get("origin_ip")
-                        processed["connector_platform"] = connector.get("platform")
-                        processed["connector_colos"] = connector.get("colos")
-            except Exception as _ce:
-                logging.warning("Could not enrich agent %s with connector info: %s", a_id, _ce)
-
-            processed_agents[a_id] = processed
-        agents_list_api = processed_agents
-    except Exception as e:
-        logging.error(f"Error while computing agent health fields: {e}", exc_info=True)
+    now_dt = datetime.now(timezone.utc)
+    heartbeat_timeout = getattr(config, "AGENT_HEARTBEAT_TIMEOUT", 60)
+    agents_list_api = {
+        agent_id: _serialize_agent(agent_id, agent_data, now_dt, heartbeat_timeout)
+        for agent_id, agent_data in list_agents().items()
+    }
+    for agent_id, processed in agents_list_api.items():
+        assigned_tunnel_id = processed.get("assigned_tunnel_id")
+        if assigned_tunnel_id in tunnel_status:
+            processed["tunnel_status"] = tunnel_status[assigned_tunnel_id]
+        if not assigned_tunnel_id:
+            continue
+        try:
+            from app.core.cloudflare_api import get_tunnel_connector_info
+            connector = get_tunnel_connector_info(assigned_tunnel_id)
+            if connector:
+                processed.update({
+                    "connector_version": connector.get("version"),
+                    "connector_origin_ip": connector.get("origin_ip"),
+                    "connector_platform": connector.get("platform"),
+                    "connector_colos": connector.get("colos"),
+                })
+        except Exception as connector_error:
+            logging.warning("Could not enrich agent %s with connector info: %s", agent_id, connector_error)
 
     log_stream_url = "/stream-logs"
     try:
@@ -341,32 +298,32 @@ def get_overview_data():
     except RuntimeError as e:
         logging.error(f"RuntimeError generating url_for for 'web.stream_logs_route': {e}. Falling back to static path.")
 
-    cf_account_id = current_app.config.get('CF_ACCOUNT_ID')
+    cf_account_id = current_app.config.get("CF_ACCOUNT_ID")
+    cf_zone_id = current_app.config.get("CF_ZONE_ID")
     return jsonify({
         "tunnel_state": api_tunnel_state,
-        "agent_state": api_agent_state,
-        "initialization": initialization_status_api,
-        "display_token": tunnel_state.get("token"), 
+        "agent_state": {},
+        "initialization": {
+            "complete": bool(api_tunnel_state.get("id") or config.EXTERNAL_TUNNEL_ID),
+            "in_progress": not (api_tunnel_state.get("id") or config.EXTERNAL_TUNNEL_ID)
+            and api_tunnel_state.get("status_message", "").lower().startswith("init"),
+        },
         "cloudflared_container_name": current_app.config.get('CLOUDFLARED_CONTAINER_NAME'),
         "docker_available": docker_client is not None,
         "external_cloudflared": config.USE_EXTERNAL_CLOUDFLARED,
         "external_tunnel_id": config.EXTERNAL_TUNNEL_ID,
         "rules": rules_for_api,
-        "all_account_tunnels": all_account_tunnels_list_api,
+        "all_account_tunnels": all_account_tunnels,
         "config_status": {
             "cf_account_id_configured": bool(cf_account_id),
-            "account_id_for_display": cf_account_id if cf_account_id else "Not Configured",
             "cf_zone_id_configured": bool(cf_zone_id),
-            "relevant_zone_name_for_tld_policy": relevant_zone_name_for_tld_policy_api,
-            "tld_policy_exists": tld_policy_exists_val_api,
-            "account_email_for_tld": account_email_for_tld_api,
         },
         "reconciliation_info": getattr(current_app, 'reconciliation_info', {
             "in_progress": False, "progress": 0, "total_items": 0,
             "processed_items": 0, "status": "Not started"
         }),
         "agents": agents_list_api,
-        "agent_keys": agent_keys_list_api,
+        "agent_keys": _serialize_agent_keys(list_agent_keys()),
         "log_stream_path": log_stream_url
     })
 
@@ -580,6 +537,7 @@ def create_manual_rule_api():
             save_state()
             state_changed = True
 
+    access_success = True
     if access_group_ids_list:
         from app import config
         rule = managed_rules.get(rule_key)
@@ -629,6 +587,7 @@ def create_manual_rule_api():
                             logging.info(f"API: Successfully updated Access Application for {rule_key}")
                         else:
                             logging.error(f"API: Failed to update Access Application for {rule_key}")
+                            access_success = False
                     else:
                         logging.info(f"API: Creating new Access Application for rule {rule_key}")
                         from app.core.access_manager import create_cloudflare_access_application
@@ -651,8 +610,17 @@ def create_manual_rule_api():
                             logging.info(f"API: Created Access Application ID '{new_app_id}' for {rule_key}")
                         else:
                             logging.error(f"API: Failed to create Access Application for {rule_key}")
+                            access_success = False
                 except Exception as e:
                     logging.error(f"API: Error creating/updating Access Application for {rule_key}: {e}", exc_info=True)
+                    access_success = False
+
+        if not access_success:
+            notification_manager.emit(
+                "cloudflare.access_failure",
+                rule_key,
+                {"hostname": hostname, "path": normalized_path, "operation": "apply policy", "source": "manual"},
+            )
 
     if state_changed:
         publish_state_event('snapshot_refresh')
@@ -672,6 +640,18 @@ def create_manual_rule_api():
         update_cloudflare_config(master_tunnel_id)
     dns_success = bool(dns_result) and dns_result not in {"semaphore_timeout", "existing_record_unconfirmed"}
     if not dns_success or not tunnel_update_success:
+        if not dns_success:
+            notification_manager.emit(
+                "cloudflare.dns_failure",
+                f"{zone_id}:{hostname}",
+                {"hostname": hostname, "path": normalized_path, "operation": "create", "source": "manual"},
+            )
+        if not tunnel_update_success:
+            notification_manager.emit(
+                "cloudflare.tunnel_failure",
+                tunnel_id,
+                {"hostname": hostname, "tunnel_id": tunnel_id[:12], "tunnel_name": tunnel_name, "operation": "update", "source": "manual"},
+            )
         with state_lock:
             if previous_rule_snapshot is None:
                 managed_rules.pop(rule_key, None)
@@ -717,6 +697,18 @@ def create_manual_rule_api():
         if old_tuple != new_tuple and not old_tuple_still_owned and all(old_tuple) and not old_tuple[0].startswith('*.'):
             delete_cloudflare_dns_record(old_tuple[1], old_tuple[0], old_tuple[2])
     status_code = 201 if state_changed else 200
+    if previous_rule_snapshot is None and state_changed and access_success:
+        notification_manager.emit(
+            "rule.activated",
+            rule_key,
+            {
+                "source": "manual",
+                "tunnel_id": tunnel_id[:12],
+                "tunnel_name": tunnel_name,
+                "resources": [{"key": rule_key, "hostname": hostname, "path": normalized_path, "source": "manual"}],
+                "public_url": config.DOCKFLARE_PUBLIC_URL,
+            },
+        )
     return jsonify({"rule_key": rule_key}), status_code
 
 @api_v2_bp.route('/reconciliation-status', methods=['GET'])
@@ -776,7 +768,7 @@ def _authenticate_agent_request():
     owner = find_agent_id_by_key(token)
     return token, owner
 
-def process_agent_container_start(payload, agent_id):
+def process_agent_container_start(payload, agent_id, defer_side_effects=False):
     """
     Process a container_start event from an agent.
     Similar to process_container_start but works with provided labels.
@@ -789,13 +781,11 @@ def process_agent_container_start(payload, agent_id):
             container_name = container_data.get("name", "unknown")
 
             logging.info(f"AGENT_PROCESS_START: Processing container {container_name} ({container_id[:12]}) from agent {agent_id}")
-            logging.info(f"AGENT_PROCESS_START: Payload: {payload}")
-            logging.info(f"AGENT_PROCESS_START: Labels: {labels}")
 
             is_enabled = get_label(labels, "enable", "false").lower() in ["true", "1", "t", "yes"]
             if not is_enabled:
                 logging.debug(f"AGENT_PROCESS: Ignoring: {container_name} ({container_id[:12]}): 'enable' label not true.")
-                return
+                return None
             
             hostnames_to_process = []
 
@@ -963,12 +953,14 @@ def process_agent_container_start(payload, agent_id):
 
             if not hostnames_to_process:
                 logging.warning(f"AGENT_PROCESS: No valid hostname configs for {container_name} ({container_id[:12]}).")
-                return
+                return None
 
             logging.info(f"AGENT_PROCESS: Found {len(hostnames_to_process)} hostname configurations for container {container_name}")
 
             state_changed_locally = False
             needs_tunnel_config_update = False
+            activated_resources = []
+            restored_resources = []
 
             agent_record = get_agent(agent_id)
             assigned_tunnel_name = agent_record.get("assigned_tunnel_name") if agent_record else "Unknown"
@@ -978,12 +970,40 @@ def process_agent_container_start(payload, agent_id):
 
             policy_jobs_map = {}
             dns_targets = {}
-            zone_inventory = get_account_zone_inventory()
+            zone_inventory = None
             for config_item in hostnames_to_process:
                 hostname = config_item["hostname"]
                 service = config_item["service"]
                 path_from_item = config_item.get("path")
                 rule_key = get_rule_key(hostname, path_from_item)
+                source_rule_key = get_source_rule_key(hostname, path_from_item)
+
+                with state_lock:
+                    matched_key, matched_rule = find_container_rule(source_rule_key, "agent", agent_id)
+                    if matched_rule and matched_rule.get("rule_ui_override", False):
+                        changed, reactivated = restore_rule_lifecycle(matched_rule, container_id)
+                        if matched_rule.get("source_rule_key") is None and matched_key == rule_key:
+                            matched_rule["source_rule_key"] = source_rule_key
+                            matched_rule["lifecycle_generation"] = int(matched_rule.get("lifecycle_generation") or 0) + 1
+                            changed = True
+                        if reactivated:
+                            mark_rule_tunnel_sync_pending(matched_rule)
+                            needs_tunnel_config_update = True
+                            restored_resources.append({
+                                "key": matched_key,
+                                "hostname": matched_rule.get("hostname"),
+                                "path": matched_rule.get("path"),
+                                "source": "agent",
+                            })
+                        state_changed_locally |= changed
+                        if matched_rule.get("hostname") and matched_rule.get("zone_id"):
+                            dns_targets[matched_rule["hostname"]] = {"zone_id": matched_rule["zone_id"]}
+                        logging.info(
+                            "UI-overridden agent rule %s: lifecycle observation accepted for container %s; UI configuration preserved.",
+                            matched_key,
+                            container_id[:12],
+                        )
+                        continue
 
                 zone_name_from_item = config_item["zone_name"]
                 no_tls_verify_from_item = config_item["no_tls_verify"]
@@ -993,6 +1013,8 @@ def process_agent_container_start(payload, agent_id):
                 disable_chunked_encoding_from_item = config_item.get("disable_chunked_encoding", False)
                 match_sni_to_host_from_item = config_item.get("match_sni_to_host", False)
 
+                if zone_inventory is None:
+                    zone_inventory = get_account_zone_inventory()
                 try:
                     selected_zone = resolve_account_zone(
                         hostname,
@@ -1003,6 +1025,11 @@ def process_agent_container_start(payload, agent_id):
                     )
                 except ZoneResolutionError as exc:
                     logging.error(f"AGENT_PROCESS: Zone resolution failed for {rule_key} ({exc.code}). Skipping.")
+                    notification_manager.emit(
+                        "cloudflare.dns_failure",
+                        rule_key,
+                        {"hostname": hostname, "path": path_from_item, "operation": "zone resolution", "source": "agent", "agent_id": agent_id[:12]},
+                    )
                     continue
                 target_zone_id = selected_zone["id"]
                 zone_name_from_item = selected_zone.get("name")
@@ -1015,8 +1042,15 @@ def process_agent_container_start(payload, agent_id):
                     if existing_rule and existing_rule.get("source") == "manual":
                         logging.info(f"AGENT_PROCESS: Rule {rule_key} is manual, skipping.")
                         continue
+                    if existing_rule and (existing_rule.get("source") != "agent" or existing_rule.get("agent_id") != agent_id):
+                        logging.warning("AGENT_PROCESS: Rule %s ownership mismatch for agent %s; observation ignored.", rule_key, agent_id)
+                        continue
 
                     if existing_rule:
+                        original_existing_rule = copy.deepcopy(existing_rule)
+                        if existing_rule.get("source_rule_key") is None:
+                            existing_rule["source_rule_key"] = source_rule_key
+                            existing_rule["lifecycle_generation"] = int(existing_rule.get("lifecycle_generation") or 0) + 1
                         logging.debug(f"AGENT_PROCESS_UPD_RULE: Updating rule for {rule_key}")
 
                         rule_data_changed = False
@@ -1071,9 +1105,26 @@ def process_agent_container_start(payload, agent_id):
                             existing_rule["status"] = "active"
                             existing_rule["delete_at"] = None
                             rule_data_changed = True
+                            restored_resources.append({
+                                "key": rule_key,
+                                "hostname": hostname,
+                                "path": path_from_item,
+                                "source": "agent",
+                            })
 
-                        if rule_data_changed:
+                        tunnel_fields = (
+                            "hostname", "path", "service", "zone_id", "no_tls_verify",
+                            "origin_server_name", "http_host_header", "http2_origin",
+                            "disable_chunked_encoding", "match_sni_to_host", "tunnel_id",
+                        )
+                        requires_tunnel_update = (
+                            original_existing_rule.get("status") != existing_rule.get("status")
+                            or any(original_existing_rule.get(field) != existing_rule.get(field) for field in tunnel_fields)
+                        )
+                        if requires_tunnel_update:
+                            mark_rule_tunnel_sync_pending(existing_rule)
                             needs_tunnel_config_update = True
+                        if original_existing_rule != existing_rule:
                             state_changed_locally = True
 
                     else:
@@ -1103,11 +1154,22 @@ def process_agent_container_start(payload, agent_id):
                             "access_group_id": None,
                             "agent_id": agent_id,
                             "tunnel_name": assigned_tunnel_name,
-                            "tunnel_id": assigned_tunnel_id
+                            "tunnel_id": assigned_tunnel_id,
+                            "source_rule_key": source_rule_key,
+                            "tunnel_sync_pending": True,
+                            "tunnel_sync_last_attempt_at": None,
+                            "tunnel_sync_attempts": 0,
+                            "lifecycle_generation": 0,
                         }
                         existing_rule = managed_rules[rule_key]
                         state_changed_locally = True
                         needs_tunnel_config_update = True
+                        activated_resources.append({
+                            "key": rule_key,
+                            "hostname": hostname,
+                            "path": path_from_item,
+                            "source": "agent",
+                        })
 
                     dns_targets[hostname] = {
                         "zone_id": target_zone_id,
@@ -1121,45 +1183,160 @@ def process_agent_container_start(payload, agent_id):
 
             policy_jobs = list(policy_jobs_map.items())
 
-            policy_state_changed = False
-            for rule_key, policy_payload in policy_jobs:
-                if handle_access_policy_from_labels(rule_key, copy.deepcopy(policy_payload)):
-                    policy_state_changed = True
-
-            if policy_state_changed:
-                state_changed_locally = True
+            plan = {
+                "agent_id": agent_id,
+                "state_changed": state_changed_locally,
+                "needs_tunnel_config_update": needs_tunnel_config_update,
+                "policy_jobs": policy_jobs,
+                "dns_targets": dns_targets,
+                "tunnel_id": assigned_tunnel_id,
+                "tunnel_name": assigned_tunnel_name,
+                "container_id": container_id,
+                "container_name": container_name,
+                "activated_resources": activated_resources,
+                "restored_resources": restored_resources,
+            }
+            if defer_side_effects:
+                return plan
 
             if state_changed_locally:
                 save_state()
                 publish_state_event('snapshot_refresh')
-
-            if needs_tunnel_config_update:
-                logging.info(f"AGENT_PROCESS: DNS and tunnel config update needed for agent {agent_id}.")
-                
-                agent_record = get_agent(agent_id)
-                if agent_record and agent_record.get("assigned_tunnel_id"):
-                    agent_tunnel_id = agent_record.get("assigned_tunnel_id")
-                    for hostname_dns, dns_details in dns_targets.items():
-                        target_zone_id_for_dns = dns_details.get("zone_id")
-                        if target_zone_id_for_dns and not hostname_dns.startswith('*.'):
-                            create_cloudflare_dns_record(target_zone_id_for_dns, hostname_dns, agent_tunnel_id)
-                        elif not target_zone_id_for_dns:
-                            logging.error(f"AGENT_PROCESS: Could not determine Zone ID for DNS record {hostname_dns}")
-    
-                    try:
-                        if update_cloudflare_config(agent_tunnel_id):
-                            logging.info(f"AGENT_PROCESS: Successfully updated tunnel config for agent {agent_id}")
-                        else:
-                            logging.error(f"AGENT_PROCESS: Failed to update tunnel config for agent {agent_id}")
-                    except Exception as e:
-                        logging.error(f"AGENT_PROCESS: Failed to update tunnel config for agent {agent_id}: {e}")
-                else:
-                    logging.error(f"AGENT_PROCESS: Agent {agent_id} not found or has no tunnel ID. Cannot send update command.")
+            _execute_agent_start_plan(plan)
+            return plan
     except Exception as e:
         logging.error(f"AGENT_PROCESS_START: Exception in process_agent_container_start: {e}", exc_info=True)
         raise
 
-def process_agent_container_stop(payload, agent_id):
+
+def _execute_agent_start_plan(plan):
+    """Apply Cloudflare work only after the associated Agent state is durable."""
+    if not plan:
+        return
+    policy_changed = False
+    for rule_key, policy_payload in plan.get("policy_jobs", []):
+        try:
+            if handle_access_policy_from_labels(rule_key, copy.deepcopy(policy_payload)):
+                policy_changed = True
+        except Exception:
+            notification_manager.emit(
+                "cloudflare.access_failure",
+                rule_key,
+                {"hostname": policy_payload.get("hostname"), "path": policy_payload.get("path"), "operation": "apply policy", "source": "agent", "agent_id": str(plan.get("agent_id") or "")[:12]},
+            )
+            raise
+    if policy_changed:
+        save_state()
+        publish_state_event('snapshot_refresh')
+
+    if not plan.get("needs_tunnel_config_update"):
+        return
+    agent_id = plan["agent_id"]
+    agent_tunnel_id = plan.get("tunnel_id")
+    if not agent_tunnel_id:
+        logging.error("AGENT_PROCESS: Agent %s has no tunnel ID; synchronization remains pending.", agent_id)
+        notification_manager.emit(
+            "cloudflare.tunnel_failure",
+            agent_id,
+            {"agent_id": str(agent_id)[:12], "operation": "resolve tunnel", "source": "agent"},
+        )
+        return
+    try:
+        if not update_cloudflare_config(agent_tunnel_id):
+            logging.error("AGENT_PROCESS: Failed to update tunnel config for agent %s", agent_id)
+            notification_manager.emit(
+                "cloudflare.tunnel_failure",
+                agent_tunnel_id,
+                {"agent_id": str(agent_id)[:12], "tunnel_id": str(agent_tunnel_id)[:12], "tunnel_name": plan.get("tunnel_name"), "operation": "update", "source": "agent"},
+            )
+            return
+        remote_success = True
+        for hostname, details in plan.get("dns_targets", {}).items():
+            zone_id = details.get("zone_id")
+            if zone_id and not hostname.startswith('*.'):
+                try:
+                    dns_result = create_cloudflare_dns_record(zone_id, hostname, agent_tunnel_id)
+                except Exception:
+                    logging.exception("AGENT_PROCESS: DNS creation raised for %s", hostname)
+                    dns_result = None
+                if not dns_result or dns_result in {"semaphore_timeout", "existing_record_unconfirmed"}:
+                    remote_success = False
+                    notification_manager.emit(
+                        "cloudflare.dns_failure",
+                        f"{zone_id}:{hostname}",
+                        {"hostname": hostname, "operation": "create", "source": "agent", "agent_id": str(agent_id)[:12]},
+                    )
+            elif not zone_id:
+                logging.error("AGENT_PROCESS: Could not determine Zone ID for DNS record %s", hostname)
+                remote_success = False
+                notification_manager.emit(
+                    "cloudflare.dns_failure",
+                    hostname,
+                    {"hostname": hostname, "operation": "create", "source": "agent", "agent_id": str(agent_id)[:12]},
+                )
+        sync_changed = False
+        with state_lock:
+            for rule in managed_rules.values():
+                if rule.get("source") == "agent" and rule.get("agent_id") == agent_id and rule.get("tunnel_id") == agent_tunnel_id and rule.get("tunnel_sync_pending"):
+                    rule["tunnel_sync_pending"] = False
+                    rule["tunnel_sync_last_attempt_at"] = None
+                    rule["tunnel_sync_attempts"] = 0
+                    rule["lifecycle_generation"] = int(rule.get("lifecycle_generation") or 0) + 1
+                    sync_changed = True
+        if sync_changed:
+            save_state()
+        logging.info("AGENT_PROCESS: Successfully updated tunnel config for agent %s", agent_id)
+        if remote_success:
+            common_context = {
+                "agent_id": str(agent_id)[:12],
+                "tunnel_id": str(agent_tunnel_id)[:12],
+                "tunnel_name": plan.get("tunnel_name"),
+                "container_id": str(plan.get("container_id") or "")[:12],
+                "container_name": plan.get("container_name"),
+                "source": "agent",
+                "public_url": config.DOCKFLARE_PUBLIC_URL,
+            }
+            if plan.get("activated_resources"):
+                notification_manager.emit("rule.activated", str(plan.get("container_id") or agent_id), {**common_context, "resources": plan["activated_resources"]})
+            if plan.get("restored_resources"):
+                notification_manager.emit("rule.restored", str(plan.get("container_id") or agent_id), {**common_context, "resources": plan["restored_resources"]})
+    except Exception:
+        logging.exception("AGENT_PROCESS: Failed to update tunnel config for agent %s", agent_id)
+        notification_manager.emit(
+            "cloudflare.tunnel_failure",
+            str(agent_tunnel_id),
+            {"agent_id": str(agent_id)[:12], "tunnel_id": str(agent_tunnel_id)[:12], "operation": "update", "source": "agent"},
+        )
+
+
+def _coalesce_agent_start_plans(plans):
+    """Coalesce one accepted report into at most one tunnel write per Agent tunnel."""
+    combined = {}
+    for plan in plans:
+        key = (plan.get("agent_id"), plan.get("tunnel_id"))
+        merged = combined.setdefault(key, {
+            "agent_id": plan.get("agent_id"),
+            "tunnel_id": plan.get("tunnel_id"),
+            "state_changed": False,
+            "needs_tunnel_config_update": False,
+            "policy_jobs": [],
+            "dns_targets": {},
+            "tunnel_name": plan.get("tunnel_name"),
+            "container_id": plan.get("container_id"),
+            "container_name": plan.get("container_name"),
+            "activated_resources": [],
+            "restored_resources": [],
+        })
+        merged["state_changed"] |= bool(plan.get("state_changed"))
+        merged["needs_tunnel_config_update"] |= bool(plan.get("needs_tunnel_config_update"))
+        merged["policy_jobs"].extend(plan.get("policy_jobs", []))
+        merged["dns_targets"].update(plan.get("dns_targets", {}))
+        merged["activated_resources"].extend(plan.get("activated_resources", []))
+        merged["restored_resources"].extend(plan.get("restored_resources", []))
+    return list(combined.values())
+
+
+def process_agent_container_stop(payload, agent_id, received_at=None, persist=True):
     """
     Process a container_stop event from an agent.
     """
@@ -1169,6 +1346,9 @@ def process_agent_container_stop(payload, agent_id):
 
         logging.info(f"AGENT_PROCESS_STOP: Processing stop for container {container_id[:12]} from agent {agent_id}")
 
+        pending_resources = []
+        delete_at_value = None
+        grace_period = current_app.config.get('GRACE_PERIOD_SECONDS', 28800)
         with state_lock:
             rule_keys_affected = []
             for r_key, details in managed_rules.items():
@@ -1179,19 +1359,29 @@ def process_agent_container_stop(payload, agent_id):
                     rule_keys_affected.append(r_key)
 
             if rule_keys_affected:
-                grace_period = current_app.config.get('GRACE_PERIOD_SECONDS', 28800)
                 for rule_key in rule_keys_affected:
                     rule = managed_rules[rule_key]
                     if rule.get("status") != "pending_deletion":
                         rule["status"] = "pending_deletion"
                         grace_delta = timedelta(seconds=grace_period)
-                        rule["delete_at"] = datetime.now(timezone.utc) + grace_delta
+                        rule["delete_at"] = (received_at or datetime.now(timezone.utc)) + grace_delta
+                        rule["lifecycle_generation"] = int(rule.get("lifecycle_generation") or 0) + 1
                         logging.info(f"AGENT_PROCESS_STOP: Rule for {rule_key} scheduled for deletion (grace period: {grace_period}s)")
-                save_state()
-                publish_state_event('snapshot_refresh')
+                        delete_at_value = rule["delete_at"].isoformat()
+                        pending_resources.append({"key": rule_key, "hostname": rule.get("hostname"), "path": rule.get("path"), "source": "agent"})
+                if persist:
+                    save_state()
+                    publish_state_event('snapshot_refresh')
                 logging.info(f"AGENT_PROCESS_STOP: Scheduled {len(rule_keys_affected)} rules for deletion from agent {agent_id}")
             else:
                 logging.info(f"AGENT_PROCESS_STOP: No active agent-managed rules found for container {container_id[:12]} from agent {agent_id}")
+        if persist and pending_resources:
+            notification_manager.emit(
+                "rule.pending_deletion",
+                container_id,
+                {"container_id": container_id[:12], "agent_id": str(agent_id)[:12], "source": "agent", "delete_at": delete_at_value, "grace_period_seconds": grace_period, "resources": pending_resources, "public_url": config.DOCKFLARE_PUBLIC_URL},
+            )
+        return bool(pending_resources)
 
 @api_v2_bp.route('/agents/generate-key', methods=['POST', 'GET'])
 def agents_generate_key():
@@ -1229,9 +1419,12 @@ def agents_revoke_key():
     Payload: { "key": "<key_token>" }
     """
     data = request.get_json() or {}
-    key = data.get('key')
-    if not key:
+    key_identifier = data.get('key')
+    if not key_identifier:
         return jsonify({"status": "error", "message": "Missing 'key' in payload."}), 400
+    key = _resolve_agent_key_identifier(key_identifier)
+    if not key:
+        return jsonify({"status": "error", "message": "Key not found."}), 404
     ok = revoke_agent_key(key)
     if ok:
         affected_agents = []
@@ -1257,7 +1450,8 @@ def delete_agent_key_permanently(key_id):
         return jsonify({"status": "error", "message": "Missing key ID"}), 400
 
     
-    key_info = get_agent_key_info(key_id)
+    key_token = _resolve_agent_key_identifier(key_id)
+    key_info = get_agent_key_info(key_token) if key_token else None
     if not key_info:
         return jsonify({"status": "error", "message": "Key not found"}), 404
 
@@ -1268,14 +1462,14 @@ def delete_agent_key_permanently(key_id):
     
     owner = key_info.get("owner", "unknown")
     revoked_at = key_info.get("revoked_at", "unknown")
-    logging.info(f"ADMIN: Permanently deleting revoked key {key_id[:8]}... (owner: {owner}, revoked: {revoked_at})")
+    logging.info("ADMIN: Permanently deleting revoked Agent key (owner: %s, revoked: %s)", owner, revoked_at)
     
-    agent_key_store.remove_key(key_id)
+    agent_key_store.remove_key(key_token)
 
     return jsonify({
         "status": "success",
         "message": "Key permanently deleted",
-        "deleted_key": key_id[:8] + "...",
+        "deleted_key": _agent_key_reference(key_token)[:8] + "...",
         "owner": owner
     }), 200
 
@@ -1380,7 +1574,8 @@ def agents_cf_service_token_delete():
 @api_v2_bp.route('/agents/deploy-info/<key_id>', methods=['GET'])
 def agents_deploy_info(key_id):
     from app.core.service_token_manager import generate_compose_content, generate_deploy_script
-    key_info = get_agent_key_info(key_id)
+    key_token = _resolve_agent_key_identifier(key_id)
+    key_info = get_agent_key_info(key_token) if key_token else None
     if not key_info:
         return jsonify({"status": "error", "message": "Key not found"}), 404
     if key_info.get("status") != "active":
@@ -1391,8 +1586,8 @@ def agents_deploy_info(key_id):
         return jsonify({"status": "error", "message": "DOCKFLARE_PUBLIC_URL is not configured"}), 400
 
     try:
-        script_content = generate_deploy_script(key_id, public_url)
-        compose_content = generate_compose_content(key_id, public_url)
+        script_content = generate_deploy_script(key_token, public_url)
+        compose_content = generate_compose_content(key_token, public_url)
         return jsonify({
             "status": "success",
             "script_content": script_content,
@@ -1408,7 +1603,8 @@ def agents_deploy_info(key_id):
 @api_v2_bp.route('/agents/deploy-script/<key_id>', methods=['GET'])
 def agents_deploy_script(key_id):
     from app.core.service_token_manager import generate_deploy_script
-    key_info = get_agent_key_info(key_id)
+    key_token = _resolve_agent_key_identifier(key_id)
+    key_info = get_agent_key_info(key_token) if key_token else None
     if not key_info:
         return jsonify({"status": "error", "message": "Key not found"}), 404
     if key_info.get("status") != "active":
@@ -1419,7 +1615,7 @@ def agents_deploy_script(key_id):
         return jsonify({"status": "error", "message": "DOCKFLARE_PUBLIC_URL is not configured"}), 400
 
     try:
-        script = generate_deploy_script(key_id, public_url)
+        script = generate_deploy_script(key_token, public_url)
         from flask import Response
         return Response(script, mimetype="text/x-shellscript")
     except ValueError as e:
@@ -1434,39 +1630,12 @@ def agents_list_api():
     """
     Admin endpoint to list known agents and keys.
     """
-    agents_map = list_agents()
-    keys_map = list_agent_keys()
-
-    try:
-        now_dt = datetime.utcnow().replace(tzinfo=timezone.utc)
-        heartbeat_timeout = getattr(config, "AGENT_HEARTBEAT_TIMEOUT", 60)
-        processed_agents = {}
-        for a_id, a in agents_map.items():
-            processed = dict(a) if isinstance(a, dict) else {"id": a_id}
-            last_seen_str = processed.get("last_seen")
-            online = False
-            try:
-                if last_seen_str:
-                    
-                    if last_seen_str.endswith('Z'):
-                        last_seen_dt = datetime.fromisoformat(last_seen_str.replace('Z', '+00:00'))
-                    else:
-                        last_seen_dt = datetime.fromisoformat(last_seen_str)
-                    last_seen_dt = last_seen_dt.replace(tzinfo=timezone.utc) if last_seen_dt.tzinfo is None else last_seen_dt.astimezone(timezone.utc)
-                    delta_secs = (now_dt - last_seen_dt).total_seconds()
-                    online = delta_secs <= heartbeat_timeout
-                else:
-                    online = False
-            except Exception:
-                online = False
-
-            processed["online"] = online
-            processed["health"] = "connected" if online else "disconnected"
-            processed.pop("api_key", None)
-            processed_agents[a_id] = processed
-        agents_map = processed_agents
-    except Exception as e:
-        logging.error(f"Error while computing agent health fields in agents_list_api: {e}", exc_info=True)
+    now_dt = datetime.now(timezone.utc)
+    heartbeat_timeout = getattr(config, "AGENT_HEARTBEAT_TIMEOUT", 60)
+    agents_map = {
+        agent_id: _serialize_agent(agent_id, agent_data, now_dt, heartbeat_timeout)
+        for agent_id, agent_data in list_agents().items()
+    }
 
     try:
         from app.core.cloudflare_api import get_tunnel_connector_info
@@ -1482,7 +1651,348 @@ def agents_list_api():
     except Exception as e:
         logging.warning("Could not enrich agents with connector info: %s", e)
 
-    return jsonify({"agents": agents_map, "agent_keys": keys_map}), 200
+    return jsonify({
+        "agents": agents_map,
+        "agent_keys": _serialize_agent_keys(list_agent_keys()),
+    }), 200
+
+def _agent_json_response(http_status, code, message=None, **fields):
+    body = {"status": "success" if http_status < 400 else "error", "code": code}
+    if message:
+        body["message"] = str(message)[:256]
+    body.update(fields)
+    return jsonify(body), http_status
+
+
+def _register_agent_request():
+    token, _owner = _authenticate_agent_request()
+    if not token:
+        return _agent_json_response(401, "unauthorized")
+    if request.content_length and request.content_length > config.AGENT_MAX_REQUEST_BYTES:
+        return _agent_json_response(413, "payload_too_large")
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _agent_json_response(400, "invalid_payload")
+
+    key_info = get_agent_key_info(token) or {}
+    bound_agent_id = key_info.get("bound_agent_id")
+    supplied_agent_id = data.get("agent_id")
+    if bound_agent_id and supplied_agent_id and supplied_agent_id != bound_agent_id:
+        return _agent_json_response(403, "agent_key_mismatch")
+    agent_id = bound_agent_id or str(uuid.uuid4())
+    existing = get_agent(agent_id)
+    if bound_agent_id and not existing:
+        return _agent_json_response(403, "agent_key_mismatch")
+
+    explicit_versions = "supported_protocol_versions" in data
+    versions = data.get("supported_protocol_versions")
+    if explicit_versions:
+        if not isinstance(versions, list) or not versions or any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 1 for value in versions
+        ):
+            return _agent_json_response(400, "invalid_payload")
+        supported = sorted(set(versions).intersection({1, 2}), reverse=True)
+        if not supported:
+            return _agent_json_response(409, "unsupported_protocol")
+        protocol_version = supported[0]
+    else:
+        protocol_version = 1
+
+    received_at = datetime.now(timezone.utc).isoformat()
+    session_id = secrets.token_urlsafe(32) if protocol_version == 2 else None
+    display_name = data.get("display_name") or data.get("hostname") or f"agent-{agent_id[:8]}"
+    capabilities = data.get("capabilities") if isinstance(data.get("capabilities"), list) else []
+    capabilities = [value for value in capabilities if isinstance(value, str) and len(value) <= 64][:32]
+    record = dict(existing or {})
+    record.update({
+        "id": agent_id,
+        "display_name": record.get("display_name") if record.get("custom_name") else display_name,
+        "version": data.get("agent_version") or data.get("version"),
+        "last_seen": received_at,
+        "status": record.get("status") or ("pending" if config.AGENT_ENROLLMENT_REQUIRED else "enrolled"),
+        "protocol_version": protocol_version,
+        "agent_session_id": session_id,
+        "last_event_sequence": 0,
+        "last_report_sequence": 0,
+        "last_complete_containers": record.get("last_complete_containers"),
+        "commands": record.get("commands", []),
+        "meta": record.get("meta", {}),
+        "capabilities": capabilities,
+    })
+    with state_lock:
+        previous = agents.get(agent_id)
+        agents[agent_id] = record
+        if not save_state():
+            if previous is None:
+                agents.pop(agent_id, None)
+            else:
+                agents[agent_id] = previous
+            return _agent_json_response(503, "persistence_failed")
+
+    meta_update = dict(key_info)
+    meta_update.update({"bound_agent_id": agent_id, "status": "active", "last_used_at": received_at})
+    add_agent_key(token, meta_update)
+    return _agent_json_response(
+        200 if existing else 201,
+        "registered",
+        agent_id=agent_id,
+        protocol_version=protocol_version,
+        agent_session_id=session_id,
+    )
+
+
+def filter_reportable_labels(labels):
+    if not isinstance(labels, dict):
+        raise ValueError("labels")
+    if len(labels) > config.AGENT_MAX_LABELS:
+        raise OverflowError("labels")
+    filtered = {}
+    for key, value in labels.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise ValueError("labels")
+        if len(key.encode("utf-8")) > config.AGENT_MAX_LABEL_KEY_BYTES or len(value.encode("utf-8")) > config.AGENT_MAX_LABEL_VALUE_BYTES:
+            raise OverflowError("labels")
+        if key.startswith(("dockflare.", "cloudflare.tunnel.")):
+            filtered[key] = value
+    return filtered
+
+
+def _validated_agent_container(value):
+    if not isinstance(value, dict):
+        raise ValueError("container")
+    container_id = value.get("id")
+    container_name = value.get("name", "unknown")
+    if not isinstance(container_id, str) or not container_id:
+        raise ValueError("container_id")
+    if len(container_id.encode("utf-8")) > config.AGENT_MAX_CONTAINER_ID_BYTES:
+        raise OverflowError("container_id")
+    if not isinstance(container_name, str):
+        raise ValueError("container_name")
+    if len(container_name.encode("utf-8")) > config.AGENT_MAX_CONTAINER_NAME_BYTES:
+        raise OverflowError("container_name")
+    return {
+        "id": container_id,
+        "name": container_name,
+        "labels": filter_reportable_labels(value.get("labels", {})),
+        "status": str(value.get("status", "unknown"))[:32],
+    }
+
+
+def _container_source_bindings(container):
+    labels = container.get("labels", {})
+    bindings = set()
+    hostname = get_label(labels, "hostname")
+    if hostname:
+        try:
+            bindings.add((container["id"], get_source_rule_key(hostname, get_label(labels, "path"))))
+        except ZoneResolutionError:
+            pass
+    index = 0
+    while True:
+        indexed_hostname = get_label(labels, f"{index}.hostname")
+        if not indexed_hostname:
+            break
+        try:
+            bindings.add((container["id"], get_source_rule_key(indexed_hostname, get_label(labels, f"{index}.path", get_label(labels, "path")))))
+        except ZoneResolutionError:
+            pass
+        index += 1
+    return bindings
+
+
+def _agent_event_summary(event_type, received_at, protocol_version, sequence, result_code, container_id=None):
+    return {
+        "type": event_type,
+        "received_at": received_at.isoformat(),
+        "protocol_version": protocol_version,
+        "sequence": sequence,
+        "container_id": container_id[:12] if container_id else None,
+        "result": result_code,
+    }
+
+
+def _handle_agent_event_request(agent_id):
+    received_at = datetime.now(timezone.utc)
+    token, _owner = _authenticate_agent_request()
+    if not token:
+        return _agent_json_response(401, "unauthorized")
+    if request.content_length and request.content_length > config.AGENT_MAX_REQUEST_BYTES:
+        return _agent_json_response(413, "payload_too_large")
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return _agent_json_response(400, "invalid_payload")
+    event_type = payload.get("type")
+    if not isinstance(event_type, str) or len(event_type.encode("utf-8")) > config.AGENT_MAX_EVENT_TYPE_BYTES or event_type not in {"container_start", "container_stop", "status_report", "heartbeat", "hello", "tunnel_status"}:
+        return _agent_json_response(400, "invalid_payload")
+    agent = get_agent(agent_id)
+    if not agent or not _ensure_agent_api_key(agent_id, agent, token):
+        return _agent_json_response(403, "agent_key_mismatch")
+    if agent.get("decommission_operation_id"):
+        return _agent_json_response(409, "agent_decommissioning")
+
+    is_v2 = agent.get("protocol_version") == 2
+    stream_field = "report_sequence" if event_type == "status_report" else "event_sequence"
+    last_field = "last_report_sequence" if event_type == "status_report" else "last_event_sequence"
+    sequence = None
+    if is_v2:
+        if payload.get("protocol_version") != 2 or payload.get("agent_session_id") != agent.get("agent_session_id"):
+            return _agent_json_response(409, "registration_required")
+        sequence = payload.get(stream_field)
+        if isinstance(sequence, bool) or not isinstance(sequence, int) or not 1 <= sequence <= 9223372036854775807:
+            return _agent_json_response(400, "invalid_payload")
+        previous_sequence = int(agent.get(last_field) or 0)
+        if sequence == previous_sequence:
+            return _agent_json_response(200, "duplicate_sequence")
+        if sequence < previous_sequence:
+            return _agent_json_response(409, "stale_sequence")
+
+    valid_containers = []
+    inventory_complete = False
+    inventory_malformed = False
+    tunnel_status_update = None
+    result_code = "accepted_noop"
+    try:
+        if event_type in {"container_start", "container_stop"}:
+            valid_containers = [_validated_agent_container(payload.get("container"))]
+        elif event_type == "status_report":
+            raw_containers = payload.get("containers") if is_v2 else payload.get("containers", (payload.get("container") or {}).get("containers"))
+            if is_v2 and payload.get("inventory_complete") is False and "containers" not in payload:
+                raw_containers = []
+            if not isinstance(raw_containers, list):
+                raise ValueError("containers")
+            if len(raw_containers) > config.AGENT_MAX_CONTAINERS:
+                raise OverflowError("containers")
+            for value in raw_containers:
+                try:
+                    valid_containers.append(_validated_agent_container(value))
+                except ValueError:
+                    inventory_malformed = True
+            inventory_complete = bool(
+                is_v2
+                and payload.get("inventory_complete") is True
+                and payload.get("inventory_scope") == "dockflare_enabled_running"
+                and not inventory_malformed
+            )
+        elif event_type == "tunnel_status":
+            tunnel_data = payload.get("tunnel") if isinstance(payload.get("tunnel"), dict) else payload
+            tunnel_status_update = {
+                "status": str(tunnel_data.get("status") or tunnel_data.get("state") or "unknown")[:64],
+                "name": str(tunnel_data.get("name") or "")[:255],
+                "version": str(tunnel_data.get("version") or "")[:128],
+            }
+    except OverflowError:
+        return _agent_json_response(413, "payload_too_large")
+    except ValueError:
+        return _agent_json_response(400, "invalid_payload")
+
+    with state_lock:
+        rules_before = copy.deepcopy(managed_rules)
+        agents_before = copy.deepcopy(agents)
+    side_effect_plans = []
+    pending_notification_resources = []
+    pending_notification_deadline = None
+    try:
+        if event_type == "container_start":
+            plan = process_agent_container_start({"container": valid_containers[0]}, agent_id, defer_side_effects=True)
+            if plan:
+                side_effect_plans.append(plan)
+            result_code = "accepted"
+        elif event_type == "container_stop":
+            process_agent_container_stop({"container": valid_containers[0]}, agent_id, received_at, persist=False)
+            result_code = "accepted"
+        elif event_type == "status_report":
+            bindings = set()
+            for container in valid_containers:
+                bindings.update(_container_source_bindings(container))
+            for container in valid_containers:
+                plan = process_agent_container_start({"container": container}, agent_id, defer_side_effects=True)
+                if plan:
+                    side_effect_plans.append(plan)
+            if inventory_complete:
+                grace_period = current_app.config.get("GRACE_PERIOD_SECONDS", 28800)
+                with state_lock:
+                    for rule in managed_rules.values():
+                        if rule.get("source") != "agent" or rule.get("agent_id") != agent_id or rule.get("status") != "active":
+                            continue
+                        source_key = rule.get("source_rule_key")
+                        present = (rule.get("container_id"), source_key) in bindings if source_key else any(c["id"] == rule.get("container_id") for c in valid_containers)
+                        if not present:
+                            rule["status"] = "pending_deletion"
+                            rule["delete_at"] = received_at + timedelta(seconds=grace_period)
+                            rule["lifecycle_generation"] = int(rule.get("lifecycle_generation") or 0) + 1
+                result_code = "accepted"
+            else:
+                result_code = "inventory_incomplete"
+        elif event_type == "tunnel_status":
+            result_code = "accepted"
+    except Exception:
+        with state_lock:
+            managed_rules.clear()
+            managed_rules.update(rules_before)
+            agents.clear()
+            agents.update(agents_before)
+        logging.exception("AGENT_EVENT: Failed to stage event %s for agent %s", event_type, agent_id)
+        return _agent_json_response(500, "processing_failed")
+
+    with state_lock:
+        current_agent = agents.get(agent_id)
+        if not current_agent:
+            return _agent_json_response(409, "registration_required")
+        current_agent["last_seen"] = received_at.isoformat()
+        if is_v2:
+            current_agent[last_field] = sequence
+        if event_type == "status_report" and inventory_complete:
+            current_agent["last_complete_containers"] = valid_containers
+        if tunnel_status_update is not None:
+            current_agent["tunnel_status"] = tunnel_status_update
+            current_agent["tunnel_last_seen"] = received_at.isoformat()
+            current_agent["tunnel_version"] = tunnel_status_update["version"]
+        container_id = valid_containers[0]["id"] if len(valid_containers) == 1 else None
+        current_agent["last_event"] = _agent_event_summary(event_type, received_at, 2 if is_v2 else 1, sequence, result_code, container_id)
+        if not save_state():
+            managed_rules.clear()
+            managed_rules.update(rules_before)
+            agents.clear()
+            agents.update(agents_before)
+            return _agent_json_response(503, "persistence_failed")
+        for rule_key, rule in managed_rules.items():
+            previous_rule = rules_before.get(rule_key)
+            if (
+                rule.get("source") == "agent"
+                and rule.get("agent_id") == agent_id
+                and rule.get("status") == "pending_deletion"
+                and (not previous_rule or previous_rule.get("status") != "pending_deletion")
+            ):
+                pending_notification_resources.append({
+                    "key": rule_key,
+                    "hostname": rule.get("hostname"),
+                    "path": rule.get("path"),
+                    "source": "agent",
+                })
+                deadline = rule.get("delete_at")
+                if isinstance(deadline, datetime):
+                    pending_notification_deadline = deadline.isoformat()
+    publish_state_event("snapshot_refresh")
+    if pending_notification_resources:
+        container_id = valid_containers[0]["id"] if len(valid_containers) == 1 else agent_id
+        notification_manager.emit(
+            "rule.pending_deletion",
+            container_id,
+            {
+                "container_id": str(container_id)[:12],
+                "agent_id": str(agent_id)[:12],
+                "source": "agent",
+                "delete_at": pending_notification_deadline,
+                "grace_period_seconds": current_app.config.get("GRACE_PERIOD_SECONDS", 28800),
+                "resources": pending_notification_resources,
+                "public_url": config.DOCKFLARE_PUBLIC_URL,
+            },
+        )
+    for plan in _coalesce_agent_start_plans(side_effect_plans):
+        _execute_agent_start_plan(plan)
+    http_status = 200 if result_code == "accepted" else 202
+    return _agent_json_response(http_status, result_code)
+
 
 @api_v2_bp.route('/agents/register', methods=['POST'])
 def agents_register():
@@ -1492,65 +2002,7 @@ def agents_register():
     Body may include optional 'agent_id', 'display_name', 'version'.
     Returns agent_id and enrollment status.
     """
-    token, owner = _authenticate_agent_request()
-    if not token:
-        return jsonify({"status": "error", "message": "Missing or invalid Authorization header."}), 401
-
-    data = request.get_json() or {}
-    provided_agent_id = data.get('agent_id')
-    agent_id = provided_agent_id or str(uuid.uuid4())
-    display_name = data.get('display_name') or data.get('hostname') or f"agent-{agent_id[:8]}"
-    version = data.get('version')
-    now = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
-    
-    existing_agent_id = provided_agent_id or agent_id
-    existing_agent = get_agent(existing_agent_id)
-
-    if existing_agent:
-        if not _ensure_agent_api_key(existing_agent_id, existing_agent, token):
-            return jsonify({"status": "error", "message": "API key mismatch for agent."}), 403
-
-        logging.info(f"Agent re-registration: Found existing agent '{existing_agent_id}'. Updating last_seen and version.")
-        update_payload = {
-            "last_seen": now,
-            "version": version,
-        }
-
-        if not existing_agent.get("custom_name"):
-            update_payload["display_name"] = display_name
-        update_agent(existing_agent_id, update_payload)
-        agent_record = get_agent(existing_agent_id)
-        agent_id = existing_agent_id
-        http_status_code = 200 # OK
-    else:
-        logging.info(f"New agent registration: Creating record for agent '{agent_id}'.")
-        agent_record = {
-            "id": agent_id,
-            "display_name": display_name,
-            "version": version,
-            "last_seen": now,
-            "status": "pending" if config.AGENT_ENROLLMENT_REQUIRED else "enrolled",
-            "assigned_tunnel_name": None,
-            "assigned_tunnel_id": None,
-            "assigned_tunnel_token": None,
-            "commands": [],
-            "meta": {"registered_with_key_owner": owner},
-            "api_key": token
-        }
-        add_agent(agent_id, agent_record)
-        key_meta = get_agent_key_info(token) or {}
-        meta_update = dict(key_meta)
-        meta_update["bound_agent_id"] = agent_id
-        if owner and not meta_update.get("owner"):
-            meta_update["owner"] = owner
-        if not meta_update.get("created_at"):
-            meta_update["created_at"] = now
-        meta_update["status"] = "active"
-        meta_update["last_used_at"] = now
-        add_agent_key(token, meta_update)
-        http_status_code = 201 # Created
-
-    return jsonify({"status": "success", "agent_id": agent_id, "agent": agent_record}), http_status_code
+    return _register_agent_request()
 
 @api_v2_bp.route('/agents/<agent_id>/commands', methods=['GET'])
 def agents_get_commands(agent_id):
@@ -1571,10 +2023,62 @@ def agents_get_commands(agent_id):
         return jsonify({"status": "error", "message": "API key mismatch for agent."}), 403
     agent = get_agent(agent_id)
 
-    commands = agent.get("commands", [])
+    commands = list(agent.get("commands", []))
+    durable_command = agent_decommission.command_for_agent(agent_id)
+    if durable_command:
+        commands.append(durable_command)
     # clear commands after delivery
-    update_agent(agent_id, {"commands": [] , "last_seen": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()})
+    update_agent(agent_id, {"commands": [], "last_seen": datetime.now(timezone.utc).isoformat()})
     return jsonify({"status": "success", "commands": commands}), 200
+
+
+@api_v2_bp.route('/agents/<agent_id>/decommission/<operation_id>/ack', methods=['POST'])
+def agents_decommission_ack(agent_id, operation_id):
+    token = _extract_bearer_token()
+    if not token:
+        return _agent_json_response(401, "unauthorized")
+    if request.content_length and request.content_length > config.AGENT_MAX_REQUEST_BYTES:
+        return _agent_json_response(413, "payload_too_large")
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return _agent_json_response(400, "invalid_payload")
+    key_info = get_agent_key_info(token) or {}
+    if not key_info:
+        return _agent_json_response(401, "unauthorized")
+    agent = get_agent(agent_id)
+    operation = agent_decommission.get_operation(operation_id)
+    if not agent:
+        duplicate_final = (
+            operation
+            and operation.get("agent_id") == agent_id
+            and operation.get("state") in agent_decommission.TERMINAL_STATES
+            and key_info.get("bound_agent_id") == agent_id
+            and key_info.get("status") == "revoked"
+            and payload.get("command_id") in operation.get("acknowledged_commands", [])
+        )
+        if duplicate_final:
+            return _agent_json_response(200, "acknowledged", operation=agent_decommission.serialize_operation(operation))
+        return _agent_json_response(403, "agent_key_mismatch")
+    if not _ensure_agent_api_key(agent_id, agent, token):
+        return _agent_json_response(403, "agent_key_mismatch")
+    if agent.get("protocol_version") == 2 and payload.get("agent_session_id") != agent.get("agent_session_id"):
+        return _agent_json_response(409, "registration_required")
+    try:
+        previous_state = operation.get("state") if operation else None
+        operation, should_cleanup = agent_decommission.record_ack(agent_id, operation_id, payload)
+        if should_cleanup:
+            operation = agent_decommission.run_master_cleanup(operation_id)
+        elif operation.get("state") == "shutdown_scheduled":
+            operation = agent_decommission.complete_finalization(operation_id)
+        agent_decommission.notify_transition(operation, previous_state)
+        return _agent_json_response(
+            200,
+            "acknowledged",
+            operation=agent_decommission.serialize_operation(operation),
+        )
+    except agent_decommission.DecommissionError as error:
+        agent_decommission.notify_transition(agent_decommission.get_operation(operation_id), previous_state)
+        return _agent_json_response(error.http_status, error.code)
 
 @api_v2_bp.route('/agents/<agent_id>/events', methods=['POST'])
 def agents_post_events(agent_id):
@@ -1582,6 +2086,8 @@ def agents_post_events(agent_id):
     Agents POST events (container start/stop, tunnel status).
     Auth via API key.
     """
+    return _handle_agent_event_request(agent_id)
+
     logging.info(f"AGENTS_EVENTS: Received request for agent {agent_id}")
     token, owner = _authenticate_agent_request()
     if not token:
@@ -1729,7 +2235,19 @@ def agents_enroll(agent_id):
     agent = get_agent(agent_id)
     if not agent:
         return jsonify({"status": "error", "message": "Agent not found."}), 404
+    if agent.get("decommission_operation_id"):
+        return jsonify({"status": "error", "message": "Agent decommission is in progress."}), 409
 
+    old_tunnel_id = agent.get("assigned_tunnel_id")
+    was_new_enrollment = agent.get("status") != "enrolled"
+    enrollment_context = {
+        "agent_name": agent.get("display_name") or f"agent-{agent_id[:8]}",
+        "agent_id": agent_id[:12],
+        "tunnel_name": tunnel_name,
+        "operation": "enroll",
+        "source": "admin",
+        "public_url": config.DOCKFLARE_PUBLIC_URL,
+    }
     try:
         from app.core.cloudflare_api import find_tunnel_via_api, create_tunnel_via_api
         found_id, found_token = find_tunnel_via_api(tunnel_name)
@@ -1737,148 +2255,169 @@ def agents_enroll(agent_id):
             created_id, created_token = create_tunnel_via_api(tunnel_name)
             tunnel_id = created_id
             token = created_token
+            tunnel_ownership = "created_exclusive"
         else:
             tunnel_id = found_id
             token = found_token
+            tunnel_ownership = "adopted"
 
         if not tunnel_id:
+            notification_manager.emit("agent.enrollment_failed", agent_id, enrollment_context)
             return jsonify({"status": "error", "message": "Failed to create/find tunnel."}), 500
 
         cmd = {"action": "start_tunnel", "tunnel_name": tunnel_name, "tunnel_id": tunnel_id, "token": token}
-        existing_cmds = agent.get("commands", [])
+        existing_cmds = list(agent.get("commands", []))
         existing_cmds.append(cmd)
-        update_agent(agent_id, {
-            "assigned_tunnel_name": tunnel_name,
-            "assigned_tunnel_id": tunnel_id,
-            "assigned_tunnel_token": token,
-            "status": "enrolled",
-            "commands": existing_cmds,
-            "last_enrolled_at": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
-        })
-
+        persistence_failed = False
         with state_lock:
+            current_agent = agents.get(agent_id)
+            if not current_agent:
+                persistence_failed = True
+            else:
+                previous_agent = copy.deepcopy(current_agent)
+                current_agent.update({
+                    "assigned_tunnel_name": tunnel_name,
+                    "assigned_tunnel_id": tunnel_id,
+                    "assigned_tunnel_token": token,
+                    "assigned_tunnel_ownership": tunnel_ownership,
+                    "status": "enrolled",
+                    "commands": existing_cmds,
+                    "last_enrolled_at": datetime.now(timezone.utc).isoformat(),
+                })
             rules_updated = False
-            for rule in managed_rules.values():
-                if rule.get("source") == "agent" and rule.get("agent_id") == agent_id:
-                    if rule.get("tunnel_name") != tunnel_name:
-                        rule["tunnel_name"] = tunnel_name
-                        rules_updated = True
+            previous_rules = {}
+            if not persistence_failed:
+                for rule in managed_rules.values():
+                    if rule.get("source") == "agent" and rule.get("agent_id") == agent_id:
+                        if rule.get("tunnel_name") != tunnel_name or rule.get("tunnel_id") != tunnel_id:
+                            previous_rules[id(rule)] = copy.deepcopy(rule)
+                            rule["tunnel_name"] = tunnel_name
+                            rule["tunnel_id"] = tunnel_id
+                            rule["tunnel_sync_pending"] = True
+                            rule["lifecycle_generation"] = int(rule.get("lifecycle_generation") or 0) + 1
+                            rules_updated = True
             if rules_updated:
                 logging.info(f"Updated {len([r for r in managed_rules.values() if r.get('agent_id') == agent_id])} rules for agent {agent_id} with tunnel name '{tunnel_name}'.")
-                save_state()
+            if not persistence_failed and not save_state():
+                current_agent.clear()
+                current_agent.update(previous_agent)
+                for rule in managed_rules.values():
+                    previous_rule = previous_rules.get(id(rule))
+                    if previous_rule is not None:
+                        rule.clear()
+                        rule.update(previous_rule)
+                persistence_failed = True
 
+        if persistence_failed:
+            notification_manager.emit("agent.enrollment_failed", agent_id, enrollment_context)
+            return jsonify({"status": "error", "message": "Failed to persist agent enrollment."}), 503
+
+        old_updated = not old_tunnel_id or old_tunnel_id == tunnel_id or update_cloudflare_config(old_tunnel_id)
+        new_updated = update_cloudflare_config(tunnel_id)
+        if old_updated and new_updated:
+            dns_targets = []
+            with state_lock:
+                for rule in managed_rules.values():
+                    if rule.get("source") == "agent" and rule.get("agent_id") == agent_id:
+                        rule["tunnel_sync_pending"] = False
+                        rule["tunnel_sync_attempts"] = 0
+                        rule["tunnel_sync_last_attempt_at"] = None
+                        if rule.get("hostname") and rule.get("zone_id"):
+                            dns_targets.append((rule["zone_id"], rule["hostname"]))
+                save_state()
+            for zone_id, hostname in dns_targets:
+                if not hostname.startswith("*."):
+                    create_cloudflare_dns_record(zone_id, hostname, tunnel_id)
+
+        if was_new_enrollment:
+            notification_manager.emit(
+                "agent.enrolled",
+                agent_id,
+                {**enrollment_context, "tunnel_id": str(tunnel_id)[:12]},
+            )
         return jsonify({"status": "success", "message": "Agent enrolled and command queued.", "command": cmd}), 200
     except Exception as e:
         logging.error(f"Error enrolling agent {agent_id}: {e}", exc_info=True)
+        notification_manager.emit("agent.enrollment_failed", agent_id, enrollment_context)
         return jsonify({"status": "error", "message": f"Exception during enrollment: {e}"}), 500
+
+
+def _start_agent_decommission_response(agent_id):
+    try:
+        operation, created = agent_decommission.start_decommission(agent_id)
+        if created:
+            notification_manager.emit(
+                "agent.decommission_started",
+                operation["operation_id"],
+                agent_decommission.notification_context(operation),
+            )
+        public_operation = agent_decommission.serialize_operation(operation)
+        return jsonify({
+            "status": "accepted",
+            "operation_id": operation["operation_id"],
+            "operation": public_operation,
+            "status_url": f"/api/v2/agent-decommissions/{operation['operation_id']}",
+        }), 202
+    except agent_decommission.DecommissionError as error:
+        return jsonify({"status": "error", "code": error.code, "message": error.code}), error.http_status
+
+
+@api_v2_bp.route('/agents/<agent_id>/decommission', methods=['POST'])
+def agents_decommission_start(agent_id):
+    return _start_agent_decommission_response(agent_id)
+
+
+@api_v2_bp.route('/agents/<agent_id>/decommission-preview', methods=['GET'])
+def agents_decommission_preview(agent_id):
+    try:
+        return jsonify({
+            "status": "success",
+            "preview": agent_decommission.preview_decommission(agent_id),
+        }), 200
+    except agent_decommission.DecommissionError as error:
+        return jsonify({"status": "error", "code": error.code, "message": error.code}), error.http_status
+
+
+@api_v2_bp.route('/agent-decommissions/<operation_id>', methods=['GET'])
+def agents_decommission_status(operation_id):
+    operation = agent_decommission.get_operation(operation_id)
+    if not operation:
+        return jsonify({"status": "error", "code": "operation_not_found", "message": "operation_not_found"}), 404
+    return jsonify({"status": "success", "operation": agent_decommission.serialize_operation(operation)}), 200
+
+
+@api_v2_bp.route('/agent-decommissions/<operation_id>/retry', methods=['POST'])
+def agents_decommission_retry(operation_id):
+    previous = agent_decommission.get_operation(operation_id)
+    previous_state = previous.get("state") if previous else None
+    try:
+        operation = agent_decommission.retry_operation(operation_id)
+        agent_decommission.notify_transition(operation, previous_state)
+        return jsonify({"status": "accepted", "operation": agent_decommission.serialize_operation(operation)}), 202
+    except agent_decommission.DecommissionError as error:
+        agent_decommission.notify_transition(agent_decommission.get_operation(operation_id), previous_state)
+        return jsonify({"status": "error", "code": error.code, "message": error.code}), error.http_status
+
+
+@api_v2_bp.route('/agent-decommissions/<operation_id>/force', methods=['POST'])
+def agents_decommission_force(operation_id):
+    previous = agent_decommission.get_operation(operation_id)
+    previous_state = previous.get("state") if previous else None
+    try:
+        operation = agent_decommission.force_cleanup(operation_id)
+        agent_decommission.notify_transition(operation, previous_state)
+        return jsonify({"status": "success", "operation": agent_decommission.serialize_operation(operation)}), 200
+    except agent_decommission.DecommissionError as error:
+        agent_decommission.notify_transition(agent_decommission.get_operation(operation_id), previous_state)
+        return jsonify({"status": "error", "code": error.code, "message": error.code}), error.http_status
 
 @api_v2_bp.route('/agents/<agent_id>/remove', methods=['POST'])
 def agents_remove(agent_id):
-    """
-    Admin endpoint to remove an agent and clean up associated resources.
-    This will:
-    - Delete the Cloudflare tunnel
-    - Remove DNS records associated with the tunnel
-    - Remove rules created by this agent
-    - Remove the agent from state
-    """
-    agent = get_agent(agent_id)
-    if not agent:
-        return jsonify({"status": "error", "message": "Agent not found."}), 404
+    return _start_agent_decommission_response(agent_id)
 
-    tunnel_id = agent.get("assigned_tunnel_id")
-    tunnel_name = agent.get("assigned_tunnel_name")
 
-    cleanup_results = {"tunnel_deleted": False, "dns_records_deleted": 0, "rules_removed": 0}
-
-    if tunnel_id:
-        try:
-
-            try:
-                all_tunnels = get_all_account_cloudflare_tunnels()
-                tunnel_exists = any(t.get("id") == tunnel_id for t in all_tunnels)
-            except Exception as check_err:
-                logging.warning(f"Failed to check if tunnel {tunnel_id} exists on Cloudflare: {check_err}. Assuming it exists and trying to delete.")
-                tunnel_exists = True
-
-            if tunnel_exists:
-                try:
-                    success = delete_tunnel_via_api(tunnel_id)
-                    cleanup_results["tunnel_deleted"] = success
-                    if success:
-                        logging.info(f"Successfully deleted tunnel {tunnel_id} for agent {agent_id}")
-                    else:
-                        logging.error(f"Failed to delete tunnel {tunnel_id} for agent {agent_id}")
-                except Exception as delete_err:
-                    logging.error(f"Exception while deleting tunnel {tunnel_id}: {delete_err}")
-                    cleanup_results["tunnel_deleted"] = False
-            else:
-                logging.info(f"Tunnel {tunnel_id} for agent {agent_id} no longer exists on Cloudflare (already deleted)")
-                cleanup_results["tunnel_deleted"] = True  # Consider it successful since it's already gone
-        except Exception as e:
-            logging.error(f"Exception while processing tunnel deletion for {tunnel_id}: {e}")
-            cleanup_results["tunnel_deleted"] = False
-
-    if tunnel_id:
-        try:
-            
-            cf_zone_id = current_app.config.get('CF_ZONE_ID')
-            scan_zone_names = current_app.config.get('TUNNEL_DNS_SCAN_ZONE_NAMES', [])
-            zone_ids_to_scan = set()
-            if cf_zone_id:
-                zone_ids_to_scan.add(cf_zone_id)
-            with state_lock:
-                zone_ids_to_scan.update(
-                    rule.get("zone_id")
-                    for rule in managed_rules.values()
-                    if rule.get("status") == "active" and rule.get("zone_id")
-                )
-            for zone_name in scan_zone_names:
-                try:
-                    zone_id = get_zone_id_from_name(zone_name)
-                    if zone_id:
-                        zone_ids_to_scan.add(zone_id)
-                except Exception as zone_err:
-                    logging.warning(f"Failed to get zone ID for {zone_name}: {zone_err}")
-
-            for zone_id in zone_ids_to_scan:
-                try:
-                    dns_records = get_dns_records_for_tunnel(zone_id, tunnel_id)
-                    for record in dns_records:
-                        hostname = record.get("name")
-                        if hostname:
-                            success = delete_cloudflare_dns_record(zone_id, hostname, tunnel_id)
-                            if success:
-                                cleanup_results["dns_records_deleted"] += 1
-                                logging.info(f"Deleted DNS record {hostname} for tunnel {tunnel_id}")
-                except Exception as dns_err:
-                    logging.error(f"Failed to cleanup DNS records in zone {zone_id} for tunnel {tunnel_id}: {dns_err}")
-        except Exception as e:
-            logging.error(f"Failed to cleanup DNS records for tunnel {tunnel_id}: {e}")
-
-    with state_lock:
-        rules_to_remove = []
-        for rule_key, rule in managed_rules.items():
-            if rule.get("source") == "agent" and rule.get("agent_id") == agent_id:
-                rules_to_remove.append(rule_key)
-
-        for rule_key in rules_to_remove:
-            del managed_rules[rule_key]
-            cleanup_results["rules_removed"] += 1
-            logging.info(f"Removed rule {rule_key} for agent {agent_id}")
-
-        save_state()
-
-    success = remove_agent(agent_id)
-    if success:
-        logging.info(f"Successfully removed agent {agent_id}")
-        return jsonify({
-            "status": "success",
-            "message": f"Agent {agent_id} removed successfully.",
-            "cleanup": cleanup_results
-        }), 200
-    else:
-        return jsonify({"status": "error", "message": "Failed to remove agent from state."}), 500
+def _agent_decommission_blocks_action(agent_record):
+    return bool(agent_record and agent_record.get("decommission_operation_id"))
 
 @api_v2_bp.route('/agents/<agent_id>/trigger-migration', methods=['POST'])
 def trigger_agent_migration(agent_id):
@@ -1889,6 +2428,8 @@ def trigger_agent_migration(agent_id):
         agent_record = get_agent(agent_id)
         if not agent_record:
             return jsonify({"status": "error", "message": "Agent not found."}), 404
+        if _agent_decommission_blocks_action(agent_record):
+            return jsonify({"status": "error", "message": "Agent decommission is in progress."}), 409
 
         assigned_tunnel_id = agent_record.get("assigned_tunnel_id")
         if not assigned_tunnel_id:
@@ -1920,6 +2461,8 @@ def redeploy_agent_tunnel(agent_id):
         agent_record = get_agent(agent_id)
         if not agent_record:
             return jsonify({"status": "error", "message": "Agent not found."}), 404
+        if _agent_decommission_blocks_action(agent_record):
+            return jsonify({"status": "error", "message": "Agent decommission is in progress."}), 409
 
         if agent_record.get("status") != "enrolled":
             return jsonify({"status": "error", "message": "Agent not enrolled."}), 400
@@ -1959,6 +2502,8 @@ def roll_agent_api_key(agent_id):
         agent_record = get_agent(agent_id)
         if not agent_record:
             return jsonify({"status": "error", "message": "Agent not found."}), 404
+        if _agent_decommission_blocks_action(agent_record):
+            return jsonify({"status": "error", "message": "Agent decommission is in progress."}), 409
 
         old_api_key = agent_record.get("api_key")
 
@@ -1997,6 +2542,8 @@ def rename_agent(agent_id):
         agent_record = get_agent(agent_id)
         if not agent_record:
             return jsonify({"status": "error", "message": "Agent not found."}), 404
+        if _agent_decommission_blocks_action(agent_record):
+            return jsonify({"status": "error", "message": "Agent decommission is in progress."}), 409
 
         data = request.get_json() or {}
         display_name = data.get('display_name', '').strip()
@@ -2025,6 +2572,7 @@ def agent_start():
     if not docker_client:
         return jsonify({"status": "error", "message": "Docker client not available."}),
         
+    notification_manager.suppress_tunnel_health(tunnel_state.get("id"), 120)
     start_cloudflared_container()
     time.sleep(0.5)
     return jsonify({
@@ -2040,6 +2588,7 @@ def agent_stop():
     if not docker_client:
         return jsonify({"status": "error", "message": "Docker client not available."}),
 
+    notification_manager.suppress_tunnel_health(tunnel_state.get("id"), 300)
     stop_cloudflared_container()
     time.sleep(0.5)
     return jsonify({
@@ -2107,6 +2656,31 @@ def delete_manual_rule(rule_key):
     config_update_success = update_cloudflare_config(tunnel_id_for_delete)
 
     publish_state_event('snapshot_refresh')
+
+    if not dns_deleted_ok:
+        notification_manager.emit(
+            "cloudflare.dns_failure",
+            f"{zone_id_for_delete}:{hostname_for_dns_operations}",
+            {"hostname": hostname_for_dns_operations, "operation": "delete", "source": "manual"},
+        )
+    if not access_app_deleted_ok:
+        notification_manager.emit(
+            "cloudflare.access_failure",
+            rule_key,
+            {"hostname": hostname_for_dns_operations, "operation": "delete", "source": "manual"},
+        )
+    if not config_update_success:
+        notification_manager.emit(
+            "cloudflare.tunnel_failure",
+            str(tunnel_id_for_delete),
+            {"hostname": hostname_for_dns_operations, "tunnel_id": str(tunnel_id_for_delete)[:12], "operation": "delete rule update", "source": "manual"},
+        )
+    if config_update_success and dns_deleted_ok and access_app_deleted_ok:
+        notification_manager.emit(
+            "rule.deleted",
+            rule_key,
+            {"source": "manual", "resources": [{"key": rule_key, "hostname": hostname_for_dns_operations, "source": "manual"}], "public_url": config.DOCKFLARE_PUBLIC_URL},
+        )
 
     if config_update_success:
         message = f"Manual rule {rule_key} deleted."
@@ -2180,6 +2754,24 @@ def force_delete_rule(rule_key):
     }
     if not all(results.values()):
         status_code = 207 
+
+    notification_context = {
+        "hostname": hostname_for_dns,
+        "operation": "force delete",
+        "source": rule_details_copy.get("source") or "manual",
+    }
+    if not dns_deleted:
+        notification_manager.emit("cloudflare.dns_failure", f"{zone_id_for_delete}:{hostname_for_dns}", notification_context)
+    if not access_app_deleted:
+        notification_manager.emit("cloudflare.access_failure", rule_key, notification_context)
+    if not config_updated:
+        notification_manager.emit("cloudflare.tunnel_failure", effective_tunnel_id, notification_context)
+    if status_code == 200:
+        notification_manager.emit(
+            "rule.deleted",
+            rule_key,
+            {**notification_context, "resources": [{"key": rule_key, "hostname": hostname_for_dns, "source": notification_context["source"]}], "public_url": config.DOCKFLARE_PUBLIC_URL},
+        )
 
     return jsonify({
         "status": "success" if status_code == 200 else "warning",
@@ -2369,9 +2961,6 @@ def update_rule_access_policy(rule_key):
 
 @api_v2_bp.route('/rules/<path:rule_key>/access-policy/revert-to-labels', methods=['POST'])
 def revert_rule_access_policy_to_labels(rule_key):
-    if not docker_client:
-        return jsonify({"status": "error", "message": "Docker client unavailable."}),
-
     app_id_to_delete_if_any = None
     state_changed_for_revert = False
     initial_rule_source = None
@@ -2399,14 +2988,15 @@ def revert_rule_access_policy_to_labels(rule_key):
             current_rule["auth_email"] = None
             state_changed_for_revert = True
             logging.info(f"API: Reverting manual rule '{rule_key}' access policy to none/public.")
-        elif initial_rule_source == "docker":
+        elif initial_rule_source in {"docker", "agent"}:
             current_rule["access_policy_ui_override"] = False
             state_changed_for_revert = True
-            logging.info(f"API: Reverting Docker rule '{rule_key}' access policy to be label-driven.")
+            logging.info(f"API: Reverting container-backed rule '{rule_key}' access policy to be label-driven.")
         else: 
             return jsonify({"status": "error", "message": f"Rule '{rule_key}' has unknown source '{initial_rule_source}'."}), 500
 
         if state_changed_for_revert:
+            current_rule["lifecycle_generation"] = int(current_rule.get("lifecycle_generation") or 0) + 1
             save_state()
 
     if initial_rule_source == "manual" and app_id_to_delete_if_any:
@@ -2424,8 +3014,16 @@ def revert_rule_access_policy_to_labels(rule_key):
         else:
             logging.info(f"API: Access App {app_id_to_delete_if_any} for reverted manual rule '{rule_key}' is shared, not deleting.")
 
-    reconcile_state_threaded()
-    return jsonify({"status": "success", "message": f"Access policy for '{rule_key}' reverted. Reconciliation triggered."}),
+    if initial_rule_source == "docker" and docker_client:
+        reconcile_state_threaded()
+    elif initial_rule_source == "agent":
+        agent_id = current_rule.get("agent_id")
+        agent = get_agent(agent_id)
+        containers = agent.get("last_complete_containers") if agent else None
+        if agent_inventory_contains_rule(containers, current_rule):
+            from app.core.reconciler import reconcile_agent_report
+            reconcile_agent_report(agent_id, containers)
+    return jsonify({"status": "success", "message": f"Access policy for '{rule_key}' reverted."}),
 
 @api_v2_bp.route('/tunnels/account', methods=['GET'])
 def get_account_tunnels_api():

@@ -59,6 +59,8 @@
     "status.save_changes": "Zapisz zmiany",
     "status.rule_ui_override": "Reguła nadpisana w UI",
     "status.ui_override": "Nadpisanie UI",
+    "status.tunnel_sync_pending": "Oczekiwanie na synchronizację tunelu",
+    "status.tunnel_sync_pending_help": "Docelowa trasa jest zapisana lokalnie i oczekuje na synchronizację tunelu.",
     "status.docker_rule_overridden": "Ta reguła Dockera została nadpisana w interfejsie i nie odzwierciedla już etykiet kontenera.",
     "status.ui_policy_override": "Ta polityka jest zarządzana z poziomu interfejsu i nadpisuje etykiety kontenera.",
     "status.revert_to_docker_labels": "Przywróć etykiety Dockera",

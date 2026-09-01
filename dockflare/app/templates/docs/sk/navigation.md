@@ -20,6 +20,8 @@ Táto dokumentácia poskytuje komplexné informácie o DockFlare. Či už si nov
     *   [Trvalé uloženie stavu](State-Persistence.md)
 *   **Konfigurácia**
     *   [Docker labely](Container-Labels.md)
+    *   [Apprise Notifications (English)](Apprise-Notifications.md)
+    *   [Discord & Apprise API Setup (English)](Discord-Apprise-Notifications.md)
     *   [Poskytovatelia identity](Identity-Providers.md)
     *   [Nastavenie poskytovateľa OAuth](OAuth-Provider-Setup.md)
 *   **Návod na použitie**

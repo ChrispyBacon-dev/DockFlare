@@ -59,6 +59,8 @@
     "status.save_changes": "保存更改",
     "status.rule_ui_override": "规则已被界面覆盖",
     "status.ui_override": "界面覆盖",
+    "status.tunnel_sync_pending": "隧道同步待处理",
+    "status.tunnel_sync_pending_help": "所需路由已保存在本地，正在等待隧道同步。",
     "status.docker_rule_overridden": "此 Docker 规则已通过界面覆盖，不再反映容器标签。",
     "status.ui_policy_override": "此策略由界面管理，并覆盖容器标签。",
     "status.revert_to_docker_labels": "还原为 Docker 标签",

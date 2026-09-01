@@ -313,6 +313,8 @@ Run a central master with agents on remote Docker hosts. Agents stream host-loca
 
 Multi-agent setup guide: [https://dockflare.app/docs/multi-server-agent](https://dockflare.app/docs/multi-server-agent)
 
+Agent source and standalone deployment files: [`dockflare-agent/`](dockflare-agent/)
+
 ## Access Control Model
 
 DockFlare uses Access Groups as the primary abstraction for reusable access intent.

@@ -20,12 +20,14 @@
 import json
 import logging
 import os
+import tempfile
 from typing import Dict, Optional
 
 from cryptography.fernet import Fernet
 
 from app import config
 from app.core.container_name import build_cloudflared_container_name
+from app.core.notification_manager import normalize_notification_config
 
 
 def _data_directory() -> str:
@@ -65,6 +67,36 @@ def load_encrypted_config_with_cipher():
 def load_encrypted_config() -> Optional[Dict]:
     data, _ = load_encrypted_config_with_cipher()
     return data
+
+
+def save_encrypted_config(config_data: Dict, fernet: Fernet) -> bool:
+    if not isinstance(config_data, dict) or fernet is None:
+        return False
+    destination = config_file_path()
+    temporary_path = None
+    try:
+        payload = fernet.encrypt(json.dumps(config_data).encode("utf-8"))
+        os.makedirs(os.path.dirname(destination), exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=os.path.dirname(destination),
+            prefix=".dockflare_config.",
+            delete=False,
+        ) as temporary:
+            temporary.write(payload)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+            temporary_path = temporary.name
+        os.replace(temporary_path, destination)
+        return True
+    except Exception as err:
+        logging.error("CONFIG_LOADER: Failed to save encrypted config: %s", type(err).__name__)
+        if temporary_path:
+            try:
+                os.unlink(temporary_path)
+            except OSError:
+                pass
+        return False
 
 
 def apply_config_to_app(flask_app, config_data: Dict) -> None:
@@ -133,6 +165,10 @@ def apply_config_to_app(flask_app, config_data: Dict) -> None:
     flask_app.config['EMAIL_CONFIG'] = email_config
     config.EMAIL_ENABLED = flask_app.config['EMAIL_ENABLED']
     config.EMAIL_CONFIG = flask_app.config['EMAIL_CONFIG']
+
+    notification_config = normalize_notification_config(config_data.get('notification_config'))
+    flask_app.config['NOTIFICATION_CONFIG'] = notification_config
+    config.NOTIFICATION_CONFIG = notification_config
 
     if flask_app.config['CF_API_TOKEN']:
         config.CF_HEADERS['Authorization'] = f"Bearer {flask_app.config['CF_API_TOKEN']}"

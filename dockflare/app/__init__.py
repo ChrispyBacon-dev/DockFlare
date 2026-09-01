@@ -20,6 +20,7 @@ import queue
 import sys
 import os
 import json
+import hashlib
 
 from flask import Flask
 from flask_wtf.csrf import CSRFProtect
@@ -135,8 +136,19 @@ except Exception as e:
     logging.error(f"FATAL: Failed to connect to Docker daemon: {e}")
     docker_client = None 
 
+
+def get_static_asset_version(path):
+    try:
+        with open(path, "rb") as asset_file:
+            return hashlib.sha256(asset_file.read()).hexdigest()[:12]
+    except OSError:
+        return config.APP_VERSION.lstrip("v")
+
+
 def create_app():
     app_instance = Flask(__name__)
+    main_js_path = os.path.join(app_instance.static_folder, "js", "main.js")
+    main_js_version = get_static_asset_version(main_js_path)
     app_instance.secret_key = os.urandom(24)
     app_instance.config['PREFERRED_URL_SCHEME'] = 'http'
     app_instance.config['APP_VERSION'] = config.APP_VERSION
@@ -220,7 +232,10 @@ def create_app():
     @app_instance.context_processor
     def inject_version():
         """Injects the app version into all templates."""
-        return dict(app_version=config.APP_VERSION)
+        return {
+            "app_version": config.APP_VERSION,
+            "main_js_version": main_js_version,
+        }
 
     app_instance.reconciliation_info = {
         "in_progress": False,

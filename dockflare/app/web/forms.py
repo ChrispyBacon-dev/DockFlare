@@ -16,8 +16,8 @@
 #
 # dockflare/app/web/forms.py
 from flask_wtf import FlaskForm
-from wtforms import BooleanField, PasswordField, SubmitField, StringField, IntegerField
-from wtforms.validators import DataRequired, EqualTo, Length, Optional
+from wtforms import BooleanField, PasswordField, SubmitField, StringField, IntegerField, TextAreaField
+from wtforms.validators import DataRequired, EqualTo, Length, NumberRange, Optional
 
 class SettingsForm(FlaskForm):
     """Form for editing general application settings."""
@@ -109,3 +109,36 @@ class CloudflareCredentialsForm(FlaskForm):
         validators=[Optional(), Length(min=40, max=100, message="API Token must be at least 40 characters long.")]
     )
     submit_cloudflare_credentials = SubmitField('Update Cloudflare Credentials')
+
+
+class NotificationSettingsForm(FlaskForm):
+    enabled = BooleanField('Enable notifications')
+    replacement_urls = TextAreaField('Replacement Apprise URLs', validators=[Optional(), Length(max=131072)])
+    clear_urls = BooleanField('Clear configured destinations')
+    failure_cooldown_seconds = IntegerField(
+        'Failure cooldown (seconds)',
+        validators=[DataRequired(), NumberRange(min=60, max=86400)],
+        default=900,
+    )
+    rule_activated = BooleanField('Rule activated')
+    rule_restored = BooleanField('Rule restored')
+    rule_pending_deletion = BooleanField('Rule pending deletion')
+    rule_deleted = BooleanField('Rule deleted')
+    cloudflare_tunnel_failure = BooleanField('Cloudflare tunnel failure')
+    cloudflare_dns_failure = BooleanField('Cloudflare DNS failure')
+    cloudflare_access_failure = BooleanField('Cloudflare Access failure')
+    docker_listener_failure = BooleanField('Docker listener failure')
+    agent_offline = BooleanField('Agent offline')
+    agent_online = BooleanField('Agent recovered')
+    agent_enrolled = BooleanField('Agent enrolled')
+    agent_enrollment_failed = BooleanField('Agent enrollment failed')
+    agent_decommission_started = BooleanField('Agent decommission started')
+    agent_decommission_completed = BooleanField('Agent decommission completed')
+    agent_decommission_failed = BooleanField('Agent decommission failed')
+    agent_decommission_stalled = BooleanField('Agent decommission stalled')
+    tunnel_down = BooleanField('Tunnel down')
+    tunnel_recovered = BooleanField('Tunnel recovered')
+    access_policy_created = BooleanField('Access Policy created')
+    access_policy_updated = BooleanField('Access Policy updated')
+    access_policy_deleted = BooleanField('Access Policy deleted')
+    submit_notifications = SubmitField('Save notification settings')

@@ -20,6 +20,8 @@ DockFlare は、Cloudflare Tunnel と Zero Trust の管理を簡素化する自�
     * [状態永続性](State-Persistence.md)
 * **構成**
     * [コンテナラベル](Container-Labels.md)
+    * [Apprise Notifications (English)](Apprise-Notifications.md)
+    * [Discord & Apprise API Setup (English)](Discord-Apprise-Notifications.md)
     * [アイデンティティプロバイダー](Identity-Providers.md)
     * [OAuth プロバイダーのセットアップ](OAuth-Provider-Setup.md)
 * **使用ガイド**

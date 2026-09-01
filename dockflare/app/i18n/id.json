@@ -59,6 +59,8 @@
     "status.save_changes": "Simpan Perubahan",
     "status.rule_ui_override": "Rule UI Override",
     "status.ui_override": "UI Override",
+    "status.tunnel_sync_pending": "Sinkronisasi tunnel tertunda",
+    "status.tunnel_sync_pending_help": "Rute yang diinginkan disimpan secara lokal dan menunggu sinkronisasi tunnel.",
     "status.docker_rule_overridden": "Docker rule ini telah dioverride melalui UI dan tidak lagi mencerminkan label container.",
     "status.ui_policy_override": "Policy ini dikelola melalui UI dan mengoverride label container.",
     "status.revert_to_docker_labels": "Kembalikan ke Docker Labels",

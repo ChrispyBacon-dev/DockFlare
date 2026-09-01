@@ -36,7 +36,15 @@ from app.core.user import User
 
 from app import config, docker_client, tunnel_state, cloudflared_agent_state, log_queue, state_update_queue, publish_state_event, limiter
 from app.core.cache import CACHE_ENABLED
-from app.core.state_manager import managed_rules, access_groups, state_lock, save_state, load_state
+from app.core.state_manager import (
+    access_groups,
+    agent_inventory_contains_rule,
+    get_agent,
+    load_state,
+    managed_rules,
+    save_state,
+    state_lock,
+)
 from app.core.tunnel_manager import (
     start_cloudflared_container,
     stop_cloudflared_container,
@@ -79,6 +87,7 @@ from app.core.docker_handler import is_valid_hostname, is_valid_service
 from app.core.utils import get_rule_key, normalize_path_value
 from app.core.container_name import build_cloudflared_container_name
 from app.core import backup_manager
+from app.core import notification_manager
 from app.web import config_loader
 from app.i18n import t as _t
 from cryptography.fernet import Fernet
@@ -457,7 +466,13 @@ def status_page():
                         default_tunnel_id=default_tunnel_id_value
                         )
 
-from app.web.forms import ChangePasswordForm, SecuritySettingsForm, SettingsForm, CloudflareCredentialsForm
+from app.web.forms import (
+    ChangePasswordForm,
+    CloudflareCredentialsForm,
+    NotificationSettingsForm,
+    SecuritySettingsForm,
+    SettingsForm,
+)
 from werkzeug.security import check_password_hash, generate_password_hash
 from cryptography.fernet import Fernet
 
@@ -548,6 +563,7 @@ def settings_page():
     change_password_form = ChangePasswordForm()
     security_settings_form = SecuritySettingsForm(prefix='security')
     cf_credentials_form = CloudflareCredentialsForm(prefix='cf_creds')
+    notification_settings_form = NotificationSettingsForm(prefix='notifications')
 
     
     if request.method == 'POST':
@@ -604,6 +620,7 @@ def settings_page():
                 if tunnel_name_changed and not config.USE_EXTERNAL_CLOUDFLARED:
                     flash(_t('flash.tunnel_name_changed'), 'info')
                     logging.info(f"Tunnel name changed from '{original_tunnel_name}' to '{new_tunnel_name}'. Triggering agent restart.")
+                    notification_manager.suppress_tunnel_health(tunnel_state.get("id"), 300)
                     
                     def restart_agent_task():
                         stop_cloudflared_container()
@@ -705,6 +722,13 @@ def settings_page():
         settings_form.preserve_unmanaged_cf_ingress_fields.data = current_app.config.get('PRESERVE_UNMANAGED_CF_INGRESS_FIELDS', False)
         settings_form.dockflare_public_url.data = current_app.config.get('DOCKFLARE_PUBLIC_URL', '')
         security_settings_form.disable_password_login.data = current_app.config.get('DISABLE_PASSWORD_LOGIN', False)
+        notification_config = current_app.config.get('NOTIFICATION_CONFIG', {})
+        notification_settings_form.enabled.data = bool(notification_config.get('enabled', False))
+        notification_settings_form.failure_cooldown_seconds.data = notification_config.get('failure_cooldown_seconds', 900)
+        for event_key, enabled in notification_config.get('events', {}).items():
+            field = getattr(notification_settings_form, event_key, None)
+            if field is not None:
+                field.data = bool(enabled)
 
     template_tunnel_state = {}
     template_agent_state = {}
@@ -723,6 +747,8 @@ def settings_page():
         change_password_form=change_password_form,
         security_settings_form=security_settings_form,
         cf_credentials_form=cf_credentials_form,
+        notification_settings_form=notification_settings_form,
+        notification_status=notification_manager.get_public_status(),
         all_account_tunnels=all_account_tunnels_list,
         tunnel_state=template_tunnel_state,
         agent_state=template_agent_state,
@@ -734,6 +760,102 @@ def settings_page():
         CF_ACCOUNT_ID_CONFIGURED=bool(cf_account_id),
         ACCOUNT_ID_FOR_DISPLAY=cf_account_id if cf_account_id else "Not Configured"
     )
+
+
+@bp.route('/settings/notifications', methods=['POST'])
+@login_required
+@limiter.limit("10 per minute")
+def save_notification_settings():
+    form = NotificationSettingsForm(prefix='notifications')
+    if not form.validate_on_submit():
+        flash(_t('flash.notification_settings_invalid'), 'danger')
+        return redirect(url_for('web.settings_page') + '#notifications')
+
+    config_data, fernet = config_loader.load_encrypted_config_with_cipher()
+    if config_data is None or fernet is None:
+        flash(_t('flash.notification_settings_save_failed'), 'danger')
+        return redirect(url_for('web.settings_page') + '#notifications')
+
+    from app.core.notification_manager import normalize_notification_config
+
+    previous_raw = config_data.get('notification_config')
+    previous_raw = copy.deepcopy(previous_raw) if isinstance(previous_raw, dict) else {}
+    previous = normalize_notification_config(previous_raw)
+    replacement_lines = [line.strip() for line in (form.replacement_urls.data or '').splitlines() if line.strip()]
+
+    if form.clear_urls.data:
+        urls = []
+    elif replacement_lines:
+        valid, invalid = notification_manager.validate_urls(replacement_lines)
+        if not valid:
+            line_number, scheme = invalid[0]
+            safe_detail = f"line {line_number}" if line_number else "destination list"
+            if scheme not in {'unknown', 'invalid', 'unavailable'}:
+                safe_detail += f" ({scheme})"
+            flash(_t('flash.notification_destination_invalid', detail=safe_detail), 'danger')
+            return redirect(url_for('web.settings_page') + '#notifications')
+        urls = normalize_notification_config({'urls': replacement_lines})['urls']
+    else:
+        urls = previous['urls']
+
+    if form.enabled.data and not urls:
+        flash(_t('flash.notification_destination_required'), 'danger')
+        return redirect(url_for('web.settings_page') + '#notifications')
+
+    stored_events = previous_raw.get('events')
+    stored_events = copy.deepcopy(stored_events) if isinstance(stored_events, dict) else {}
+    for event_key in previous['events']:
+        stored_events[event_key] = bool(getattr(form, event_key).data)
+
+    updated_raw = previous_raw
+    updated_raw.update({
+        'enabled': bool(form.enabled.data),
+        'urls': urls,
+        'events': stored_events,
+        'failure_cooldown_seconds': int(form.failure_cooldown_seconds.data),
+    })
+    config_data['notification_config'] = updated_raw
+    if not config_loader.save_encrypted_config(config_data, fernet):
+        flash(_t('flash.notification_settings_save_failed'), 'danger')
+        return redirect(url_for('web.settings_page') + '#notifications')
+
+    config_loader.apply_config_to_app(current_app, config_data)
+    notification_manager.configure(current_app.config['NOTIFICATION_CONFIG'])
+    flash(_t('flash.notification_settings_saved'), 'success')
+    return redirect(url_for('web.settings_page') + '#notifications')
+
+
+@bp.route('/api/v2/notifications/test', methods=['POST'])
+@login_required
+@limiter.limit("5 per minute")
+def test_notification_delivery():
+    status = notification_manager.get_public_status()
+    if not status['enabled'] or not status['available']:
+        return jsonify({'status': 'error', 'message': 'notifications_not_available'}), 409
+    job_id, accepted = notification_manager.send_test()
+    if not accepted:
+        return jsonify({'status': 'error', 'message': 'notification_queue_unavailable'}), 503
+    return jsonify({'status': 'accepted', 'job_id': job_id}), 202
+
+
+@bp.route('/api/v2/notifications/test/<job_id>', methods=['GET'])
+@login_required
+def notification_test_status(job_id):
+    job = notification_manager.get_test_status(job_id)
+    if not job:
+        return jsonify({'status': 'not_found'}), 404
+    response = {'status': job['status']}
+    if job.get('completed_at'):
+        response['completed_at'] = job['completed_at']
+    if job['status'] == 'failure':
+        response['message'] = 'Notification delivery failed. Check DockFlare logs.'
+    return jsonify(response), 200
+
+
+@bp.route('/api/v2/notifications/status', methods=['GET'])
+@login_required
+def notification_public_status():
+    return jsonify(notification_manager.get_public_status()), 200
 
 @bp.route('/settings/reveal-master-key', methods=['POST'])
 @login_required
@@ -842,9 +964,6 @@ def change_password():
 @bp.route('/revert_access_policy_to_labels/<path:hostname>', methods=['POST'])
 def revert_access_policy_to_labels(hostname):
     fqdn = hostname.split('|')[0]
-    if not docker_client:
-        return redirect(url_for('web.status_page'))
-    
     action_status_message = f"Attempting to revert Access Policy for '{fqdn}' to label configuration..."
     app_id_to_delete_if_any = None
     state_changed_for_revert = False
@@ -857,7 +976,10 @@ def revert_access_policy_to_labels(hostname):
             return redirect(url_for('web.status_page'))
         
         app_id_to_delete_if_any = current_rule.get("access_app_id")
+        source = current_rule.get("source")
+        agent_id = current_rule.get("agent_id")
         current_rule["access_policy_ui_override"] = False
+        current_rule["lifecycle_generation"] = int(current_rule.get("lifecycle_generation") or 0) + 1
         state_changed_for_revert = True
         if state_changed_for_revert:
             save_state()
@@ -867,8 +989,18 @@ def revert_access_policy_to_labels(hostname):
         if delete_cloudflare_access_application(app_id_to_delete_if_any):
             pass
     
-    reconcile_state_threaded() 
-    action_status_message += " Reconciliation triggered."
+    if source == "docker" and docker_client:
+        reconcile_state_threaded()
+        action_status_message += " Reconciliation triggered."
+    elif source == "agent":
+        agent = get_agent(agent_id)
+        containers = agent.get("last_complete_containers") if agent else None
+        if agent_inventory_contains_rule(containers, current_rule):
+            from app.core.reconciler import reconcile_agent_report
+            reconcile_agent_report(agent_id, containers)
+            action_status_message += " Agent reconciliation triggered."
+        else:
+            action_status_message += " Waiting for the next Agent report."
     cloudflared_agent_state["last_action_status"] = action_status_message
     return redirect(url_for('web.status_page'))
 
@@ -1113,12 +1245,14 @@ def reconciliation_status_route():
 
 @bp.route('/start-tunnel', methods=['POST'])
 def start_tunnel_route(): 
+    notification_manager.suppress_tunnel_health(tunnel_state.get("id"), 120)
     start_cloudflared_container() 
     time.sleep(1)
     return redirect(url_for('web.status_page'))
 
 @bp.route('/stop-tunnel', methods=['POST'])
 def stop_tunnel_route(): 
+    notification_manager.suppress_tunnel_health(tunnel_state.get("id"), 300)
     stop_cloudflared_container() 
     time.sleep(1)
     return redirect(url_for('web.status_page'))
@@ -1129,6 +1263,7 @@ def force_delete_rule_route(hostname):
     zone_id_for_delete = None
     access_app_id_for_delete = None
     tunnel_id_for_delete = None
+    source_for_delete = None
     fqdn = hostname.split('|')[0]
     with state_lock:
         rule_details = managed_rules.get(hostname)
@@ -1136,6 +1271,7 @@ def force_delete_rule_route(hostname):
             fqdn = rule_details.get("hostname") or fqdn
             zone_id_for_delete = rule_details.get("zone_id")
             access_app_id_for_delete = rule_details.get("access_app_id")
+            source_for_delete = rule_details.get("source") or "manual"
             tunnel_id_for_delete = rule_details.get("tunnel_id") or (tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID)
             del managed_rules[hostname]
             rule_removed_from_state = True
@@ -1148,12 +1284,29 @@ def force_delete_rule_route(hostname):
             and (rule.get("tunnel_id") or tunnel_id_for_delete) == tunnel_id_for_delete
             for rule in managed_rules.values()
         )
+    dns_deleted = True
+    access_deleted = True
+    tunnel_updated = True
     if zone_id_for_delete and tunnel_id_for_delete and not tuple_still_owned:
-        delete_cloudflare_dns_record(zone_id_for_delete, fqdn, tunnel_id_for_delete)
+        dns_deleted = bool(delete_cloudflare_dns_record(zone_id_for_delete, fqdn, tunnel_id_for_delete))
     if access_app_id_for_delete:
-        delete_cloudflare_access_application(access_app_id_for_delete)
+        access_deleted = bool(delete_cloudflare_access_application(access_app_id_for_delete))
     if rule_removed_from_state and not config.USE_EXTERNAL_CLOUDFLARED:
-        update_cloudflare_config(tunnel_id_for_delete)
+        tunnel_updated = bool(update_cloudflare_config(tunnel_id_for_delete))
+    if rule_removed_from_state:
+        context = {"hostname": fqdn, "operation": "force delete", "source": source_for_delete}
+        if not dns_deleted:
+            notification_manager.emit("cloudflare.dns_failure", f"{zone_id_for_delete}:{fqdn}", context)
+        if not access_deleted:
+            notification_manager.emit("cloudflare.access_failure", hostname, context)
+        if not tunnel_updated:
+            notification_manager.emit("cloudflare.tunnel_failure", str(tunnel_id_for_delete), context)
+        if dns_deleted and access_deleted and tunnel_updated:
+            notification_manager.emit(
+                "rule.deleted",
+                hostname,
+                {"source": source_for_delete, "resources": [{"key": hostname, "hostname": fqdn, "source": source_for_delete}], "public_url": config.DOCKFLARE_PUBLIC_URL},
+            )
     return redirect(url_for('web.status_page'))
 
 @bp.route('/stream-logs')
@@ -1565,10 +1718,6 @@ def ui_revert_docker_rule_route():
     """
     Reverts a UI-overridden Docker rule back to label-driven configuration.
     """
-    if not docker_client:
-        cloudflared_agent_state["last_action_status"] = "Error: Docker client unavailable."
-        return redirect(url_for('web.status_page'))
-
     rule_key = request.form.get('rule_key')
     if not rule_key:
         cloudflared_agent_state["last_action_status"] = "Error: Missing rule key for revert."
@@ -1580,26 +1729,39 @@ def ui_revert_docker_rule_route():
             cloudflared_agent_state["last_action_status"] = f"Error: Rule '{rule_key}' not found."
             return redirect(url_for('web.status_page'))
 
-        if existing.get("source") != "docker":
-            cloudflared_agent_state["last_action_status"] = f"Error: Rule '{rule_key}' is not a Docker rule."
+        source = existing.get("source")
+        if source not in {"docker", "agent"}:
+            cloudflared_agent_state["last_action_status"] = f"Error: Rule '{rule_key}' is not container-backed."
             return redirect(url_for('web.status_page'))
 
         if not existing.get("rule_ui_override", False):
             cloudflared_agent_state["last_action_status"] = f"Info: Rule '{rule_key}' is not UI-overridden."
             return redirect(url_for('web.status_page'))
 
-        # Revert the rule back to Docker label control
+        if source == "docker" and not docker_client:
+            cloudflared_agent_state["last_action_status"] = "Error: Docker client unavailable."
+            return redirect(url_for('web.status_page'))
+
         existing["rule_ui_override"] = False
+        existing["lifecycle_generation"] = int(existing.get("lifecycle_generation") or 0) + 1
         save_state()
 
-        cloudflared_agent_state["last_action_status"] = f"Success: Rule '{rule_key}' reverted to Docker label control. Reconciliation will update it based on container labels."
+        cloudflared_agent_state["last_action_status"] = f"Success: Rule '{rule_key}' reverted to label control."
 
-    # Trigger reconciliation to pick up Docker labels
     try:
-        from app.core.reconciler import reconcile_state_threaded
-        reconcile_state_threaded()
+        if source == "docker":
+            from app.core.reconciler import reconcile_state_threaded
+            reconcile_state_threaded()
+        else:
+            from app.core.reconciler import reconcile_agent_report
+            agent = get_agent(existing.get("agent_id"))
+            containers = agent.get("last_complete_containers") if agent else None
+            if agent_inventory_contains_rule(containers, existing):
+                reconcile_agent_report(existing.get("agent_id"), containers)
+            else:
+                cloudflared_agent_state["last_action_status"] += " Waiting for the next Agent report."
     except Exception as e:
-        logging.error(f"Failed to trigger reconciliation after Docker rule revert: {e}")
+        logging.error(f"Failed to trigger reconciliation after rule revert: {e}")
 
     return redirect(url_for('web.status_page'))
 
@@ -1610,10 +1772,6 @@ def ui_edit_manual_rule_route():
     Expects a hidden 'edit_rule_key' form field identifying the rule key to edit.
     Only rules with source != 'docker' (manual or agent) are editable via UI.
     """
-    if not docker_client:
-        cloudflared_agent_state["last_action_status"] = "Error: Docker client unavailable."
-        return redirect(url_for('web.status_page'))
-
     rule_key = request.form.get('edit_rule_key')
     if not rule_key:
         cloudflared_agent_state["last_action_status"] = "Error: Missing rule key for edit."
@@ -1625,7 +1783,7 @@ def ui_edit_manual_rule_route():
             cloudflared_agent_state["last_action_status"] = f"Error: Rule '{rule_key}' not found."
             return redirect(url_for('web.status_page'))
         existing = copy.deepcopy(existing)
-        is_docker_rule = existing.get("source") == "docker"
+        is_container_backed = existing.get("source") in {"docker", "agent"}
     
     subdomain_input = request.form.get('edit_subdomain', '').strip()
     domain_name_input = request.form.get('edit_domain_name', '').strip()
@@ -1831,12 +1989,13 @@ def ui_edit_manual_rule_route():
             "access_app_config_hash": access_app_config_hash,
             "access_group_id": access_group_id,
             "access_policy_ui_override": True,
-            "rule_ui_override": is_docker_rule,
+            "rule_ui_override": is_container_backed,
             "source": existing.get("source", "manual"),
             "agent_id": existing.get("agent_id"),
             "tunnel_id": target_tunnel_id,
             "tunnel_name": target_tunnel_name
         })
+    rule_entry["lifecycle_generation"] = int(existing.get("lifecycle_generation") or 0) + 1
 
     with state_lock:
         conflicting = managed_rules.get(new_key)
@@ -2003,7 +2162,10 @@ def create_access_group():
             "policies": policies
         }
         access_groups[group_id] = new_group
-        save_state()
+        if not save_state():
+            access_groups.pop(group_id, None)
+            flash(_t('flash.access_group.create_error', error='persistence_failed'), "error")
+            return redirect(url_for('web.access_policies_page'))
 
         from app import config
         if config.USE_REUSABLE_POLICIES and len(effective_access_policies(new_group)) == 1:
@@ -2017,6 +2179,19 @@ def create_access_group():
 
         publish_state_event('snapshot_refresh')
 
+    notification_manager.emit(
+        "access.policy_created",
+        group_id,
+        {
+            "policy_name": display_name,
+            "policy_id": group_id,
+            "policy_type": "Reusable" if config.USE_REUSABLE_POLICIES else "Inline",
+            "identity_provider_count": len(new_group.get("allowed_idps") or []),
+            "rules_count": len(effective_access_policies(new_group)),
+            "source": "admin",
+            "public_url": config.DOCKFLARE_PUBLIC_URL,
+        },
+    )
     flash(_t('flash.access_group.created', displayName=display_name), "success")
     return redirect(url_for('web.access_policies_page'))
 
@@ -2057,6 +2232,7 @@ def edit_access_group(group_id):
             flash(_t('flash.access_group.update_error', error=str(e)), "error")
             return redirect(url_for('web.access_policies_page'))
 
+        previous_group = copy.deepcopy(access_groups[group_id])
         updated_group = {
             "id": group_id,
             "display_name": display_name,
@@ -2068,7 +2244,20 @@ def edit_access_group(group_id):
             "policies": policies
         }
         access_groups[group_id] = updated_group
-        save_state()
+        if not save_state():
+            access_groups[group_id] = previous_group
+            flash(_t('flash.access_group.update_error', error='persistence_failed'), "error")
+            return redirect(url_for('web.access_policies_page'))
+
+        affected_service_count = sum(
+            1
+            for rule in managed_rules.values()
+            if group_id in (
+                rule.get('access_group_id')
+                if isinstance(rule.get('access_group_id'), list)
+                else [rule.get('access_group_id')]
+            )
+        )
 
         from app import config
         if config.USE_REUSABLE_POLICIES and len(effective_access_policies(updated_group)) == 1:
@@ -2082,6 +2271,20 @@ def edit_access_group(group_id):
 
         publish_state_event('snapshot_refresh')
 
+    notification_manager.emit(
+        "access.policy_updated",
+        group_id,
+        {
+            "policy_name": display_name,
+            "policy_id": group_id,
+            "policy_type": "Reusable" if config.USE_REUSABLE_POLICIES else "Inline",
+            "identity_provider_count": len(updated_group.get("allowed_idps") or []),
+            "rules_count": len(effective_access_policies(updated_group)),
+            "affected_service_count": affected_service_count,
+            "source": "admin",
+            "public_url": config.DOCKFLARE_PUBLIC_URL,
+        },
+    )
     flash(_t('flash.access_group.updated', displayName=display_name), "success")
     reconcile_state_threaded()
     return redirect(url_for('web.access_policies_page'))
@@ -2107,24 +2310,46 @@ def delete_access_group(group_id):
             flash(_t('flash.access_group.delete_in_use', displayName=access_groups[group_id]['display_name']), "error")
             return redirect(url_for('web.access_policies_page'))
 
-        display_name = access_groups[group_id]['display_name']
+        previous_group = copy.deepcopy(access_groups[group_id])
+        display_name = previous_group['display_name']
 
         from app import config
+        deletion_persisted = True
         if config.USE_REUSABLE_POLICIES:
             from app.core import reusable_policies
             try:
-                reusable_policies.delete_access_group_and_policy(group_id)
-                logging.info(f"Deleted access group '{group_id}' and associated Cloudflare policy")
+                deletion_persisted = reusable_policies.delete_access_group_and_policy(group_id)
+                if deletion_persisted:
+                    logging.info(f"Deleted access group '{group_id}' and associated Cloudflare policy")
             except Exception as e:
                 logging.error(f"Error deleting Cloudflare policy for '{group_id}': {e}", exc_info=True)
                 del access_groups[group_id]
-                save_state()
+                deletion_persisted = save_state()
+                if not deletion_persisted:
+                    access_groups[group_id] = previous_group
         else:
             del access_groups[group_id]
-            save_state()
+            deletion_persisted = save_state()
+            if not deletion_persisted:
+                access_groups[group_id] = previous_group
+
+        if not deletion_persisted:
+            flash(_t('flash.access_group.update_error', error='persistence_failed'), "error")
+            return redirect(url_for('web.access_policies_page'))
 
         publish_state_event('snapshot_refresh')
 
+    notification_manager.emit(
+        "access.policy_deleted",
+        group_id,
+        {
+            "policy_name": display_name,
+            "policy_id": group_id,
+            "policy_type": "Reusable" if config.USE_REUSABLE_POLICIES else "Inline",
+            "source": "admin",
+            "public_url": config.DOCKFLARE_PUBLIC_URL,
+        },
+    )
     flash(_t('flash.access_group.deleted', displayName=display_name), "success")
     return redirect(url_for('web.access_policies_page'))
 
