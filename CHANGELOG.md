@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- **Apprise notifications:** Added opt-in, encrypted notification destinations for rule lifecycle, Cloudflare failures, Docker listener failures, Agent health, and tunnel health. Delivery uses a bounded background queue with cooldowns, startup and intentional-action suppression, redacted settings/status output, and authenticated test delivery. Addresses [#302](https://github.com/ChrispyBacon-dev/DockFlare/issues/302).
+- **Apprise notifications:** Added opt-in, encrypted notification destinations for rule lifecycle, Cloudflare failures, Docker listener failures, Agent enrollment, decommission lifecycle, Agent health, tunnel health, and explicit Access Policy management. Event controls are grouped by area, with routine administrative events opt-in and failure/terminal observability enabled by default. Delivery uses a bounded background queue with cooldowns, startup and intentional-action suppression, redacted settings/status output, and authenticated test delivery. Addresses [#302](https://github.com/ChrispyBacon-dev/DockFlare/issues/302).
 - **Safe Agent decommissioning:** Replaced immediate Agent deletion with a durable prepare, ownership-safe Cloudflare cleanup, and final Agent shutdown workflow. Decommissioned Agents persist a local tombstone, stop their managed tunnel without Docker delete permission, revoke their API key only after final acknowledgement, and cannot silently recreate the tunnel after restart. The Agents UI now shows retryable progress and provides separately acknowledged host cleanup commands that remove the Agent Docker deployment while preserving the shared external `cloudflare-net` network.
 
 ### Fixed

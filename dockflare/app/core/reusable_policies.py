@@ -432,7 +432,7 @@ def delete_access_group_and_policy(group_id):
         logging.warning(f"Access group '{group_id}' not found in state")
         return False
 
-    group = access_groups[group_id]
+    group = copy.deepcopy(access_groups[group_id])
     policy_id = group.get("cloudflare_policy_id")
 
     if policy_id:
@@ -444,6 +444,9 @@ def delete_access_group_and_policy(group_id):
         logging.info(f"No Cloudflare policy ID found for access group '{group_id}', removing from state only")
 
     del access_groups[group_id]
-    save_state()
+    if not save_state():
+        access_groups[group_id] = group
+        logging.error(f"Failed to persist removal of access group '{group_id}'")
+        return False
     logging.info(f"Removed access group '{group_id}' from state")
     return True

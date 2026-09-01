@@ -7,7 +7,7 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from app import tunnel_state
+from app import config, tunnel_state
 from app.core.access_manager import delete_cloudflare_access_application
 from app.core.cloudflare_api import delete_cloudflare_dns_record, delete_tunnel_via_api
 from app.core.state_manager import (
@@ -21,6 +21,7 @@ from app.core.state_manager import (
     state_lock,
 )
 from app.core.tunnel_manager import update_cloudflare_config
+from app.core import notification_manager
 
 
 TERMINAL_STATES = {"completed", "forced_completed"}
@@ -40,6 +41,43 @@ def _bounded_int_env(name, default, minimum, maximum):
 
 
 DEFAULT_TIMEOUT_SECONDS = _bounded_int_env("AGENT_DECOMMISSION_TIMEOUT_SECONDS", 180, 30, 1800)
+
+
+def notification_context(operation):
+    plan = operation.get("resource_plan") or {}
+    results = operation.get("cleanup_results") or {}
+    return {
+        "agent_name": operation.get("display_name"),
+        "agent_id": str(operation.get("agent_id") or "")[:12],
+        "tunnel_id": str(plan.get("tunnel_id") or "")[:12],
+        "operation_id": str(operation.get("operation_id") or "")[:12],
+        "operation": "decommission",
+        "rules_count": results.get("rules_removed", len(plan.get("rule_keys") or [])),
+        "source": "admin",
+        "public_url": config.DOCKFLARE_PUBLIC_URL,
+    }
+
+
+def notify_transition(operation, previous_state=None):
+    """Emit a safe notification for a committed decommission state transition."""
+    if not isinstance(operation, dict):
+        return False
+    state = operation.get("state")
+    if state == previous_state:
+        return False
+    if state in TERMINAL_STATES:
+        event_type = "agent.decommission_completed"
+    elif state == "timed_out":
+        event_type = "agent.decommission_stalled"
+    elif state in {"prepare_failed", "cleanup_failed", "finalize_failed", "force_failed"}:
+        event_type = "agent.decommission_failed"
+    else:
+        return False
+    return notification_manager.emit(
+        event_type,
+        str(operation.get("operation_id") or operation.get("agent_id") or "unknown"),
+        notification_context(operation),
+    )
 
 
 class DecommissionError(RuntimeError):
@@ -721,6 +759,8 @@ def expire_due_operations(now=None):
                 agents[agent_id].clear()
                 agents[agent_id].update(previous)
             return []
+    for operation_id in changed:
+        notify_transition(get_operation(operation_id), "waiting")
     return changed
 
 

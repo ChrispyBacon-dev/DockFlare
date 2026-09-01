@@ -2064,17 +2064,20 @@ def agents_decommission_ack(agent_id, operation_id):
     if agent.get("protocol_version") == 2 and payload.get("agent_session_id") != agent.get("agent_session_id"):
         return _agent_json_response(409, "registration_required")
     try:
+        previous_state = operation.get("state") if operation else None
         operation, should_cleanup = agent_decommission.record_ack(agent_id, operation_id, payload)
         if should_cleanup:
             operation = agent_decommission.run_master_cleanup(operation_id)
         elif operation.get("state") == "shutdown_scheduled":
             operation = agent_decommission.complete_finalization(operation_id)
+        agent_decommission.notify_transition(operation, previous_state)
         return _agent_json_response(
             200,
             "acknowledged",
             operation=agent_decommission.serialize_operation(operation),
         )
     except agent_decommission.DecommissionError as error:
+        agent_decommission.notify_transition(agent_decommission.get_operation(operation_id), previous_state)
         return _agent_json_response(error.http_status, error.code)
 
 @api_v2_bp.route('/agents/<agent_id>/events', methods=['POST'])
@@ -2236,6 +2239,15 @@ def agents_enroll(agent_id):
         return jsonify({"status": "error", "message": "Agent decommission is in progress."}), 409
 
     old_tunnel_id = agent.get("assigned_tunnel_id")
+    was_new_enrollment = agent.get("status") != "enrolled"
+    enrollment_context = {
+        "agent_name": agent.get("display_name") or f"agent-{agent_id[:8]}",
+        "agent_id": agent_id[:12],
+        "tunnel_name": tunnel_name,
+        "operation": "enroll",
+        "source": "admin",
+        "public_url": config.DOCKFLARE_PUBLIC_URL,
+    }
     try:
         from app.core.cloudflare_api import find_tunnel_via_api, create_tunnel_via_api
         found_id, found_token = find_tunnel_via_api(tunnel_name)
@@ -2250,34 +2262,55 @@ def agents_enroll(agent_id):
             tunnel_ownership = "adopted"
 
         if not tunnel_id:
+            notification_manager.emit("agent.enrollment_failed", agent_id, enrollment_context)
             return jsonify({"status": "error", "message": "Failed to create/find tunnel."}), 500
 
         cmd = {"action": "start_tunnel", "tunnel_name": tunnel_name, "tunnel_id": tunnel_id, "token": token}
-        existing_cmds = agent.get("commands", [])
+        existing_cmds = list(agent.get("commands", []))
         existing_cmds.append(cmd)
-        update_agent(agent_id, {
-            "assigned_tunnel_name": tunnel_name,
-            "assigned_tunnel_id": tunnel_id,
-            "assigned_tunnel_token": token,
-            "assigned_tunnel_ownership": tunnel_ownership,
-            "status": "enrolled",
-            "commands": existing_cmds,
-            "last_enrolled_at": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
-        })
-
+        persistence_failed = False
         with state_lock:
+            current_agent = agents.get(agent_id)
+            if not current_agent:
+                persistence_failed = True
+            else:
+                previous_agent = copy.deepcopy(current_agent)
+                current_agent.update({
+                    "assigned_tunnel_name": tunnel_name,
+                    "assigned_tunnel_id": tunnel_id,
+                    "assigned_tunnel_token": token,
+                    "assigned_tunnel_ownership": tunnel_ownership,
+                    "status": "enrolled",
+                    "commands": existing_cmds,
+                    "last_enrolled_at": datetime.now(timezone.utc).isoformat(),
+                })
             rules_updated = False
-            for rule in managed_rules.values():
-                if rule.get("source") == "agent" and rule.get("agent_id") == agent_id:
-                    if rule.get("tunnel_name") != tunnel_name or rule.get("tunnel_id") != tunnel_id:
-                        rule["tunnel_name"] = tunnel_name
-                        rule["tunnel_id"] = tunnel_id
-                        rule["tunnel_sync_pending"] = True
-                        rule["lifecycle_generation"] = int(rule.get("lifecycle_generation") or 0) + 1
-                        rules_updated = True
+            previous_rules = {}
+            if not persistence_failed:
+                for rule in managed_rules.values():
+                    if rule.get("source") == "agent" and rule.get("agent_id") == agent_id:
+                        if rule.get("tunnel_name") != tunnel_name or rule.get("tunnel_id") != tunnel_id:
+                            previous_rules[id(rule)] = copy.deepcopy(rule)
+                            rule["tunnel_name"] = tunnel_name
+                            rule["tunnel_id"] = tunnel_id
+                            rule["tunnel_sync_pending"] = True
+                            rule["lifecycle_generation"] = int(rule.get("lifecycle_generation") or 0) + 1
+                            rules_updated = True
             if rules_updated:
                 logging.info(f"Updated {len([r for r in managed_rules.values() if r.get('agent_id') == agent_id])} rules for agent {agent_id} with tunnel name '{tunnel_name}'.")
-                save_state()
+            if not persistence_failed and not save_state():
+                current_agent.clear()
+                current_agent.update(previous_agent)
+                for rule in managed_rules.values():
+                    previous_rule = previous_rules.get(id(rule))
+                    if previous_rule is not None:
+                        rule.clear()
+                        rule.update(previous_rule)
+                persistence_failed = True
+
+        if persistence_failed:
+            notification_manager.emit("agent.enrollment_failed", agent_id, enrollment_context)
+            return jsonify({"status": "error", "message": "Failed to persist agent enrollment."}), 503
 
         old_updated = not old_tunnel_id or old_tunnel_id == tunnel_id or update_cloudflare_config(old_tunnel_id)
         new_updated = update_cloudflare_config(tunnel_id)
@@ -2296,15 +2329,28 @@ def agents_enroll(agent_id):
                 if not hostname.startswith("*."):
                     create_cloudflare_dns_record(zone_id, hostname, tunnel_id)
 
+        if was_new_enrollment:
+            notification_manager.emit(
+                "agent.enrolled",
+                agent_id,
+                {**enrollment_context, "tunnel_id": str(tunnel_id)[:12]},
+            )
         return jsonify({"status": "success", "message": "Agent enrolled and command queued.", "command": cmd}), 200
     except Exception as e:
         logging.error(f"Error enrolling agent {agent_id}: {e}", exc_info=True)
+        notification_manager.emit("agent.enrollment_failed", agent_id, enrollment_context)
         return jsonify({"status": "error", "message": f"Exception during enrollment: {e}"}), 500
 
 
 def _start_agent_decommission_response(agent_id):
     try:
-        operation, _created = agent_decommission.start_decommission(agent_id)
+        operation, created = agent_decommission.start_decommission(agent_id)
+        if created:
+            notification_manager.emit(
+                "agent.decommission_started",
+                operation["operation_id"],
+                agent_decommission.notification_context(operation),
+            )
         public_operation = agent_decommission.serialize_operation(operation)
         return jsonify({
             "status": "accepted",
@@ -2342,19 +2388,27 @@ def agents_decommission_status(operation_id):
 
 @api_v2_bp.route('/agent-decommissions/<operation_id>/retry', methods=['POST'])
 def agents_decommission_retry(operation_id):
+    previous = agent_decommission.get_operation(operation_id)
+    previous_state = previous.get("state") if previous else None
     try:
         operation = agent_decommission.retry_operation(operation_id)
+        agent_decommission.notify_transition(operation, previous_state)
         return jsonify({"status": "accepted", "operation": agent_decommission.serialize_operation(operation)}), 202
     except agent_decommission.DecommissionError as error:
+        agent_decommission.notify_transition(agent_decommission.get_operation(operation_id), previous_state)
         return jsonify({"status": "error", "code": error.code, "message": error.code}), error.http_status
 
 
 @api_v2_bp.route('/agent-decommissions/<operation_id>/force', methods=['POST'])
 def agents_decommission_force(operation_id):
+    previous = agent_decommission.get_operation(operation_id)
+    previous_state = previous.get("state") if previous else None
     try:
         operation = agent_decommission.force_cleanup(operation_id)
+        agent_decommission.notify_transition(operation, previous_state)
         return jsonify({"status": "success", "operation": agent_decommission.serialize_operation(operation)}), 200
     except agent_decommission.DecommissionError as error:
+        agent_decommission.notify_transition(agent_decommission.get_operation(operation_id), previous_state)
         return jsonify({"status": "error", "code": error.code, "message": error.code}), error.http_status
 
 @api_v2_bp.route('/agents/<agent_id>/remove', methods=['POST'])

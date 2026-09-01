@@ -2162,7 +2162,10 @@ def create_access_group():
             "policies": policies
         }
         access_groups[group_id] = new_group
-        save_state()
+        if not save_state():
+            access_groups.pop(group_id, None)
+            flash(_t('flash.access_group.create_error', error='persistence_failed'), "error")
+            return redirect(url_for('web.access_policies_page'))
 
         from app import config
         if config.USE_REUSABLE_POLICIES and len(effective_access_policies(new_group)) == 1:
@@ -2176,6 +2179,19 @@ def create_access_group():
 
         publish_state_event('snapshot_refresh')
 
+    notification_manager.emit(
+        "access.policy_created",
+        group_id,
+        {
+            "policy_name": display_name,
+            "policy_id": group_id,
+            "policy_type": "Reusable" if config.USE_REUSABLE_POLICIES else "Inline",
+            "identity_provider_count": len(new_group.get("allowed_idps") or []),
+            "rules_count": len(effective_access_policies(new_group)),
+            "source": "admin",
+            "public_url": config.DOCKFLARE_PUBLIC_URL,
+        },
+    )
     flash(_t('flash.access_group.created', displayName=display_name), "success")
     return redirect(url_for('web.access_policies_page'))
 
@@ -2216,6 +2232,7 @@ def edit_access_group(group_id):
             flash(_t('flash.access_group.update_error', error=str(e)), "error")
             return redirect(url_for('web.access_policies_page'))
 
+        previous_group = copy.deepcopy(access_groups[group_id])
         updated_group = {
             "id": group_id,
             "display_name": display_name,
@@ -2227,7 +2244,20 @@ def edit_access_group(group_id):
             "policies": policies
         }
         access_groups[group_id] = updated_group
-        save_state()
+        if not save_state():
+            access_groups[group_id] = previous_group
+            flash(_t('flash.access_group.update_error', error='persistence_failed'), "error")
+            return redirect(url_for('web.access_policies_page'))
+
+        affected_service_count = sum(
+            1
+            for rule in managed_rules.values()
+            if group_id in (
+                rule.get('access_group_id')
+                if isinstance(rule.get('access_group_id'), list)
+                else [rule.get('access_group_id')]
+            )
+        )
 
         from app import config
         if config.USE_REUSABLE_POLICIES and len(effective_access_policies(updated_group)) == 1:
@@ -2241,6 +2271,20 @@ def edit_access_group(group_id):
 
         publish_state_event('snapshot_refresh')
 
+    notification_manager.emit(
+        "access.policy_updated",
+        group_id,
+        {
+            "policy_name": display_name,
+            "policy_id": group_id,
+            "policy_type": "Reusable" if config.USE_REUSABLE_POLICIES else "Inline",
+            "identity_provider_count": len(updated_group.get("allowed_idps") or []),
+            "rules_count": len(effective_access_policies(updated_group)),
+            "affected_service_count": affected_service_count,
+            "source": "admin",
+            "public_url": config.DOCKFLARE_PUBLIC_URL,
+        },
+    )
     flash(_t('flash.access_group.updated', displayName=display_name), "success")
     reconcile_state_threaded()
     return redirect(url_for('web.access_policies_page'))
@@ -2266,24 +2310,46 @@ def delete_access_group(group_id):
             flash(_t('flash.access_group.delete_in_use', displayName=access_groups[group_id]['display_name']), "error")
             return redirect(url_for('web.access_policies_page'))
 
-        display_name = access_groups[group_id]['display_name']
+        previous_group = copy.deepcopy(access_groups[group_id])
+        display_name = previous_group['display_name']
 
         from app import config
+        deletion_persisted = True
         if config.USE_REUSABLE_POLICIES:
             from app.core import reusable_policies
             try:
-                reusable_policies.delete_access_group_and_policy(group_id)
-                logging.info(f"Deleted access group '{group_id}' and associated Cloudflare policy")
+                deletion_persisted = reusable_policies.delete_access_group_and_policy(group_id)
+                if deletion_persisted:
+                    logging.info(f"Deleted access group '{group_id}' and associated Cloudflare policy")
             except Exception as e:
                 logging.error(f"Error deleting Cloudflare policy for '{group_id}': {e}", exc_info=True)
                 del access_groups[group_id]
-                save_state()
+                deletion_persisted = save_state()
+                if not deletion_persisted:
+                    access_groups[group_id] = previous_group
         else:
             del access_groups[group_id]
-            save_state()
+            deletion_persisted = save_state()
+            if not deletion_persisted:
+                access_groups[group_id] = previous_group
+
+        if not deletion_persisted:
+            flash(_t('flash.access_group.update_error', error='persistence_failed'), "error")
+            return redirect(url_for('web.access_policies_page'))
 
         publish_state_event('snapshot_refresh')
 
+    notification_manager.emit(
+        "access.policy_deleted",
+        group_id,
+        {
+            "policy_name": display_name,
+            "policy_id": group_id,
+            "policy_type": "Reusable" if config.USE_REUSABLE_POLICIES else "Inline",
+            "source": "admin",
+            "public_url": config.DOCKFLARE_PUBLIC_URL,
+        },
+    )
     flash(_t('flash.access_group.deleted', displayName=display_name), "success")
     return redirect(url_for('web.access_policies_page'))
 

@@ -21,8 +21,17 @@ EVENT_DEFINITIONS = {
     "docker.listener_failure": ("docker_listener_failure", "failure", True),
     "agent.offline": ("agent_offline", "failure", True),
     "agent.online": ("agent_online", "success", True),
+    "agent.enrolled": ("agent_enrolled", "success", True),
+    "agent.enrollment_failed": ("agent_enrollment_failed", "failure", True),
+    "agent.decommission_started": ("agent_decommission_started", "warning", False),
+    "agent.decommission_completed": ("agent_decommission_completed", "success", True),
+    "agent.decommission_failed": ("agent_decommission_failed", "failure", True),
+    "agent.decommission_stalled": ("agent_decommission_stalled", "warning", True),
     "tunnel.down": ("tunnel_down", "failure", True),
     "tunnel.recovered": ("tunnel_recovered", "success", True),
+    "access.policy_created": ("access_policy_created", "success", False),
+    "access.policy_updated": ("access_policy_updated", "info", False),
+    "access.policy_deleted": ("access_policy_deleted", "info", False),
 }
 
 DEFAULT_NOTIFICATION_CONFIG = {
@@ -38,7 +47,13 @@ BOOTSTRAP_SUPPRESSED_EVENTS = {
     "rule.pending_deletion",
     "rule.deleted",
     "agent.online",
+    "agent.enrolled",
+    "agent.decommission_started",
+    "agent.decommission_completed",
     "tunnel.recovered",
+    "access.policy_created",
+    "access.policy_updated",
+    "access.policy_deleted",
 }
 
 COOLDOWN_EVENTS = {
@@ -47,6 +62,9 @@ COOLDOWN_EVENTS = {
     "cloudflare.access_failure",
     "docker.listener_failure",
     "agent.offline",
+    "agent.enrollment_failed",
+    "agent.decommission_failed",
+    "agent.decommission_stalled",
     "tunnel.down",
 }
 
@@ -66,8 +84,17 @@ TITLE_MAP = {
     "docker.listener_failure": "❌ DockFlare — Docker listener stopped",
     "agent.offline": "🔴 DockFlare — Agent offline",
     "agent.online": "🟢 DockFlare — Agent recovered",
+    "agent.enrolled": "✅ DockFlare — Agent enrolled",
+    "agent.enrollment_failed": "❌ DockFlare — Agent enrollment failed",
+    "agent.decommission_started": "⚠️ DockFlare — Agent decommission started",
+    "agent.decommission_completed": "✅ DockFlare — Agent decommission completed",
+    "agent.decommission_failed": "❌ DockFlare — Agent decommission failed",
+    "agent.decommission_stalled": "⚠️ DockFlare — Agent decommission stalled",
     "tunnel.down": "🔴 DockFlare — Tunnel down",
     "tunnel.recovered": "🟢 DockFlare — Tunnel recovered",
+    "access.policy_created": "✅ DockFlare — Access Policy created",
+    "access.policy_updated": "ℹ️ DockFlare — Access Policy updated",
+    "access.policy_deleted": "ℹ️ DockFlare — Access Policy deleted",
     "notification.test": "🔔 DockFlare — Test notification",
 }
 
@@ -76,6 +103,15 @@ STATUS_MAP = {
     "agent.online": "Online",
     "tunnel.down": "Down",
     "tunnel.recovered": "Running",
+    "agent.enrolled": "Enrolled",
+    "agent.enrollment_failed": "Enrollment failed",
+    "agent.decommission_started": "In progress",
+    "agent.decommission_completed": "Completed",
+    "agent.decommission_failed": "Failed",
+    "agent.decommission_stalled": "Timed out",
+    "access.policy_created": "Created",
+    "access.policy_updated": "Updated",
+    "access.policy_deleted": "Deleted",
 }
 
 
@@ -520,6 +556,18 @@ class NotificationManager:
             if context.get(key) not in (None, ""):
                 lines.append(f"{label}: {context[key]}")
 
+        if context.get("policy_name"):
+            lines.append(f"Access Policy: {context['policy_name']}")
+        if context.get("policy_type"):
+            lines.append(f"Policy type: {context['policy_type']}")
+        if context.get("identity_provider_count"):
+            lines.append(f"Identity providers: {context['identity_provider_count']}")
+        if context.get("rules_count"):
+            rules_label = "Managed rules" if event_type.startswith("agent.decommission_") else "Policy rules"
+            lines.append(f"{rules_label}: {context['rules_count']}")
+        if context.get("affected_service_count"):
+            lines.append(f"Affected services: {context['affected_service_count']}")
+
         if context.get("delete_at"):
             lines.append(f"Deletion deadline: {context['delete_at']}")
         if context.get("grace_period_seconds"):
@@ -533,7 +581,11 @@ class NotificationManager:
 
         technical_fields = [
             (label, context[key])
-            for key, label in (("container_id", "Container ID"), ("agent_id", "Agent ID"), ("tunnel_id", "Tunnel ID"))
+            for key, label in (
+                ("container_id", "Container ID"), ("agent_id", "Agent ID"),
+                ("tunnel_id", "Tunnel ID"), ("operation_id", "Operation ID"),
+                ("policy_id", "Policy ID"),
+            )
             if context.get(key) not in (None, "")
         ]
         if technical_fields:
@@ -560,7 +612,9 @@ class NotificationManager:
             "message", "operation", "hostname", "path", "service", "source",
             "container_name", "container_id", "agent_name", "agent_id",
             "tunnel_name", "tunnel_id", "delete_at", "grace_period_seconds",
-            "retry_count", "resources", "public_url",
+            "retry_count", "resources", "public_url", "operation_id",
+            "policy_name", "policy_id", "policy_type", "identity_provider_count",
+            "rules_count", "affected_service_count",
         }
         sanitized = {}
         for key in allowed:

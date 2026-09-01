@@ -507,30 +507,54 @@
                         <label class="label"><span class="label-text-alt">{{ t('settings.notification_cooldown_help') }}</span></label>
                     </div>
 
-                    {% set notification_events = [
-                        ('rule_activated', 'settings.notification_event_rule_activated'),
-                        ('rule_restored', 'settings.notification_event_rule_restored'),
-                        ('rule_pending_deletion', 'settings.notification_event_rule_pending_deletion'),
-                        ('rule_deleted', 'settings.notification_event_rule_deleted'),
-                        ('cloudflare_tunnel_failure', 'settings.notification_event_tunnel_failure'),
-                        ('cloudflare_dns_failure', 'settings.notification_event_dns_failure'),
-                        ('cloudflare_access_failure', 'settings.notification_event_access_failure'),
-                        ('docker_listener_failure', 'settings.notification_event_docker_listener_failure'),
-                        ('agent_offline', 'settings.notification_event_agent_offline'),
-                        ('agent_online', 'settings.notification_event_agent_online'),
-                        ('tunnel_down', 'settings.notification_event_tunnel_down'),
-                        ('tunnel_recovered', 'settings.notification_event_tunnel_recovered')
+                    {% set notification_event_groups = [
+                        ('settings.notification_group_rules', [
+                            ('rule_activated', 'settings.notification_event_rule_activated'),
+                            ('rule_restored', 'settings.notification_event_rule_restored'),
+                            ('rule_pending_deletion', 'settings.notification_event_rule_pending_deletion'),
+                            ('rule_deleted', 'settings.notification_event_rule_deleted')
+                        ]),
+                        ('settings.notification_group_failures', [
+                            ('cloudflare_tunnel_failure', 'settings.notification_event_tunnel_failure'),
+                            ('cloudflare_dns_failure', 'settings.notification_event_dns_failure'),
+                            ('cloudflare_access_failure', 'settings.notification_event_access_failure'),
+                            ('docker_listener_failure', 'settings.notification_event_docker_listener_failure')
+                        ]),
+                        ('settings.notification_group_agents', [
+                            ('agent_enrolled', 'settings.notification_event_agent_enrolled'),
+                            ('agent_enrollment_failed', 'settings.notification_event_agent_enrollment_failed'),
+                            ('agent_offline', 'settings.notification_event_agent_offline'),
+                            ('agent_online', 'settings.notification_event_agent_online'),
+                            ('agent_decommission_started', 'settings.notification_event_agent_decommission_started'),
+                            ('agent_decommission_completed', 'settings.notification_event_agent_decommission_completed'),
+                            ('agent_decommission_failed', 'settings.notification_event_agent_decommission_failed'),
+                            ('agent_decommission_stalled', 'settings.notification_event_agent_decommission_stalled')
+                        ]),
+                        ('settings.notification_group_tunnels', [
+                            ('tunnel_down', 'settings.notification_event_tunnel_down'),
+                            ('tunnel_recovered', 'settings.notification_event_tunnel_recovered')
+                        ]),
+                        ('settings.notification_group_access_policies', [
+                            ('access_policy_created', 'settings.notification_event_access_policy_created'),
+                            ('access_policy_updated', 'settings.notification_event_access_policy_updated'),
+                            ('access_policy_deleted', 'settings.notification_event_access_policy_deleted')
+                        ])
                     ] %}
-                    <fieldset>
+                    <fieldset class="space-y-4">
                         <legend class="font-semibold mb-3">{{ t('settings.notification_events') }}</legend>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {% for field_name, label_key in notification_events %}
-                                <label class="label cursor-pointer justify-start gap-3 rounded-md bg-base-200/50 px-3">
-                                    {{ notification_settings_form[field_name](class="checkbox checkbox-sm checkbox-primary") }}
-                                    <span class="label-text">{{ t(label_key) }}</span>
-                                </label>
-                            {% endfor %}
-                        </div>
+                        {% for group_label_key, notification_events in notification_event_groups %}
+                            <div>
+                                <h4 class="text-sm font-semibold mb-2">{{ t(group_label_key) }}</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    {% for field_name, label_key in notification_events %}
+                                        <label class="label cursor-pointer justify-start gap-3 rounded-md bg-base-200/50 px-3">
+                                            {{ notification_settings_form[field_name](class="checkbox checkbox-sm checkbox-primary") }}
+                                            <span class="label-text">{{ t(label_key) }}</span>
+                                        </label>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        {% endfor %}
                     </fieldset>
 
                     <div class="card-actions pt-2 gap-3">
