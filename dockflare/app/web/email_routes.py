@@ -1103,12 +1103,10 @@ def email_log_stats():
 
 
 def _check_internal_request():
-    # Block any request that carries Cloudflare edge headers (all public internet
-    # requests via the CF tunnel have CF-Ray; internal Docker requests never do)
+
     if request.headers.get('CF-Ray') or request.headers.get('CF-Connecting-IP'):
         return False
 
-    # Block non-private IPs
     try:
         ip = ipaddress.ip_address(request.remote_addr or '')
         if not ip.is_private:
@@ -1116,12 +1114,16 @@ def _check_internal_request():
     except ValueError:
         return False
 
-    # If a shared secret is configured, require it
     expected = os.environ.get('INTERNAL_BOOTSTRAP_SECRET', '')
-    if expected:
-        provided = request.headers.get('X-Bootstrap-Token', '')
-        if not provided or not hmac.compare_digest(provided, expected):
-            return False
+    if not expected:
+        logging.warning(
+            "INTERNAL_BOOTSTRAP_SECRET is not configured; rejecting internal request"
+        )
+        return False
+
+    provided = request.headers.get('X-Bootstrap-Token', '')
+    if not provided or not hmac.compare_digest(provided, expected):
+        return False
 
     return True
 

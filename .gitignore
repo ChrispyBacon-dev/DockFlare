@@ -82,7 +82,6 @@ $RECYCLE.BIN/
 *~
 .directory
 .env
-.claude
 .docs
 /dockflare/tests/
 dockflare-agent/overview.json
@@ -96,3 +95,4 @@ logs/
 DockFlare-Agent-prd/
 unstable-compose.yml
 unstable-local.yml
+/artifacts
