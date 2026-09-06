@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [v3.1.5] - 2026-09-01
 
 ### Added
 - **Apprise notifications:** Added opt-in, encrypted notification destinations for rule lifecycle, Cloudflare failures, Docker listener failures, Agent enrollment, decommission lifecycle, Agent health, tunnel health, and explicit Access Policy management. Event controls are grouped by area, with routine administrative events opt-in and failure/terminal observability enabled by default. Delivery uses a bounded background queue with cooldowns, startup and intentional-action suppression, redacted settings/status output, and authenticated test delivery. Addresses [#302](https://github.com/ChrispyBacon-dev/DockFlare/issues/302).
