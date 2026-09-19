@@ -46,13 +46,13 @@ def _admin_bypass_emails():
     return sorted({email.strip() for email in emails if isinstance(email, str) and '@' in email})
 
 
-def _create_scoped_bypass(account_id, app_uuid, emails):
+def _create_admin_allow_policy(account_id, app_uuid, emails):
     resp = cf_api_request(
         "POST",
         f"/accounts/{account_id}/access/apps/{app_uuid}/policies",
         json_data={
-            "name": "DockFlare Admin Bypass",
-            "decision": "bypass",
+            "name": "DockFlare Admin Access",
+            "decision": "allow",
             "precedence": 2,
             "include": [{"email": {"email": email}} for email in emails]
         }
@@ -84,16 +84,15 @@ def ensure_agent_access_hardening():
         return
 
     admin_emails = _admin_bypass_emails()
-    scoped_bypass = None
+    has_admin_allow = False
     broad_bypass_ids = []
     for policy in policies:
-        if policy.get("decision") != "bypass":
-            continue
+        decision = policy.get("decision")
         policy_id = policy.get("id") or policy.get("uid")
-        if _policy_includes_everyone(policy):
+        if decision == "bypass" and _policy_includes_everyone(policy):
             broad_bypass_ids.append(policy_id)
-        else:
-            scoped_bypass = policy_id
+        elif decision == "allow" and not _policy_includes_everyone(policy):
+            has_admin_allow = True
 
     for policy_id in broad_bypass_ids:
         try:
@@ -102,13 +101,13 @@ def ensure_agent_access_hardening():
         except Exception as e:
             logging.warning(f"Could not remove broad Access bypass policy {policy_id}: {e}")
 
-    if not scoped_bypass and admin_emails:
+    if not has_admin_allow and admin_emails:
         try:
-            new_id = _create_scoped_bypass(account_id, app_uuid, admin_emails)
+            new_id = _create_admin_allow_policy(account_id, app_uuid, admin_emails)
             if new_id:
-                logging.info("Created a scoped admin bypass policy for the Cloudflare Access Agent API application")
+                logging.info("Created a scoped admin access policy for the Cloudflare Access Agent API application")
         except Exception as e:
-            logging.warning(f"Could not create scoped admin bypass policy: {e}")
+            logging.warning(f"Could not create scoped admin access policy: {e}")
 
 
 def ensure_agent_service_token(public_url):
@@ -169,9 +168,9 @@ def ensure_agent_service_token(public_url):
     policy_id = policy_result.get("id")
 
     admin_emails = _admin_bypass_emails()
-    bypass_policy_id = None
+    admin_policy_id = None
     if admin_emails:
-        bypass_policy_id = _create_scoped_bypass(account_id, app_uuid, admin_emails)
+        admin_policy_id = _create_admin_allow_policy(account_id, app_uuid, admin_emails)
 
     agent_key_store.store_service_token_secret(client_secret)
 
@@ -181,8 +180,8 @@ def ensure_agent_service_token(public_url):
         "app_uuid": app_uuid,
         "policy_id": policy_id,
     }
-    if bypass_policy_id:
-        token_data["bypass_policy_id"] = bypass_policy_id
+    if admin_policy_id:
+        token_data["admin_policy_id"] = admin_policy_id
     set_agent_cf_token(token_data)
 
     return {**token_data, "client_secret": client_secret}
