@@ -22,6 +22,7 @@ import os
 import json
 import hashlib
 import ipaddress
+import threading
 
 from flask import Flask
 from flask_wtf.csrf import CSRFProtect
@@ -41,7 +42,42 @@ from .i18n import init_app as init_i18n
 tunnel_state = { "name": config.TUNNEL_NAME, "id": None, "token": None, "status_message": "Initializing...", "error": None }
 cloudflared_agent_state = { "container_status": "unknown", "last_action_status": None }
 
-log_queue = queue.Queue(maxsize=config.MAX_LOG_QUEUE_SIZE)
+class LogBroadcaster:
+    def __init__(self, per_client_maxsize):
+        self._per_client_maxsize = max(50, int(per_client_maxsize or 200))
+        self._subscribers = {}
+        self._lock = threading.Lock()
+
+    def subscribe(self):
+        client_queue = queue.Queue(maxsize=self._per_client_maxsize)
+        subscriber_id = id(client_queue)
+        with self._lock:
+            self._subscribers[subscriber_id] = client_queue
+        return subscriber_id, client_queue
+
+    def unsubscribe(self, subscriber_id):
+        with self._lock:
+            self._subscribers.pop(subscriber_id, None)
+
+    def publish(self, line):
+        with self._lock:
+            queues = list(self._subscribers.values())
+        for client_queue in queues:
+            try:
+                client_queue.put_nowait(line)
+            except queue.Full:
+                try:
+                    client_queue.get_nowait()
+                    client_queue.put_nowait(line)
+                except (queue.Empty, queue.Full):
+                    pass
+
+    def subscriber_count(self):
+        with self._lock:
+            return len(self._subscribers)
+
+
+log_broadcaster = LogBroadcaster(config.MAX_LOG_QUEUE_SIZE)
 state_update_queue = queue.Queue(maxsize=50) 
 log_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', datefmt='%H:%M:%S')
 
@@ -108,23 +144,16 @@ limiter = Limiter(
     storage_uri=os.environ.get('REDIS_URL', 'memory://')
 )
 
-class QueueLogHandler(logging.Handler):
-    def __init__(self, log_queue_instance):
+class LogBroadcastHandler(logging.Handler):
+    def __init__(self, broadcaster):
         super().__init__()
-        self.log_queue_instance = log_queue_instance
+        self.broadcaster = broadcaster
 
     def emit(self, record):
-        log_entry = self.format(record)
         try:
-            self.log_queue_instance.put_nowait(log_entry)
-        except queue.Full:
-            try:
-                self.log_queue_instance.get_nowait() 
-                self.log_queue_instance.put_nowait(log_entry)
-            except queue.Empty:
-                pass 
-            except queue.Full:
-                 print("Log queue still full after attempting to make space, dropping message.", file=sys.stderr)
+            self.broadcaster.publish(self.format(record))
+        except Exception:
+            pass
 
 root_logger = logging.getLogger()
 
@@ -144,7 +173,7 @@ console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setFormatter(log_formatter)
 root_logger.addHandler(console_handler)
 
-queue_handler = QueueLogHandler(log_queue)
+queue_handler = LogBroadcastHandler(log_broadcaster)
 queue_handler.setFormatter(log_formatter)
 queue_handler.setLevel(log_level)
 root_logger.addHandler(queue_handler)

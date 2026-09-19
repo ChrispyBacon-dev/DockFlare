@@ -2,7 +2,8 @@
 const maxLogLines = 250;
 let initialConnectMessageCleared = false;
 let activeLogSource = null;
-let eventSourceHealthCheck = null;
+let logWatchdogTimer = null;
+let logReconnectTimer = null;
 let logsEnabled = false;
 let pingInterval = null;
 let manualTunnelTomSelect = null;
@@ -743,9 +744,26 @@ function setupLogControls() {
             logOutput.textContent = activeLogSource ? t('js.text.log_cleared') + '\n' : t('js.text.enable_logs_prompt');
         }
     });
+
+    document.addEventListener('visibilitychange', () => {
+        if (!logsEnabled) return;
+        if (document.hidden) {
+            disconnectEventSource();
+        } else {
+            connectEventSource();
+        }
+    });
 }
 
 function disconnectEventSource() {
+    if (logWatchdogTimer) {
+        clearTimeout(logWatchdogTimer);
+        logWatchdogTimer = null;
+    }
+    if (logReconnectTimer) {
+        clearTimeout(logReconnectTimer);
+        logReconnectTimer = null;
+    }
     if (activeLogSource) {
         try {
             activeLogSource.close();
@@ -754,10 +772,24 @@ function disconnectEventSource() {
         }
         activeLogSource = null;
     }
-    if (eventSourceHealthCheck) {
-        clearInterval(eventSourceHealthCheck);
-        eventSourceHealthCheck = null;
-    }
+}
+
+function armLogWatchdog() {
+    if (logWatchdogTimer) clearTimeout(logWatchdogTimer);
+    logWatchdogTimer = setTimeout(() => {
+        if (!logsEnabled) return;
+        if (activeLogSource) {
+            try {
+                activeLogSource.close();
+            } catch (e) {
+                console.error("Error closing stale log stream:", e);
+            }
+            activeLogSource = null;
+        }
+        addLogLine(t('js.text.log_connection_timeout'), 'error');
+        if (logReconnectTimer) clearTimeout(logReconnectTimer);
+        logReconnectTimer = setTimeout(connectEventSource, 2000);
+    }, 45000);
 }
 
 function connectEventSource() {
@@ -769,6 +801,10 @@ function connectEventSource() {
         addLogLine(t('js.text.browser_sse_not_supported'), 'error');
         return;
     }
+    if (logReconnectTimer) {
+        clearTimeout(logReconnectTimer);
+        logReconnectTimer = null;
+    }
     if (activeLogSource) {
         try {
             activeLogSource.close();
@@ -779,65 +815,41 @@ function connectEventSource() {
     }
 
     const streamUrl = `${document.baseURI}stream-logs?t=${Date.now()}`;
+    let source;
     try {
-        activeLogSource = new EventSource(streamUrl);
-        let connectionTimeout;
-        const resetConnectionTimeout = () => {
-            if (connectionTimeout) clearTimeout(connectionTimeout);
-            connectionTimeout = setTimeout(() => {
-                if (activeLogSource) {
-                    activeLogSource.close();
-                    activeLogSource = null;
-                    addLogLine(t('js.text.log_connection_timeout'), 'error');
-                    setTimeout(connectEventSource, 2000);
-                }
-            }, 10000);
-        };
-        resetConnectionTimeout();
-
-        activeLogSource.onopen = function() {
-            if (connectionTimeout) clearTimeout(connectionTimeout);
-            addLogLine(t('js.text.log_connected'), 'connected');
-        };
-        activeLogSource.onmessage = function(event) {
-            resetConnectionTimeout();
-            if (event.data === "heartbeat" || event.data === ": keepalive") {
-                return;
-            }
-            addLogLine(event.data, 'log');
-        };
-
-        let retryAttempt = 0;
-        activeLogSource.onerror = function(err) {
-            if (connectionTimeout) clearTimeout(connectionTimeout);
-            if (activeLogSource && activeLogSource.readyState !== EventSource.CLOSED) {
-                addLogLine(t('js.text.log_connection_error'), 'error');
-            }
-            if (activeLogSource) {
-                activeLogSource.close();
-                activeLogSource = null;
-            }
-
-            if (logsEnabled) {
-                retryAttempt++;
-                const delay = Math.min(5000 * Math.pow(1.5, Math.min(retryAttempt - 1, 5)), 30000);
-                setTimeout(connectEventSource, delay);
-            }
-        };
+        source = new EventSource(streamUrl);
     } catch (e) {
         addLogLine(t('js.text.log_connection_failed', {error: e.message}), 'error');
         if (logsEnabled) {
-            setTimeout(connectEventSource, 5000);
+            logReconnectTimer = setTimeout(connectEventSource, 5000);
         }
+        return;
     }
+    activeLogSource = source;
 
-    if (eventSourceHealthCheck) clearInterval(eventSourceHealthCheck);
-    eventSourceHealthCheck = setInterval(() => {
-        if (logsEnabled && (!activeLogSource || activeLogSource.readyState === EventSource.CLOSED)) {
-            addLogLine(t('js.text.log_health_check_error'), 'status');
-            connectEventSource();
+    source.addEventListener('hello', function(event) {
+        armLogWatchdog();
+        if (event.data) {
+            addLogLine(event.data, 'connected');
         }
-    }, 15000);
+    });
+    source.addEventListener('heartbeat', function() {
+        armLogWatchdog();
+    });
+    source.addEventListener('log', function(event) {
+        armLogWatchdog();
+        if (!event.data) {
+            return;
+        }
+        addLogLine(event.data, 'log');
+    });
+    source.onopen = function() {
+        armLogWatchdog();
+    };
+    source.onerror = function() {
+        armLogWatchdog();
+    };
+    armLogWatchdog();
 }
 
 function formatTimeDifference(diffMillis) {
@@ -1730,7 +1742,8 @@ document.addEventListener('DOMContentLoaded', function() {
     window.addEventListener('beforeunload', function() {
         if (activeLogSource) activeLogSource.close();
         if (activeStateEventSource) activeStateEventSource.close();
-        if (eventSourceHealthCheck) clearInterval(eventSourceHealthCheck);
+        if (logWatchdogTimer) clearTimeout(logWatchdogTimer);
+        if (logReconnectTimer) clearTimeout(logReconnectTimer);
         if (pingInterval) clearInterval(pingInterval);
     });
 });

@@ -34,7 +34,7 @@ from flask import (
 from flask_login import current_user, login_required, login_user, logout_user
 from app.core.user import User
 
-from app import config, docker_client, tunnel_state, cloudflared_agent_state, log_queue, state_update_queue, publish_state_event, limiter
+from app import config, docker_client, tunnel_state, cloudflared_agent_state, log_broadcaster, state_update_queue, publish_state_event, limiter
 from app.core.cache import CACHE_ENABLED
 from app.core.state_manager import (
     access_groups,
@@ -1298,35 +1298,34 @@ def force_delete_rule_route(hostname):
 @login_required
 def stream_logs_route():
     client_id = f"client-{random.randint(1000, 9999)}"
-    logging.info(f"Log stream client {client_id} connected.")
+    logging.debug(f"Log stream client {client_id} connected.")
+    subscriber_id, client_queue = log_broadcaster.subscribe()
+
     def event_stream():
         try:
-            yield f"data: --- Log stream connected (client {client_id}) ---\n\n"
+            yield "retry: 5000\n\n"
+            yield f"event: hello\ndata: --- Log stream connected (client {client_id}) ---\n\n"
             last_heartbeat = time.time()
             while True:
                 try:
-                    log_entry = log_queue.get(timeout=0.25) 
-                    yield f"data: {log_entry}\n\n"
-                    last_heartbeat = time.time() 
+                    log_entry = client_queue.get(timeout=1.0)
+                    yield f"event: log\ndata: {log_entry}\n\n"
                 except queue.Empty:
-                    if time.time() - last_heartbeat > 2: 
-                        yield ": keepalive\n\n" 
+                    if time.time() - last_heartbeat >= 15:
+                        yield "event: heartbeat\ndata: {}\n\n"
                         last_heartbeat = time.time()
-                    time.sleep(0.1) 
         except GeneratorExit:
-            logging.info(f"Log stream client {client_id} disconnected.")
+            logging.debug(f"Log stream client {client_id} disconnected.")
         except Exception as e_stream:
             logging.error(f"Error in log stream for {client_id}: {e_stream}", exc_info=True)
         finally:
-            logging.info(f"Log stream for client {client_id} ended.")
-            
+            log_broadcaster.unsubscribe(subscriber_id)
+
     response = Response(event_stream(), mimetype='text/event-stream')
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
     response.headers['X-Accel-Buffering'] = 'no'
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET'
     return response
 
 @bp.route('/stream-state-updates')
