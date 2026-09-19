@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 - **Inbound email blocked when Webmail is behind Cloudflare Access:** The inbound worker's webhook was getting caught by the Access login, so received mail piled up in R2 and never reached mail-manager. DockFlare now adds a bypass for just `/api/v1/webhook/inbound` (exact path, still HMAC-verified) during domain setup, and fixes existing installs automatically on startup.
 - **Webmail dependency refresh:** Vite 5 → 8, Tiptap 2 → 3, plus the plugin/PWA/workbox bumps - all 35 `npm audit` findings are gone and both webmail and DockFlare audit clean. Composer updated for Tiptap 3, build image moved to Node 22, and the stray `vue-tsc` `.js`/`.js.map` output (102 committed files) is cleaned up with `noEmit` and gitignore.
 - **Email domain lifecycle:** Tearing down a domain now removes its webhook bypass Access app, creating a mailbox that already has a routing rule updates it instead of failing with a 409, and quota KV namespace creation no longer logs "already exists" on every start.
-- **Access Group country picker:** With a lot of countries selected the chip list wouldn't scroll and the dropdown was clipped by the modal. It now scrolls, and the dropdown renders outside the modal. (Not an npm-audit regression - pre-existing layout issue.)
+- **Access Group country picker:** With a lot of countries selected the chip list wouldn't scroll and the dropdown was clipped by the modal. It now scrolls, and the dropdown renders outside the modal.
 
 
 ## [v3.1.5] - 2026-09-01
