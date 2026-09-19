@@ -190,7 +190,8 @@ def sync_access_group_to_reusable_policy(group_id):
 
     is_system_policy = local_definition.get("system_policy", False)
     if is_system_policy and local_definition.get("policies"):
-        policy_name = local_definition["policies"][0].get("name", f"DockFlare-AccessGroup-{group_id}")
+        original_policies = group_definition.get("policies") or [{}]
+        policy_name = original_policies[0].get("name") or local_definition["policies"][0].get("name", f"DockFlare-AccessGroup-{group_id}")
     else:
         policy_name = f"DockFlare-AccessGroup-{group_id}"
 

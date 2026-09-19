@@ -65,9 +65,15 @@ def set_remote_policy_id(group, policy_id):
 def _resolve_remote_policy(reusable_policies, policy_name, decision, include_rules, require_rules=None, existing_policy_id=None):
     if existing_policy_id:
         existing = reusable_policies.get_reusable_policy(existing_policy_id)
-        if existing:
+        if existing and existing.get("name") == policy_name:
             return existing_policy_id
-        logging.warning(f"Cloudflare policy '{existing_policy_id}' ({policy_name}) not found, searching by name")
+        if existing:
+            logging.warning(
+                f"Cloudflare policy '{existing_policy_id}' is named '{existing.get('name')}' but "
+                f"'{policy_name}' was expected; searching by name instead"
+            )
+        else:
+            logging.warning(f"Cloudflare policy '{existing_policy_id}' ({policy_name}) not found, searching by name")
     existing_by_name = reusable_policies.find_policy_by_name(policy_name)
     if existing_by_name and existing_by_name.get("id"):
         logging.info(f"Found existing policy '{policy_name}' in Cloudflare with ID: {existing_by_name.get('id')}")
@@ -476,6 +482,11 @@ def ensure_default_bypass_policy(flask_app=None):
                 del existing_policy["hide_from_ui"]
                 save_state()
 
+            if existing_policy.get("policies") and existing_policy["policies"][0].get("name") != cf_policy_name:
+                logging.info(f"Restoring bypass policy name to '{cf_policy_name}'")
+                existing_policy["policies"][0]["name"] = cf_policy_name
+                save_state()
+
             remote_policy_id = get_remote_policy_id(existing_policy, default_bypass_id)
 
             if flask_app and getattr(config, "CF_ACCOUNT_ID", None):
@@ -596,6 +607,12 @@ def ensure_authenticated_default_policy(flask_app=None):
                         "require": [{"login_method": {"id": onetimepin_cf_id}}]
                     }
                 ]
+                needs_state_update = True
+                needs_cf_update = True
+
+            if existing_policy.get("policies") and existing_policy["policies"][0].get("name") != cf_policy_name:
+                logging.info(f"Restoring authenticated-default policy name to '{cf_policy_name}'")
+                existing_policy["policies"][0]["name"] = cf_policy_name
                 needs_state_update = True
                 needs_cf_update = True
 
