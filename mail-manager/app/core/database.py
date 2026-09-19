@@ -336,6 +336,12 @@ def _migrate(conn):
         if encrypted_count:
             logging.warning(f"Encrypted secrets for {encrypted_count} domain config row(s) at rest")
         conn.commit()
+        if encrypted_count:
+            try:
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                conn.execute("VACUUM")
+            except Exception as vacuum_error:
+                logging.warning(f"Could not compact the mail database after secret migration: {vacuum_error}")
     except Exception as e:
         logging.warning(f"Could not encrypt mail-manager secrets at rest: {e}")
 

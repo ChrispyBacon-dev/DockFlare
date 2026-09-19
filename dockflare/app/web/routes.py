@@ -1299,9 +1299,8 @@ def force_delete_rule_route(hostname):
 def stream_logs_route():
     client_id = f"client-{random.randint(1000, 9999)}"
     logging.debug(f"Log stream client {client_id} connected.")
-    subscriber_id, client_queue = log_broadcaster.subscribe()
-
     def event_stream():
+        subscriber_id, client_queue = log_broadcaster.subscribe()
         try:
             yield "retry: 5000\n\n"
             yield f"event: hello\ndata: --- Log stream connected (client {client_id}) ---\n\n"

@@ -45,14 +45,13 @@ def decrypt_value(value):
         return value
     key = _encryption_key()
     if key is None:
-        logging.error("Cannot decrypt a stored mail secret because MAIL_SECRET_KEY is missing")
-        return value
+        raise ValueError("Cannot decrypt a stored mail secret because MAIL_SECRET_KEY is not configured")
     try:
         blob = base64.urlsafe_b64decode(value[len(_PREFIX):])
         return AESGCM(key).decrypt(blob[:12], blob[12:], None).decode('utf-8')
     except Exception as e:
         logging.error(f"Failed to decrypt a stored mail secret: {e}")
-        return value
+        raise ValueError("Stored mail secret could not be decrypted; check MAIL_SECRET_KEY") from e
 
 
 def decrypt_domain_config(row):

@@ -216,66 +216,56 @@ def inbound():
 
         db = get_db()
 
+        def _mailbox_exists(candidate):
+            return bool(candidate) and bool(
+                db.execute("SELECT 1 FROM mailboxes WHERE address=?", (candidate,)).fetchone()
+            )
+
+        def _active_alias(candidate, now_iso):
+            if not candidate:
+                return None
+            return db.execute(
+                "SELECT * FROM aliases WHERE address=? AND is_active=1 AND (expires_at IS NULL OR expires_at > ?)",
+                (candidate, now_iso)
+            ).fetchone()
+
         to_address = ''
         alias_address = None
+        now_utc = datetime.now(timezone.utc).isoformat()
+        envelope_to = (data.get('to') or '').strip()
+        resolved_mailbox = (data.get('resolved_mailbox') or '').strip()
+        via_alias = bool(data.get('via_alias', False))
 
-        for addr in parsed['to_addresses']:
-            if db.execute("SELECT 1 FROM mailboxes WHERE address=?", (addr,)).fetchone():
-                to_address = addr
-                break
+        if via_alias and envelope_to:
+            alias_row = _active_alias(envelope_to, now_utc)
+            if alias_row and alias_row['mailbox_address'] == resolved_mailbox and _mailbox_exists(resolved_mailbox):
+                to_address = resolved_mailbox
+                alias_address = envelope_to
 
-        if not to_address:
-            raw_resolved = data.get('resolved_mailbox', '')
-            if raw_resolved and db.execute("SELECT 1 FROM mailboxes WHERE address=?", (raw_resolved,)).fetchone():
-                to_address = raw_resolved
-
-        if not to_address:
-            via_alias = data.get('via_alias', False)
-            raw_resolved = data.get('resolved_mailbox', '')
-
-            if via_alias and raw_resolved:
-                envelope_to = data.get('to', '')
-                now_utc = datetime.now(timezone.utc).isoformat()
-                alias_row = db.execute(
-                    "SELECT * FROM aliases WHERE address=? AND is_active=1 AND (expires_at IS NULL OR expires_at > ?)",
-                    (envelope_to, now_utc)
-                ).fetchone()
-                if alias_row and alias_row['mailbox_address'] == raw_resolved:
+        if not to_address and envelope_to:
+            if _mailbox_exists(envelope_to):
+                to_address = envelope_to
+            else:
+                alias_row = _active_alias(envelope_to, now_utc)
+                if alias_row and _mailbox_exists(alias_row['mailbox_address']):
                     to_address = alias_row['mailbox_address']
                     alias_address = envelope_to
-                    db.execute(
-                        "UPDATE aliases SET use_count=use_count+1, last_use_at=? WHERE address=?",
-                        (now_utc, alias_address)
-                    )
-            else:
-                now_utc = datetime.now(timezone.utc).isoformat()
-                for addr in parsed['to_addresses']:
-                    alias_row = db.execute(
-                        "SELECT * FROM aliases WHERE address=? AND is_active=1 AND (expires_at IS NULL OR expires_at > ?)",
-                        (addr, now_utc)
-                    ).fetchone()
-                    if alias_row:
-                        to_address = alias_row['mailbox_address']
-                        alias_address = addr
-                        db.execute(
-                            "UPDATE aliases SET use_count=use_count+1, last_use_at=? WHERE address=?",
-                            (now_utc, alias_address)
-                        )
-                        break
 
-        if not to_address:
-            for addr in parsed.get('delivered_to_addresses', []):
-                if db.execute("SELECT 1 FROM mailboxes WHERE address=?", (addr,)).fetchone():
-                    to_address = addr
-                    break
+        if not to_address and resolved_mailbox and _mailbox_exists(resolved_mailbox):
+            to_address = resolved_mailbox
+
+        if alias_address:
+            db.execute(
+                "UPDATE aliases SET use_count=use_count+1, last_use_at=? WHERE address=?",
+                (now_utc, alias_address)
+            )
 
         if not to_address and domain_cfg and domain_cfg['catch_all_mailbox']:
-            catch_all = domain_cfg['catch_all_mailbox']
-            if db.execute("SELECT 1 FROM mailboxes WHERE address=?", (catch_all,)).fetchone():
-                to_address = catch_all
+            if _mailbox_exists(domain_cfg['catch_all_mailbox']):
+                to_address = domain_cfg['catch_all_mailbox']
 
         if not to_address:
-            log.info("Inbound ignored: no matching mailbox for %s", parsed['to_addresses'])
+            log.info("Inbound ignored: no mailbox for envelope %s (headers %s)", envelope_to, parsed['to_addresses'])
             try:
                 delete_from_r2(r2_key, domain_cfg)
             except Exception:

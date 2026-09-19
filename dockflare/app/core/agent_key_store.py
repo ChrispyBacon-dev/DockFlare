@@ -65,8 +65,8 @@ def _fernet() -> Optional[Fernet]:
 def _persist_locked() -> None:
     fernet = _fernet()
     if fernet is None:
-        logging.warning("AGENT_KEY_STORE: Persist skipped because Fernet key is unavailable.")
-        return
+        logging.error("AGENT_KEY_STORE: Persist failed because the encryption key is unavailable.")
+        raise RuntimeError("Agent key store encryption key is unavailable")
 
     payload = {"keys": _cached_keys}
     try:
@@ -81,6 +81,7 @@ def _persist_locked() -> None:
         logging.debug("AGENT_KEY_STORE: Persisted %d keys to encrypted store.", len(_cached_keys))
     except Exception as err:  # pylint: disable=broad-except
         logging.error("AGENT_KEY_STORE: Failed to persist key store: %s", err, exc_info=True)
+        raise
 
 
 def _load_locked() -> None:

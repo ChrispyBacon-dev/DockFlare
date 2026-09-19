@@ -129,6 +129,12 @@ def push_subscribe():
     if not endpoint or not p256dh or not auth_key or not mailbox_address:
         return jsonify({"error": "endpoint, keys, and mailbox_address are required"}), 400
 
+    from app.core.push import validate_push_endpoint
+    try:
+        validate_push_endpoint(endpoint)
+    except ValueError as endpoint_error:
+        return jsonify({"error": str(endpoint_error)}), 400
+
     if not _check_mailbox_access(mailbox_address):
         return jsonify({"error": "forbidden"}), 403
 

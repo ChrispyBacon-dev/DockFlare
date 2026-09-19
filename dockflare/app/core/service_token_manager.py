@@ -34,14 +34,14 @@ def _parse_hostname(public_url):
     return parsed.hostname
 
 
-def _create_admin_bypass_policy(account_id, app_uuid):
+def _create_admin_bypass_policy(account_id, app_uuid, precedence=2):
     resp = cf_api_request(
         "POST",
         f"/accounts/{account_id}/access/apps/{app_uuid}/policies",
         json_data={
             "name": "DockFlare Admin Bypass",
             "decision": "bypass",
-            "precedence": 2,
+            "precedence": precedence,
             "include": [{"everyone": {}}]
         }
     )
@@ -84,7 +84,9 @@ def ensure_agent_access_hardening():
                 logging.warning(f"Could not remove the redundant admin access policy {policy_id}: {e}")
 
     try:
-        new_id = _create_admin_bypass_policy(account_id, app_uuid)
+        precedences = [p.get("precedence") for p in policies if isinstance(p.get("precedence"), int)]
+        next_precedence = (max(precedences) if precedences else 1) + 1
+        new_id = _create_admin_bypass_policy(account_id, app_uuid, next_precedence)
         if new_id:
             logging.info(
                 "Ensured the Agent API Access app allows the admin UI; the endpoints still require the master or agent API key"

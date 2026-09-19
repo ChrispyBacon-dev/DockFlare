@@ -2,10 +2,44 @@ import json
 import logging
 import os
 import threading
+import ipaddress
+import socket
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 log = logging.getLogger(__name__)
+
+
+def _address_is_blocked(ip_text):
+    try:
+        addr = ipaddress.ip_address(ip_text)
+    except ValueError:
+        return True
+    return (
+        addr.is_private or addr.is_loopback or addr.is_link_local
+        or addr.is_reserved or addr.is_multicast or addr.is_unspecified
+    )
+
+
+def validate_push_endpoint(endpoint):
+    if not isinstance(endpoint, str) or not endpoint or len(endpoint) > 2048:
+        raise ValueError("invalid push endpoint")
+    parsed = urlparse(endpoint)
+    if parsed.scheme != 'https' or not parsed.hostname:
+        raise ValueError("push endpoint must be a valid https URL")
+    if parsed.username or parsed.password:
+        raise ValueError("push endpoint must not contain credentials")
+    try:
+        infos = socket.getaddrinfo(parsed.hostname, parsed.port or 443, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as e:
+        raise ValueError("push endpoint host could not be resolved") from e
+    if not infos:
+        raise ValueError("push endpoint host could not be resolved")
+    for info in infos:
+        if _address_is_blocked(info[4][0]):
+            raise ValueError("push endpoint resolves to a non-public address")
+    return True
 
 
 def send_push_notifications(mailbox_address: str, payload: dict):
@@ -37,6 +71,16 @@ def _send_one(sub: dict, private_key: str, push_payload: dict, mailbox_address: 
 
     now_iso = datetime.now(timezone.utc).isoformat()
     db = get_standalone_db()
+    try:
+        validate_push_endpoint(sub['endpoint'])
+    except ValueError as endpoint_error:
+        try:
+            db.execute("DELETE FROM push_subscriptions WHERE id=?", (sub['id'],))
+            db.commit()
+        except Exception:
+            log.exception("Failed to delete invalid subscription %s", sub['id'])
+        log.warning("Removed invalid push subscription %s: %s", sub['id'], endpoint_error)
+        return
     try:
         webpush(
             subscription_info={

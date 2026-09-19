@@ -105,6 +105,7 @@ export default {
     }
 
     const domain = String(env.DOMAIN_NAME || "").toLowerCase();
+    const fromHeaderValue = stripHeader(body.from);
     const fromAddress = parseAddress(body.from);
     if (!fromAddress) {
       return json({ error: "invalid sender" }, 400);
@@ -183,7 +184,7 @@ export default {
     const innerBoundary = "b" + crypto.randomUUID().replace(/-/g, "");
     const outerBoundary = hasAttachments ? "b" + crypto.randomUUID().replace(/-/g, "") : null;
 
-    let mimeMessage = `From: ${fromAddress}\r\nTo: ${toList.join(", ")}\r\n`;
+    let mimeMessage = `From: ${fromHeaderValue || fromAddress}\r\nTo: ${toList.join(", ")}\r\n`;
     if (ccList.length > 0) mimeMessage += `Cc: ${ccList.join(", ")}\r\n`;
     mimeMessage += `Subject: ${subject}\r\n`;
     mimeMessage += `Date: ${new Date().toUTCString()}\r\n`;

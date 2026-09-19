@@ -533,6 +533,7 @@ ${LABELS_BLOCK}
       - DOCKFLARE_MASTER_URL=http://dockflare:5000
       - MAIL_DATA_PATH=/data
       - INTERNAL_BOOTSTRAP_SECRET=\${INTERNAL_BOOTSTRAP_SECRET:?set INTERNAL_BOOTSTRAP_SECRET}
+      - MAIL_SECRET_KEY=\${MAIL_SECRET_KEY:?set MAIL_SECRET_KEY}
     volumes:
       - mail_data:/data
     depends_on:

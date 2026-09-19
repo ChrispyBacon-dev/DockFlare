@@ -405,8 +405,6 @@ def load_state():
                 )
             identity_providers.update(idps_to_load)
             agent_cf_token.update(cf_token_to_load)
-            if _migrate_agent_secrets():
-                save_state()
             key_count = len(agent_key_store.list_keys())
             logging.info(
                 "LOAD_STATE: Loaded %s access groups, %s agents and %s agent keys (encrypted backing store).",
@@ -471,7 +469,13 @@ def load_state():
 
                 managed_rules[final_key] = rule_copy
 
-            migration_needed = schema_version < STATE_SCHEMA_VERSION or migrated_count > 0 or tunnel_name_migration_count > 0 or group_migration_count > 0
+            agent_secrets_migrated = False
+            try:
+                agent_secrets_migrated = _migrate_agent_secrets()
+            except Exception as e_agent_migrate:
+                logging.error(f"LOAD_STATE: Agent secret migration failed: {e_agent_migrate}", exc_info=True)
+
+            migration_needed = schema_version < STATE_SCHEMA_VERSION or migrated_count > 0 or tunnel_name_migration_count > 0 or group_migration_count > 0 or agent_secrets_migrated
             if migrated_count > 0:
                 logging.info(f"LOAD_STATE: Migrated {migrated_count} rules to the new key format.")
             if tunnel_name_migration_count > 0:
@@ -898,6 +902,10 @@ def remove_agent(agent_id):
     with state_lock:
         if agent_id in agents:
             del agents[agent_id]
+            try:
+                agent_key_store.clear_agent_tunnel_token(agent_id)
+            except Exception as e:
+                logging.warning(f"Could not clear stored tunnel token for removed agent {agent_id}: {e}")
             save_state()
             return True
         return False
