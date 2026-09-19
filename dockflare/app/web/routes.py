@@ -39,7 +39,9 @@ from app.core.cache import CACHE_ENABLED
 from app.core.state_manager import (
     access_groups,
     agent_inventory_contains_rule,
+    ensure_default_bypass_policy,
     get_agent,
+    get_remote_policy_id,
     load_state,
     managed_rules,
     save_state,
@@ -480,26 +482,14 @@ from cryptography.fernet import Fernet
 @login_required
 def access_policies_page():
     """Renders the Access Policies page."""
-    from app.core import reusable_policies
-
     default_bypass_id = "public-default-bypass"
     if default_bypass_id in access_groups:
         policy = access_groups[default_bypass_id]
-        cf_policy_id = policy.get("cf_policy_id")
+        cf_policy_id = get_remote_policy_id(policy, default_bypass_id)
 
-        if not cf_policy_id or cf_policy_id == default_bypass_id:
+        if not cf_policy_id:
             try:
-                cf_policy = reusable_policies.create_reusable_policy(
-                    name="DockFlare-Default-Public-Access-Bypass",
-                    decision="bypass",
-                    include_rules=[{"everyone": {}}]
-                )
-                if cf_policy and cf_policy.get("id"):
-                    with state_lock:
-                        access_groups[default_bypass_id]["cf_policy_id"] = cf_policy["id"]
-                        access_groups[default_bypass_id]["id"] = cf_policy["id"]
-                        save_state()
-                    logging.info(f"Synced default bypass policy to Cloudflare with ID: {cf_policy['id']}")
+                ensure_default_bypass_policy(flask_app=current_app)
             except Exception as e:
                 logging.error(f"Failed to sync default bypass policy to Cloudflare: {e}", exc_info=True)
 
@@ -1575,7 +1565,7 @@ def ui_add_manual_rule_route():
                 default_bypass_id = "public-default-bypass"
                 if default_bypass_id in access_groups:
                     default_bypass_group = access_groups[default_bypass_id]
-                    cf_policy_id = default_bypass_group.get("cf_policy_id") or default_bypass_group.get("id")
+                    cf_policy_id = get_remote_policy_id(default_bypass_group, default_bypass_id)
 
                     access_group_id = [default_bypass_id]
                     access_policy_type = "group"
@@ -1909,7 +1899,7 @@ def ui_edit_manual_rule_route():
                 default_bypass_id = "public-default-bypass"
                 if default_bypass_id in access_groups:
                     default_bypass_group = access_groups[default_bypass_id]
-                    cf_policy_id = default_bypass_group.get("cf_policy_id") or default_bypass_group.get("id")
+                    cf_policy_id = get_remote_policy_id(default_bypass_group, default_bypass_id)
 
                     access_group_id = [default_bypass_id]
                     access_policy_type = "group"

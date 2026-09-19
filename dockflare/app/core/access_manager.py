@@ -493,6 +493,15 @@ def handle_access_policy_from_labels(rule_key, hostname_config_item):
                         if current_rule:
                             current_rule.update({"access_app_id": rule_working.get("access_app_id"), "access_policy_type": rule_working.get("access_policy_type"), "access_app_config_hash": rule_working.get("access_app_config_hash"), "access_group_id": rule_working.get("access_group_id")})
                 return local_state_changed_by_access_policy
+            else:
+                logging.error(
+                    f"ACCESS_MANAGER: Refusing to create or update Access App for {application_domain}. "
+                    f"'dockflare.access.policy={policy_source_type}' is not a supported value and no "
+                    f"'dockflare.access.custom_rules' were provided. Valid values are 'bypass', "
+                    f"'authenticate', or 'default_tld'. Use 'dockflare.access.group=<group_id>' to attach "
+                    f"an Access Group such as 'authenticated-default'. Existing Access App left untouched."
+                )
+                return False
 
         new_config_hash = generate_access_app_config_hash(
             policy_source_type, desired_session_duration, desired_app_launcher_visible,

@@ -18,6 +18,7 @@
 import json
 import logging
 import os
+import re
 import threading
 from datetime import datetime, timezone
 from typing import Dict, Any, List
@@ -25,6 +26,64 @@ from app import config
 from app.core import agent_key_store
 from app.core.access_policy_rules import normalize_managed_access_group
 from app.core.utils import get_label, get_rule_key, get_source_rule_key
+
+_REMOTE_POLICY_ID_PATTERN = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+def is_remote_policy_id(value, group_id=None):
+    if not value:
+        return False
+    text = str(value)
+    if group_id is not None and text == str(group_id):
+        return False
+    return bool(_REMOTE_POLICY_ID_PATTERN.match(text))
+
+
+def get_remote_policy_id(group, group_id=None):
+    if not group:
+        return None
+    for key in ("cloudflare_policy_id", "cf_policy_id", "id"):
+        value = group.get(key)
+        if is_remote_policy_id(value, group_id):
+            return value
+    return None
+
+
+def set_remote_policy_id(group, policy_id):
+    if not group or not policy_id:
+        return False
+    changed = False
+    for key in ("cloudflare_policy_id", "cf_policy_id", "id"):
+        if group.get(key) != policy_id:
+            group[key] = policy_id
+            changed = True
+    return changed
+
+
+def _resolve_remote_policy(reusable_policies, policy_name, decision, include_rules, require_rules=None, existing_policy_id=None):
+    if existing_policy_id:
+        existing = reusable_policies.get_reusable_policy(existing_policy_id)
+        if existing:
+            return existing_policy_id
+        logging.warning(f"Cloudflare policy '{existing_policy_id}' ({policy_name}) not found, searching by name")
+    existing_by_name = reusable_policies.find_policy_by_name(policy_name)
+    if existing_by_name and existing_by_name.get("id"):
+        logging.info(f"Found existing policy '{policy_name}' in Cloudflare with ID: {existing_by_name.get('id')}")
+        return existing_by_name.get("id")
+    created = reusable_policies.create_reusable_policy(
+        name=policy_name,
+        decision=decision,
+        include_rules=include_rules,
+        require_rules=require_rules,
+    )
+    if created and created.get("id"):
+        logging.info(f"Created policy '{policy_name}' in Cloudflare with ID: {created.get('id')}")
+        return created.get("id")
+    logging.error(f"Failed to create policy '{policy_name}' in Cloudflare")
+    return None
+
 
 STATE_SCHEMA_VERSION = 3
 RULE_LIFECYCLE_DEFAULTS = {
@@ -417,40 +476,22 @@ def ensure_default_bypass_policy(flask_app=None):
                 del existing_policy["hide_from_ui"]
                 save_state()
 
-            cf_policy_id = existing_policy.get("cf_policy_id") or existing_policy.get("id")
+            remote_policy_id = get_remote_policy_id(existing_policy, default_bypass_id)
 
-            if flask_app and cf_policy_id != default_bypass_id:  # Has a real CF ID
+            if flask_app and getattr(config, "CF_ACCOUNT_ID", None):
                 with flask_app.app_context():
                     try:
-                        cf_policy = reusable_policies.get_reusable_policy(cf_policy_id)
-                        if cf_policy:
-                            logging.debug(f"Verified default bypass policy exists in Cloudflare: {cf_policy_id}")
-                        else:
-                            logging.warning(f"Default bypass policy {cf_policy_id} not found in Cloudflare, searching by name")
-                            existing_by_name = reusable_policies.find_policy_by_name(cf_policy_name)
-                            if existing_by_name:
-                                found_policy_id = existing_by_name.get("id")
-                                logging.info(f"Found existing bypass policy by name with ID: {found_policy_id}")
-                                existing_policy["cloudflare_policy_id"] = found_policy_id
-                                existing_policy["cf_policy_id"] = found_policy_id
-                                save_state()
-                            else:
-                                logging.info(f"No existing bypass policy found, creating new one")
-                                new_policy = reusable_policies.create_reusable_policy(
-                                    name=cf_policy_name,
-                                    decision="bypass",
-                                    include_rules=[{"everyone": {}}]
-                                )
-                                if new_policy and new_policy.get("id"):
-                                    new_cf_policy_id = new_policy["id"]
-                                    logging.info(f"Created bypass policy in Cloudflare with ID: {new_cf_policy_id}")
-                                    existing_policy["cloudflare_policy_id"] = new_cf_policy_id
-                                    existing_policy["cf_policy_id"] = new_cf_policy_id
-                                    save_state()
-                                else:
-                                    logging.error(f"Failed to create bypass policy in Cloudflare")
+                        resolved_id = _resolve_remote_policy(
+                            reusable_policies,
+                            cf_policy_name,
+                            "bypass",
+                            [{"everyone": {}}],
+                            existing_policy_id=remote_policy_id,
+                        )
+                        if resolved_id and set_remote_policy_id(existing_policy, resolved_id):
+                            save_state()
                     except Exception as e:
-                        logging.error(f"Error verifying/updating default bypass policy in Cloudflare: {e}")
+                        logging.error(f"Error verifying/updating default bypass policy in Cloudflare: {e}", exc_info=True)
 
 def ensure_authenticated_default_policy(flask_app=None):
 
@@ -592,55 +633,39 @@ def ensure_authenticated_default_policy(flask_app=None):
             if needs_state_update:
                 save_state()
 
-            cf_policy_id = existing_policy.get("cloudflare_policy_id") or existing_policy.get("cf_policy_id") or existing_policy.get("id")
+            remote_policy_id = get_remote_policy_id(existing_policy, authenticated_default_id)
 
-            if flask_app and cf_policy_id != authenticated_default_id:
+            if flask_app and getattr(config, "CF_ACCOUNT_ID", None):
                 with flask_app.app_context():
                     try:
-                        cf_policy = reusable_policies.get_reusable_policy(cf_policy_id)
-                        if cf_policy:
-                            logging.debug(f"Verified default authenticated policy exists in Cloudflare: {cf_policy_id}")
-
-                            if needs_cf_update:
-                                logging.info(f"Updating Cloudflare reusable policy {cf_policy_id} with strict email and login method matching")
-                                updated_policy = reusable_policies.update_reusable_policy(
-                                    cf_policy_id,
-                                    cf_policy_name,
-                                    "allow",
-                                    include_rules=[{"email": {"email": account_email}}],
-                                    require_rules=[{"login_method": {"id": onetimepin_cf_id}}]
-                                )
-                                if updated_policy:
-                                    logging.info(f"Successfully updated Cloudflare policy {cf_policy_id} with correct structure")
-                                else:
-                                    logging.error(f"Failed to update Cloudflare policy {cf_policy_id}")
-                        else:
-                            logging.warning(f"Default authenticated policy {cf_policy_id} not found in Cloudflare, searching by name")
-                            existing_by_name = reusable_policies.find_policy_by_name(cf_policy_name)
-                            if existing_by_name:
-                                found_policy_id = existing_by_name.get("id")
-                                logging.info(f"Found existing authenticated-default policy by name with ID: {found_policy_id}")
-                                existing_policy["cloudflare_policy_id"] = found_policy_id
-                                existing_policy["cf_policy_id"] = found_policy_id
-                                save_state()
+                        resolved_id = _resolve_remote_policy(
+                            reusable_policies,
+                            cf_policy_name,
+                            "allow",
+                            [{"email": {"email": account_email}}],
+                            require_rules=[{"login_method": {"id": onetimepin_cf_id}}],
+                            existing_policy_id=remote_policy_id,
+                        )
+                        if not resolved_id:
+                            logging.error("Failed to create/verify authenticated-default policy in Cloudflare")
+                            return
+                        if needs_cf_update:
+                            logging.info(f"Updating Cloudflare reusable policy {resolved_id} with strict email and login method matching")
+                            updated_policy = reusable_policies.update_reusable_policy(
+                                resolved_id,
+                                cf_policy_name,
+                                "allow",
+                                include_rules=[{"email": {"email": account_email}}],
+                                require_rules=[{"login_method": {"id": onetimepin_cf_id}}]
+                            )
+                            if updated_policy:
+                                logging.info(f"Successfully updated Cloudflare policy {resolved_id} with correct structure")
                             else:
-                                logging.info(f"No existing authenticated-default policy found, creating new one")
-                                new_policy = reusable_policies.create_reusable_policy(
-                                    name=cf_policy_name,
-                                    decision="allow",
-                                    include_rules=[{"email": {"email": account_email}}],
-                                    require_rules=[{"login_method": {"id": onetimepin_cf_id}}]
-                                )
-                                if new_policy and new_policy.get("id"):
-                                    new_cf_policy_id = new_policy["id"]
-                                    logging.info(f"Created authenticated-default policy in Cloudflare with ID: {new_cf_policy_id}")
-                                    existing_policy["cloudflare_policy_id"] = new_cf_policy_id
-                                    existing_policy["cf_policy_id"] = new_cf_policy_id
-                                    save_state()
-                                else:
-                                    logging.error(f"Failed to create authenticated-default policy in Cloudflare")
+                                logging.error(f"Failed to update Cloudflare policy {resolved_id}")
+                        if set_remote_policy_id(existing_policy, resolved_id):
+                            save_state()
                     except Exception as e:
-                        logging.error(f"Error verifying/updating default authenticated policy in Cloudflare: {e}")
+                        logging.error(f"Error verifying/updating default authenticated policy in Cloudflare: {e}", exc_info=True)
 
 def save_state():
     with state_lock:
