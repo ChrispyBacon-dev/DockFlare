@@ -34,27 +34,15 @@ def _parse_hostname(public_url):
     return parsed.hostname
 
 
-def _admin_bypass_emails():
-    emails = []
-    try:
-        from flask import current_app
-        emails = list(current_app.config.get('OAUTH_AUTHORIZED_USERS') or [])
-    except Exception:
-        emails = []
-    if not emails:
-        emails = list(getattr(config, 'OAUTH_AUTHORIZED_USERS', []) or [])
-    return sorted({email.strip() for email in emails if isinstance(email, str) and '@' in email})
-
-
-def _create_admin_allow_policy(account_id, app_uuid, emails):
+def _create_admin_bypass_policy(account_id, app_uuid):
     resp = cf_api_request(
         "POST",
         f"/accounts/{account_id}/access/apps/{app_uuid}/policies",
         json_data={
-            "name": "DockFlare Admin Access",
-            "decision": "allow",
+            "name": "DockFlare Admin Bypass",
+            "decision": "bypass",
             "precedence": 2,
-            "include": [{"email": {"email": email}} for email in emails]
+            "include": [{"everyone": {}}]
         }
     )
     return resp.get("result", {}).get("id")
@@ -83,31 +71,26 @@ def ensure_agent_access_hardening():
         logging.warning(f"Could not list Cloudflare Access policies for the Agent API app: {e}")
         return
 
-    admin_emails = _admin_bypass_emails()
-    has_admin_allow = False
-    broad_bypass_ids = []
+    if any(policy.get("decision") == "bypass" and _policy_includes_everyone(policy) for policy in policies):
+        return
+
     for policy in policies:
-        decision = policy.get("decision")
-        policy_id = policy.get("id") or policy.get("uid")
-        if decision == "bypass" and _policy_includes_everyone(policy):
-            broad_bypass_ids.append(policy_id)
-        elif decision == "allow" and not _policy_includes_everyone(policy):
-            has_admin_allow = True
+        if policy.get("name") == "DockFlare Admin Access" and policy.get("decision") == "allow":
+            policy_id = policy.get("id") or policy.get("uid")
+            try:
+                cf_api_request("DELETE", f"/accounts/{account_id}/access/apps/{app_uuid}/policies/{policy_id}")
+                logging.warning("Removed the redundant DockFlare Admin Access policy from the Agent API app")
+            except Exception as e:
+                logging.warning(f"Could not remove the redundant admin access policy {policy_id}: {e}")
 
-    for policy_id in broad_bypass_ids:
-        try:
-            cf_api_request("DELETE", f"/accounts/{account_id}/access/apps/{app_uuid}/policies/{policy_id}")
-            logging.warning("Removed an everyone-bypass policy from the Cloudflare Access Agent API application")
-        except Exception as e:
-            logging.warning(f"Could not remove broad Access bypass policy {policy_id}: {e}")
-
-    if not has_admin_allow and admin_emails:
-        try:
-            new_id = _create_admin_allow_policy(account_id, app_uuid, admin_emails)
-            if new_id:
-                logging.info("Created a scoped admin access policy for the Cloudflare Access Agent API application")
-        except Exception as e:
-            logging.warning(f"Could not create scoped admin access policy: {e}")
+    try:
+        new_id = _create_admin_bypass_policy(account_id, app_uuid)
+        if new_id:
+            logging.info(
+                "Ensured the Agent API Access app allows the admin UI; the endpoints still require the master or agent API key"
+            )
+    except Exception as e:
+        logging.warning(f"Could not ensure the admin bypass policy for the Agent API app: {e}")
 
 
 def ensure_agent_service_token(public_url):
@@ -167,10 +150,7 @@ def ensure_agent_service_token(public_url):
     policy_result = policy_resp.get("result", {})
     policy_id = policy_result.get("id")
 
-    admin_emails = _admin_bypass_emails()
-    admin_policy_id = None
-    if admin_emails:
-        admin_policy_id = _create_admin_allow_policy(account_id, app_uuid, admin_emails)
+    admin_policy_id = _create_admin_bypass_policy(account_id, app_uuid)
 
     agent_key_store.store_service_token_secret(client_secret)
 
@@ -181,7 +161,7 @@ def ensure_agent_service_token(public_url):
         "policy_id": policy_id,
     }
     if admin_policy_id:
-        token_data["admin_policy_id"] = admin_policy_id
+        token_data["bypass_policy_id"] = admin_policy_id
     set_agent_cf_token(token_data)
 
     return {**token_data, "client_secret": client_secret}
