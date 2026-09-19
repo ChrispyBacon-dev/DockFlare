@@ -21,6 +21,7 @@
 | **账户** | **Workers Scripts** | **编辑** | 部署入站/出站 Worker |
 | **账户** | **Workers KV Storage** | **编辑** | 在边缘实时执行配额策略 |
 | **账户** | **R2 Storage** | **编辑** | 创建和管理中转存储桶 |
+| **账户** | **Access: Apps and Policies** | **编辑** | 当 Webmail 受 Cloudflare Access 保护时，为入站邮件 Webhook 路径创建绕过策略 |
 | **区域** | **Email Routing** | **编辑** | 启用路由并管理规则 |
 | **区域** | **DNS** | **编辑** | 创建 MX、SPF、DMARC 和 DKIM 记录 |
 

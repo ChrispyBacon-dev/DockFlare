@@ -21,6 +21,7 @@ Pakiet poczty e-mail wymaga dodatkowych uprawnień w istniejącym tokenie API Do
 | **Konto** | **Workers Scripts** | **Edycja** | Wdrażanie workerów przychodzących/wychodzących |
 | **Konto** | **Workers KV Storage** | **Edycja** | Egzekwowanie limitów w czasie rzeczywistym na brzegu sieci |
 | **Konto** | **R2 Storage** | **Edycja** | Tworzenie i zarządzanie zasobnikami tranzytowymi |
+| **Konto** | **Access: Apps and Policies** | **Edycja** | Tworzenie obejścia dla ścieżki webhooka przychodzącej poczty, gdy Webmail jest chroniony przez Cloudflare Access |
 | **Strefa** | **Email Routing** | **Edycja** | Aktywacja routingu i zarządzanie regułami |
 | **Strefa** | **DNS** | **Edycja** | Tworzenie rekordów MX, SPF, DMARC i DKIM |
 

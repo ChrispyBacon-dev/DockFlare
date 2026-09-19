@@ -21,6 +21,7 @@ Die E-Mail-Suite benötigt zusätzliche Berechtigungen für Ihr vorhandenes Dock
 | **Account** | **Workers Scripts** | **Bearbeiten** | Bereitstellung von Inbound-/Outbound-Workern |
 | **Account** | **Workers KV Storage** | **Bearbeiten** | Echtzeit-Quota-Durchsetzung am Edge |
 | **Account** | **R2 Storage** | **Bearbeiten** | Erstellen und Verwalten von Transit-Buckets |
+| **Account** | **Access: Apps and Policies** | **Bearbeiten** | Bypass-Richtlinie für den eingehenden E-Mail-Webhook-Pfad erstellen, wenn Webmail durch Cloudflare Access geschützt ist |
 | **Zone** | **E-Mail-Routing** | **Bearbeiten** | Routing aktivieren und Regeln verwalten |
 | **Zone** | **DNS** | **Bearbeiten** | Erstellen von MX-, SPF-, DMARC- und DKIM-Einträgen |
 

@@ -413,3 +413,158 @@ def setup_catchall_routing_rule(zone_id, worker_name):
         logging.warning(f"Could not GET catch_all rule: {e}")
     logging.info(f"Setting catch-all routing rule to worker {worker_name} via dedicated endpoint")
     return cf_api_request('PUT', f'/zones/{zone_id}/email/routing/rules/catch_all', json_data=data)
+
+
+WEBHOOK_ACCESS_PATH = "/api/v1/webhook/inbound"
+WEBHOOK_ACCESS_APP_NAME = "DockFlare Mail Webhook Bypass"
+
+
+def _normalize_access_destination(value):
+    text = str(value or "").strip().lower()
+    if text.startswith("https://"):
+        text = text[len("https://"):]
+    elif text.startswith("http://"):
+        text = text[len("http://"):]
+    return text.rstrip("/")
+
+
+def _access_app_destinations(app):
+    destinations = []
+    domain = app.get("domain")
+    path = app.get("path")
+    if domain:
+        domain_text = _normalize_access_destination(domain)
+        if path and not domain_text.endswith("/" + str(path).strip("/").lower()):
+            destinations.append(f"{domain_text}/{str(path).strip('/')}")
+        else:
+            destinations.append(domain_text)
+    for extra in app.get("self_hosted_domains") or []:
+        destinations.append(_normalize_access_destination(extra))
+    return [d for d in destinations if d]
+
+
+def _access_destination_covers(destination, host, path):
+    destination = _normalize_access_destination(destination)
+    if not destination:
+        return False
+    if "/" in destination:
+        dest_host, _, dest_path = destination.partition("/")
+        dest_path = "/" + dest_path.lstrip("/")
+    else:
+        dest_host, dest_path = destination, "/"
+    host = _normalize_access_destination(host)
+    if dest_host.startswith("*."):
+        host_matches = host.endswith(dest_host[1:])
+    else:
+        host_matches = dest_host == host
+    if not host_matches:
+        return False
+    if dest_path in ("", "/"):
+        return True
+    return path == dest_path or path.startswith(dest_path.rstrip("/") + "/")
+
+
+def _find_webhook_bypass_app(apps, host, path):
+    target = f"{_normalize_access_destination(host)}{path}"
+    for app in apps:
+        for destination in _access_app_destinations(app):
+            if destination == target:
+                return app
+    return None
+
+
+def _app_has_bypass_policy(account_id, app_uuid):
+    try:
+        response = cf_api_request(
+            'GET', f'/accounts/{account_id}/access/apps/{app_uuid}/policies'
+        )
+        for policy in response.get('result') or []:
+            if policy.get('decision') == 'bypass':
+                return True
+    except Exception as e:
+        logging.warning(f"Could not read Access policies for app {app_uuid}: {e}")
+    return False
+
+
+def _create_webhook_bypass_policy(account_id, app_uuid):
+    cf_api_request(
+        'POST',
+        f'/accounts/{account_id}/access/apps/{app_uuid}/policies',
+        json_data={
+            "name": "DockFlare Webhook Bypass",
+            "decision": "bypass",
+            "precedence": 1,
+            "include": [{"everyone": {}}],
+        },
+    )
+
+
+def ensure_webhook_access_bypass(webmail_hostname):
+    account_id = getattr(config, 'CF_ACCOUNT_ID', None)
+    if not account_id or not webmail_hostname:
+        return None
+
+    host = _normalize_access_destination(webmail_hostname)
+    path = WEBHOOK_ACCESS_PATH
+
+    try:
+        response = cf_api_request(
+            'GET', f'/accounts/{account_id}/access/apps', params={"per_page": 100}
+        )
+        apps = response.get('result') or []
+    except Exception as e:
+        logging.warning(
+            f"Could not check Cloudflare Access for webhook bypass on {host}: {e}. "
+            f"The email webhook may be blocked if {host} sits behind Access."
+        )
+        return None
+
+    existing = _find_webhook_bypass_app(apps, host, path)
+    if existing:
+        app_uuid = existing.get('id') or existing.get('uid')
+        if app_uuid and not _app_has_bypass_policy(account_id, app_uuid):
+            try:
+                _create_webhook_bypass_policy(account_id, app_uuid)
+                logging.info(f"Added missing webhook bypass policy to Access app {app_uuid}")
+            except Exception as e:
+                logging.warning(f"Could not add webhook bypass policy to {app_uuid}: {e}")
+        return app_uuid
+
+    covered = any(
+        _access_destination_covers(destination, host, path)
+        for app in apps
+        for destination in _access_app_destinations(app)
+    )
+    if not covered:
+        return None
+
+    try:
+        app_response = cf_api_request(
+            'POST',
+            f'/accounts/{account_id}/access/apps',
+            json_data={
+                "name": WEBHOOK_ACCESS_APP_NAME,
+                "domain": f"{host}{path}",
+                "type": "self_hosted",
+                "session_duration": "24h",
+                "app_launcher_visible": False,
+            },
+        )
+        app_result = app_response.get('result') or {}
+        app_uuid = app_result.get('id') or app_result.get('uid')
+        if not app_uuid:
+            logging.warning(f"Cloudflare did not return an Access app id for {host}{path}")
+            return None
+        _create_webhook_bypass_policy(account_id, app_uuid)
+        logging.info(
+            f"Created Cloudflare Access webhook bypass app for {host}{path} "
+            f"(inbound email worker can now reach mail-manager)"
+        )
+        return app_uuid
+    except Exception as e:
+        logging.warning(
+            f"Could not create Access webhook bypass app for {host}{path}: {e}. "
+            f"Ensure the API token has 'Access: Apps and Policies: Edit'."
+        )
+        return None
+

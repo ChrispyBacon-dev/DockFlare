@@ -163,6 +163,7 @@ def setup_email_domain():
         email_manager.deploy_worker(inbound_worker_name, _read_worker_template('inbound_worker.js'), inbound_bindings)
         email_manager.set_worker_cron(inbound_worker_name, ['*/5 * * * *'])
         email_manager.setup_catchall_routing_rule(zone_id, inbound_worker_name)
+        email_manager.ensure_webhook_access_bypass(webmail_hostname)
 
         try:
             email_manager.enable_email_sending(zone_id, zone_name)
@@ -430,6 +431,7 @@ def _redeploy_inbound_worker(email_cfg, domain):
 
     email_manager.deploy_worker(d['inbound_worker_name'], _read_worker_template('inbound_worker.js'), inbound_bindings)
     email_manager.set_worker_cron(d['inbound_worker_name'], ['*/5 * * * *'])
+    email_manager.ensure_webhook_access_bypass(webmail_hostname)
 
 @email_bp.route('/mailbox/create', methods=['POST'])
 @login_required
