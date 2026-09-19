@@ -124,24 +124,22 @@ def roll_agent_key(agent_id):
             cloudflared_agent_state["last_action_status"] = f"Error: Agent '{agent_id}' not found."
             return redirect(url_for('web.agents_page'))
 
-        old_api_key = agent.get("api_key")
-
         new_api_key = secrets.token_urlsafe(32)
 
-        success = update_agent(agent_id, {"api_key": new_api_key})
-        if not success:
-            cloudflared_agent_state["last_action_status"] = f"Error: Failed to update agent '{agent_id}' with new API key."
-            return redirect(url_for('web.agents_page'))
-
-        if old_api_key:
-            revoke_agent_key(old_api_key)
+        from app.core import agent_key_store as _agent_key_store
+        revoked = 0
+        for existing_key, existing_meta in _agent_key_store.list_keys().items():
+            if (existing_meta or {}).get("bound_agent_id") == agent_id and (existing_meta or {}).get("status", "active") == "active":
+                if revoke_agent_key(existing_key):
+                    revoked += 1
 
         now_iso = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
         add_agent_key(new_api_key, {
             "bound_agent_id": agent_id,
             "created_at": now_iso,
             "last_used_at": None,
-            "rolled_from": old_api_key[:8] + "..." if old_api_key else None
+            "status": "active",
+            "rolled_from_previous": bool(revoked),
         })
 
         cloudflared_agent_state["last_action_status"] = f"Success: API key rolled for agent '{agent.get('display_name', agent_id)}'. Agent must be restarted with new key: {new_api_key}"
@@ -263,9 +261,6 @@ def add_security_headers_bp(response):
     if is_https:
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
 
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-Requested-With, Authorization'
     return response
 
 @bp.context_processor

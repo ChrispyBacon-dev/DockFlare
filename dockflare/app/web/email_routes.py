@@ -7,6 +7,7 @@ import os
 import secrets
 import time
 import jwt
+from urllib.parse import urlparse
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, current_app
 from flask_login import login_required, current_user
 from cryptography.hazmat.primitives import serialization
@@ -23,21 +24,73 @@ def _read_worker_template(filename):
     with open(os.path.join(_WORKER_TEMPLATE_DIR, filename), 'r') as f:
         return f.read()
 
+
+def _outbound_bindings(domain_name, auth_secret, quota_kv_ns_id=None):
+    bindings = [
+        {"type": "send_email", "name": "SEND_EMAIL"},
+        {"type": "secret_text", "name": "AUTH_SECRET", "text": auth_secret},
+        {"type": "plain_text", "name": "DOMAIN_NAME", "text": domain_name},
+        {"type": "plain_text", "name": "RATE_LIMIT_PER_HOUR", "text": str(getattr(config, 'EMAIL_OUTBOUND_RATE_LIMIT_PER_HOUR', 50))},
+        {"type": "plain_text", "name": "RATE_LIMIT_PER_DAY", "text": str(getattr(config, 'EMAIL_OUTBOUND_RATE_LIMIT_PER_DAY', 200))},
+    ]
+    if quota_kv_ns_id:
+        bindings.append({"type": "kv_namespace", "name": "RATE_LIMIT_KV", "namespace_id": quota_kv_ns_id})
+    return bindings
+
 email_bp = Blueprint('email', __name__, url_prefix='/email')
+
+def _public_email_config(email_cfg):
+    public = {
+        "enabled": email_cfg.get("enabled", False),
+        "domains": {},
+    }
+    for domain, domain_cfg in (email_cfg.get("domains") or {}).items():
+        public["domains"][domain] = {
+            "zone_id": domain_cfg.get("zone_id"),
+            "zone_name": domain_cfg.get("zone_name"),
+            "email_routing_enabled": domain_cfg.get("email_routing_enabled"),
+            "email_sending_status": domain_cfg.get("email_sending_status"),
+            "r2_bucket": domain_cfg.get("r2_bucket"),
+            "inbound_worker_name": domain_cfg.get("inbound_worker_name"),
+            "outbound_worker_name": domain_cfg.get("outbound_worker_name"),
+            "catch_all_address": domain_cfg.get("catch_all_address"),
+            "mailboxes": {
+                address: {
+                    "display_name": mailbox.get("display_name"),
+                    "quota_bytes": mailbox.get("quota_bytes"),
+                    "created_at": mailbox.get("created_at"),
+                }
+                for address, mailbox in (domain_cfg.get("mailboxes") or {}).items()
+            },
+        }
+    return public
+
+
+def _allowed_webmail_origins():
+    allowed = set()
+    webmail_hostname = _get_webmail_hostname()
+    if webmail_hostname:
+        allowed.add(webmail_hostname.lower())
+    for domain in (config.EMAIL_CONFIG.get('domains') or {}).keys():
+        allowed.add(f"mail.{domain}".lower())
+    return allowed
+
 
 def _webmail_origin():
     request_origin = request.headers.get('Origin', '')
+    allowed_hosts = _allowed_webmail_origins()
+    fallback = f"https://{sorted(allowed_hosts)[0]}" if allowed_hosts else 'null'
     if not request_origin:
-        return '*'
-        
-    # Allow any origin that looks like our mail subdomains
-    if '.dockflare.app' in request_origin or 'localhost' in request_origin or '127.0.0.1' in request_origin:
-        return request_origin
-
-    # Fallback to the first domain or *
-    domains = config.EMAIL_CONFIG.get('domains', {})
-    first_domain = next(iter(domains), '')
-    return f"https://mail.{first_domain}" if first_domain else '*'
+        return fallback
+    try:
+        parsed = urlparse(request_origin)
+    except Exception:
+        return fallback
+    if parsed.scheme in ('http', 'https') and parsed.hostname:
+        host = parsed.hostname.lower()
+        if host in allowed_hosts or host in ('localhost', '127.0.0.1', '::1'):
+            return request_origin
+    return fallback
 
 def save_email_config(email_config_data):
     cfg, fernet = load_encrypted_config_with_cipher()
@@ -70,7 +123,7 @@ def _get_mail_manager_state():
 def email_page():
     zones = list_account_zones() or []
     mail_manager_state = _get_mail_manager_state()
-    return render_template('email.html', zones=zones, email_config=config.EMAIL_CONFIG, email_enabled=config.EMAIL_ENABLED, mail_manager_state=mail_manager_state, cf_account_id=config.CF_ACCOUNT_ID or '')
+    return render_template('email.html', zones=zones, email_config=_public_email_config(config.EMAIL_CONFIG), email_enabled=config.EMAIL_ENABLED, mail_manager_state=mail_manager_state, cf_account_id=config.CF_ACCOUNT_ID or '')
 
 @email_bp.route('/setup-domain', methods=['POST'])
 @login_required
@@ -172,10 +225,7 @@ def setup_email_domain():
 
         email_sending_status = email_manager.get_email_sending_status(zone_id, zone_name)
 
-        outbound_bindings = [
-            {"type": "send_email", "name": "SEND_EMAIL"},
-            {"type": "secret_text", "name": "AUTH_SECRET", "text": outbound_auth_secret}
-        ]
+        outbound_bindings = _outbound_bindings(zone_name, outbound_auth_secret, quota_kv_ns_id)
 
         email_manager.deploy_worker(outbound_worker_name, _read_worker_template('outbound_worker.js'), outbound_bindings)
 
@@ -413,10 +463,7 @@ def local_domains():
 
 def _redeploy_outbound_worker(email_cfg, domain):
     d = email_cfg['domains'][domain]
-    outbound_bindings = [
-        {"type": "send_email", "name": "SEND_EMAIL"},
-        {"type": "secret_text", "name": "AUTH_SECRET", "text": d['outbound_auth_secret']}
-    ]
+    outbound_bindings = _outbound_bindings(domain, d['outbound_auth_secret'], d.get('quota_kv_namespace_id'))
     email_manager.deploy_worker(d['outbound_worker_name'], _read_worker_template('outbound_worker.js'), outbound_bindings)
 
 def _redeploy_inbound_worker(email_cfg, domain):
@@ -618,7 +665,7 @@ def update_r2_credentials():
 @email_bp.route('/status', methods=['GET'])
 @login_required
 def email_status_api():
-    return jsonify({'success': True, 'config': config.EMAIL_CONFIG})
+    return jsonify({'success': True, 'config': _public_email_config(config.EMAIL_CONFIG)})
 
 @email_bp.route('/verify-dns', methods=['POST'])
 @login_required

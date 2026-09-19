@@ -817,6 +817,8 @@
   const noRevokedKeysMessage = document.getElementById('no-revoked-keys');
 
   
+  const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+
   const renderAgentsTable = (agents) => {
     agentsTableBody.innerHTML = '';
     if (!agents || Object.keys(agents).length === 0) {
@@ -838,10 +840,10 @@
       const connectorVersion = agent.connector_version || null;
       const connectorPlatform = agent.connector_platform || null;
       const cloudflaredVersion = connectorVersion
-        ? `<span class="text-sm font-medium">${connectorVersion}</span>${connectorPlatform ? `<br><span class="text-xs text-base-content/40 font-normal">${connectorPlatform}</span>` : ''}`
+        ? `<span class="text-sm font-medium">${escapeHtml(connectorVersion)}</span>${connectorPlatform ? `<br><span class="text-xs text-base-content/40 font-normal">${escapeHtml(connectorPlatform)}</span>` : ''}`
         : na;
       const originIp = agent.connector_origin_ip
-        ? `<span class="font-mono text-sm">${agent.connector_origin_ip}</span>`
+        ? `<span class="font-mono text-sm">${escapeHtml(agent.connector_origin_ip)}</span>`
         : na;
 
       const migrationStatus = agent.migration_status;
@@ -861,20 +863,20 @@
 
       tr.innerHTML = `
         <td class="px-4 py-3 whitespace-nowrap" data-label="${t('agents.agent_id')}">
-          <span class="font-mono text-xs text-base-content/50 cursor-help" title="${agentId}">${agentId.substring(0, 8)}…</span>
+          <span class="font-mono text-xs text-base-content/50 cursor-help" title="${escapeHtml(agentId)}">${escapeHtml(agentId.substring(0, 8))}…</span>
         </td>
         <td class="px-4 py-3 whitespace-nowrap" data-label="${t('agents.display_name')}">
-          <span class="text-sm font-medium">${agent.display_name || na}</span>
+          <span class="text-sm font-medium">${agent.display_name ? escapeHtml(agent.display_name) : na}</span>
         </td>
         <td class="px-4 py-3 whitespace-nowrap" data-label="${t('agents.version')}">
-          <span class="text-sm text-base-content/60">${agent.version || na}</span>
+          <span class="text-sm text-base-content/60">${agent.version ? escapeHtml(agent.version) : na}</span>
         </td>
         <td class="px-4 py-3" data-label="${t('agents.status')}">
           <div class="flex flex-wrap gap-1">${statusHtml}</div>
         </td>
         <td class="px-4 py-3 text-center" data-label="${t('agents.heart_beat')}">${ledStripHtml}</td>
         <td class="px-4 py-3 whitespace-nowrap" data-label="${t('agents.assigned_tunnel')}">
-          <span class="text-sm">${agent.assigned_tunnel_name || na}</span>
+          <span class="text-sm">${agent.assigned_tunnel_name ? escapeHtml(agent.assigned_tunnel_name) : na}</span>
         </td>
         <td class="px-4 py-3" data-label="${t('agents.migration')}">${migrationHtml}${migrationStatus && (migrationStatus.has_conflicts || migrationStatus.has_orphaned) ? `<button class="btn btn-xs btn-info ml-2 btn-migration-assistant" data-agent-id="${agentId}" title="Open Migration Assistant">Resolve</button>` : ''}</td>
         <td class="px-4 py-3 whitespace-nowrap" data-label="${t('agents.cloudflared_version')}">${cloudflaredVersion}</td>

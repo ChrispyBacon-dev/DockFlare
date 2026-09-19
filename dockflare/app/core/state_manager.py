@@ -91,6 +91,80 @@ def _resolve_remote_policy(reusable_policies, policy_name, decision, include_rul
     return None
 
 
+_AGENT_STATE_SECRET_FIELDS = ("api_key", "assigned_tunnel_token")
+
+
+def _sanitize_agent_for_state(agent):
+    clean = dict(agent)
+    for field in _AGENT_STATE_SECRET_FIELDS:
+        clean.pop(field, None)
+    try:
+        token = agent_key_store.get_agent_tunnel_token(agent.get("id"))
+    except Exception:
+        token = None
+    if token:
+        clean["has_tunnel_token"] = True
+    commands = []
+    for command in clean.get("commands") or []:
+        if isinstance(command, dict):
+            command = {key: value for key, value in command.items() if key not in ("token", "tunnel_token")}
+        commands.append(command)
+    clean["commands"] = commands
+    return clean
+
+
+def _scrub_secret_fields(value):
+    if isinstance(value, dict):
+        return {
+            key: _scrub_secret_fields(item)
+            for key, item in value.items()
+            if key not in ("token", "tunnel_token", "api_key", "assigned_tunnel_token")
+        }
+    if isinstance(value, list):
+        return [_scrub_secret_fields(item) for item in value]
+    return value
+
+
+def _migrate_agent_secrets():
+    moved_keys = 0
+    moved_tokens = 0
+    for agent_id, agent_data in list(agents.items()):
+        if not isinstance(agent_data, dict):
+            continue
+        legacy_key = agent_data.get("api_key")
+        if isinstance(legacy_key, str) and legacy_key:
+            existing = agent_key_store.get_key(legacy_key)
+            metadata = dict(existing) if existing else {}
+            metadata.setdefault("bound_agent_id", agent_id)
+            metadata.setdefault("status", "active")
+            agent_key_store.upsert_key(legacy_key, metadata)
+            moved_keys += 1
+        legacy_token = agent_data.get("assigned_tunnel_token")
+        if isinstance(legacy_token, str) and legacy_token:
+            agent_key_store.store_agent_tunnel_token(agent_id, legacy_token)
+            moved_tokens += 1
+        for command in agent_data.get("commands") or []:
+            if not isinstance(command, dict):
+                continue
+            if command.get("action") == "start_tunnel" and not command.get("token"):
+                token = agent_key_store.get_agent_tunnel_token(agent_id)
+                if token:
+                    command["token"] = token
+            elif command.get("action") == "restart_tunnel" and not command.get("tunnel_token"):
+                token = agent_key_store.get_agent_tunnel_token(agent_id)
+                if token:
+                    command["tunnel_token"] = token
+        agent_data.pop("api_key", None)
+        agent_data.pop("assigned_tunnel_token", None)
+    if moved_keys or moved_tokens:
+        logging.warning(
+            "STATE_SECURITY: moved %s plaintext agent key(s) and %s tunnel token(s) out of state.json into the encrypted store",
+            moved_keys,
+            moved_tokens,
+        )
+    return bool(moved_keys or moved_tokens)
+
+
 STATE_SCHEMA_VERSION = 3
 RULE_LIFECYCLE_DEFAULTS = {
     "source_rule_key": None,
@@ -331,6 +405,8 @@ def load_state():
                 )
             identity_providers.update(idps_to_load)
             agent_cf_token.update(cf_token_to_load)
+            if _migrate_agent_secrets():
+                save_state()
             key_count = len(agent_key_store.list_keys())
             logging.info(
                 "LOAD_STATE: Loaded %s access groups, %s agents and %s agent keys (encrypted backing store).",
@@ -698,8 +774,15 @@ def save_state():
         serializable_rules = {}
         rules_to_iterate = list(managed_rules.items())
         groups_to_iterate = dict(access_groups)
-        agents_to_iterate = dict(agents)
-        decommissions_to_iterate = dict(agent_decommissions)
+        agents_to_iterate = {
+            agent_id: _sanitize_agent_for_state(agent_data)
+            for agent_id, agent_data in agents.items()
+            if isinstance(agent_data, dict)
+        }
+        decommissions_to_iterate = {
+            operation_id: _scrub_secret_fields(operation)
+            for operation_id, operation in agent_decommissions.items()
+        }
         idps_to_iterate = dict(identity_providers)
         cf_token_to_iterate = dict(agent_cf_token)
 

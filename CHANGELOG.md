@@ -12,6 +12,16 @@ All notable changes to this project will be documented in this file.
 - **Email domain lifecycle:** Tearing down a domain now removes its webhook bypass Access app, creating a mailbox that already has a routing rule updates it instead of failing with a 409, and quota KV namespace creation no longer logs "already exists" on every start.
 - **Access Group country picker:** With a lot of countries selected the chip list wouldn't scroll and the dropdown was clipped by the modal. It now scrolls, and the dropdown renders outside the modal.
 
+### Security
+- **Outbound email worker hardening:** The worker no longer relays for arbitrary senders - it pins the sender to the configured domain (plus an optional allowlist), validates recipients, strips CR/LF from all headers to block header/MIME injection, stops leaking the `Bcc:` header, encodes attachment filenames, compares the auth secret in constant time, and enforces per-sender hourly/daily rate limits. Mail-manager sanitizes header fields before dispatch too.
+- **Agent API Access app no longer bypasses everyone:** The `/api/v2/agents/` Cloudflare Access app no longer gets a `bypass` policy for `everyone`, and existing installs are cleaned up on startup. Admin browser bypass, when wanted, is scoped to the configured authorized emails.
+- **Agent secrets removed from `state.json`:** Agent API keys and tunnel tokens now live only in the encrypted key store, legacy plaintext values are migrated on first load, backups no longer contain them, and rolling a key revokes all previous active keys.
+- **Mail-manager secrets encrypted at rest:** R2 secret keys, webhook secrets and outbound auth secrets are AES-GCM encrypted in the SQLite DB (`MAIL_SECRET_KEY`, falling back to the bootstrap secret), existing rows are migrated on startup, and DB/directory permissions are tightened.
+- **Rate limits can't be spoofed:** The client IP used for login/mailbox rate limiting now only trusts forwarded headers from known proxies (Cloudflare ranges, loopback and private ranges by default, overridable via `TRUSTED_PROXY_IPS`).
+- **Email status no longer leaks secrets:** `/email/status` and the Email page now return a non-secret summary instead of the full config (no private JWT/VAPID keys, R2 secrets or webhook secrets).
+- **Cross-mailbox folder protection:** Moving a message now requires the target folder to belong to that mailbox and folder listings are mailbox-scoped; any legacy mis-filed messages are repaired on startup.
+- **Agent UI XSS and CORS:** Agent-supplied fields are HTML-escaped before rendering, and the blanket `Access-Control-Allow-Origin: *` on the master UI was removed.
+
 
 ## [v3.1.5] - 2026-09-01
 

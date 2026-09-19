@@ -156,9 +156,10 @@ def _check_and_send_auto_reply(db, mailbox_address, parsed, domain_cfg):
 
 
 def _get_domain_config(domain):
+    from app.core.secret_store import decrypt_domain_config
     db = get_db()
     cur = db.execute("SELECT * FROM domain_configs WHERE domain_name=?", (domain,))
-    return cur.fetchone()
+    return decrypt_domain_config(cur.fetchone())
 
 
 def _verify_signature(req, secret):
@@ -190,7 +191,8 @@ def inbound():
             log.warning("Inbound webhook: X-DockFlare-Domain header missing with %d domains configured", count)
             return jsonify({"error": "domain header required"}), 400
         row = db.execute("SELECT * FROM domain_configs LIMIT 1").fetchone()
-        domain_cfg = row if row else None
+        from app.core.secret_store import decrypt_domain_config
+        domain_cfg = decrypt_domain_config(row)
         secret = domain_cfg['webhook_secret'] if domain_cfg else config.WEBHOOK_SECRET
 
     if not _verify_signature(request, secret):

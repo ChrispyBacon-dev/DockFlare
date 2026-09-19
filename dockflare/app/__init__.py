@@ -21,6 +21,7 @@ import sys
 import os
 import json
 import hashlib
+import ipaddress
 
 from flask import Flask
 from flask_wtf.csrf import CSRFProtect
@@ -46,11 +47,60 @@ log_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', dat
 
 oauth = None
 
+DEFAULT_TRUSTED_PROXY_NETS = (
+    "127.0.0.0/8", "::1/128",
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7",
+    "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
+    "141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
+    "197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
+    "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+    "2400:cb00::/32", "2606:4700::/32", "2803:f800::/32", "2405:b500::/32",
+    "2405:8100::/32", "2a06:98c0::/29", "2c0f:f248::/32",
+)
+
+_trusted_proxy_networks_cache = None
+
+
+def _trusted_proxy_networks():
+    global _trusted_proxy_networks_cache
+    if _trusted_proxy_networks_cache is not None:
+        return _trusted_proxy_networks_cache
+    raw = os.environ.get("TRUSTED_PROXY_IPS", "").strip()
+    entries = [value.strip() for value in raw.split(",") if value.strip()] if raw else list(DEFAULT_TRUSTED_PROXY_NETS)
+    networks = []
+    for entry in entries:
+        try:
+            networks.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError:
+            logging.warning(f"TRUSTED_PROXY_IPS: ignoring invalid entry '{entry}'")
+    _trusted_proxy_networks_cache = tuple(networks)
+    return _trusted_proxy_networks_cache
+
+
+def _is_trusted_proxy(ip_text):
+    if not ip_text:
+        return False
+    try:
+        address = ipaddress.ip_address(ip_text)
+    except ValueError:
+        return False
+    return any(address in network for network in _trusted_proxy_networks())
+
+
+def get_client_ip():
+    peer = flask_request.remote_addr or ""
+    if _is_trusted_proxy(peer):
+        forwarded = flask_request.headers.get('CF-Connecting-IP')
+        if not forwarded:
+            xff = flask_request.headers.get('X-Forwarded-For', '')
+            forwarded = xff.split(',')[0].strip() if xff else None
+        if forwarded:
+            return forwarded
+    return peer
+
+
 def _get_real_ip():
-    return (
-        flask_request.headers.get('CF-Connecting-IP') or
-        get_remote_address()
-    )
+    return get_client_ip()
 
 limiter = Limiter(
     key_func=_get_real_ip,

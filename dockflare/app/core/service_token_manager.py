@@ -34,6 +34,83 @@ def _parse_hostname(public_url):
     return parsed.hostname
 
 
+def _admin_bypass_emails():
+    emails = []
+    try:
+        from flask import current_app
+        emails = list(current_app.config.get('OAUTH_AUTHORIZED_USERS') or [])
+    except Exception:
+        emails = []
+    if not emails:
+        emails = list(getattr(config, 'OAUTH_AUTHORIZED_USERS', []) or [])
+    return sorted({email.strip() for email in emails if isinstance(email, str) and '@' in email})
+
+
+def _create_scoped_bypass(account_id, app_uuid, emails):
+    resp = cf_api_request(
+        "POST",
+        f"/accounts/{account_id}/access/apps/{app_uuid}/policies",
+        json_data={
+            "name": "DockFlare Admin Bypass",
+            "decision": "bypass",
+            "precedence": 2,
+            "include": [{"email": {"email": email}} for email in emails]
+        }
+    )
+    return resp.get("result", {}).get("id")
+
+
+def _policy_includes_everyone(policy):
+    for rule in policy.get("include") or []:
+        if isinstance(rule, dict) and "everyone" in rule:
+            return True
+    return False
+
+
+def ensure_agent_access_hardening():
+    data = get_agent_cf_token()
+    account_id = _account_id()
+    if not data or not account_id:
+        return
+    app_uuid = data.get("app_uuid")
+    if not app_uuid:
+        return
+
+    try:
+        resp = cf_api_request("GET", f"/accounts/{account_id}/access/apps/{app_uuid}/policies")
+        policies = resp.get("result") or []
+    except Exception as e:
+        logging.warning(f"Could not list Cloudflare Access policies for the Agent API app: {e}")
+        return
+
+    admin_emails = _admin_bypass_emails()
+    scoped_bypass = None
+    broad_bypass_ids = []
+    for policy in policies:
+        if policy.get("decision") != "bypass":
+            continue
+        policy_id = policy.get("id") or policy.get("uid")
+        if _policy_includes_everyone(policy):
+            broad_bypass_ids.append(policy_id)
+        else:
+            scoped_bypass = policy_id
+
+    for policy_id in broad_bypass_ids:
+        try:
+            cf_api_request("DELETE", f"/accounts/{account_id}/access/apps/{app_uuid}/policies/{policy_id}")
+            logging.warning("Removed an everyone-bypass policy from the Cloudflare Access Agent API application")
+        except Exception as e:
+            logging.warning(f"Could not remove broad Access bypass policy {policy_id}: {e}")
+
+    if not scoped_bypass and admin_emails:
+        try:
+            new_id = _create_scoped_bypass(account_id, app_uuid, admin_emails)
+            if new_id:
+                logging.info("Created a scoped admin bypass policy for the Cloudflare Access Agent API application")
+        except Exception as e:
+            logging.warning(f"Could not create scoped admin bypass policy: {e}")
+
+
 def ensure_agent_service_token(public_url):
     existing = get_agent_cf_token()
     existing_secret = agent_key_store.get_service_token_secret()
@@ -91,17 +168,10 @@ def ensure_agent_service_token(public_url):
     policy_result = policy_resp.get("result", {})
     policy_id = policy_result.get("id")
 
-    bypass_resp = cf_api_request(
-        "POST",
-        f"/accounts/{account_id}/access/apps/{app_uuid}/policies",
-        json_data={
-            "name": "DockFlare Admin Bypass",
-            "decision": "bypass",
-            "precedence": 2,
-            "include": [{"everyone": {}}]
-        }
-    )
-    bypass_policy_id = bypass_resp.get("result", {}).get("id")
+    admin_emails = _admin_bypass_emails()
+    bypass_policy_id = None
+    if admin_emails:
+        bypass_policy_id = _create_scoped_bypass(account_id, app_uuid, admin_emails)
 
     agent_key_store.store_service_token_secret(client_secret)
 
@@ -110,8 +180,9 @@ def ensure_agent_service_token(public_url):
         "token_id": token_id,
         "app_uuid": app_uuid,
         "policy_id": policy_id,
-        "bypass_policy_id": bypass_policy_id,
     }
+    if bypass_policy_id:
+        token_data["bypass_policy_id"] = bypass_policy_id
     set_agent_cf_token(token_data)
 
     return {**token_data, "client_secret": client_secret}

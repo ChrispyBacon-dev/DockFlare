@@ -316,6 +316,13 @@ def start_core_services():
         except Exception as e:
             logging.debug(f"Could not refresh email sending status on startup: {e}")
 
+    try:
+        from app.core.service_token_manager import ensure_agent_access_hardening
+        with app.app_context():
+            ensure_agent_access_hardening()
+    except Exception as e:
+        logging.warning(f"Agent Access hardening check failed: {e}")
+
     notification_manager.end_bootstrap()
     run_all_background_tasks()
 

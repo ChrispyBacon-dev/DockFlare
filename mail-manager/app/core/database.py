@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import logging
 from flask import g
 from app.config import config
 
@@ -193,6 +194,27 @@ def _migrate(conn):
             pass
 
     try:
+        cursor = conn.execute("""
+            UPDATE messages
+            SET folder_id = (
+                SELECT f2.id FROM folders f2
+                WHERE f2.mailbox_address = messages.mailbox_address AND f2.name = 'Inbox'
+            )
+            WHERE EXISTS (
+                SELECT 1 FROM folders f_inbox
+                WHERE f_inbox.mailbox_address = messages.mailbox_address AND f_inbox.name = 'Inbox'
+            )
+            AND folder_id IN (
+                SELECT f3.id FROM folders f3 WHERE f3.mailbox_address != messages.mailbox_address
+            )
+        """)
+        if cursor.rowcount:
+            logging.warning(f"Repaired {cursor.rowcount} message(s) filed into another mailbox's folder")
+        conn.commit()
+    except Exception:
+        pass
+
+    try:
         row = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='push_subscriptions'"
         ).fetchone()
@@ -292,6 +314,31 @@ def _migrate(conn):
     except Exception:
         pass
 
+    try:
+        from app.core.secret_store import encrypt_value, is_encrypted
+        rows = conn.execute(
+            "SELECT domain_name, webhook_secret, r2_secret_access_key, outbound_auth_secret FROM domain_configs"
+        ).fetchall()
+        encrypted_count = 0
+        for row in rows:
+            updates = {}
+            for index, column in enumerate(("webhook_secret", "r2_secret_access_key", "outbound_auth_secret"), start=1):
+                value = row[index]
+                if value and not is_encrypted(value):
+                    updates[column] = encrypt_value(value)
+            if updates:
+                set_clause = ", ".join(f"{column}=?" for column in updates)
+                conn.execute(
+                    f"UPDATE domain_configs SET {set_clause} WHERE domain_name=?",
+                    (*updates.values(), row[0]),
+                )
+                encrypted_count += 1
+        if encrypted_count:
+            logging.warning(f"Encrypted secrets for {encrypted_count} domain config row(s) at rest")
+        conn.commit()
+    except Exception as e:
+        logging.warning(f"Could not encrypt mail-manager secrets at rest: {e}")
+
 
 def init_db():
     import logging
@@ -299,6 +346,13 @@ def init_db():
     conn = _connect()
     _migrate(conn)
     conn.executescript(_SCHEMA)
+    try:
+        conn.execute("PRAGMA secure_delete=ON")
+        conn.commit()
+        os.chmod(os.path.dirname(config.DB_PATH), 0o700)
+        os.chmod(config.DB_PATH, 0o600)
+    except Exception as e:
+        logging.getLogger('mail-manager').warning("Could not tighten mail DB permissions: %s", e)
     result = conn.execute("PRAGMA quick_check").fetchone()
     if result and result[0] != 'ok':
         logging.getLogger('mail-manager').critical("SQLite integrity check failed: %s", result[0])
