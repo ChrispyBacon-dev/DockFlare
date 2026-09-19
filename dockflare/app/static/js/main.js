@@ -13,6 +13,7 @@ let cachedZonesStale = false;
 let manualZoneDetectionTimeout = null;
 let servicesSnapshotPromise = null;
 let servicesSnapshotQueued = false;
+let pendingServicesReload = false;
 let activeStateEventSource = null;
 function getMasterApiKey() {
     const meta = document.querySelector('meta[name="dockflare-api-key"]');
@@ -388,12 +389,26 @@ function applyServicesSnapshot(services) {
     });
 
     if (servicesById.size > 0) {
+        if (document.querySelector('dialog[open]')) {
+            pendingServicesReload = true;
+            return;
+        }
         window.location.reload();
         return;
     }
 
     updateCountdowns();
 }
+
+document.addEventListener('close', function(event) {
+    if (typeof HTMLDialogElement === 'undefined' || !(event.target instanceof HTMLDialogElement)) {
+        return;
+    }
+    if (pendingServicesReload && !document.querySelector('dialog[open]')) {
+        pendingServicesReload = false;
+        window.location.reload();
+    }
+}, true);
 
 function scheduleServicesSnapshotRefresh() {
     if (!document.querySelector('tr[data-rule-key]')) {

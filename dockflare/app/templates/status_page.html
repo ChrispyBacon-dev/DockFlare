@@ -740,52 +740,6 @@ document.addEventListener('DOMContentLoaded', function() {
     let allRows = [];
     let filteredRows = [];
 
-    let stateEventSource = null;
-    let reconnectAttempts = 0;
-    const maxReconnectDelay = 30000;
-    let reloadDebounceTimer = null;
-
-    function connectStateUpdates() {
-        if (stateEventSource) {
-            stateEventSource.close();
-        }
-
-        stateEventSource = new EventSource('/stream-state-updates');
-
-        stateEventSource.onmessage = function(event) {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.type === 'snapshot_refresh') {
-                    clearTimeout(reloadDebounceTimer);
-                    reloadDebounceTimer = setTimeout(() => {
-                        window.location.reload();
-                    }, 500);
-                }
-            } catch (e) {
-                console.error('State update parse error:', e);
-            }
-        };
-
-        stateEventSource.onerror = function() {
-            stateEventSource.close();
-            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), maxReconnectDelay);
-            reconnectAttempts++;
-            setTimeout(connectStateUpdates, delay);
-        };
-
-        stateEventSource.onopen = function() {
-            reconnectAttempts = 0;
-        };
-    }
-
-    connectStateUpdates();
-
-    window.addEventListener('beforeunload', function() {
-        if (stateEventSource) {
-            stateEventSource.close();
-        }
-    });
-
     function initializeFilters() {
         if (!tableBody) return;
 
