@@ -17,6 +17,7 @@ set -euo pipefail
 #   DOCKFLARE_EMAIL   — set to "true" to enable email profile    (default: false)
 #   DOCKFLARE_TLD     — base domain e.g. example.com             (required if EMAIL=true)
 #   DOCKFLARE_DOMAIN  — DockFlare master domain                  (default: dockflare.$DOCKFLARE_TLD)
+#   INTERNAL_BOOTSTRAP_SECRET — existing service-to-service secret (generated if unset)
 #
 # Examples:
 #   bash <(curl -fsSL https://dockflare.app/install.sh)
@@ -31,6 +32,7 @@ DOCKFLARE_GID="${DOCKFLARE_GID:-65532}"
 DOCKFLARE_EMAIL="${DOCKFLARE_EMAIL:-false}"
 DOCKFLARE_TLD="${DOCKFLARE_TLD:-}"
 DOCKFLARE_DOMAIN="${DOCKFLARE_DOMAIN:-}"
+INTERNAL_BOOTSTRAP_SECRET="${INTERNAL_BOOTSTRAP_SECRET:-}"
 
 BOLD="\033[1m"
 GREEN="\033[0;32m"
@@ -289,6 +291,81 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+# Internal service authentication
+# -----------------------------------------------------------------------------
+section "Configuring internal service authentication"
+
+ENV_FILE="${DOCKFLARE_DIR}/.env"
+
+# Preserve the existing secret when the installer is rerun. Do not source the
+# file: it is configuration data and may contain values that are unsafe to
+# evaluate as shell code.
+if [ -z "$INTERNAL_BOOTSTRAP_SECRET" ] && [ -f "$ENV_FILE" ]; then
+  INTERNAL_BOOTSTRAP_SECRET="$(
+    awk '
+      /^INTERNAL_BOOTSTRAP_SECRET=/ {
+        sub(/^INTERNAL_BOOTSTRAP_SECRET=/, "")
+        print
+        exit
+      }
+    ' "$ENV_FILE"
+  )"
+fi
+
+if [ -z "$INTERNAL_BOOTSTRAP_SECRET" ]; then
+  if command -v openssl &>/dev/null; then
+    INTERNAL_BOOTSTRAP_SECRET="$(openssl rand -hex 32)"
+  elif command -v od &>/dev/null && command -v tr &>/dev/null && [ -r /dev/urandom ]; then
+    INTERNAL_BOOTSTRAP_SECRET="$(od -An -N32 -tx1 /dev/urandom | tr -d '[:space:]')"
+  else
+    error "Could not generate INTERNAL_BOOTSTRAP_SECRET (openssl or od with /dev/urandom is required)."
+    exit 1
+  fi
+fi
+
+if [ "${#INTERNAL_BOOTSTRAP_SECRET}" -lt 32 ]; then
+  error "INTERNAL_BOOTSTRAP_SECRET must contain at least 32 characters."
+  exit 1
+fi
+case "$INTERNAL_BOOTSTRAP_SECRET" in
+  *[!A-Za-z0-9._-]*)
+    error "INTERNAL_BOOTSTRAP_SECRET may contain only letters, numbers, dots, underscores, and hyphens."
+    exit 1
+    ;;
+esac
+
+# Write or replace only the bootstrap-secret entry while preserving any other
+# installer settings already present in .env. The temporary file and final file
+# are restricted to the installing user.
+umask 077
+ENV_TMP="$(mktemp "${DOCKFLARE_DIR}/.env.tmp.XXXXXX")"
+trap 'rm -f "$ENV_TMP"' EXIT
+if [ -f "$ENV_FILE" ]; then
+  awk -v secret="$INTERNAL_BOOTSTRAP_SECRET" '
+    BEGIN { written = 0 }
+    /^INTERNAL_BOOTSTRAP_SECRET=/ {
+      if (!written) {
+        print "INTERNAL_BOOTSTRAP_SECRET=" secret
+        written = 1
+      }
+      next
+    }
+    { print }
+    END {
+      if (!written) {
+        print "INTERNAL_BOOTSTRAP_SECRET=" secret
+      }
+    }
+  ' "$ENV_FILE" > "$ENV_TMP"
+else
+  printf 'INTERNAL_BOOTSTRAP_SECRET=%s\n' "$INTERNAL_BOOTSTRAP_SECRET" > "$ENV_TMP"
+fi
+chmod 600 "$ENV_TMP"
+mv "$ENV_TMP" "$ENV_FILE"
+trap - EXIT
+info "Internal bootstrap secret configured in ${ENV_FILE}"
+
+# -----------------------------------------------------------------------------
 # Docker network
 # -----------------------------------------------------------------------------
 section "Preparing Docker network"
@@ -386,6 +463,7 @@ ${LABELS_BLOCK}
       - REDIS_URL=redis://redis:6379/0
       - REDIS_DB_INDEX=0
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
+      - INTERNAL_BOOTSTRAP_SECRET=\${INTERNAL_BOOTSTRAP_SECRET:?set INTERNAL_BOOTSTRAP_SECRET}
       #- LOG_LEVEL=DEBUG
     depends_on:
       docker-socket-proxy:
@@ -418,6 +496,7 @@ ${LABELS_BLOCK}
     environment:
       - DOCKFLARE_MASTER_URL=http://dockflare:5000
       - MAIL_DATA_PATH=/data
+      - INTERNAL_BOOTSTRAP_SECRET=\${INTERNAL_BOOTSTRAP_SECRET:?set INTERNAL_BOOTSTRAP_SECRET}
     volumes:
       - mail_data:/data
     depends_on:

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## unreleased
+
+### Fixed
+- **Internal email configuration authentication:** Internal mail bootstrap endpoints now fail closed when `INTERNAL_BOOTSTRAP_SECRET` is missing and require a matching `X-Bootstrap-Token` for every request. Docker Compose passes the same required secret to DockFlare and mail-manager, preventing unauthenticated private-network access to mail storage credentials, webhook and outbound-worker secrets, and VAPID key material. The website installation script now generates and preserves this shared secret automatically.
+
+
 ## [v3.1.5] - 2026-09-01
 
 ### Added
