@@ -142,7 +142,7 @@ def setup_email_domain():
 
         quota_kv_ns_id = None
         try:
-            quota_kv_ns_id = email_manager.create_kv_namespace(
+            quota_kv_ns_id = email_manager.get_or_create_kv_namespace(
                 f"dockflare-quota-{zone_name.replace('.', '-')}"
             )
         except Exception as e:
@@ -301,6 +301,18 @@ def teardown_domain():
         current_app.config['EMAIL_ENABLED'] = False
     save_email_config(email_cfg)
 
+    webmail_hostname = _get_webmail_hostname()
+    teardown_host = webmail_hostname or f"mail.{zone_name}"
+    remaining_hosts = {
+        webmail_hostname or f"mail.{remaining_domain}"
+        for remaining_domain in email_cfg.get('domains', {}).keys()
+    }
+    if teardown_host not in remaining_hosts:
+        try:
+            email_manager.delete_webhook_access_bypass(teardown_host)
+        except Exception as e:
+            errors.append(f"Webhook bypass: {e}")
+
     _restart_mail_container()
     return jsonify({'success': True, 'errors': errors})
 
@@ -312,6 +324,12 @@ def teardown_all():
     include_local = data.get('include_local_data', False)
     email_cfg = config.EMAIL_CONFIG.copy()
     errors = []
+
+    webmail_hostname = _get_webmail_hostname()
+    webhook_hosts = {
+        webmail_hostname or f"mail.{domain}"
+        for domain in email_cfg.get('domains', {}).keys()
+    }
 
     for domain, domain_cfg in list(email_cfg.get('domains', {}).items()):
         errors.extend(_teardown_domain_remote(domain, domain_cfg))
@@ -334,6 +352,12 @@ def teardown_all():
     config.EMAIL_ENABLED = False
     current_app.config['EMAIL_ENABLED'] = False
     save_email_config(email_cfg)
+
+    for host in webhook_hosts:
+        try:
+            email_manager.delete_webhook_access_bypass(host)
+        except Exception as e:
+            errors.append(f"Webhook bypass ({host}): {e}")
 
     _restart_mail_container()
     return jsonify({'success': True, 'errors': errors})

@@ -267,6 +267,24 @@ def set_worker_cron(script_name, cron_expressions):
 def delete_worker(script_name):
     return cf_api_request('DELETE', f'/accounts/{config.CF_ACCOUNT_ID}/workers/scripts/{script_name}')
 
+def _find_email_routing_rule(zone_id, address):
+    try:
+        response = list_email_routing_rules(zone_id)
+        rules = response.get('result') or []
+    except Exception as e:
+        logging.warning(f"Could not list email routing rules for zone {zone_id}: {e}")
+        return None
+    target = str(address or '').strip().lower()
+    for rule in rules:
+        for matcher in rule.get('matchers') or []:
+            if (
+                matcher.get('type') == 'literal'
+                and matcher.get('field') == 'to'
+                and str(matcher.get('value', '')).strip().lower() == target
+            ):
+                return rule
+    return None
+
 def create_email_routing_rule(zone_id, address, worker_name):
     data = {
         "matchers": [{"type": "literal", "field": "to", "value": address}],
@@ -274,7 +292,21 @@ def create_email_routing_rule(zone_id, address, worker_name):
         "enabled": True,
         "name": f"DockFlare: {address}"
     }
-    return cf_api_request('POST', f'/zones/{zone_id}/email/routing/rules', json_data=data)
+    existing = _find_email_routing_rule(zone_id, address)
+    if existing and existing.get('id'):
+        logging.info(f"Email routing rule for {address} already exists; updating it instead of creating")
+        return cf_api_request('PUT', f'/zones/{zone_id}/email/routing/rules/{existing["id"]}', json_data=data)
+    try:
+        return cf_api_request('POST', f'/zones/{zone_id}/email/routing/rules', json_data=data)
+    except Exception as e:
+        error_text = str(e).lower()
+        if '409' not in error_text and 'duplicated' not in error_text and 'already exists' not in error_text:
+            raise
+        existing = _find_email_routing_rule(zone_id, address)
+        if not existing or not existing.get('id'):
+            raise
+        logging.info(f"Email routing rule for {address} already exists (409); updating it")
+        return cf_api_request('PUT', f'/zones/{zone_id}/email/routing/rules/{existing["id"]}', json_data=data)
 
 def delete_email_routing_rule(zone_id, rule_id):
     return cf_api_request('DELETE', f'/zones/{zone_id}/email/routing/rules/{rule_id}')
@@ -356,19 +388,12 @@ def create_kv_namespace(title):
     return res.get('result', {}).get('id')
 
 
-def get_or_create_kv_namespace(title):
-    try:
-        ns_id = create_kv_namespace(title)
-        if ns_id:
-            return ns_id
-    except Exception:
-        pass
+def _list_kv_namespaces_tagged(title):
     page = 1
     while True:
         res = cf_api_request('GET', f'/accounts/{config.CF_ACCOUNT_ID}/storage/kv/namespaces',
                              params={'per_page': 100, 'page': page})
-        results = res.get('result') or []
-        for ns in results:
+        for ns in res.get('result') or []:
             if ns.get('title') == title:
                 return ns.get('id')
         info = res.get('result_info', {})
@@ -376,6 +401,18 @@ def get_or_create_kv_namespace(title):
             break
         page += 1
     return None
+
+def get_or_create_kv_namespace(title):
+    existing = _list_kv_namespaces_tagged(title)
+    if existing:
+        return existing
+    try:
+        ns_id = create_kv_namespace(title)
+        if ns_id:
+            return ns_id
+    except Exception as e:
+        logging.warning(f"Could not create KV namespace '{title}': {e}")
+    return _list_kv_namespaces_tagged(title)
 
 def update_kv_entry(namespace_id, key, value_dict):
     url = f"{config.CF_API_BASE_URL}/accounts/{config.CF_ACCOUNT_ID}/storage/kv/namespaces/{namespace_id}/values/{key}"
@@ -567,4 +604,36 @@ def ensure_webhook_access_bypass(webmail_hostname):
             f"Ensure the API token has 'Access: Apps and Policies: Edit'."
         )
         return None
+
+
+def delete_webhook_access_bypass(webmail_hostname):
+    account_id = getattr(config, 'CF_ACCOUNT_ID', None)
+    if not account_id or not webmail_hostname:
+        return False
+
+    host = _normalize_access_destination(webmail_hostname)
+    path = WEBHOOK_ACCESS_PATH
+
+    try:
+        response = cf_api_request('GET', f'/accounts/{account_id}/access/apps', params={"per_page": 100})
+        apps = response.get('result') or []
+    except Exception as e:
+        logging.warning(f"Could not list Access apps to remove webhook bypass for {host}: {e}")
+        return False
+
+    existing = _find_webhook_bypass_app(apps, host, path)
+    if not existing:
+        return False
+
+    app_uuid = existing.get('id') or existing.get('uid')
+    if not app_uuid:
+        return False
+
+    try:
+        cf_api_request('DELETE', f'/accounts/{account_id}/access/apps/{app_uuid}')
+        logging.info(f"Deleted Cloudflare Access webhook bypass app for {host}{path}")
+        return True
+    except Exception as e:
+        logging.warning(f"Could not delete Access webhook bypass app {app_uuid}: {e}")
+        return False
 
