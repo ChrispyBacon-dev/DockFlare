@@ -1589,8 +1589,9 @@ def agents_deploy_info(key_id):
         return jsonify({"status": "error", "message": "DOCKFLARE_PUBLIC_URL is not configured"}), 400
 
     try:
-        script_content = generate_deploy_script(key_token, public_url)
-        compose_content = generate_compose_content(key_token, public_url)
+        owner = key_info.get("owner")
+        script_content = generate_deploy_script(key_token, public_url, agent_display_name=owner)
+        compose_content = generate_compose_content(key_token, public_url, agent_display_name=owner)
         return jsonify({
             "status": "success",
             "script_content": script_content,
@@ -1618,7 +1619,7 @@ def agents_deploy_script(key_id):
         return jsonify({"status": "error", "message": "DOCKFLARE_PUBLIC_URL is not configured"}), 400
 
     try:
-        script = generate_deploy_script(key_token, public_url)
+        script = generate_deploy_script(key_token, public_url, agent_display_name=key_info.get("owner"))
         from flask import Response
         return Response(script, mimetype="text/x-shellscript")
     except ValueError as e:

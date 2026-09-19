@@ -201,13 +201,23 @@ def delete_agent_service_token():
     clear_agent_cf_token()
 
 
-def generate_compose_content(key_id, public_url, cloudflared_image="cloudflare/cloudflared:latest"):
+def _safe_display_name(value):
+    if not isinstance(value, str):
+        return None
+    cleaned = ''.join(ch for ch in value if ch.isprintable() and ch not in '\\"').strip()
+    return cleaned[:128] or None
+
+
+def generate_compose_content(key_id, public_url, cloudflared_image="cloudflare/cloudflared:latest", agent_display_name=None):
     token_data = get_agent_service_token()
     if not token_data:
         raise ValueError("CF Service Token not configured")
 
     client_id = token_data["client_id"]
     client_secret = token_data["client_secret"]
+
+    safe_name = _safe_display_name(agent_display_name)
+    display_name_env = f'\n      - "AGENT_DISPLAY_NAME={safe_name}"' if safe_name else ''
 
     return f"""services:
   docker-socket-proxy:
@@ -245,7 +255,7 @@ def generate_compose_content(key_id, public_url, cloudflared_image="cloudflare/c
     restart: unless-stopped
     environment:
       - DOCKFLARE_MASTER_URL={public_url}
-      - DOCKFLARE_API_KEY={key_id}
+      - DOCKFLARE_API_KEY={key_id}{display_name_env}
       - CF_ACCESS_CLIENT_ID={client_id}
       - CF_ACCESS_CLIENT_SECRET={client_secret}
       - CLOUDFLARED_IMAGE={cloudflared_image}
@@ -273,8 +283,8 @@ networks:
 """
 
 
-def generate_deploy_script(key_id, public_url, cloudflared_image="cloudflare/cloudflared:latest"):
-    compose_content = generate_compose_content(key_id, public_url, cloudflared_image)
+def generate_deploy_script(key_id, public_url, cloudflared_image="cloudflare/cloudflared:latest", agent_display_name=None):
+    compose_content = generate_compose_content(key_id, public_url, cloudflared_image, agent_display_name)
 
     return f"""#!/usr/bin/env bash
 set -e
