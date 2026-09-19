@@ -96,3 +96,8 @@ DockFlare-Agent-prd/
 unstable-compose.yml
 unstable-local.yml
 /artifacts
+
+# Webmail TypeScript/vue-tsc emit output (build artifacts, not source)
+/webmail/src/**/*.js
+/webmail/src/**/*.js.map
+*.tsbuildinfo

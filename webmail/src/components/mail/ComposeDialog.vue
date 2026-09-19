@@ -14,7 +14,7 @@ import Typography from '@tiptap/extension-typography'
 import Underline from '@tiptap/extension-underline'
 import TextAlign from '@tiptap/extension-text-align'
 import Color from '@tiptap/extension-color'
-import TextStyle from '@tiptap/extension-text-style'
+import { TextStyle } from '@tiptap/extension-text-style'
 import Highlight from '@tiptap/extension-highlight'
 import FontFamily from '@tiptap/extension-font-family'
 
@@ -57,7 +57,7 @@ const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 
 const editor = useEditor({
   extensions: [
-    StarterKit,
+    StarterKit.configure({ link: false, underline: false }),
     LinkExtension.configure({ openOnClick: false }),
     Placeholder.configure({ placeholder: 'Write your message…' }),
     Typography,
