@@ -257,6 +257,7 @@ def cleanup_duplicate_policies(dry_run=True):
                         else:
                             logging.info(f"  Updating group '{group_id}': {policy_id} → {correct_id}")
                             access_groups[group_id]["cloudflare_policy_id"] = correct_id
+                            access_groups[group_id]["cf_policy_id"] = correct_id
                             state_updated = True
 
         if state_updated and not dry_run:

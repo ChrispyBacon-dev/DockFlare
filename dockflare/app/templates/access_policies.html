@@ -516,6 +516,7 @@
                  },
                  placeholder: "{{ t('policies.search_select_countries') }}",
                  maxOptions: null,
+                 dropdownParent: 'body',
                  render: {
                      item: function(data, escape) {
                          return '<div class="item">' + escape(data.text) + '</div>';
@@ -530,6 +531,7 @@
                 controlWrapper.style.maxHeight = 'none';
                 controlWrapper.style.border = 'none';
                 controlWrapper.style.background = 'transparent';
+                controlWrapper.style.overflowY = 'auto';
 
                 const observer = new ResizeObserver(() => {
                     const containerHeight = parentContainer.offsetHeight;

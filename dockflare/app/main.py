@@ -290,8 +290,8 @@ def start_core_services():
             logging.debug(f"dockflare-mail-manager not found or could not restart: {e}")
 
         try:
-            from app.core.email_manager import get_email_sending_status
-            from app.web.email_routes import save_email_config
+            from app.core.email_manager import get_email_sending_status, ensure_webhook_access_bypass
+            from app.web.email_routes import save_email_config, _get_webmail_hostname
             email_cfg = config.EMAIL_CONFIG
             updated = False
             for domain, domain_cfg in email_cfg.get('domains', {}).items():
@@ -304,8 +304,24 @@ def start_core_services():
                         logging.info(f"Email sending status for {domain}: {status}")
             if updated:
                 save_email_config(email_cfg)
+
+            webmail_hostname = _get_webmail_hostname()
+            checked_hosts = set()
+            for domain in email_cfg.get('domains', {}).keys():
+                host = webmail_hostname or f"mail.{domain}"
+                if host in checked_hosts:
+                    continue
+                checked_hosts.add(host)
+                ensure_webhook_access_bypass(host)
         except Exception as e:
             logging.debug(f"Could not refresh email sending status on startup: {e}")
+
+    try:
+        from app.core.service_token_manager import ensure_agent_access_hardening
+        with app.app_context():
+            ensure_agent_access_hardening()
+    except Exception as e:
+        logging.warning(f"Agent Access hardening check failed: {e}")
 
     notification_manager.end_bootstrap()
     run_all_background_tasks()

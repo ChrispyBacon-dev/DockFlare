@@ -1425,17 +1425,20 @@ def agents_revoke_key():
     key = _resolve_agent_key_identifier(key_identifier)
     if not key:
         return jsonify({"status": "error", "message": "Key not found."}), 404
+    key_info = get_agent_key_info(key) or {}
+    bound_agent_id = key_info.get("bound_agent_id")
     ok = revoke_agent_key(key)
     if ok:
         affected_agents = []
-        agents_snapshot = list_agents()
-        now_iso = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
-        for agent_id, agent_data in agents_snapshot.items():
-            if agent_data.get("api_key") == key:
+        if bound_agent_id:
+            agents_snapshot = list_agents()
+            agent_data = agents_snapshot.get(bound_agent_id)
+            if agent_data:
+                now_iso = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
                 agent_meta = dict(agent_data.get("meta") or {})
                 agent_meta["last_key_revoked_at"] = now_iso
-                update_agent(agent_id, {"api_key": None, "status": "pending", "meta": agent_meta})
-                affected_agents.append(agent_id)
+                update_agent(bound_agent_id, {"status": "pending", "meta": agent_meta})
+                affected_agents.append(bound_agent_id)
         return jsonify({"status": "success", "message": "Key revoked.", "affected_agents": affected_agents}), 200
     else:
         return jsonify({"status": "error", "message": "Key not found."}), 404
@@ -1586,8 +1589,9 @@ def agents_deploy_info(key_id):
         return jsonify({"status": "error", "message": "DOCKFLARE_PUBLIC_URL is not configured"}), 400
 
     try:
-        script_content = generate_deploy_script(key_token, public_url)
-        compose_content = generate_compose_content(key_token, public_url)
+        owner = key_info.get("owner")
+        script_content = generate_deploy_script(key_token, public_url, agent_display_name=owner)
+        compose_content = generate_compose_content(key_token, public_url, agent_display_name=owner)
         return jsonify({
             "status": "success",
             "script_content": script_content,
@@ -1615,7 +1619,7 @@ def agents_deploy_script(key_id):
         return jsonify({"status": "error", "message": "DOCKFLARE_PUBLIC_URL is not configured"}), 400
 
     try:
-        script = generate_deploy_script(key_token, public_url)
+        script = generate_deploy_script(key_token, public_url, agent_display_name=key_info.get("owner"))
         from flask import Response
         return Response(script, mimetype="text/x-shellscript")
     except ValueError as e:
@@ -2278,12 +2282,16 @@ def agents_enroll(agent_id):
                 current_agent.update({
                     "assigned_tunnel_name": tunnel_name,
                     "assigned_tunnel_id": tunnel_id,
-                    "assigned_tunnel_token": token,
                     "assigned_tunnel_ownership": tunnel_ownership,
                     "status": "enrolled",
                     "commands": existing_cmds,
                     "last_enrolled_at": datetime.now(timezone.utc).isoformat(),
                 })
+                try:
+                    from app.core import agent_key_store as _agent_key_store
+                    _agent_key_store.store_agent_tunnel_token(agent_id, token)
+                except Exception as _token_err:
+                    logging.warning(f"Could not persist tunnel token for agent {agent_id}: {_token_err}")
             rules_updated = False
             previous_rules = {}
             if not persistence_failed:
@@ -2469,7 +2477,8 @@ def redeploy_agent_tunnel(agent_id):
 
         tunnel_name = agent_record.get("assigned_tunnel_name")
         tunnel_id = agent_record.get("assigned_tunnel_id")
-        tunnel_token = agent_record.get("assigned_tunnel_token")
+        from app.core import agent_key_store as _agent_key_store
+        tunnel_token = _agent_key_store.get_agent_tunnel_token(agent_id) or agent_record.get("assigned_tunnel_token")
 
         if not all([tunnel_name, tunnel_id, tunnel_token]):
             return jsonify({"status": "error", "message": "Agent missing tunnel configuration."}), 400
@@ -2505,23 +2514,23 @@ def roll_agent_api_key(agent_id):
         if _agent_decommission_blocks_action(agent_record):
             return jsonify({"status": "error", "message": "Agent decommission is in progress."}), 409
 
-        old_api_key = agent_record.get("api_key")
+        from app.core import agent_key_store as _agent_key_store
 
         new_api_key = secrets.token_urlsafe(32)
-
-        success = update_agent(agent_id, {"api_key": new_api_key})
-        if not success:
-            return jsonify({"status": "error", "message": "Failed to update agent with new API key."}), 500
-
-        if old_api_key:
-            revoke_agent_key(old_api_key)
-
         now_iso = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+
+        revoked = 0
+        for existing_key, existing_meta in _agent_key_store.list_keys().items():
+            if (existing_meta or {}).get("bound_agent_id") == agent_id and (existing_meta or {}).get("status", "active") == "active":
+                if revoke_agent_key(existing_key):
+                    revoked += 1
+
         add_agent_key(new_api_key, {
             "bound_agent_id": agent_id,
             "created_at": now_iso,
             "last_used_at": None,
-            "rolled_from": old_api_key[:8] + "..." if old_api_key else None
+            "status": "active",
+            "rolled_from_previous": bool(revoked),
         })
 
         return jsonify({

@@ -65,8 +65,8 @@ def _fernet() -> Optional[Fernet]:
 def _persist_locked() -> None:
     fernet = _fernet()
     if fernet is None:
-        logging.warning("AGENT_KEY_STORE: Persist skipped because Fernet key is unavailable.")
-        return
+        logging.error("AGENT_KEY_STORE: Persist failed because the encryption key is unavailable.")
+        raise RuntimeError("Agent key store encryption key is unavailable")
 
     payload = {"keys": _cached_keys}
     try:
@@ -81,6 +81,7 @@ def _persist_locked() -> None:
         logging.debug("AGENT_KEY_STORE: Persisted %d keys to encrypted store.", len(_cached_keys))
     except Exception as err:  # pylint: disable=broad-except
         logging.error("AGENT_KEY_STORE: Failed to persist key store: %s", err, exc_info=True)
+        raise
 
 
 def _load_locked() -> None:
@@ -212,4 +213,37 @@ def clear_service_token_secret() -> None:
     with _store_lock:
         if _CF_SERVICE_TOKEN_KEY in _cached_keys:
             del _cached_keys[_CF_SERVICE_TOKEN_KEY]
+            _persist_locked()
+
+
+_AGENT_TUNNEL_PREFIX = "__agent_tunnel__"
+
+
+def store_agent_tunnel_token(agent_id, token) -> None:
+    if not agent_id or not token:
+        return
+    _ensure_loaded()
+    with _store_lock:
+        _cached_keys[f"{_AGENT_TUNNEL_PREFIX}{agent_id}"] = {"token": token}
+        _persist_locked()
+
+
+def get_agent_tunnel_token(agent_id):
+    if not agent_id:
+        return None
+    _ensure_loaded()
+    with _store_lock:
+        entry = _cached_keys.get(f"{_AGENT_TUNNEL_PREFIX}{agent_id}")
+        if isinstance(entry, dict):
+            return entry.get("token")
+        return None
+
+
+def clear_agent_tunnel_token(agent_id) -> None:
+    if not agent_id:
+        return
+    _ensure_loaded()
+    with _store_lock:
+        if f"{_AGENT_TUNNEL_PREFIX}{agent_id}" in _cached_keys:
+            del _cached_keys[f"{_AGENT_TUNNEL_PREFIX}{agent_id}"]
             _persist_locked()

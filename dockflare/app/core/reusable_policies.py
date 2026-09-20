@@ -190,7 +190,8 @@ def sync_access_group_to_reusable_policy(group_id):
 
     is_system_policy = local_definition.get("system_policy", False)
     if is_system_policy and local_definition.get("policies"):
-        policy_name = local_definition["policies"][0].get("name", f"DockFlare-AccessGroup-{group_id}")
+        original_policies = group_definition.get("policies") or [{}]
+        policy_name = original_policies[0].get("name") or local_definition["policies"][0].get("name", f"DockFlare-AccessGroup-{group_id}")
     else:
         policy_name = f"DockFlare-AccessGroup-{group_id}"
 
@@ -280,9 +281,13 @@ def sync_access_group_to_reusable_policy(group_id):
         needs_save = False
         with state_lock:
             group_definition = access_groups.get(group_id)
-            if group_definition and group_definition.get("cloudflare_policy_id") != policy_id:
+            if group_definition and (
+                group_definition.get("cloudflare_policy_id") != policy_id
+                or group_definition.get("cf_policy_id") != policy_id
+            ):
                 group_definition = copy.deepcopy(group_definition)
                 group_definition["cloudflare_policy_id"] = policy_id
+                group_definition["cf_policy_id"] = policy_id
                 access_groups[group_id] = group_definition
                 needs_save = True
         if needs_save:
@@ -377,21 +382,28 @@ def import_cloudflare_reusable_policies(sync_all=None):
 
         if group_id in access_groups:
             existing_group = access_groups[group_id]
-            if existing_group.get("cloudflare_policy_id") == policy_id:
+            if (
+                existing_group.get("cloudflare_policy_id") == policy_id
+                and existing_group.get("cf_policy_id") == policy_id
+            ):
                 logging.debug(f"Access group '{group_id}' already linked to policy '{policy_id}'")
                 skipped_count += 1
                 continue
+            already_linked = existing_group.get("cloudflare_policy_id") == policy_id
+            existing_group["cloudflare_policy_id"] = policy_id
+            existing_group["cf_policy_id"] = policy_id
+            existing_group["allowed_idps"] = login_method_ids([policy_definition])
+            if not is_dockflare_managed:
+                existing_group["external_policy"] = True
+            # Update system_policy flag if this is a system policy
+            if is_system_policy:
+                existing_group["system_policy"] = True
+                existing_group["display_name"] = display_name
+            if already_linked:
+                logging.info(f"Backfilled cf_policy_id for access group '{group_id}' (policy ID '{policy_id}')")
             else:
-                existing_group["cloudflare_policy_id"] = policy_id
-                existing_group["allowed_idps"] = login_method_ids([policy_definition])
-                if not is_dockflare_managed:
-                    existing_group["external_policy"] = True
-                # Update system_policy flag if this is a system policy
-                if is_system_policy:
-                    existing_group["system_policy"] = True
-                    existing_group["display_name"] = display_name
                 logging.info(f"Updated existing access group '{group_id}' with policy ID '{policy_id}'")
-                updated_count += 1
+            updated_count += 1
         else:
             new_group = {
                 "id": group_id,
@@ -401,7 +413,8 @@ def import_cloudflare_reusable_policies(sync_all=None):
                 "auto_redirect_to_identity": False,
                 "allowed_idps": login_method_ids([policy_definition]),
                 "policies": [policy_definition],
-                "cloudflare_policy_id": policy_id
+                "cloudflare_policy_id": policy_id,
+                "cf_policy_id": policy_id
             }
             if not is_dockflare_managed:
                 new_group["external_policy"] = True

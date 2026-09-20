@@ -21,6 +21,7 @@ La Suite e-mail nécessite des permissions supplémentaires sur votre token API 
 | **Compte** | **Workers Scripts** | **Édition** | Déploiement des workers entrants/sortants |
 | **Compte** | **Workers KV Storage** | **Édition** | Application des quotas en temps réel à l'edge |
 | **Compte** | **R2 Storage** | **Édition** | Création et gestion des buckets de transit |
+| **Compte** | **Access: Apps and Policies** | **Édition** | Créer une exception pour le chemin du webhook e-mail entrant lorsque Webmail est protégé par Cloudflare Access |
 | **Zone** | **Email Routing** | **Édition** | Activation du routage et gestion des règles |
 | **Zone** | **DNS** | **Édition** | Création des enregistrements MX, SPF, DMARC et DKIM |
 

@@ -21,6 +21,7 @@ La Suite e-mail richiede autorizzazioni aggiuntive sul tuo token API DockFlare e
 | **Account** | **Workers Scripts** | **Modifica** | Distribuzione dei worker inbound/outbound |
 | **Account** | **Workers KV Storage** | **Modifica** | Applicazione delle quote in tempo reale all'edge |
 | **Account** | **R2 Storage** | **Modifica** | Creazione e gestione dei bucket di transito |
+| **Account** | **Access: Apps and Policies** | **Modifica** | Creare un bypass per il percorso del webhook e-mail in entrata quando Webmail è protetto da Cloudflare Access |
 | **Zona** | **Email Routing** | **Modifica** | Attivazione del routing e gestione delle regole |
 | **Zona** | **DNS** | **Modifica** | Creazione di record MX, SPF, DMARC e DKIM |
 

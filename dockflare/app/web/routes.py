@@ -34,12 +34,14 @@ from flask import (
 from flask_login import current_user, login_required, login_user, logout_user
 from app.core.user import User
 
-from app import config, docker_client, tunnel_state, cloudflared_agent_state, log_queue, state_update_queue, publish_state_event, limiter
+from app import config, docker_client, tunnel_state, cloudflared_agent_state, log_broadcaster, state_update_queue, publish_state_event, limiter
 from app.core.cache import CACHE_ENABLED
 from app.core.state_manager import (
     access_groups,
     agent_inventory_contains_rule,
+    ensure_default_bypass_policy,
     get_agent,
+    get_remote_policy_id,
     load_state,
     managed_rules,
     save_state,
@@ -122,24 +124,22 @@ def roll_agent_key(agent_id):
             cloudflared_agent_state["last_action_status"] = f"Error: Agent '{agent_id}' not found."
             return redirect(url_for('web.agents_page'))
 
-        old_api_key = agent.get("api_key")
-
         new_api_key = secrets.token_urlsafe(32)
 
-        success = update_agent(agent_id, {"api_key": new_api_key})
-        if not success:
-            cloudflared_agent_state["last_action_status"] = f"Error: Failed to update agent '{agent_id}' with new API key."
-            return redirect(url_for('web.agents_page'))
-
-        if old_api_key:
-            revoke_agent_key(old_api_key)
+        from app.core import agent_key_store as _agent_key_store
+        revoked = 0
+        for existing_key, existing_meta in _agent_key_store.list_keys().items():
+            if (existing_meta or {}).get("bound_agent_id") == agent_id and (existing_meta or {}).get("status", "active") == "active":
+                if revoke_agent_key(existing_key):
+                    revoked += 1
 
         now_iso = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
         add_agent_key(new_api_key, {
             "bound_agent_id": agent_id,
             "created_at": now_iso,
             "last_used_at": None,
-            "rolled_from": old_api_key[:8] + "..." if old_api_key else None
+            "status": "active",
+            "rolled_from_previous": bool(revoked),
         })
 
         cloudflared_agent_state["last_action_status"] = f"Success: API key rolled for agent '{agent.get('display_name', agent_id)}'. Agent must be restarted with new key: {new_api_key}"
@@ -261,9 +261,6 @@ def add_security_headers_bp(response):
     if is_https:
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
 
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-Requested-With, Authorization'
     return response
 
 @bp.context_processor
@@ -480,26 +477,14 @@ from cryptography.fernet import Fernet
 @login_required
 def access_policies_page():
     """Renders the Access Policies page."""
-    from app.core import reusable_policies
-
     default_bypass_id = "public-default-bypass"
     if default_bypass_id in access_groups:
         policy = access_groups[default_bypass_id]
-        cf_policy_id = policy.get("cf_policy_id")
+        cf_policy_id = get_remote_policy_id(policy, default_bypass_id)
 
-        if not cf_policy_id or cf_policy_id == default_bypass_id:
+        if not cf_policy_id:
             try:
-                cf_policy = reusable_policies.create_reusable_policy(
-                    name="DockFlare-Default-Public-Access-Bypass",
-                    decision="bypass",
-                    include_rules=[{"everyone": {}}]
-                )
-                if cf_policy and cf_policy.get("id"):
-                    with state_lock:
-                        access_groups[default_bypass_id]["cf_policy_id"] = cf_policy["id"]
-                        access_groups[default_bypass_id]["id"] = cf_policy["id"]
-                        save_state()
-                    logging.info(f"Synced default bypass policy to Cloudflare with ID: {cf_policy['id']}")
+                ensure_default_bypass_policy(flask_app=current_app)
             except Exception as e:
                 logging.error(f"Failed to sync default bypass policy to Cloudflare: {e}", exc_info=True)
 
@@ -1313,35 +1298,33 @@ def force_delete_rule_route(hostname):
 @login_required
 def stream_logs_route():
     client_id = f"client-{random.randint(1000, 9999)}"
-    logging.info(f"Log stream client {client_id} connected.")
+    logging.debug(f"Log stream client {client_id} connected.")
     def event_stream():
+        subscriber_id, client_queue = log_broadcaster.subscribe()
         try:
-            yield f"data: --- Log stream connected (client {client_id}) ---\n\n"
+            yield "retry: 5000\n\n"
+            yield f"event: hello\ndata: --- Log stream connected (client {client_id}) ---\n\n"
             last_heartbeat = time.time()
             while True:
                 try:
-                    log_entry = log_queue.get(timeout=0.25) 
-                    yield f"data: {log_entry}\n\n"
-                    last_heartbeat = time.time() 
+                    log_entry = client_queue.get(timeout=1.0)
+                    yield f"event: log\ndata: {log_entry}\n\n"
                 except queue.Empty:
-                    if time.time() - last_heartbeat > 2: 
-                        yield ": keepalive\n\n" 
+                    if time.time() - last_heartbeat >= 15:
+                        yield "event: heartbeat\ndata: {}\n\n"
                         last_heartbeat = time.time()
-                    time.sleep(0.1) 
         except GeneratorExit:
-            logging.info(f"Log stream client {client_id} disconnected.")
+            logging.debug(f"Log stream client {client_id} disconnected.")
         except Exception as e_stream:
             logging.error(f"Error in log stream for {client_id}: {e_stream}", exc_info=True)
         finally:
-            logging.info(f"Log stream for client {client_id} ended.")
-            
+            log_broadcaster.unsubscribe(subscriber_id)
+
     response = Response(event_stream(), mimetype='text/event-stream')
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
     response.headers['X-Accel-Buffering'] = 'no'
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET'
     return response
 
 @bp.route('/stream-state-updates')
@@ -1575,7 +1558,7 @@ def ui_add_manual_rule_route():
                 default_bypass_id = "public-default-bypass"
                 if default_bypass_id in access_groups:
                     default_bypass_group = access_groups[default_bypass_id]
-                    cf_policy_id = default_bypass_group.get("cf_policy_id") or default_bypass_group.get("id")
+                    cf_policy_id = get_remote_policy_id(default_bypass_group, default_bypass_id)
 
                     access_group_id = [default_bypass_id]
                     access_policy_type = "group"
@@ -1909,7 +1892,7 @@ def ui_edit_manual_rule_route():
                 default_bypass_id = "public-default-bypass"
                 if default_bypass_id in access_groups:
                     default_bypass_group = access_groups[default_bypass_id]
-                    cf_policy_id = default_bypass_group.get("cf_policy_id") or default_bypass_group.get("id")
+                    cf_policy_id = get_remote_policy_id(default_bypass_group, default_bypass_id)
 
                     access_group_id = [default_bypass_id]
                     access_policy_type = "group"

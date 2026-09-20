@@ -21,6 +21,7 @@ La Suite de correo requiere permisos adicionales en su token API de DockFlare ex
 | **Cuenta** | **Workers Scripts** | **Edición** | Despliegue de workers entrantes/salientes |
 | **Cuenta** | **Workers KV Storage** | **Edición** | Aplicación de cuotas en tiempo real en el edge |
 | **Cuenta** | **R2 Storage** | **Edición** | Creación y gestión de buckets de tránsito |
+| **Cuenta** | **Access: Apps and Policies** | **Edición** | Crear una excepción para la ruta del webhook de correo entrante cuando Webmail está protegido por Cloudflare Access |
 | **Zona** | **Email Routing** | **Edición** | Activación del enrutamiento y gestión de reglas |
 | **Zona** | **DNS** | **Edición** | Creación de registros MX, SPF, DMARC y DKIM |
 

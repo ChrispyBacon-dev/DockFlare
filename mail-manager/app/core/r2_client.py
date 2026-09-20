@@ -24,9 +24,10 @@ def get_r2_client(access_key_id, secret_access_key, endpoint_url):
 
 def _resolve(domain_cfg):
     if domain_cfg:
+        from app.core.secret_store import decrypt_value
         return (
             domain_cfg['r2_access_key_id'],
-            domain_cfg['r2_secret_access_key'],
+            decrypt_value(domain_cfg['r2_secret_access_key']),
             domain_cfg['r2_endpoint_url'],
             domain_cfg['r2_bucket'],
         )

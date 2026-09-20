@@ -60,6 +60,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - REDIS_DB_INDEX=0  # Optional: specify Redis database index (0-15) for isolation from other containers
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
+      - INTERNAL_BOOTSTRAP_SECRET=${INTERNAL_BOOTSTRAP_SECRET:?set INTERNAL_BOOTSTRAP_SECRET}
     depends_on:
       docker-socket-proxy:
         condition: service_started
@@ -91,6 +92,8 @@ services:
     environment:
       - DOCKFLARE_MASTER_URL=http://dockflare:5000
       - MAIL_DATA_PATH=/data
+      - INTERNAL_BOOTSTRAP_SECRET=${INTERNAL_BOOTSTRAP_SECRET:?set INTERNAL_BOOTSTRAP_SECRET}
+      - MAIL_SECRET_KEY=${MAIL_SECRET_KEY:-}
     volumes:
       - mail_data:/data
     depends_on:

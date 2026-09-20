@@ -17,6 +17,8 @@ set -euo pipefail
 #   DOCKFLARE_EMAIL   — set to "true" to enable email profile    (default: false)
 #   DOCKFLARE_TLD     — base domain e.g. example.com             (required if EMAIL=true)
 #   DOCKFLARE_DOMAIN  — DockFlare master domain                  (default: dockflare.$DOCKFLARE_TLD)
+#   INTERNAL_BOOTSTRAP_SECRET — existing service-to-service secret (generated if unset)
+#   MAIL_SECRET_KEY   — key for encrypting mail secrets at rest    (generated if unset)
 #
 # Examples:
 #   bash <(curl -fsSL https://dockflare.app/install.sh)
@@ -31,6 +33,8 @@ DOCKFLARE_GID="${DOCKFLARE_GID:-65532}"
 DOCKFLARE_EMAIL="${DOCKFLARE_EMAIL:-false}"
 DOCKFLARE_TLD="${DOCKFLARE_TLD:-}"
 DOCKFLARE_DOMAIN="${DOCKFLARE_DOMAIN:-}"
+INTERNAL_BOOTSTRAP_SECRET="${INTERNAL_BOOTSTRAP_SECRET:-}"
+MAIL_SECRET_KEY="${MAIL_SECRET_KEY:-}"
 
 BOLD="\033[1m"
 GREEN="\033[0;32m"
@@ -289,6 +293,115 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+# Internal service authentication
+# -----------------------------------------------------------------------------
+section "Configuring internal service authentication"
+
+ENV_FILE="${DOCKFLARE_DIR}/.env"
+
+# Preserve existing secrets when the installer is rerun. Do not source the file:
+# it is configuration data and may contain values that are unsafe to evaluate as
+# shell code.
+read_env_value() {
+  [ -f "$ENV_FILE" ] || return 0
+  awk -v key="$1" '
+    $0 ~ "^" key "=" {
+      sub("^" key "=", "")
+      print
+      exit
+    }
+  ' "$ENV_FILE"
+}
+
+if [ -z "$INTERNAL_BOOTSTRAP_SECRET" ]; then
+  INTERNAL_BOOTSTRAP_SECRET="$(read_env_value INTERNAL_BOOTSTRAP_SECRET)"
+fi
+if [ -z "$MAIL_SECRET_KEY" ]; then
+  MAIL_SECRET_KEY="$(read_env_value MAIL_SECRET_KEY)"
+fi
+
+generate_secret() {
+  if command -v openssl &>/dev/null; then
+    openssl rand -hex 32
+  elif command -v od &>/dev/null && command -v tr &>/dev/null && [ -r /dev/urandom ]; then
+    od -An -N32 -tx1 /dev/urandom | tr -d '[:space:]'
+  else
+    return 1
+  fi
+}
+
+if [ -z "$INTERNAL_BOOTSTRAP_SECRET" ]; then
+  INTERNAL_BOOTSTRAP_SECRET="$(generate_secret)" || {
+    error "Could not generate INTERNAL_BOOTSTRAP_SECRET (openssl or od with /dev/urandom is required)."
+    exit 1
+  }
+fi
+if [ -z "$MAIL_SECRET_KEY" ]; then
+  MAIL_SECRET_KEY="$(generate_secret)" || {
+    error "Could not generate MAIL_SECRET_KEY (openssl or od with /dev/urandom is required)."
+    exit 1
+  }
+fi
+
+validate_secret() {
+  local name="$1"
+  local value="$2"
+  if [ "${#value}" -lt 32 ]; then
+    error "${name} must contain at least 32 characters."
+    exit 1
+  fi
+  case "$value" in
+    *[!A-Za-z0-9._-]*)
+      error "${name} may contain only letters, numbers, dots, underscores, and hyphens."
+      exit 1
+      ;;
+  esac
+}
+validate_secret INTERNAL_BOOTSTRAP_SECRET "$INTERNAL_BOOTSTRAP_SECRET"
+validate_secret MAIL_SECRET_KEY "$MAIL_SECRET_KEY"
+
+# Write or replace only these entries while preserving any other installer
+# settings already present in .env. The temporary file and final file are
+# restricted to the installing user.
+umask 077
+ENV_TMP="$(mktemp "${DOCKFLARE_DIR}/.env.tmp.XXXXXX")"
+trap 'rm -f "$ENV_TMP"' EXIT
+if [ -f "$ENV_FILE" ]; then
+  awk -v bootstrap="$INTERNAL_BOOTSTRAP_SECRET" -v mailkey="$MAIL_SECRET_KEY" '
+    BEGIN { wrote_bootstrap = 0; wrote_mailkey = 0 }
+    /^INTERNAL_BOOTSTRAP_SECRET=/ {
+      if (!wrote_bootstrap) {
+        print "INTERNAL_BOOTSTRAP_SECRET=" bootstrap
+        wrote_bootstrap = 1
+      }
+      next
+    }
+    /^MAIL_SECRET_KEY=/ {
+      if (!wrote_mailkey) {
+        print "MAIL_SECRET_KEY=" mailkey
+        wrote_mailkey = 1
+      }
+      next
+    }
+    { print }
+    END {
+      if (!wrote_bootstrap) {
+        print "INTERNAL_BOOTSTRAP_SECRET=" bootstrap
+      }
+      if (!wrote_mailkey) {
+        print "MAIL_SECRET_KEY=" mailkey
+      }
+    }
+  ' "$ENV_FILE" > "$ENV_TMP"
+else
+  printf 'INTERNAL_BOOTSTRAP_SECRET=%s\nMAIL_SECRET_KEY=%s\n' "$INTERNAL_BOOTSTRAP_SECRET" "$MAIL_SECRET_KEY" > "$ENV_TMP"
+fi
+chmod 600 "$ENV_TMP"
+mv "$ENV_TMP" "$ENV_FILE"
+trap - EXIT
+info "Internal bootstrap secret and mail encryption key configured in ${ENV_FILE}"
+
+# -----------------------------------------------------------------------------
 # Docker network
 # -----------------------------------------------------------------------------
 section "Preparing Docker network"
@@ -386,6 +499,7 @@ ${LABELS_BLOCK}
       - REDIS_URL=redis://redis:6379/0
       - REDIS_DB_INDEX=0
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
+      - INTERNAL_BOOTSTRAP_SECRET=\${INTERNAL_BOOTSTRAP_SECRET:?set INTERNAL_BOOTSTRAP_SECRET}
       #- LOG_LEVEL=DEBUG
     depends_on:
       docker-socket-proxy:
@@ -418,6 +532,8 @@ ${LABELS_BLOCK}
     environment:
       - DOCKFLARE_MASTER_URL=http://dockflare:5000
       - MAIL_DATA_PATH=/data
+      - INTERNAL_BOOTSTRAP_SECRET=\${INTERNAL_BOOTSTRAP_SECRET:?set INTERNAL_BOOTSTRAP_SECRET}
+      - MAIL_SECRET_KEY=\${MAIL_SECRET_KEY:?set MAIL_SECRET_KEY}
     volumes:
       - mail_data:/data
     depends_on:

@@ -34,6 +34,67 @@ def _parse_hostname(public_url):
     return parsed.hostname
 
 
+def _create_admin_bypass_policy(account_id, app_uuid, precedence=2):
+    resp = cf_api_request(
+        "POST",
+        f"/accounts/{account_id}/access/apps/{app_uuid}/policies",
+        json_data={
+            "name": "DockFlare Admin Bypass",
+            "decision": "bypass",
+            "precedence": precedence,
+            "include": [{"everyone": {}}]
+        }
+    )
+    return resp.get("result", {}).get("id")
+
+
+def _policy_includes_everyone(policy):
+    for rule in policy.get("include") or []:
+        if isinstance(rule, dict) and "everyone" in rule:
+            return True
+    return False
+
+
+def ensure_agent_access_hardening():
+    data = get_agent_cf_token()
+    account_id = _account_id()
+    if not data or not account_id:
+        return
+    app_uuid = data.get("app_uuid")
+    if not app_uuid:
+        return
+
+    try:
+        resp = cf_api_request("GET", f"/accounts/{account_id}/access/apps/{app_uuid}/policies")
+        policies = resp.get("result") or []
+    except Exception as e:
+        logging.warning(f"Could not list Cloudflare Access policies for the Agent API app: {e}")
+        return
+
+    if any(policy.get("decision") == "bypass" and _policy_includes_everyone(policy) for policy in policies):
+        return
+
+    for policy in policies:
+        if policy.get("name") == "DockFlare Admin Access" and policy.get("decision") == "allow":
+            policy_id = policy.get("id") or policy.get("uid")
+            try:
+                cf_api_request("DELETE", f"/accounts/{account_id}/access/apps/{app_uuid}/policies/{policy_id}")
+                logging.warning("Removed the redundant DockFlare Admin Access policy from the Agent API app")
+            except Exception as e:
+                logging.warning(f"Could not remove the redundant admin access policy {policy_id}: {e}")
+
+    try:
+        precedences = [p.get("precedence") for p in policies if isinstance(p.get("precedence"), int)]
+        next_precedence = (max(precedences) if precedences else 1) + 1
+        new_id = _create_admin_bypass_policy(account_id, app_uuid, next_precedence)
+        if new_id:
+            logging.info(
+                "Ensured the Agent API Access app allows the admin UI; the endpoints still require the master or agent API key"
+            )
+    except Exception as e:
+        logging.warning(f"Could not ensure the admin bypass policy for the Agent API app: {e}")
+
+
 def ensure_agent_service_token(public_url):
     existing = get_agent_cf_token()
     existing_secret = agent_key_store.get_service_token_secret()
@@ -91,17 +152,7 @@ def ensure_agent_service_token(public_url):
     policy_result = policy_resp.get("result", {})
     policy_id = policy_result.get("id")
 
-    bypass_resp = cf_api_request(
-        "POST",
-        f"/accounts/{account_id}/access/apps/{app_uuid}/policies",
-        json_data={
-            "name": "DockFlare Admin Bypass",
-            "decision": "bypass",
-            "precedence": 2,
-            "include": [{"everyone": {}}]
-        }
-    )
-    bypass_policy_id = bypass_resp.get("result", {}).get("id")
+    admin_policy_id = _create_admin_bypass_policy(account_id, app_uuid)
 
     agent_key_store.store_service_token_secret(client_secret)
 
@@ -110,8 +161,9 @@ def ensure_agent_service_token(public_url):
         "token_id": token_id,
         "app_uuid": app_uuid,
         "policy_id": policy_id,
-        "bypass_policy_id": bypass_policy_id,
     }
+    if admin_policy_id:
+        token_data["bypass_policy_id"] = admin_policy_id
     set_agent_cf_token(token_data)
 
     return {**token_data, "client_secret": client_secret}
@@ -151,13 +203,23 @@ def delete_agent_service_token():
     clear_agent_cf_token()
 
 
-def generate_compose_content(key_id, public_url, cloudflared_image="cloudflare/cloudflared:latest"):
+def _safe_display_name(value):
+    if not isinstance(value, str):
+        return None
+    cleaned = ''.join(ch for ch in value if ch.isprintable() and ch not in '\\"').strip()
+    return cleaned[:128] or None
+
+
+def generate_compose_content(key_id, public_url, cloudflared_image="cloudflare/cloudflared:latest", agent_display_name=None):
     token_data = get_agent_service_token()
     if not token_data:
         raise ValueError("CF Service Token not configured")
 
     client_id = token_data["client_id"]
     client_secret = token_data["client_secret"]
+
+    safe_name = _safe_display_name(agent_display_name)
+    display_name_env = f'\n      - "AGENT_DISPLAY_NAME={safe_name}"' if safe_name else ''
 
     return f"""services:
   docker-socket-proxy:
@@ -195,7 +257,7 @@ def generate_compose_content(key_id, public_url, cloudflared_image="cloudflare/c
     restart: unless-stopped
     environment:
       - DOCKFLARE_MASTER_URL={public_url}
-      - DOCKFLARE_API_KEY={key_id}
+      - DOCKFLARE_API_KEY={key_id}{display_name_env}
       - CF_ACCESS_CLIENT_ID={client_id}
       - CF_ACCESS_CLIENT_SECRET={client_secret}
       - CLOUDFLARED_IMAGE={cloudflared_image}
@@ -223,8 +285,8 @@ networks:
 """
 
 
-def generate_deploy_script(key_id, public_url, cloudflared_image="cloudflare/cloudflared:latest"):
-    compose_content = generate_compose_content(key_id, public_url, cloudflared_image)
+def generate_deploy_script(key_id, public_url, cloudflared_image="cloudflare/cloudflared:latest", agent_display_name=None):
+    compose_content = generate_compose_content(key_id, public_url, cloudflared_image, agent_display_name)
 
     return f"""#!/usr/bin/env bash
 set -e

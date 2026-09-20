@@ -55,6 +55,10 @@ class _Config:
         return _env('OUTBOUND_AUTH_SECRET')
 
     @property
+    def MAIL_SECRET_KEY(self):
+        return _env('MAIL_SECRET_KEY') or _env('INTERNAL_BOOTSTRAP_SECRET')
+
+    @property
     def DB_PATH(self):
         return os.path.join(self.MAIL_DATA_PATH, 'db', 'mail.db')
 

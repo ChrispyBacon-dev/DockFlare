@@ -21,6 +21,7 @@ The Email Suite requires additional permissions on your existing DockFlare API T
 | **Account** | **Workers Scripts** | **Edit** | Deploying inbound/outbound workers |
 | **Account** | **Workers KV Storage** | **Edit** | Real-time quota enforcement at the edge |
 | **Account** | **R2 Storage** | **Edit** | Creating and managing transit buckets |
+| **Account** | **Access: Apps and Policies** | **Edit** | Create a bypass for the inbound email webhook path when Webmail is protected by Cloudflare Access |
 | **Zone** | **Email Routing** | **Edit** | Activating routing and managing rules |
 | **Zone** | **DNS** | **Edit** | Creating MX, SPF, DMARC, and DKIM records |
 

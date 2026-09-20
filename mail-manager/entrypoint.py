@@ -110,6 +110,7 @@ def _sync_domains(bootstrap_data):
     conn = sqlite3.connect(db_path)
     now = datetime.now(timezone.utc).isoformat()
     try:
+        from app.core.secret_store import encrypt_value
         for zone_name, d in bootstrap_data.get('domains', {}).items():
             conn.execute("""
                 INSERT INTO domain_configs (
@@ -128,13 +129,13 @@ def _sync_domains(bootstrap_data):
                     updated_at=excluded.updated_at
             """, (
                 zone_name,
-                d.get('webhook_secret', ''),
+                encrypt_value(d.get('webhook_secret', '')),
                 d.get('r2_bucket', ''),
                 d.get('r2_access_key_id', ''),
-                d.get('r2_secret_access_key', ''),
+                encrypt_value(d.get('r2_secret_access_key', '')),
                 d.get('r2_endpoint_url', ''),
                 d.get('outbound_worker_url', ''),
-                d.get('outbound_auth_secret', ''),
+                encrypt_value(d.get('outbound_auth_secret', '')),
                 now,
             ))
         conn.commit()

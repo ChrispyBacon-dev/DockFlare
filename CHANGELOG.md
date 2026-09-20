@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.1.6] - 2026-09-19
+
+### Fixed
+- **Internal email config auth:** Mail bootstrap endpoints now require the shared `INTERNAL_BOOTSTRAP_SECRET` and a matching `X-Bootstrap-Token`, and the installer generates that secret automatically. Closes off unauthenticated access to mail secrets on the private network.
+- **Built-in Access policies missing on new installs (regression):** On a fresh setup the two default policies (`public-default-bypass`, `authenticated-default`) could fail to reach Cloudflare, and a stale local reference then made DockFlare skip them forever - so label-created apps had no policies attached and every login was denied. DockFlare now verifies both on startup and recreates or re-links them when missing. Also stopped the duplicate bypass policy the Access Policies page kept creating, and an unknown `dockflare.access.policy` value now errors instead of silently stripping a policy. Thanks [@PauloJf](https://github.com/PauloJf) for the report and repro ([#399](https://github.com/ChrispyBacon-dev/DockFlare/issues/399)).
+- **Inbound email blocked when Webmail is behind Cloudflare Access:** The inbound worker's webhook was getting caught by the Access login, so received mail piled up in R2 and never reached mail-manager. DockFlare now adds a bypass for just `/api/v1/webhook/inbound` (exact path, still HMAC-verified) during domain setup, and fixes existing installs automatically on startup.
+- **Webmail dependency refresh:** Vite 5 → 8, Tiptap 2 → 3, plus the plugin/PWA/workbox bumps - all 35 `npm audit` findings are gone and both webmail and DockFlare audit clean. Composer updated for Tiptap 3, build image moved to Node 22, and the stray `vue-tsc` `.js`/`.js.map` output (102 committed files) is cleaned up with `noEmit` and gitignore.
+- **Email domain lifecycle:** Tearing down a domain now removes its webhook bypass Access app, creating a mailbox that already has a routing rule updates it instead of failing with a 409, and quota KV namespace creation no longer logs "already exists" on every start.
+- **Access Group country picker:** With a lot of countries selected the chip list wouldn't scroll and the dropdown was clipped by the modal. It now scrolls, and the dropdown renders outside the modal.
+- **Agent name carries from the API key into new deploys:** When you give an "Owner" name while generating an agent API key, that name is now injected as `AGENT_DISPLAY_NAME` into the generated Compose snippet and one-liner, so the agent shows up in DockFlare with the name you assigned on first enrollment instead of the generic `dockflare-agent` fallback. This only applies to **newly generated deploy commands** - already-deployed agents keep their current name until they're redeployed with the new command or renamed manually.
+- **Open modal no longer closes itself:** Removed the Dashboard's duplicate live-update reload that refreshed the page every few seconds and closed any open dialog (e.g. Add Rule). The remaining fallback reload now waits until dialogs are closed.
+- **Real-time log stream fixed:** The activity log panel no longer reconnects every ~10s or opens duplicate connections. Proper SSE heartbeats, a single reconnect watchdog, per-viewer log fan-out, and it pauses when the tab is hidden.
+
+### Security
+- **Outbound email worker hardening:** The worker no longer relays for arbitrary senders - it pins the sender to the configured domain (plus an optional allowlist), validates recipients, strips CR/LF from all headers to block header/MIME injection, keeps the sender display name in `From`, stops leaking the `Bcc:` header, encodes attachment filenames, compares the auth secret in constant time, and enforces per-sender hourly/daily rate limits. Mail-manager sanitizes header fields before dispatch too.
+- **Inbound mail can't be mis-filed by headers:** Mailbox resolution now trusts the SMTP envelope (and the worker's alias result) instead of the spoofable `To:`/`Delivered-To` headers, so with catch-all enabled a sender can no longer drop mail into an arbitrary mailbox.
+- **Push endpoints can't target internal hosts:** Web Push subscriptions must be HTTPS and resolve to public addresses; invalid or legacy endpoints are rejected on subscribe and cleaned up on send.
+- **Agent API Access app:** The `/api/v2/agents/` Cloudflare Access app keeps an admin bypass policy so the same-origin admin UI can reach those endpoints (an identity `allow` policy breaks the browser request flow), while the endpoints themselves remain protected by the master API key and per-agent keys. Startup now ensures the policy exists instead of creating duplicates.
+- **Agent secrets removed from `state.json`:** Agent API keys and tunnel tokens now live only in the encrypted key store, legacy plaintext values are migrated on first load, backups no longer contain them, and rolling a key revokes all previous active keys.
+- **Mail-manager secrets encrypted at rest:** R2 secret keys, webhook secrets and outbound auth secrets are AES-GCM encrypted in the SQLite DB (`MAIL_SECRET_KEY`, falling back to the bootstrap secret), existing rows are migrated on startup, and DB/directory permissions are tightened.
+- **Rate limits can't be spoofed:** The client IP used for login/mailbox rate limiting now only trusts forwarded headers from known proxies (Cloudflare ranges, loopback and private ranges by default, overridable via `TRUSTED_PROXY_IPS`).
+- **Email status no longer leaks secrets:** `/email/status` and the Email page now return a non-secret summary instead of the full config (no private JWT/VAPID keys, R2 secrets or webhook secrets).
+- **Cross-mailbox folder protection:** Moving a message now requires the target folder to belong to that mailbox and folder listings are mailbox-scoped; any legacy mis-filed messages are repaired on startup.
+- **Agent UI XSS and CORS:** Agent-supplied fields are HTML-escaped before rendering, and the blanket `Access-Control-Allow-Origin: *` on the master UI was removed.
+
+
 ## [v3.1.5] - 2026-09-01
 
 ### Added

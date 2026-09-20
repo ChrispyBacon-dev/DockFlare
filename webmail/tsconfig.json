@@ -12,6 +12,7 @@
     "esModuleInterop": true,
     "lib": ["ES2022", "DOM"],
     "skipLibCheck": true,
+    "noEmit": true,
     "types": ["vite/client", "vite-plugin-pwa/client"],
     "paths": {
       "@/*": ["./src/*"]

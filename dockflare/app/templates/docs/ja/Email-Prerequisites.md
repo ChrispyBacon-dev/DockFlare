@@ -21,6 +21,7 @@
 | **アカウント** | **Workers Scripts** | **編集** | インバウンド/アウトバウンドワーカーのデプロイ |
 | **アカウント** | **Workers KV Storage** | **編集** | エッジでのリアルタイムクォータ適用 |
 | **アカウント** | **R2 Storage** | **編集** | トランジットバケットの作成と管理 |
+| **アカウント** | **Access: Apps and Policies** | **編集** | Webmail が Cloudflare Access で保護されている場合に、受信メール webhook パス用のバイパスを作成 |
 | **ゾーン** | **Email Routing** | **編集** | ルーティングの有効化とルール管理 |
 | **ゾーン** | **DNS** | **編集** | MX、SPF、DMARC、DKIM レコードの作成 |
 

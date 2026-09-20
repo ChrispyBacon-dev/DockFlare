@@ -56,6 +56,23 @@ def _check_mailbox_access(address):
     return address in request.user.get('mailboxes', [])
 
 
+def _folder_belongs_to_mailbox(db, folder_id, address):
+    try:
+        folder_id = int(folder_id)
+    except (TypeError, ValueError):
+        return False
+    row = db.execute(
+        "SELECT 1 FROM folders WHERE id=? AND mailbox_address=?",
+        (folder_id, address),
+    ).fetchone()
+    return row is not None
+
+
+def _strip_header_value(value, max_length=998):
+    text = str(value or '').replace('\r', ' ').replace('\n', ' ').replace('\x00', ' ').strip()
+    return text[:max_length]
+
+
 @api_bp.route('/stats', methods=['GET'])
 @admin_required
 def stats():
@@ -111,6 +128,12 @@ def push_subscribe():
 
     if not endpoint or not p256dh or not auth_key or not mailbox_address:
         return jsonify({"error": "endpoint, keys, and mailbox_address are required"}), 400
+
+    from app.core.push import validate_push_endpoint
+    try:
+        validate_push_endpoint(endpoint)
+    except ValueError as endpoint_error:
+        return jsonify({"error": str(endpoint_error)}), 400
 
     if not _check_mailbox_access(mailbox_address):
         return jsonify({"error": "forbidden"}), 403
@@ -358,13 +381,13 @@ def get_messages(address):
     folder_id = folder_row['id']
 
     cur = db.execute(
-        "SELECT COUNT(*) FROM messages WHERE folder_id=?", (folder_id,)
+        "SELECT COUNT(*) FROM messages WHERE folder_id=? AND mailbox_address=?", (folder_id, address)
     )
     total = cur.fetchone()[0]
 
     cur = db.execute(
-        f"SELECT * FROM messages WHERE folder_id=? ORDER BY {sort_expr} {order} LIMIT ? OFFSET ?",
-        (folder_id, per_page, offset),
+        f"SELECT * FROM messages WHERE folder_id=? AND mailbox_address=? ORDER BY {sort_expr} {order} LIMIT ? OFFSET ?",
+        (folder_id, address, per_page, offset),
     )
     msgs = [dict(row) for row in cur.fetchall()]
     return _paginated(msgs, total, page, per_page)
@@ -455,6 +478,8 @@ def patch_message(address, msg_id):
             (int(bool(data['is_starred'])), msg_id, address),
         )
     if 'folder_id' in data:
+        if not _folder_belongs_to_mailbox(db, data['folder_id'], address):
+            return jsonify({"error": "invalid folder"}), 400
         db.execute(
             "UPDATE messages SET folder_id=? WHERE id=? AND mailbox_address=?",
             (data['folder_id'], msg_id, address),
@@ -476,6 +501,8 @@ def bulk_move(address):
         return jsonify({"error": "message_ids and folder_id are required"}), 400
 
     db = get_db()
+    if not _folder_belongs_to_mailbox(db, folder_id, address):
+        return jsonify({"error": "invalid folder"}), 400
     for mid in msg_ids:
         db.execute(
             "UPDATE messages SET folder_id=? WHERE id=? AND mailbox_address=?",
@@ -521,14 +548,14 @@ def get_folders(address):
     folders = [dict(row) for row in cur.fetchall()]
     for f in folders:
         cur = db.execute(
-            "SELECT COUNT(*) FROM messages WHERE folder_id=? AND is_read=0",
-            (f['id'],),
+            "SELECT COUNT(*) FROM messages WHERE folder_id=? AND mailbox_address=? AND is_read=0",
+            (f['id'], address),
         )
         f['unread_count'] = cur.fetchone()[0]
 
         cur = db.execute(
-            "SELECT COUNT(*) FROM messages WHERE folder_id=?",
-            (f['id'],),
+            "SELECT COUNT(*) FROM messages WHERE folder_id=? AND mailbox_address=?",
+            (f['id'], address),
         )
         f['total_count'] = cur.fetchone()[0]
 
@@ -820,23 +847,32 @@ def _dispatch_send(address, data, effective_from=None, via_alias=None):
             (sender_domain,)
         ).fetchone()
         if db_cfg and db_cfg['outbound_worker_url']:
+            from app.core.secret_store import decrypt_value
             outbound_url = db_cfg['outbound_worker_url']
-            outbound_auth = db_cfg['outbound_auth_secret']
+            outbound_auth = decrypt_value(db_cfg['outbound_auth_secret'])
 
     if external_recipients:
+        safe_attachments = [
+            {
+                **att,
+                "filename": _strip_header_value(att.get("filename") or "attachment", 255) or "attachment",
+                "content_type": _strip_header_value(att.get("content_type") or "application/octet-stream", 255) or "application/octet-stream",
+            }
+            for att in attachments
+        ]
         worker_payload = {
-            "from": from_formatted,
+            "from": _strip_header_value(from_formatted),
             "to": external_recipients,
             "cc": data.get('cc'),
             "bcc": data.get('bcc'),
-            "subject": subject,
+            "subject": _strip_header_value(subject),
             "text": text,
             "html": html,
-            "replyTo": data.get('reply_to') or data.get('replyTo'),
-            "inReplyTo": data.get('in_reply_to') or data.get('inReplyTo'),
-            "references": data.get('references'),
-            "messageId": msg_id,
-            "attachments": attachments,
+            "replyTo": _strip_header_value(data.get('reply_to') or data.get('replyTo') or '') or None,
+            "inReplyTo": _strip_header_value(data.get('in_reply_to') or data.get('inReplyTo') or '') or None,
+            "references": _strip_header_value(data.get('references') or '') or None,
+            "messageId": _strip_header_value(msg_id),
+            "attachments": safe_attachments,
         }
         if outbound_url:
             try:

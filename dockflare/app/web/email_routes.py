@@ -7,6 +7,7 @@ import os
 import secrets
 import time
 import jwt
+from urllib.parse import urlparse
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, current_app
 from flask_login import login_required, current_user
 from cryptography.hazmat.primitives import serialization
@@ -23,21 +24,73 @@ def _read_worker_template(filename):
     with open(os.path.join(_WORKER_TEMPLATE_DIR, filename), 'r') as f:
         return f.read()
 
+
+def _outbound_bindings(domain_name, auth_secret, quota_kv_ns_id=None):
+    bindings = [
+        {"type": "send_email", "name": "SEND_EMAIL"},
+        {"type": "secret_text", "name": "AUTH_SECRET", "text": auth_secret},
+        {"type": "plain_text", "name": "DOMAIN_NAME", "text": domain_name},
+        {"type": "plain_text", "name": "RATE_LIMIT_PER_HOUR", "text": str(getattr(config, 'EMAIL_OUTBOUND_RATE_LIMIT_PER_HOUR', 50))},
+        {"type": "plain_text", "name": "RATE_LIMIT_PER_DAY", "text": str(getattr(config, 'EMAIL_OUTBOUND_RATE_LIMIT_PER_DAY', 200))},
+    ]
+    if quota_kv_ns_id:
+        bindings.append({"type": "kv_namespace", "name": "RATE_LIMIT_KV", "namespace_id": quota_kv_ns_id})
+    return bindings
+
 email_bp = Blueprint('email', __name__, url_prefix='/email')
+
+def _public_email_config(email_cfg):
+    public = {
+        "enabled": email_cfg.get("enabled", False),
+        "domains": {},
+    }
+    for domain, domain_cfg in (email_cfg.get("domains") or {}).items():
+        public["domains"][domain] = {
+            "zone_id": domain_cfg.get("zone_id"),
+            "zone_name": domain_cfg.get("zone_name"),
+            "email_routing_enabled": domain_cfg.get("email_routing_enabled"),
+            "email_sending_status": domain_cfg.get("email_sending_status"),
+            "r2_bucket": domain_cfg.get("r2_bucket"),
+            "inbound_worker_name": domain_cfg.get("inbound_worker_name"),
+            "outbound_worker_name": domain_cfg.get("outbound_worker_name"),
+            "catch_all_address": domain_cfg.get("catch_all_address"),
+            "mailboxes": {
+                address: {
+                    "display_name": mailbox.get("display_name"),
+                    "quota_bytes": mailbox.get("quota_bytes"),
+                    "created_at": mailbox.get("created_at"),
+                }
+                for address, mailbox in (domain_cfg.get("mailboxes") or {}).items()
+            },
+        }
+    return public
+
+
+def _allowed_webmail_origins():
+    allowed = set()
+    webmail_hostname = _get_webmail_hostname()
+    if webmail_hostname:
+        allowed.add(webmail_hostname.lower())
+    for domain in (config.EMAIL_CONFIG.get('domains') or {}).keys():
+        allowed.add(f"mail.{domain}".lower())
+    return allowed
+
 
 def _webmail_origin():
     request_origin = request.headers.get('Origin', '')
+    allowed_hosts = _allowed_webmail_origins()
+    fallback = f"https://{sorted(allowed_hosts)[0]}" if allowed_hosts else 'null'
     if not request_origin:
-        return '*'
-        
-    # Allow any origin that looks like our mail subdomains
-    if '.dockflare.app' in request_origin or 'localhost' in request_origin or '127.0.0.1' in request_origin:
-        return request_origin
-
-    # Fallback to the first domain or *
-    domains = config.EMAIL_CONFIG.get('domains', {})
-    first_domain = next(iter(domains), '')
-    return f"https://mail.{first_domain}" if first_domain else '*'
+        return fallback
+    try:
+        parsed = urlparse(request_origin)
+    except Exception:
+        return fallback
+    if parsed.scheme in ('http', 'https') and parsed.hostname:
+        host = parsed.hostname.lower()
+        if host in allowed_hosts or host in ('localhost', '127.0.0.1', '::1'):
+            return request_origin
+    return fallback
 
 def save_email_config(email_config_data):
     cfg, fernet = load_encrypted_config_with_cipher()
@@ -70,7 +123,7 @@ def _get_mail_manager_state():
 def email_page():
     zones = list_account_zones() or []
     mail_manager_state = _get_mail_manager_state()
-    return render_template('email.html', zones=zones, email_config=config.EMAIL_CONFIG, email_enabled=config.EMAIL_ENABLED, mail_manager_state=mail_manager_state, cf_account_id=config.CF_ACCOUNT_ID or '')
+    return render_template('email.html', zones=zones, email_config=_public_email_config(config.EMAIL_CONFIG), email_enabled=config.EMAIL_ENABLED, mail_manager_state=mail_manager_state, cf_account_id=config.CF_ACCOUNT_ID or '')
 
 @email_bp.route('/setup-domain', methods=['POST'])
 @login_required
@@ -142,7 +195,7 @@ def setup_email_domain():
 
         quota_kv_ns_id = None
         try:
-            quota_kv_ns_id = email_manager.create_kv_namespace(
+            quota_kv_ns_id = email_manager.get_or_create_kv_namespace(
                 f"dockflare-quota-{zone_name.replace('.', '-')}"
             )
         except Exception as e:
@@ -163,6 +216,7 @@ def setup_email_domain():
         email_manager.deploy_worker(inbound_worker_name, _read_worker_template('inbound_worker.js'), inbound_bindings)
         email_manager.set_worker_cron(inbound_worker_name, ['*/5 * * * *'])
         email_manager.setup_catchall_routing_rule(zone_id, inbound_worker_name)
+        email_manager.ensure_webhook_access_bypass(webmail_hostname)
 
         try:
             email_manager.enable_email_sending(zone_id, zone_name)
@@ -171,10 +225,7 @@ def setup_email_domain():
 
         email_sending_status = email_manager.get_email_sending_status(zone_id, zone_name)
 
-        outbound_bindings = [
-            {"type": "send_email", "name": "SEND_EMAIL"},
-            {"type": "secret_text", "name": "AUTH_SECRET", "text": outbound_auth_secret}
-        ]
+        outbound_bindings = _outbound_bindings(zone_name, outbound_auth_secret, quota_kv_ns_id)
 
         email_manager.deploy_worker(outbound_worker_name, _read_worker_template('outbound_worker.js'), outbound_bindings)
 
@@ -300,6 +351,18 @@ def teardown_domain():
         current_app.config['EMAIL_ENABLED'] = False
     save_email_config(email_cfg)
 
+    webmail_hostname = _get_webmail_hostname()
+    teardown_host = webmail_hostname or f"mail.{zone_name}"
+    remaining_hosts = {
+        webmail_hostname or f"mail.{remaining_domain}"
+        for remaining_domain in email_cfg.get('domains', {}).keys()
+    }
+    if teardown_host not in remaining_hosts:
+        try:
+            email_manager.delete_webhook_access_bypass(teardown_host)
+        except Exception as e:
+            errors.append(f"Webhook bypass: {e}")
+
     _restart_mail_container()
     return jsonify({'success': True, 'errors': errors})
 
@@ -311,6 +374,12 @@ def teardown_all():
     include_local = data.get('include_local_data', False)
     email_cfg = config.EMAIL_CONFIG.copy()
     errors = []
+
+    webmail_hostname = _get_webmail_hostname()
+    webhook_hosts = {
+        webmail_hostname or f"mail.{domain}"
+        for domain in email_cfg.get('domains', {}).keys()
+    }
 
     for domain, domain_cfg in list(email_cfg.get('domains', {}).items()):
         errors.extend(_teardown_domain_remote(domain, domain_cfg))
@@ -333,6 +402,12 @@ def teardown_all():
     config.EMAIL_ENABLED = False
     current_app.config['EMAIL_ENABLED'] = False
     save_email_config(email_cfg)
+
+    for host in webhook_hosts:
+        try:
+            email_manager.delete_webhook_access_bypass(host)
+        except Exception as e:
+            errors.append(f"Webhook bypass ({host}): {e}")
 
     _restart_mail_container()
     return jsonify({'success': True, 'errors': errors})
@@ -388,10 +463,7 @@ def local_domains():
 
 def _redeploy_outbound_worker(email_cfg, domain):
     d = email_cfg['domains'][domain]
-    outbound_bindings = [
-        {"type": "send_email", "name": "SEND_EMAIL"},
-        {"type": "secret_text", "name": "AUTH_SECRET", "text": d['outbound_auth_secret']}
-    ]
+    outbound_bindings = _outbound_bindings(domain, d['outbound_auth_secret'], d.get('quota_kv_namespace_id'))
     email_manager.deploy_worker(d['outbound_worker_name'], _read_worker_template('outbound_worker.js'), outbound_bindings)
 
 def _redeploy_inbound_worker(email_cfg, domain):
@@ -430,6 +502,7 @@ def _redeploy_inbound_worker(email_cfg, domain):
 
     email_manager.deploy_worker(d['inbound_worker_name'], _read_worker_template('inbound_worker.js'), inbound_bindings)
     email_manager.set_worker_cron(d['inbound_worker_name'], ['*/5 * * * *'])
+    email_manager.ensure_webhook_access_bypass(webmail_hostname)
 
 @email_bp.route('/mailbox/create', methods=['POST'])
 @login_required
@@ -592,7 +665,7 @@ def update_r2_credentials():
 @email_bp.route('/status', methods=['GET'])
 @login_required
 def email_status_api():
-    return jsonify({'success': True, 'config': config.EMAIL_CONFIG})
+    return jsonify({'success': True, 'config': _public_email_config(config.EMAIL_CONFIG)})
 
 @email_bp.route('/verify-dns', methods=['POST'])
 @login_required
@@ -1103,12 +1176,10 @@ def email_log_stats():
 
 
 def _check_internal_request():
-    # Block any request that carries Cloudflare edge headers (all public internet
-    # requests via the CF tunnel have CF-Ray; internal Docker requests never do)
+
     if request.headers.get('CF-Ray') or request.headers.get('CF-Connecting-IP'):
         return False
 
-    # Block non-private IPs
     try:
         ip = ipaddress.ip_address(request.remote_addr or '')
         if not ip.is_private:
@@ -1116,12 +1187,16 @@ def _check_internal_request():
     except ValueError:
         return False
 
-    # If a shared secret is configured, require it
     expected = os.environ.get('INTERNAL_BOOTSTRAP_SECRET', '')
-    if expected:
-        provided = request.headers.get('X-Bootstrap-Token', '')
-        if not provided or not hmac.compare_digest(provided, expected):
-            return False
+    if not expected:
+        logging.warning(
+            "INTERNAL_BOOTSTRAP_SECRET is not configured; rejecting internal request"
+        )
+        return False
+
+    provided = request.headers.get('X-Bootstrap-Token', '')
+    if not provided or not hmac.compare_digest(provided, expected):
+        return False
 
     return True
 

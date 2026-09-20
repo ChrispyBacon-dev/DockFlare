@@ -21,6 +21,7 @@ Email Suite memerlukan izin tambahan pada Token API DockFlare Anda yang ada. Per
 | **Account** | **Workers Scripts** | **Edit** | Men-deploy worker inbound/outbound |
 | **Account** | **Workers KV Storage** | **Edit** | Penegakan kuota real-time di edge |
 | **Account** | **R2 Storage** | **Edit** | Membuat dan mengelola bucket transit |
+| **Account** | **Access: Apps and Policies** | **Edit** | Membuat bypass untuk jalur webhook email masuk saat Webmail dilindungi Cloudflare Access |
 | **Zone** | **Email Routing** | **Edit** | Mengaktifkan routing dan mengelola aturan |
 | **Zone** | **DNS** | **Edit** | Membuat record MX, SPF, DMARC, dan DKIM |
 

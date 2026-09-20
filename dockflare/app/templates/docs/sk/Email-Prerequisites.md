@@ -21,6 +21,7 @@ E-mailová sada si vyžaduje ďalšie oprávnenia na tvojom existujúcom DockFla
 | **Account** | **Workers Scripts** | **Edit** | Nasadenie inbound/outbound workerov |
 | **Account** | **Workers KV Storage** | **Edit** | Vynucovanie kvót v reálnom čase na edge |
 | **Account** | **R2 Storage** | **Edit** | Vytváranie a správa tranzitných bucketov |
+| **Account** | **Access: Apps and Policies** | **Edit** | Vytvorenie obchádzky pre cestu webhooku prichádzajúcej pošty, keď je Webmail chránený cez Cloudflare Access |
 | **Zone** | **Email Routing** | **Edit** | Aktivácia routingu a správa pravidiel |
 | **Zone** | **DNS** | **Edit** | Vytváranie MX, SPF, DMARC a DKIM záznamov |
 

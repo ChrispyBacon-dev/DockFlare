@@ -17,6 +17,7 @@ D E-Mail-Suite bruucht zusätzlichi Berechtigunge uf dim bestehende DockFlare-AP
 | **Account** | **Workers Scripts** | **Bearbeite** | Inbound-/Outbound-Worker deploye |
 | **Account** | **Workers KV Storage** | **Bearbeite** | Echtzeit-Quota-Durchsetzung am Edge |
 | **Account** | **R2 Storage** | **Bearbeite** | Transit-Buckets erstelle u verwalte |
+| **Account** | **Access: Apps and Policies** | **Bearbeite** | Es Umgehig für de Iigang-Mail-Webhook-Pfad erstelle, wenn Webmail dür Cloudflare Access gschützt isch |
 | **Zone** | **Email Routing** | **Bearbeite** | Routing aktiviere u Regle verwalte |
 | **Zone** | **DNS** | **Bearbeite** | MX-, SPF-, DMARC- u DKIM-Iiträg erstelle |
 

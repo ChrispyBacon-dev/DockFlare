@@ -82,7 +82,6 @@ $RECYCLE.BIN/
 *~
 .directory
 .env
-.claude
 .docs
 /dockflare/tests/
 dockflare-agent/overview.json
@@ -96,3 +95,9 @@ logs/
 DockFlare-Agent-prd/
 unstable-compose.yml
 unstable-local.yml
+/artifacts
+
+# Webmail TypeScript/vue-tsc emit output (build artifacts, not source)
+/webmail/src/**/*.js
+/webmail/src/**/*.js.map
+*.tsbuildinfo
