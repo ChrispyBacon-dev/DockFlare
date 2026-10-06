@@ -1947,9 +1947,15 @@ def ui_edit_manual_rule_route():
     new_key = get_rule_key(full_hostname, processed_path)
     old_hostname = existing.get("hostname")
     old_zone_id = existing.get("zone_id")
-    old_tunnel_id = existing.get("tunnel_id") or (tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID)
+    default_tunnel_id = tunnel_state.get("id") if not config.USE_EXTERNAL_CLOUDFLARED else config.EXTERNAL_TUNNEL_ID
+    old_tunnel_id = existing.get("tunnel_id") or default_tunnel_id
     target_tunnel_id = existing.get("tunnel_id") or old_tunnel_id
     target_tunnel_name = existing.get("tunnel_name")
+    if not target_tunnel_name and target_tunnel_id:
+        if target_tunnel_id == default_tunnel_id:
+            target_tunnel_name = tunnel_state.get("name")
+        if not target_tunnel_name:
+            target_tunnel_name = get_tunnel_name_by_id(target_tunnel_id)
     rule_entry = copy.deepcopy(existing)
     rule_entry.update({
             "hostname": full_hostname,
